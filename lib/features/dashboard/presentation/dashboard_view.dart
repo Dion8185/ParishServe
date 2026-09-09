@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../auth/models/user_model.dart';
 import '../../auth/presentation/login_view.dart';
 import '../../sacramental_records/presentation/dialogs/ocr_scan_dialog.dart';
 import '../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
@@ -9,7 +10,9 @@ import 'widgets/parish_calendar.dart';
 import 'dialogs/notification_dialog.dart';
 
 class DashboardView extends StatelessWidget {
-  const DashboardView({super.key});
+  final UserModel? currentUser;
+
+  const DashboardView({super.key, this.currentUser});
 
   @override
   Widget build(BuildContext context) {
@@ -18,6 +21,7 @@ class DashboardView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header with Dynamic User Greet & Role
           Row(
             children: [
               Container(
@@ -31,21 +35,23 @@ class DashboardView extends StatelessWidget {
                 child: const Icon(Icons.church, size: 32, color: ParishColors.marianBlue),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'St. John Paul II Parish',
-                      style: TextStyle(
+                      currentUser != null ? currentUser!.fullName : 'St. John Paul II Parish',
+                      style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.bold,
                         color: ParishColors.marianBlue,
                       ),
                     ),
                     Text(
-                      'ParishServe Portal',
-                      style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                      currentUser != null
+                          ? '${currentUser!.roleDisplay} • ${currentUser!.userId}'
+                          : 'ParishServe Portal',
+                      style: const TextStyle(fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -107,8 +113,10 @@ class DashboardView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
+
           _buildArchiveTelemetryCard(context),
           const SizedBox(height: 22),
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
