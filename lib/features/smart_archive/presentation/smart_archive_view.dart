@@ -13,11 +13,10 @@ class SmartArchiveView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Smart Archive & IoT', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text('ESP32 telemetry monitoring for sacramental books & asset storage', style: TextStyle(color: ParishColors.textMuted)),
+          Text('Smart Archive & IoT', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('ESP32 telemetry monitoring for sacramental books & asset storage', style: TextStyle(color: ParishColors.textMuted)),
           const SizedBox(height: 18),
 
-          // Overall Storage Health Summary
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -29,19 +28,19 @@ class SmartArchiveView extends StatelessWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.all(12),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: ParishColors.marianBlueSurface,
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.hub_outlined, color: ParishColors.marianBlue, size: 30),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('4 Active ESP32 Nodes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      Text('1 Node Triggered Humidity Alert', style: TextStyle(fontSize: 13, color: ParishColors.mercyRed, fontWeight: FontWeight.w600)),
+                      Text('4 Active ESP32 Nodes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                      const Text('1 Node Triggered Humidity Alert', style: TextStyle(fontSize: 13, color: ParishColors.mercyRed, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -50,7 +49,6 @@ class SmartArchiveView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Configure Thresholds Action Button
           SizedBox(
             width: double.infinity,
             height: 52,
@@ -67,31 +65,31 @@ class SmartArchiveView extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          const Text('Monitored Storage Zones', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text('Monitored Storage Zones', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
 
-          const StorageNodeTile(
+          StorageNodeTile(
             roomTitle: 'Main Sacramental Archive Room',
             nodeId: 'ESP32-NODE-01',
             temperature: '24.2 °C',
             humidity: '54 %',
             isWarning: false,
           ),
-          const StorageNodeTile(
+          StorageNodeTile(
             roomTitle: 'Liturgical Vessel & Robe Storage',
             nodeId: 'ESP32-NODE-02',
             temperature: '29.1 °C',
             humidity: '68 %',
             isWarning: true,
           ),
-          const StorageNodeTile(
+          StorageNodeTile(
             roomTitle: 'Historical Parish Register Vault',
             nodeId: 'ESP32-NODE-03',
             temperature: '23.5 °C',
             humidity: '51 %',
             isWarning: false,
           ),
-          const StorageNodeTile(
+          StorageNodeTile(
             roomTitle: 'Altar Linen & Vestment Closet',
             nodeId: 'ESP32-NODE-04',
             temperature: '26.0 °C',

@@ -70,6 +70,7 @@ Widget _buildNotificationItem({
   required String time,
   required String description,
 }) {
+  final textColorMuted = ParishColors.textMuted;
   return Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -82,12 +83,12 @@ Widget _buildNotificationItem({
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                Text(time, style: const TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(time, style: TextStyle(fontSize: 11, color: textColorMuted)),
               ],
             ),
-            const SizedBox(height: 2),
-            Text(description, style: const TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+            SizedBox(height: 2),
+            Text(description, style: TextStyle(fontSize: 12, color: textColorMuted)),
           ],
         ),
       ),

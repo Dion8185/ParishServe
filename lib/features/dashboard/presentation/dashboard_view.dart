@@ -6,8 +6,8 @@ import '../../sacramental_records/presentation/dialogs/ocr_scan_dialog.dart';
 import '../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
 import '../../receipts/presentation/dialogs/new_transaction_dialog.dart';
 import '../../smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
-import 'widgets/parish_calendar.dart';
 import 'dialogs/notification_dialog.dart';
+import 'pages/parish_calendar_page.dart';
 
 class DashboardView extends StatelessWidget {
   final UserModel? currentUser;
@@ -21,7 +21,7 @@ class DashboardView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with Dynamic User Greet & Role
+          // Header
           Row(
             children: [
               Container(
@@ -51,7 +51,7 @@ class DashboardView extends StatelessWidget {
                       currentUser != null
                           ? '${currentUser!.roleDisplay} • ${currentUser!.userId}'
                           : 'ParishServe Portal',
-                      style: const TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -114,13 +114,15 @@ class DashboardView extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
+          // ESP32 Telemetry Banner
           _buildArchiveTelemetryCard(context),
           const SizedBox(height: 22),
 
+          // Master Calendar Preview Card
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Parish Event Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const Text('Parish Master Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -135,12 +137,19 @@ class DashboardView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('Tap any highlighted date to view scheduled church events.', style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+          Text(
+            'Tap below to view full Month, Week, and Day schedules.',
+            style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+          ),
           const SizedBox(height: 12),
-          const ParishCalendar(),
+          _buildCalendarSummaryCard(context),
+
           const SizedBox(height: 24),
+
+          // Operational Actions
           const Text('Quick Operational Actions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
+
           _buildLargeActionCard(
             context: context,
             icon: Icons.document_scanner,
@@ -168,6 +177,76 @@ class DashboardView extends StatelessWidget {
             onTap: () => showNewTransactionModal(context),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarSummaryCard(BuildContext context) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ParishCalendarPage()),
+        );
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ParishColors.marianBlueSurface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.calendar_month, color: ParishColors.marianBlue, size: 30),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Open Master Calendar',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Month • Week • Day timeline views',
+                        style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_forward_ios, size: 18, color: ParishColors.textMuted),
+              ],
+            ),
+            const Divider(height: 24),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _CalendarQuickMetric(label: 'Today', value: '2 Services', color: ParishColors.marianBlue),
+                _CalendarQuickMetric(label: 'This Week', value: '7 Bookings', color: ParishColors.goldAccent),
+                _CalendarQuickMetric(label: 'Status', value: '1 Alert', color: ParishColors.mercyRed),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -225,36 +304,36 @@ class DashboardView extends StatelessWidget {
               ],
             ),
             const Divider(height: 22),
-            const Row(
+            Row(
               children: [
                 Expanded(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.thermostat, size: 26, color: ParishColors.marianBlue),
-                      SizedBox(width: 6),
+                      const Icon(Icons.thermostat, size: 26, color: ParishColors.marianBlue),
+                      const SizedBox(width: 6),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Temperature', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-                          Text('24.2 °C', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                          const Text('24.2 °C', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ],
                   ),
                 ),
-                VerticalDivider(width: 20),
+                const VerticalDivider(width: 20),
                 Expanded(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.water_drop_outlined, size: 26, color: ParishColors.marianBlue),
-                      SizedBox(width: 6),
+                      const Icon(Icons.water_drop_outlined, size: 26, color: ParishColors.marianBlue),
+                      const SizedBox(width: 6),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Humidity', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-                          Text('54 %', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                          const Text('54 %', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ],
@@ -300,14 +379,40 @@ class DashboardView extends StatelessWidget {
                 children: [
                   Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+                  Text(subtitle, style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, size: 18, color: ParishColors.textMuted),
+            Icon(Icons.arrow_forward_ios, size: 18, color: ParishColors.textMuted),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CalendarQuickMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _CalendarQuickMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
     );
   }
 }

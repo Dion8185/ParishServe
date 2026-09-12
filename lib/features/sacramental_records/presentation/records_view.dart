@@ -14,8 +14,8 @@ class SacramentalRecordsView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Sacramental Records', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text('Search registry or digitize manual books', style: TextStyle(color: ParishColors.textMuted)),
+          Text('Sacramental Records', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Search registry or digitize manual books', style: TextStyle(color: ParishColors.textMuted)),
           const SizedBox(height: 18),
 
           Container(
@@ -26,10 +26,10 @@ class SacramentalRecordsView extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: ParishColors.marianBlue, width: 1.8),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.search, size: 28, color: ParishColors.marianBlue),
-                SizedBox(width: 12),
+                const Icon(Icons.search, size: 28, color: ParishColors.marianBlue),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'Search by Name, Year, or Book #...',
@@ -78,22 +78,22 @@ class SacramentalRecordsView extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          const Text('Recent Sacramental Logs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text('Recent Sacramental Logs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
 
-          const RecordTile(
+          RecordTile(
             name: 'Juan Miguel Dela Cruz',
             sacrament: 'BAPTISM',
             bookRef: 'Book 12, Page 143, Entry #04',
             date: 'Baptized: Oct 14, 2021',
           ),
-          const RecordTile(
+          RecordTile(
             name: 'Carlos Santos & Maria Ramos',
             sacrament: 'MATRIMONY',
             bookRef: 'Book 06, Page 52, Entry #01',
             date: 'Married: Feb 18, 2023',
           ),
-          const RecordTile(
+          RecordTile(
             name: 'Gabriel Morales',
             sacrament: 'CONFIRMATION',
             bookRef: 'Book 04, Page 88, Entry #19',

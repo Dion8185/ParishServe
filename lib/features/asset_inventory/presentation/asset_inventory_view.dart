@@ -14,11 +14,10 @@ class AssetInventoryView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Parish Asset Inventory', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text('Track physical church properties, furniture, and sacred vessels', style: TextStyle(color: ParishColors.textMuted)),
+          Text('Parish Asset Inventory', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Track physical church properties, furniture, and sacred vessels', style: TextStyle(color: ParishColors.textMuted)),
           const SizedBox(height: 18),
 
-          // Primary Actions: Scan for Audit & Add New Asset
           Row(
             children: [
               Expanded(
@@ -58,7 +57,6 @@ class AssetInventoryView extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // Search Bar
           Container(
             height: 54,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -67,10 +65,10 @@ class AssetInventoryView extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: ParishColors.borderGrey),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.search, size: 24, color: ParishColors.marianBlue),
-                SizedBox(width: 10),
+                const Icon(Icons.search, size: 24, color: ParishColors.marianBlue),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text('Search by Control #, item name, or location...', style: TextStyle(fontSize: 14, color: ParishColors.textMuted)),
                 ),
@@ -79,31 +77,31 @@ class AssetInventoryView extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          const Text('Registered Diocesan Properties', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text('Registered Diocesan Properties', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
 
-          const AssetItemCard(
+          AssetItemCard(
             controlNo: 'JP2-2023-SAC-0014',
             itemName: 'Gold-Plated Ciboria (Sacred Vessel)',
             location: 'Sacristy Vault - Cabinet A',
             condition: 'VERIFIED / GOOD',
             conditionColor: ParishColors.oliveGreen,
           ),
-          const AssetItemCard(
+          AssetItemCard(
             controlNo: 'JP2-2022-AV-0008',
             itemName: 'Wireless Microphone Set (2 Pcs)',
             location: 'Altar Sound Station',
             condition: 'REQUIRES REPAIR',
             conditionColor: ParishColors.mercyRed,
           ),
-          const AssetItemCard(
+          AssetItemCard(
             controlNo: 'JP2-2021-FUR-0035',
             itemName: 'Hand-Carved Narra Presider\'s Chair',
             location: 'Sanctuary Altar Floor',
             condition: 'VERIFIED / GOOD',
             conditionColor: ParishColors.oliveGreen,
           ),
-          const AssetItemCard(
+          AssetItemCard(
             controlNo: 'JP2-2024-LIT-0002',
             itemName: 'Roman Missal (Third Typical Edition)',
             location: 'Sacristy Clergy Bookcase',

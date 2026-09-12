@@ -7,6 +7,9 @@ void showCertificatePreviewModal(
       required String sacrament,
       required String bookRef,
     }) {
+  final textColorMuted = ParishColors.textMuted;
+  final textColorDark = ParishColors.textDark;
+
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -34,13 +37,13 @@ void showCertificatePreviewModal(
               'PAROCHIA SANCTI IOANNIS PAULI II',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
             ),
-            const Text('Diocese of San Pablo', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+            Text('Diocese of San Pablo', style: TextStyle(fontSize: 11, color: textColorMuted)),
             const Divider(height: 20),
             Text('CERTIFICATE OF $sacrament', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 8),
             Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: ParishColors.marianBlue)),
             const SizedBox(height: 4),
-            Text(bookRef, style: const TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+            Text(bookRef, style: TextStyle(fontSize: 12, color: textColorMuted)),
             const SizedBox(height: 14),
             Container(
               width: 80,
@@ -49,10 +52,10 @@ void showCertificatePreviewModal(
                 border: Border.all(color: ParishColors.borderGrey),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.qr_code_2, size: 70, color: ParishColors.textDark),
+              child: Icon(Icons.qr_code_2, size: 70, color: textColorDark),
             ),
             const SizedBox(height: 6),
-            const Text('QR Code for Parish Verification', style: TextStyle(fontSize: 10, color: ParishColors.textMuted)),
+            Text('QR Code for Parish Verification', style: TextStyle(fontSize: 10, color: textColorMuted)),
           ],
         ),
       ),

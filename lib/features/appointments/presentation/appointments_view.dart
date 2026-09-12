@@ -13,11 +13,10 @@ class AppointmentsView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Parish Appointments', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text('Schedule weddings, baptisms, mass intentions & pastoral duties', style: TextStyle(color: ParishColors.textMuted)),
+          Text('Parish Appointments', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Schedule weddings, baptisms, mass intentions & pastoral duties', style: TextStyle(color: ParishColors.textMuted)),
           const SizedBox(height: 18),
 
-          // Primary Booking Action Button
           SizedBox(
             width: double.infinity,
             height: 58,
@@ -34,7 +33,6 @@ class AppointmentsView extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // Filter Summary Chips
           Row(
             children: [
               _buildFilterChip('All (4)', isSelected: true),
@@ -46,10 +44,10 @@ class AppointmentsView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          const Text('Scheduled Parish Services', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text('Scheduled Parish Services', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
 
-          const AppointmentCard(
+          AppointmentCard(
             refNo: 'APT-2026-0042',
             serviceName: 'Nuptial Mass (Santos & Ramos Wedding)',
             requester: 'Carlos Santos',
@@ -59,7 +57,7 @@ class AppointmentsView extends StatelessWidget {
             status: 'CONFIRMED',
             feeStatus: 'Paid (REC-2026-00870)',
           ),
-          const AppointmentCard(
+          AppointmentCard(
             refNo: 'APT-2026-0043',
             serviceName: 'Community Baptism (Batch A)',
             requester: 'Dela Cruz Family',
@@ -69,7 +67,7 @@ class AppointmentsView extends StatelessWidget {
             status: 'CONFIRMED',
             feeStatus: 'Paid (REC-2026-00892)',
           ),
-          const AppointmentCard(
+          AppointmentCard(
             refNo: 'APT-2026-0044',
             serviceName: 'Pastoral Sick Call & Anointing of the Sick',
             requester: 'Remedios Bautista',
@@ -79,7 +77,7 @@ class AppointmentsView extends StatelessWidget {
             status: 'PENDING',
             feeStatus: 'Non-Financial (Pastoral Care)',
           ),
-          const AppointmentCard(
+          AppointmentCard(
             refNo: 'APT-2026-0045',
             serviceName: 'Thanksgiving Mass Intention',
             requester: 'Pedro Alvarez',

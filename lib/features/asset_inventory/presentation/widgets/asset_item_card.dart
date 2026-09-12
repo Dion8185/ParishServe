@@ -60,8 +60,8 @@ class AssetItemCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                   ),
                   const SizedBox(height: 2),
-                  Text(itemName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text(location, style: const TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+                  Text(itemName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text(location, style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

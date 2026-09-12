@@ -8,14 +8,14 @@ void showManualEntryModal(BuildContext context) {
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('New Sacramental Entry', style: TextStyle(fontWeight: FontWeight.bold)),
-      content: const SingleChildScrollView(
+      content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ParishDialogTextField(label: 'Sacrament Type', hint: 'Baptism / Matrimony / Confirmation'),
-            ParishDialogTextField(label: 'Full Name of Subject', hint: 'First, Middle, Last Name'),
-            ParishDialogTextField(label: 'Book & Page Reference', hint: 'e.g., Book 12, Page 45, Entry 02'),
-            ParishDialogTextField(label: 'Parents / Witnesses', hint: 'Names separated by comma'),
+            const ParishDialogTextField(label: 'Sacrament Type', hint: 'Baptism / Matrimony / Confirmation'),
+            const ParishDialogTextField(label: 'Full Name of Subject', hint: 'First, Middle, Last Name'),
+            const ParishDialogTextField(label: 'Book & Page Reference', hint: 'e.g., Book 12, Page 45, Entry 02'),
+            const ParishDialogTextField(label: 'Parents / Witnesses', hint: 'Names separated by comma'),
           ],
         ),
       ),

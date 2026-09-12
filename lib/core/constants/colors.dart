@@ -1,28 +1,52 @@
 import 'package:flutter/material.dart';
+import '../theme/theme_controller.dart';
 
-/// Parish Coat of Arms Palette & High-Contrast Senior-Accessible Neutrals
 class ParishColors {
-  // Marian Blue (Primary Coat of Arms Field, Shield & Marian 'M')
+  // ===========================================================================
+  // Fixed Brand Accents (Coat of Arms)
+  // ===========================================================================
   static const Color marianBlue = Color(0xFF164E87);
   static const Color marianBlueLight = Color(0xFF246EB9);
-  static const Color marianBlueSurface = Color(0xFFEDF4FB);
-
-  // Papal & Wheat Gold (Outer Ring & Rice Stalks)
   static const Color goldAccent = Color(0xFFD49B18);
-  static const Color goldLight = Color(0xFFFFF7E6);
-
-  // Divine Mercy Crimson (Accent Ray / Urgent Alerts / Notifications)
   static const Color mercyRed = Color(0xFFB91C1C);
-  static const Color mercyRedSurface = Color(0xFFFDF2F2);
-
-  // Olive Green (Dove's Olive Branch / Safe Environmental Status)
   static const Color oliveGreen = Color(0xFF2D6A4F);
-  static const Color oliveGreenSurface = Color(0xFFEDF7F2);
 
-  // High-Contrast Neutrals (Senior-Friendly WCAG AAA Readability)
-  static const Color textDark = Color(0xFF1E293B);
-  static const Color textMuted = Color(0xFF475569);
-  static const Color backgroundLight = Color(0xFFF8FAFC);
-  static const Color cardWhite = Color(0xFFFFFFFF);
-  static const Color borderGrey = Color(0xFFCBD5E1);
+  // ===========================================================================
+  // Theme-Adaptive Dynamic Colors
+  // ===========================================================================
+  static Color get backgroundLight => AppThemeController.isDarkMode
+      ? const Color(0xFF0F172A) // Deep nocturnal Marian slate
+      : const Color(0xFFF8FAFC); // Clean parchment white
+
+  static Color get cardWhite => AppThemeController.isDarkMode
+      ? const Color(0xFF1E293B) // Dark slate container
+      : const Color(0xFFFFFFFF); // Pure white card
+
+  static Color get textDark => AppThemeController.isDarkMode
+      ? const Color(0xFFF8FAFC) // Crisp white for senior readability
+      : const Color(0xFF1E293B); // Deep charcoal
+
+  static Color get textMuted => AppThemeController.isDarkMode
+      ? const Color(0xFF94A3B8) // High-contrast silver slate
+      : const Color(0xFF475569); // Muted slate
+
+  static Color get borderGrey => AppThemeController.isDarkMode
+      ? const Color(0xFF334155) // Subtle dark border
+      : const Color(0xFFCBD5E1); // Light grey border
+
+  static Color get marianBlueSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF1E3A5F)
+      : const Color(0xFFEDF4FB);
+
+  static Color get goldLight => AppThemeController.isDarkMode
+      ? const Color(0xFF3E2D0C)
+      : const Color(0xFFFFF7E6);
+
+  static Color get mercyRedSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF450A0A)
+      : const Color(0xFFFDF2F2);
+
+  static Color get oliveGreenSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF064E3B)
+      : const Color(0xFFEDF7F2);
 }

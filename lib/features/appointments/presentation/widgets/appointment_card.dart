@@ -94,14 +94,14 @@ class AppointmentCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(serviceName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text('Requester: $requester', style: const TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+                  Text(serviceName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text('Requester: $requester', style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.access_time, size: 14, color: ParishColors.textMuted),
+                      Icon(Icons.access_time, size: 14, color: ParishColors.textMuted),
                       const SizedBox(width: 4),
-                      Text(scheduleTime, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textDark)),
+                      Text(scheduleTime, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textDark)),
                     ],
                   ),
                 ],

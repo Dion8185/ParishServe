@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 
 void showOcrScanModal(BuildContext context) {
+  final textColorMuted = ParishColors.textMuted;
+
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -24,12 +26,12 @@ void showOcrScanModal(BuildContext context) {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: ParishColors.marianBlue, width: 1.5),
             ),
-            child: const Column(
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.camera_alt_outlined, size: 48, color: ParishColors.marianBlue),
-                SizedBox(height: 8),
-                Text('Align ledger record inside frame', style: TextStyle(color: ParishColors.textMuted, fontSize: 13)),
+                const Icon(Icons.camera_alt_outlined, size: 48, color: ParishColors.marianBlue),
+                const SizedBox(height: 8),
+                Text('Align ledger record inside frame', style: TextStyle(color: textColorMuted, fontSize: 13)),
               ],
             ),
           ),
@@ -58,7 +60,7 @@ void showOcrScanModal(BuildContext context) {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel', style: TextStyle(fontSize: 16, color: ParishColors.textMuted)),
+          child: Text('Cancel', style: TextStyle(fontSize: 16, color: textColorMuted)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(

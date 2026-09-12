@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 
 void showCalendarEventModal(BuildContext context, {required String date, required String eventTitle}) {
+  final textColorMuted = ParishColors.textMuted;
+  final textColorDark = ParishColors.textDark;
+
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -27,25 +30,25 @@ void showCalendarEventModal(BuildContext context, {required String date, require
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Scheduled Activity', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                Text('Scheduled Activity', style: TextStyle(fontSize: 12, color: textColorMuted)),
                 Text(eventTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
               ],
             ),
           ),
           const SizedBox(height: 14),
-          const Row(
+          Row(
             children: [
-              Icon(Icons.location_on_outlined, size: 18, color: ParishColors.textMuted),
-              SizedBox(width: 6),
-              Text('Venue: Main Church Altar', style: TextStyle(fontSize: 14, color: ParishColors.textDark)),
+              Icon(Icons.location_on_outlined, size: 18, color: textColorMuted),
+              const SizedBox(width: 6),
+              Text('Venue: Main Church Altar', style: TextStyle(fontSize: 14, color: textColorDark)),
             ],
           ),
           const SizedBox(height: 6),
-          const Row(
+          Row(
             children: [
-              Icon(Icons.person_outline, size: 18, color: ParishColors.textMuted),
-              SizedBox(width: 6),
-              Text('Officiant: Rev. Fr. Parish Priest', style: TextStyle(fontSize: 14, color: ParishColors.textDark)),
+              Icon(Icons.person_outline, size: 18, color: textColorMuted),
+              const SizedBox(width: 6),
+              Text('Officiant: Rev. Fr. Parish Priest', style: TextStyle(fontSize: 14, color: textColorDark)),
             ],
           ),
         ],

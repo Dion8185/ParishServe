@@ -13,7 +13,7 @@ void showLoginHelpDialog(BuildContext context) {
           Text('Staff Assistance', style: TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
-      content: const Column(
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -21,7 +21,7 @@ void showLoginHelpDialog(BuildContext context) {
             'If you forgot your password or require role access:',
             style: TextStyle(fontSize: 14, color: ParishColors.textDark),
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
           Text(
             '• Approach the Parish Priest or Parish Technical Staff.\n• Passwords can be reset directly at the Parish Secretariat terminal.',
             style: TextStyle(fontSize: 13, color: ParishColors.textMuted),

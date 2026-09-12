@@ -9,6 +9,8 @@ void showReceiptDetailModal(
       required String amount,
       required String date,
     }) {
+  final textColorMuted = ParishColors.textMuted;
+
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -16,7 +18,7 @@ void showReceiptDetailModal(
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('Parish Receipt', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text('Parish Receipt', style: const TextStyle(fontWeight: FontWeight.bold)),
           Text(receiptNo, style: const TextStyle(fontSize: 13, color: ParishColors.marianBlue)),
         ],
       ),
@@ -25,8 +27,8 @@ void showReceiptDetailModal(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Payer: $payer', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          Text('Purpose: $purpose', style: const TextStyle(fontSize: 14, color: ParishColors.textMuted)),
-          Text('Date: $date', style: const TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+          Text('Date: $date', style: TextStyle(fontSize: 13, color: textColorMuted)),
+          Text('Purpose: $purpose', style: TextStyle(fontSize: 14, color: textColorMuted)),
           const Divider(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

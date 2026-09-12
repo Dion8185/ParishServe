@@ -47,7 +47,7 @@ class StorageNodeTile extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(roomTitle, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(roomTitle, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ParishColors.textDark)),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -62,13 +62,13 @@ class StorageNodeTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text(nodeId, style: const TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+            Text(nodeId, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
             const SizedBox(height: 12),
             Row(
               children: [
-                Text('Temp: $temperature', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text('Temp: $temperature', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.textDark)),
                 const SizedBox(width: 20),
-                Text('Humidity: $humidity', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text('Humidity: $humidity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.textDark)),
               ],
             ),
           ],

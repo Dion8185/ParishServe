@@ -50,7 +50,6 @@ class _LoginViewState extends State<LoginView> {
       } else if (!user.accountStatus) {
         _showErrorDialog('This account (${user.userId}) has been deactivated. Please contact the Parish Priest or Administrator.');
       } else {
-        // Successful login: pass authenticated user to the main navigation shell
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -80,7 +79,7 @@ class _LoginViewState extends State<LoginView> {
             Text('Sign In Error', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
-        content: Text(message, style: const TextStyle(fontSize: 14, color: ParishColors.textDark)),
+        content: Text(message, style: TextStyle(fontSize: 14, color: ParishColors.textDark)),
         actions: [
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -106,7 +105,7 @@ class _LoginViewState extends State<LoginView> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Parish Coat of Arms Emblem Container
+                // Parish Emblem Container
                 Container(
                   width: 86,
                   height: 86,
@@ -136,7 +135,7 @@ class _LoginViewState extends State<LoginView> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'Diocese of San Pablo • Labuin, Sta. Cruz, Laguna',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
@@ -149,7 +148,7 @@ class _LoginViewState extends State<LoginView> {
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: ParishColors.goldAccent, width: 1.2),
                   ),
-                  child: const Text(
+                  child: Text(
                     'ParishServe Management Portal',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                   ),
@@ -168,18 +167,17 @@ class _LoginViewState extends State<LoginView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Staff Sign In',
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Enter your username or parish email to log in.',
                         style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
                       ),
                       const SizedBox(height: 20),
 
-                      // Username or Email
                       const Text('Username or Email', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 6),
                       TextField(
@@ -195,7 +193,6 @@ class _LoginViewState extends State<LoginView> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Password
                       const Text('Password', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 6),
                       TextField(
@@ -216,8 +213,7 @@ class _LoginViewState extends State<LoginView> {
                       ),
                       const SizedBox(height: 18),
 
-                      // Quick Test Account Selector
-                      const Text('Quick Test Account:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textMuted)),
+                      Text('Quick Test Account:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textMuted)),
                       const SizedBox(height: 6),
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
@@ -233,7 +229,6 @@ class _LoginViewState extends State<LoginView> {
                       ),
                       const SizedBox(height: 22),
 
-                      // Login Button with Loading State
                       SizedBox(
                         width: double.infinity,
                         height: 58,
@@ -272,7 +267,7 @@ class _LoginViewState extends State<LoginView> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.help_outline, size: 18, color: ParishColors.textMuted),
+                    Icon(Icons.help_outline, size: 18, color: ParishColors.textMuted),
                     const SizedBox(width: 4),
                     TextButton(
                       onPressed: () => showLoginHelpDialog(context),

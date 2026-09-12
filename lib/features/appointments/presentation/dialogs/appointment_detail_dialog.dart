@@ -12,6 +12,8 @@ void showAppointmentDetailModal(
       required String status,
       required String feeStatus,
     }) {
+  final textColorMuted = ParishColors.textMuted;
+
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -39,7 +41,7 @@ void showAppointmentDetailModal(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Service Requested', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                  Text('Service Requested', style: TextStyle(fontSize: 12, color: textColorMuted)),
                   Text(serviceName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
                 ],
               ),
@@ -72,7 +74,7 @@ void showAppointmentDetailModal(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Close', style: TextStyle(fontSize: 15, color: ParishColors.textMuted)),
+          child: Text('Close', style: TextStyle(fontSize: 15, color: textColorMuted)),
         ),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
@@ -90,6 +92,9 @@ void showAppointmentDetailModal(
 }
 
 Widget _buildDetailRow(IconData icon, String label, String value) {
+  final textColorDark = ParishColors.textDark;
+  final textColorMuted = ParishColors.textMuted;
+
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 4),
     child: Row(
@@ -100,9 +105,9 @@ Widget _buildDetailRow(IconData icon, String label, String value) {
         Expanded(
           child: RichText(
             text: TextSpan(
-              style: const TextStyle(fontSize: 14, color: ParishColors.textDark),
+              style: TextStyle(fontSize: 14, color: textColorDark),
               children: [
-                TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.textMuted)),
+                TextSpan(text: '$label: ', style: TextStyle(fontWeight: FontWeight.bold, color: textColorMuted)),
                 TextSpan(text: value, style: const TextStyle(fontWeight: FontWeight.w600)),
               ],
             ),

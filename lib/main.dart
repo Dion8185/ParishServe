@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/login_view.dart';
 
 Future<void> main() async {
@@ -19,11 +20,18 @@ class ParishServeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'ParishServe',
-      debugShowCheckedModeBanner: false,
-      theme: ParishTheme.lightTheme,
-      home: const LoginView(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeController.themeModeNotifier,
+      builder: (context, currentMode, _) {
+        return MaterialApp(
+          title: 'ParishServe',
+          debugShowCheckedModeBanner: false,
+          theme: ParishTheme.lightTheme,
+          darkTheme: ParishTheme.darkTheme,
+          themeMode: currentMode,
+          home: const LoginView(),
+        );
+      },
     );
   }
 }

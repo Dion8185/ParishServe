@@ -13,8 +13,8 @@ class ReceiptManagementView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Parish Receipts', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text('Issue ecclesiastical receipts & manage service fees', style: TextStyle(color: ParishColors.textMuted)),
+          Text('Parish Receipts', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Issue ecclesiastical receipts & manage service fees', style: TextStyle(color: ParishColors.textMuted)),
           const SizedBox(height: 18),
 
           SizedBox(
@@ -33,10 +33,10 @@ class ReceiptManagementView extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          const Text('Recent Ecclesiastical Receipts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text('Recent Ecclesiastical Receipts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
 
-          const ReceiptCard(
+          ReceiptCard(
             receiptNo: 'REC-2026-00892',
             payer: 'Theresa Sanchez',
             purpose: 'Baptismal Certificate Request (Pabuklat)',
@@ -44,7 +44,7 @@ class ReceiptManagementView extends StatelessWidget {
             date: 'Today, 10:15 AM',
             status: 'PAID',
           ),
-          const ReceiptCard(
+          ReceiptCard(
             receiptNo: 'REC-2026-00891',
             payer: 'Fernando Gomez',
             purpose: 'Thanksgiving Mass Intention',
@@ -52,7 +52,7 @@ class ReceiptManagementView extends StatelessWidget {
             date: 'Today, 09:30 AM',
             status: 'PAID',
           ),
-          const ReceiptCard(
+          ReceiptCard(
             receiptNo: 'REC-2026-00890',
             payer: 'Anonymous Benefactor',
             purpose: 'Church Altar Repair Donation',

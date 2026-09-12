@@ -8,14 +8,14 @@ void showNewTransactionModal(BuildContext context) {
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('Record Ecclesiastical Receipt', style: TextStyle(fontWeight: FontWeight.bold)),
-      content: const SingleChildScrollView(
+      content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ParishDialogTextField(label: 'Payer / Requester', hint: 'e.g., Maria Santos'),
-            ParishDialogTextField(label: 'Transaction Purpose', hint: 'Mass Intention / Certificate / Donation'),
-            ParishDialogTextField(label: 'Amount Received (PHP)', hint: '₱ 0.00'),
-            ParishDialogTextField(label: 'Auto Generated Receipt #', hint: 'REC-2026-00893', enabled: false),
+            const ParishDialogTextField(label: 'Payer / Requester', hint: 'e.g., Maria Santos'),
+            const ParishDialogTextField(label: 'Transaction Purpose', hint: 'Mass Intention / Certificate / Donation'),
+            const ParishDialogTextField(label: 'Amount Received (PHP)', hint: '₱ 0.00'),
+            const ParishDialogTextField(label: 'Auto Generated Receipt #', hint: 'REC-2026-00893', enabled: false),
           ],
         ),
       ),

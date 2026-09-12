@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 
 void showAuditScanModal(BuildContext context) {
+  final textColorMuted = ParishColors.textMuted;
+
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -28,7 +30,7 @@ void showAuditScanModal(BuildContext context) {
             ),
           ),
           const SizedBox(height: 12),
-          const Text('Hold device within 4 cm of asset label.', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+          Text('Hold device within 4 cm of asset label.', style: TextStyle(fontSize: 12, color: textColorMuted)),
         ],
       ),
       actions: [

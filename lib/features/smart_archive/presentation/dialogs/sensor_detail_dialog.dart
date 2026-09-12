@@ -9,6 +9,8 @@ void showSensorDetailModal(
       required String humidity,
       required bool isWarning,
     }) {
+  final textColorMuted = ParishColors.textMuted;
+
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -18,7 +20,7 @@ void showSensorDetailModal(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Node ID: $nodeId', style: const TextStyle(color: ParishColors.textMuted, fontSize: 13)),
+          Text('Node ID: $nodeId', style: TextStyle(color: textColorMuted, fontSize: 13)),
           const SizedBox(height: 12),
           Row(
             children: [
