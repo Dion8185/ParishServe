@@ -27,21 +27,7 @@ class _ProfileViewState extends State<ProfileView> {
 
     return Scaffold(
       backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: ParishColors.cardWhite,
-        elevation: 0,
-        title: Text(
-          'Staff Profile & Settings',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: ParishColors.mercyRed),
-            onPressed: () => _confirmLogout(context),
-            tooltip: 'Sign Out',
-          ),
-        ],
-      ),
+      // NOTE: appBar removed here so it seamlessly uses MainNavigationShell's persistent Top Bar!
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -64,6 +50,7 @@ class _ProfileViewState extends State<ProfileView> {
               ),
               child: Column(
                 children: [
+                  // Avatar with Papal Gold Ring
                   Container(
                     width: 84,
                     height: 84,
@@ -84,6 +71,8 @@ class _ProfileViewState extends State<ProfileView> {
                     ),
                   ),
                   const SizedBox(height: 14),
+
+                  // Name & Role
                   Text(
                     fullName,
                     textAlign: TextAlign.center,
@@ -111,7 +100,7 @@ class _ProfileViewState extends State<ProfileView> {
             ),
             const SizedBox(height: 20),
 
-            // Credentials Section
+            // Credentials & Assignment Section
             _buildSectionHeader('Parish Credentials & Assignment'),
             Container(
               padding: const EdgeInsets.all(16),
@@ -132,7 +121,7 @@ class _ProfileViewState extends State<ProfileView> {
             ),
             const SizedBox(height: 20),
 
-            // Accessibility & Theme Preferences Section
+            // Accessibility & Display Preferences Section
             _buildSectionHeader('Appearance & Accessibility'),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../auth/models/user_model.dart';
-import '../../auth/presentation/login_view.dart';
 import '../../sacramental_records/presentation/dialogs/ocr_scan_dialog.dart';
 import '../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
 import '../../receipts/presentation/dialogs/new_transaction_dialog.dart';
 import '../../smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
-import 'dialogs/notification_dialog.dart';
 import 'pages/parish_calendar_page.dart';
 
 class DashboardView extends StatelessWidget {
@@ -21,100 +19,49 @@ class DashboardView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: ParishColors.marianBlueSurface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: ParishColors.goldAccent, width: 2),
+          // Welcome Card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            decoration: BoxDecoration(
+              color: ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: ParishColors.borderGrey),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: ParishColors.goldLight,
+                  child: const Icon(Icons.person, color: ParishColors.goldAccent, size: 24),
                 ),
-                child: const Icon(Icons.church, size: 32, color: ParishColors.marianBlue),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      currentUser != null ? currentUser!.fullName : 'St. John Paul II Parish',
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.marianBlue,
-                      ),
-                    ),
-                    Text(
-                      currentUser != null
-                          ? '${currentUser!.roleDisplay} • ${currentUser!.userId}'
-                          : 'ParishServe Portal',
-                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              InkWell(
-                onTap: () => showNotificationModal(context),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: ParishColors.cardWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ParishColors.borderGrey, width: 1.5),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.notifications_outlined, size: 26, color: ParishColors.marianBlue),
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: ParishColors.mercyRed,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Text(
-                            '3',
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
+                      Text(
+                        currentUser != null ? 'Welcome, ${currentUser!.firstName}!' : 'Welcome, Parish Staff!',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark,
                         ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Ready for today\'s sacramental & parish duties.',
+                        style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LoginView()),
-                  );
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: ParishColors.cardWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ParishColors.borderGrey, width: 1.5),
-                  ),
-                  child: const Icon(Icons.logout, size: 24, color: ParishColors.mercyRed),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
-          // ESP32 Telemetry Banner
+          // ESP32 Smart Archive Telemetry Banner
           _buildArchiveTelemetryCard(context),
           const SizedBox(height: 22),
 
@@ -122,7 +69,7 @@ class DashboardView extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Parish Master Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text('Parish Master Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -147,7 +94,7 @@ class DashboardView extends StatelessWidget {
           const SizedBox(height: 24),
 
           // Operational Actions
-          const Text('Quick Operational Actions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text('Quick Operational Actions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
 
           _buildLargeActionCard(
@@ -316,7 +263,7 @@ class DashboardView extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Temperature', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-                          const Text('24.2 °C', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                          Text('24.2 °C', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                         ],
                       ),
                     ],
@@ -333,7 +280,7 @@ class DashboardView extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Humidity', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-                          const Text('54 %', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                          Text('54 %', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                         ],
                       ),
                     ],
@@ -377,7 +324,7 @@ class DashboardView extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                   const SizedBox(height: 2),
                   Text(subtitle, style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
                 ],

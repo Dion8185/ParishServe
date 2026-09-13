@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../auth/models/user_model.dart';
 import '../../dashboard/presentation/dashboard_view.dart';
+import '../../dashboard/presentation/dialogs/notification_dialog.dart';
 import '../../sacramental_records/presentation/records_view.dart';
 import '../../receipts/presentation/receipts_view.dart';
 import '../../appointments/presentation/appointments_view.dart';
@@ -48,8 +49,133 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Unified Top Navigation Bar (Visible across all tabs)
+      appBar: _buildTopNavigationBar(context),
       body: SafeArea(child: _views[_currentIndex]),
       bottomNavigationBar: _buildGcashStyleBottomBar(),
+    );
+  }
+
+  /// Unified Top Navigation Bar with Parish Logo on Left & Notifications on Right
+  PreferredSizeWidget _buildTopNavigationBar(BuildContext context) {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(70),
+      child: Container(
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          border: Border(
+            bottom: BorderSide(color: ParishColors.borderGrey, width: 1.2),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              children: [
+                // Parish Logo / Emblem Container (Left Side)
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: ParishColors.marianBlueSurface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: ParishColors.goldAccent, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.church,
+                    size: 28,
+                    color: ParishColors.marianBlue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                // Parish Title & Location / Staff Subtitle
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'St. John Paul II Parish',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.marianBlue,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        widget.currentUser != null
+                            ? '${widget.currentUser!.firstName} • ${widget.currentUser!.roleDisplay}'
+                            : 'Diocese of San Pablo • Labuin, Sta. Cruz',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: ParishColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Notification Bell with Badge (Right Side)
+                InkWell(
+                  onTap: () => showNotificationModal(context),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: ParishColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: ParishColors.borderGrey, width: 1.2),
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        const Icon(
+                          Icons.notifications_outlined,
+                          size: 26,
+                          color: ParishColors.marianBlue,
+                        ),
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: ParishColors.mercyRed,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Text(
+                              '3',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
