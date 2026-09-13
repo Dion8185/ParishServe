@@ -1,0 +1,4401 @@
+================================================================================
+FILE: lib/main.dart
+================================================================================
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/theme/app_theme.dart';
+import 'core/theme/theme_controller.dart';
+import 'features/auth/presentation/login_view.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'https://wdosrvmkgdrkcotlkzgi.supabase.co',
+    anonKey: 'sb_publishable_wzE6ee-MEqpM8Qz7H8awDQ_4q1i2oJq',
+  );
+
+  runApp(const ParishServeApp());
+}
+
+class ParishServeApp extends StatelessWidget {
+  const ParishServeApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeController.themeModeNotifier,
+      builder: (context, currentMode, _) {
+        return MaterialApp(
+          title: 'ParishServe',
+          debugShowCheckedModeBanner: false,
+          theme: ParishTheme.lightTheme,
+          darkTheme: ParishTheme.darkTheme,
+          themeMode: currentMode,
+          home: const LoginView(),
+        );
+      },
+    );
+  }
+}
+
+================================================================================
+FILE: lib/core/constants/colors.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../theme/theme_controller.dart';
+
+class ParishColors {
+  // ===========================================================================
+  // Fixed Brand Accents (Coat of Arms)
+  // ===========================================================================
+  static const Color marianBlue = Color(0xFF164E87);
+  static const Color marianBlueLight = Color(0xFF246EB9);
+  static const Color goldAccent = Color(0xFFD49B18);
+  static const Color mercyRed = Color(0xFFB91C1C);
+  static const Color oliveGreen = Color(0xFF2D6A4F);
+
+  // ===========================================================================
+  // Theme-Adaptive Dynamic Colors
+  // ===========================================================================
+  static Color get backgroundLight => AppThemeController.isDarkMode
+      ? const Color(0xFF0F172A) // Deep nocturnal Marian slate
+      : const Color(0xFFF8FAFC); // Clean parchment white
+
+  static Color get cardWhite => AppThemeController.isDarkMode
+      ? const Color(0xFF1E293B) // Dark slate container
+      : const Color(0xFFFFFFFF); // Pure white card
+
+  static Color get textDark => AppThemeController.isDarkMode
+      ? const Color(0xFFF8FAFC) // Crisp white for senior readability
+      : const Color(0xFF1E293B); // Deep charcoal
+
+  static Color get textMuted => AppThemeController.isDarkMode
+      ? const Color(0xFF94A3B8) // High-contrast silver slate
+      : const Color(0xFF475569); // Muted slate
+
+  static Color get borderGrey => AppThemeController.isDarkMode
+      ? const Color(0xFF334155) // Subtle dark border
+      : const Color(0xFFCBD5E1); // Light grey border
+
+  static Color get marianBlueSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF1E3A5F)
+      : const Color(0xFFEDF4FB);
+
+  static Color get goldLight => AppThemeController.isDarkMode
+      ? const Color(0xFF3E2D0C)
+      : const Color(0xFFFFF7E6);
+
+  static Color get mercyRedSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF450A0A)
+      : const Color(0xFFFDF2F2);
+
+  static Color get oliveGreenSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF064E3B)
+      : const Color(0xFFEDF7F2);
+}
+
+================================================================================
+FILE: lib/core/theme/app_theme.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../constants/colors.dart';
+
+class ParishTheme {
+  // Light Theme Configuration
+  static ThemeData get lightTheme {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: ParishColors.marianBlue,
+        brightness: Brightness.light,
+        primary: ParishColors.marianBlue,
+        secondary: ParishColors.goldAccent,
+        surface: const Color(0xFFFFFFFF),
+      ),
+      textTheme: const TextTheme(
+        headlineMedium: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+        titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+        bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+        bodyMedium: TextStyle(fontSize: 15, color: Color(0xFF475569)),
+      ),
+    );
+  }
+
+  // Dark Theme Configuration
+  static ThemeData get darkTheme {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: const Color(0xFF0F172A),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: ParishColors.marianBlue,
+        brightness: Brightness.dark,
+        primary: const Color(0xFF3B82F6),
+        secondary: ParishColors.goldAccent,
+        surface: const Color(0xFF1E293B),
+      ),
+      textTheme: const TextTheme(
+        headlineMedium: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFFF8FAFC)),
+        titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFFF8FAFC)),
+        bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFFF8FAFC)),
+        bodyMedium: TextStyle(fontSize: 15, color: Color(0xFF94A3B8)),
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/core/theme/theme_controller.dart
+================================================================================
+import 'package:flutter/material.dart';
+
+class AppThemeController {
+  // Global notifier holding the active ThemeMode
+  static final ValueNotifier<ThemeMode> themeModeNotifier =
+  ValueNotifier<ThemeMode>(ThemeMode.light);
+
+  static bool get isDarkMode => themeModeNotifier.value == ThemeMode.dark;
+
+  static void toggleTheme(bool isDark) {
+    themeModeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
+  }
+}
+
+================================================================================
+FILE: lib/core/widgets/dialog_text_field.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../constants/colors.dart';
+
+class ParishDialogTextField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final bool enabled;
+
+  const ParishDialogTextField({
+    super.key,
+    required this.label,
+    required this.hint,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        enabled: enabled,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          filled: true,
+          fillColor: ParishColors.backgroundLight,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        ),
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/appointments/presentation/appointments_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import 'dialogs/schedule_appointment_dialog.dart';
+import 'widgets/appointment_card.dart';
+
+class AppointmentsView extends StatelessWidget {
+  const AppointmentsView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Parish Appointments', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Schedule weddings, baptisms, mass intentions & pastoral duties', style: TextStyle(color: ParishColors.textMuted)),
+          const SizedBox(height: 18),
+
+          SizedBox(
+            width: double.infinity,
+            height: 58,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.goldAccent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () => showScheduleAppointmentModal(context),
+              icon: const Icon(Icons.add_task, size: 26),
+              label: const Text('+ Book New Appointment', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          Row(
+            children: [
+              _buildFilterChip('All (4)', isSelected: true),
+              const SizedBox(width: 8),
+              _buildFilterChip('Confirmed (3)'),
+              const SizedBox(width: 8),
+              _buildFilterChip('Pending (1)'),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          Text('Scheduled Parish Services', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 12),
+
+          AppointmentCard(
+            refNo: 'APT-2026-0042',
+            serviceName: 'Nuptial Mass (Santos & Ramos Wedding)',
+            requester: 'Carlos Santos',
+            contact: '0917-882-9912',
+            scheduleTime: 'Saturday, Sep 12, 2026 • 10:00 AM',
+            officiant: 'Rev. Fr. Parish Priest',
+            status: 'CONFIRMED',
+            feeStatus: 'Paid (REC-2026-00870)',
+          ),
+          AppointmentCard(
+            refNo: 'APT-2026-0043',
+            serviceName: 'Community Baptism (Batch A)',
+            requester: 'Dela Cruz Family',
+            contact: '0922-451-2290',
+            scheduleTime: 'Monday, Sep 14, 2026 • 09:00 AM',
+            officiant: 'Rev. Fr. Parochial Vicar',
+            status: 'CONFIRMED',
+            feeStatus: 'Paid (REC-2026-00892)',
+          ),
+          AppointmentCard(
+            refNo: 'APT-2026-0044',
+            serviceName: 'Pastoral Sick Call & Anointing of the Sick',
+            requester: 'Remedios Bautista',
+            contact: '0918-334-5511',
+            scheduleTime: 'Wednesday, Sep 16, 2026 • 02:00 PM',
+            officiant: 'Rev. Fr. Parish Priest',
+            status: 'PENDING',
+            feeStatus: 'Non-Financial (Pastoral Care)',
+          ),
+          AppointmentCard(
+            refNo: 'APT-2026-0045',
+            serviceName: 'Thanksgiving Mass Intention',
+            requester: 'Pedro Alvarez',
+            contact: '0908-112-9943',
+            scheduleTime: 'Friday, Sep 18, 2026 • 06:00 AM',
+            officiant: 'Rev. Fr. Parish Priest',
+            status: 'CONFIRMED',
+            feeStatus: 'Paid (REC-2026-00891)',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, {bool isSelected = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? ParishColors.marianBlue : ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: isSelected ? ParishColors.marianBlue : ParishColors.borderGrey),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: isSelected ? Colors.white : ParishColors.textMuted,
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/appointments/presentation/dialogs/appointment_detail_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showAppointmentDetailModal(
+    BuildContext context, {
+      required String refNo,
+      required String serviceName,
+      required String requester,
+      required String contact,
+      required String scheduleTime,
+      required String officiant,
+      required String status,
+      required String feeStatus,
+    }) {
+  final textColorMuted = ParishColors.textMuted;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text('Appointment Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          Text(refNo, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: ParishColors.borderGrey),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Service Requested', style: TextStyle(fontSize: 12, color: textColorMuted)),
+                  Text(serviceName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _buildDetailRow(Icons.person, 'Requester', requester),
+            _buildDetailRow(Icons.phone, 'Contact', contact),
+            _buildDetailRow(Icons.event, 'Scheduled Date', scheduleTime),
+            _buildDetailRow(Icons.church, 'Officiating Clergy', officiant),
+            _buildDetailRow(Icons.payments_outlined, 'Ecclesiastical Fee', feeStatus),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: status == 'CONFIRMED' ? ParishColors.oliveGreenSurface : ParishColors.goldLight,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'STATUS: $status',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: status == 'CONFIRMED' ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text('Close', style: TextStyle(fontSize: 15, color: textColorMuted)),
+        ),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.marianBlue,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          icon: const Icon(Icons.edit_calendar, size: 18),
+          label: const Text('Reschedule'),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildDetailRow(IconData icon, String label, String value) {
+  final textColorDark = ParishColors.textDark;
+  final textColorMuted = ParishColors.textMuted;
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: ParishColors.marianBlue),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(fontSize: 14, color: textColorDark),
+              children: [
+                TextSpan(text: '$label: ', style: TextStyle(fontWeight: FontWeight.bold, color: textColorMuted)),
+                TextSpan(text: value, style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/appointments/presentation/dialogs/schedule_appointment_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../../core/widgets/dialog_text_field.dart';
+
+void showScheduleAppointmentModal(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Schedule Parish Service', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ParishDialogTextField(label: 'Service Requested', hint: 'Baptism, Wedding, Sick Call'),
+            const ParishDialogTextField(label: 'Requester Name', hint: 'Full Name'),
+            const ParishDialogTextField(label: 'Contact Number', hint: '09XX-XXX-XXXX'),
+            const ParishDialogTextField(label: 'Preferred Date & Time', hint: 'e.g., Sep 18, 2026 - 10:00 AM'),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.goldAccent,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Confirm Schedule'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/appointments/presentation/widgets/appointment_card.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../dialogs/appointment_detail_dialog.dart';
+
+class AppointmentCard extends StatelessWidget {
+  final String refNo;
+  final String serviceName;
+  final String requester;
+  final String contact;
+  final String scheduleTime;
+  final String officiant;
+  final String status;
+  final String feeStatus;
+
+  const AppointmentCard({
+    super.key,
+    required this.refNo,
+    required this.serviceName,
+    required this.requester,
+    required this.contact,
+    required this.scheduleTime,
+    required this.officiant,
+    required this.status,
+    required this.feeStatus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isConfirmed = status == 'CONFIRMED';
+
+    return InkWell(
+      onTap: () => showAppointmentDetailModal(
+        context,
+        refNo: refNo,
+        serviceName: serviceName,
+        requester: requester,
+        contact: contact,
+        scheduleTime: scheduleTime,
+        officiant: officiant,
+        status: status,
+        feeStatus: feeStatus,
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: ParishColors.borderGrey),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isConfirmed ? ParishColors.marianBlueSurface : ParishColors.goldLight,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.calendar_today,
+                color: isConfirmed ? ParishColors.marianBlue : ParishColors.goldAccent,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        refNo,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ParishColors.marianBlue),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isConfirmed ? ParishColors.oliveGreenSurface : ParishColors.goldLight,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          status,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isConfirmed ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(serviceName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text('Requester: $requester', style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.access_time, size: 14, color: ParishColors.textMuted),
+                      const SizedBox(width: 4),
+                      Text(scheduleTime, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textDark)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/asset_inventory/presentation/asset_inventory_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import 'dialogs/audit_scan_dialog.dart';
+import 'dialogs/register_asset_dialog.dart';
+import 'widgets/asset_item_card.dart';
+
+class AssetInventoryView extends StatelessWidget {
+  const AssetInventoryView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Parish Asset Inventory', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Track physical church properties, furniture, and sacred vessels', style: TextStyle(color: ParishColors.textMuted)),
+          const SizedBox(height: 18),
+
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: SizedBox(
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => showAuditScanModal(context),
+                    icon: const Icon(Icons.qr_code_scanner, size: 24),
+                    label: const Text('Scan Audit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+                      foregroundColor: ParishColors.marianBlue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => showRegisterAssetModal(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Register', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          Container(
+            height: 54,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: ParishColors.borderGrey),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 24, color: ParishColors.marianBlue),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Search by Control #, item name, or location...', style: TextStyle(fontSize: 14, color: ParishColors.textMuted)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          Text('Registered Diocesan Properties', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 12),
+
+          AssetItemCard(
+            controlNo: 'JP2-2023-SAC-0014',
+            itemName: 'Gold-Plated Ciboria (Sacred Vessel)',
+            location: 'Sacristy Vault - Cabinet A',
+            condition: 'VERIFIED / GOOD',
+            conditionColor: ParishColors.oliveGreen,
+          ),
+          AssetItemCard(
+            controlNo: 'JP2-2022-AV-0008',
+            itemName: 'Wireless Microphone Set (2 Pcs)',
+            location: 'Altar Sound Station',
+            condition: 'REQUIRES REPAIR',
+            conditionColor: ParishColors.mercyRed,
+          ),
+          AssetItemCard(
+            controlNo: 'JP2-2021-FUR-0035',
+            itemName: 'Hand-Carved Narra Presider\'s Chair',
+            location: 'Sanctuary Altar Floor',
+            condition: 'VERIFIED / GOOD',
+            conditionColor: ParishColors.oliveGreen,
+          ),
+          AssetItemCard(
+            controlNo: 'JP2-2024-LIT-0002',
+            itemName: 'Roman Missal (Third Typical Edition)',
+            location: 'Sacristy Clergy Bookcase',
+            condition: 'VERIFIED / GOOD',
+            conditionColor: ParishColors.oliveGreen,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/asset_inventory/presentation/dialogs/asset_detail_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showAssetDetailModal(
+    BuildContext context, {
+      required String controlNo,
+      required String itemName,
+      required String location,
+      required String condition,
+    }) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(itemName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Diocese Control No: $controlNo', style: const TextStyle(color: ParishColors.marianBlue, fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 6),
+          Text('Location: $location', style: const TextStyle(fontSize: 14)),
+          Text('Current Condition: $condition', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Update Status'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/asset_inventory/presentation/dialogs/audit_scan_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showAuditScanModal(BuildContext context) {
+  final textColorMuted = ParishColors.textMuted;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Asset Audit Scanner', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 140,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: ParishColors.marianBlueSurface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: ParishColors.marianBlue, width: 2),
+            ),
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.nfc, size: 50, color: ParishColors.marianBlue),
+                SizedBox(height: 8),
+                Text('Scan Property QR or Wave NFC Tag', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text('Hold device within 4 cm of asset label.', style: TextStyle(fontSize: 12, color: textColorMuted)),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Simulate Scan Result'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/asset_inventory/presentation/dialogs/register_asset_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../../core/widgets/dialog_text_field.dart';
+
+void showRegisterAssetModal(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Register Parish Property', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ParishDialogTextField(label: 'Item Name & Description', hint: 'e.g., Sterling Silver Chalice'),
+            const ParishDialogTextField(label: 'Asset Classification', hint: 'Sacred Vessel / Audio-Visual / Furniture'),
+            const ParishDialogTextField(label: 'Storage / Placement Location', hint: 'e.g., Sacristy Vault - Cabinet B'),
+            const ParishDialogTextField(label: 'Acquisition Mode & Cost', hint: 'e.g., Donated / ₱ 25,000.00'),
+            const ParishDialogTextField(label: 'Diocesan Control #', hint: 'JP2-2026-SAC-0021', enabled: false),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.marianBlue,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Save Asset Record'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/asset_inventory/presentation/widgets/asset_item_card.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../dialogs/asset_detail_dialog.dart';
+
+class AssetItemCard extends StatelessWidget {
+  final String controlNo;
+  final String itemName;
+  final String location;
+  final String condition;
+  final Color conditionColor;
+
+  const AssetItemCard({
+    super.key,
+    required this.controlNo,
+    required this.itemName,
+    required this.location,
+    required this.condition,
+    required this.conditionColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => showAssetDetailModal(
+        context,
+        controlNo: controlNo,
+        itemName: itemName,
+        location: location,
+        condition: condition,
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: ParishColors.borderGrey),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: ParishColors.goldLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ParishColors.goldAccent),
+              ),
+              child: const Icon(Icons.inventory, color: ParishColors.goldAccent),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    controlNo,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(itemName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text(location, style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: conditionColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      condition,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: conditionColor),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/auth/models/user_model.dart
+================================================================================
+class UserModel {
+  final String userId;
+  final String username;
+  final String email;
+  final String firstName;
+  final String lastName;
+  final String userRole;
+  final bool accountStatus;
+
+  UserModel({
+    required this.userId,
+    required this.username,
+    required this.email,
+    required this.firstName,
+    required this.lastName,
+    required this.userRole,
+    required this.accountStatus,
+  });
+
+  String get fullName => '$firstName $lastName';
+
+  String get roleDisplay {
+    switch (userRole.toLowerCase()) {
+      case 'superadmin':
+        return 'Super Administrator (S)';
+      case 'admin':
+        return 'Administrator (A)';
+      case 'secretary':
+        return 'Parish Secretary (Sc)';
+      case 'encoder':
+        return 'Records Encoder (E)';
+      case 'parishpriest':
+        return 'Parish Priest (P)';
+      default:
+        return userRole.toUpperCase();
+    }
+  }
+
+  factory UserModel.fromMap(Map<String, dynamic> map) {
+    return UserModel(
+      userId: map['user_id'] ?? '',
+      username: map['username'] ?? '',
+      email: map['email'] ?? '',
+      firstName: map['first_name'] ?? '',
+      lastName: map['last_name'] ?? '',
+      userRole: map['user_role'] ?? 'secretary',
+      accountStatus: map['account_status'] ?? true,
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/auth/presentation/login_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../navigation/presentation/main_navigation_shell.dart';
+import '../models/user_model.dart';
+import '../services/auth_service.dart';
+import 'dialogs/login_help_dialog.dart';
+
+class LoginView extends StatefulWidget {
+  const LoginView({super.key});
+
+  @override
+  State<LoginView> createState() => _LoginViewState();
+}
+
+class _LoginViewState extends State<LoginView> {
+  final TextEditingController _identifierController = TextEditingController(text: 'secretary');
+  final TextEditingController _passwordController = TextEditingController(text: 'ParishServe@123');
+
+  bool _obscurePassword = true;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _identifierController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleLogin() async {
+    final identifier = _identifierController.text.trim();
+    final password = _passwordController.text;
+
+    if (identifier.isEmpty || password.isEmpty) {
+      _showErrorDialog('Please enter both username/email and password.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final user = await AuthService.login(
+        identifier: identifier,
+        password: password,
+      );
+
+      if (!mounted) return;
+
+      if (user == null) {
+        _showErrorDialog('Invalid username/email or password. Please verify your credentials.');
+      } else if (!user.accountStatus) {
+        _showErrorDialog('This account (${user.userId}) has been deactivated. Please contact the Parish Priest or Administrator.');
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MainNavigationShell(currentUser: user),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorDialog('Network connection error. Could not connect to Supabase: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 28),
+            SizedBox(width: 8),
+            Text('Sign In Error', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: Text(message, style: TextStyle(fontSize: 14, color: ParishColors.textDark)),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: ParishColors.backgroundLight,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Parish Emblem Container
+                Container(
+                  width: 86,
+                  height: 86,
+                  decoration: BoxDecoration(
+                    color: ParishColors.marianBlueSurface,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ParishColors.goldAccent, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.church, size: 48, color: ParishColors.marianBlue),
+                ),
+                const SizedBox(height: 14),
+
+                const Text(
+                  'St. John Paul II Parish',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Diocese of San Pablo • Labuin, Sta. Cruz, Laguna',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ParishColors.goldLight,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: ParishColors.goldAccent, width: 1.2),
+                  ),
+                  child: Text(
+                    'ParishServe Management Portal',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Form Card
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: ParishColors.cardWhite,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Staff Sign In',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Enter your username or parish email to log in.',
+                        style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                      ),
+                      const SizedBox(height: 20),
+
+                      const Text('Username or Email', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _identifierController,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.person, color: ParishColors.marianBlue),
+                          filled: true,
+                          fillColor: ParishColors.backgroundLight,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Text('Password', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.lock, color: ParishColors.marianBlue),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: ParishColors.textMuted),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                          filled: true,
+                          fillColor: ParishColors.backgroundLight,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      Text('Quick Test Account:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textMuted)),
+                      const SizedBox(height: 6),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildQuickAccountChip('secretary', 'Secretary'),
+                            _buildQuickAccountChip('parishpriest', 'Priest'),
+                            _buildQuickAccountChip('admin', 'Admin'),
+                            _buildQuickAccountChip('encoder', 'Encoder'),
+                            _buildQuickAccountChip('superadmin', 'Superadmin'),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 58,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ParishColors.marianBlue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          onPressed: _isLoading ? null : _handleLogin,
+                          child: _isLoading
+                              ? const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                          )
+                              : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.login, size: 22),
+                              SizedBox(width: 8),
+                              Text(
+                                'LOG IN TO PARISHSERVE',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.help_outline, size: 18, color: ParishColors.textMuted),
+                    const SizedBox(width: 4),
+                    TextButton(
+                      onPressed: () => showLoginHelpDialog(context),
+                      child: const Text(
+                        'Need assistance logging in? Tap here',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+                const Text(
+                  'TOTUS TUUS',
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    fontStyle: FontStyle.italic,
+                    color: ParishColors.goldAccent,
+                    letterSpacing: 2.0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickAccountChip(String username, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: ActionChip(
+        backgroundColor: ParishColors.marianBlueSurface,
+        label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+        onPressed: () {
+          setState(() {
+            _identifierController.text = username;
+            _passwordController.text = 'ParishServe@123';
+          });
+        },
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/auth/presentation/dialogs/login_help_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showLoginHelpDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Row(
+        children: [
+          Icon(Icons.support_agent, color: ParishColors.marianBlue, size: 28),
+          SizedBox(width: 8),
+          Text('Staff Assistance', style: TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'If you forgot your password or require role access:',
+            style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '• Approach the Parish Priest or Parish Technical Staff.\n• Passwords can be reset directly at the Parish Secretariat terminal.',
+            style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+          ),
+        ],
+      ),
+      actions: [
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.marianBlue,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Understood'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/auth/services/auth_service.dart
+================================================================================
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/user_model.dart';
+
+class AuthService {
+  static final SupabaseClient _client = Supabase.instance.client;
+
+  /// Authenticate staff using Username or Email + Password
+  static Future<UserModel?> login({
+    required String identifier, // username or email
+    required String password,
+  }) async {
+    final cleanIdentifier = identifier.trim();
+
+    final response = await _client
+        .from('users')
+        .select()
+        .or('username.eq.$cleanIdentifier,email.eq.$cleanIdentifier')
+        .eq('password', password)
+        .maybeSingle();
+
+    if (response == null) {
+      return null;
+    }
+
+    return UserModel.fromMap(response);
+  }
+}
+
+================================================================================
+FILE: lib/features/dashboard/presentation/dashboard_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../auth/models/user_model.dart';
+import '../../auth/presentation/login_view.dart';
+import '../../sacramental_records/presentation/dialogs/ocr_scan_dialog.dart';
+import '../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
+import '../../receipts/presentation/dialogs/new_transaction_dialog.dart';
+import '../../smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
+import 'dialogs/notification_dialog.dart';
+import 'pages/parish_calendar_page.dart';
+
+class DashboardView extends StatelessWidget {
+  final UserModel? currentUser;
+
+  const DashboardView({super.key, this.currentUser});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: ParishColors.marianBlueSurface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: ParishColors.goldAccent, width: 2),
+                ),
+                child: const Icon(Icons.church, size: 32, color: ParishColors.marianBlue),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      currentUser != null ? currentUser!.fullName : 'St. John Paul II Parish',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.marianBlue,
+                      ),
+                    ),
+                    Text(
+                      currentUser != null
+                          ? '${currentUser!.roleDisplay} • ${currentUser!.userId}'
+                          : 'ParishServe Portal',
+                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: () => showNotificationModal(context),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: ParishColors.cardWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const Icon(Icons.notifications_outlined, size: 26, color: ParishColors.marianBlue),
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: ParishColors.mercyRed,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Text(
+                            '3',
+                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => const LoginView()),
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: ParishColors.cardWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+                  ),
+                  child: const Icon(Icons.logout, size: 24, color: ParishColors.mercyRed),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // ESP32 Telemetry Banner
+          _buildArchiveTelemetryCard(context),
+          const SizedBox(height: 22),
+
+          // Master Calendar Preview Card
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Parish Master Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: ParishColors.goldLight,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'September 2026',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.goldAccent, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Tap below to view full Month, Week, and Day schedules.',
+            style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          _buildCalendarSummaryCard(context),
+
+          const SizedBox(height: 24),
+
+          // Operational Actions
+          const Text('Quick Operational Actions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+
+          _buildLargeActionCard(
+            context: context,
+            icon: Icons.document_scanner,
+            title: 'Scan Sacramental Page (OCR)',
+            subtitle: 'Digitize Baptism, Confirmation, or Marriage books',
+            accentColor: ParishColors.marianBlue,
+            onTap: () => showOcrScanModal(context),
+          ),
+          const SizedBox(height: 12),
+          _buildLargeActionCard(
+            context: context,
+            icon: Icons.edit_calendar,
+            title: 'Schedule Parish Appointment',
+            subtitle: 'Book Mass intentions, weddings, or baptism dates',
+            accentColor: ParishColors.goldAccent,
+            onTap: () => showScheduleAppointmentModal(context),
+          ),
+          const SizedBox(height: 12),
+          _buildLargeActionCard(
+            context: context,
+            icon: Icons.payments_outlined,
+            title: 'Issue Ecclesiastical Receipt',
+            subtitle: 'Record fees, certificate requests & donations',
+            accentColor: ParishColors.oliveGreen,
+            onTap: () => showNewTransactionModal(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarSummaryCard(BuildContext context) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ParishCalendarPage()),
+        );
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ParishColors.marianBlueSurface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.calendar_month, color: ParishColors.marianBlue, size: 30),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Open Master Calendar',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Month • Week • Day timeline views',
+                        style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_forward_ios, size: 18, color: ParishColors.textMuted),
+              ],
+            ),
+            const Divider(height: 24),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _CalendarQuickMetric(label: 'Today', value: '2 Services', color: ParishColors.marianBlue),
+                _CalendarQuickMetric(label: 'This Week', value: '7 Bookings', color: ParishColors.goldAccent),
+                _CalendarQuickMetric(label: 'Status', value: '1 Alert', color: ParishColors.mercyRed),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildArchiveTelemetryCard(BuildContext context) {
+    return InkWell(
+      onTap: () => showSensorDetailModal(
+        context,
+        roomTitle: 'Sacramental Archive Room',
+        nodeId: 'ESP32-NODE-01',
+        temperature: '24.2 °C',
+        humidity: '54 %',
+        isWarning: false,
+      ),
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.sensors, color: ParishColors.marianBlue, size: 24),
+                    SizedBox(width: 8),
+                    Text(
+                      'Archive Sensors (ESP32)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ParishColors.oliveGreenSurface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ParishColors.oliveGreen),
+                  ),
+                  child: const Text(
+                    'SAFE STATUS',
+                    style: TextStyle(
+                      color: ParishColors.oliveGreen,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 22),
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.thermostat, size: 26, color: ParishColors.marianBlue),
+                      const SizedBox(width: 6),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Temperature', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                          const Text('24.2 °C', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const VerticalDivider(width: 20),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.water_drop_outlined, size: 26, color: ParishColors.marianBlue),
+                      const SizedBox(width: 6),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Humidity', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                          const Text('54 %', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLargeActionCard({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accentColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: ParishColors.borderGrey, width: 1.2),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 26,
+              backgroundColor: accentColor.withOpacity(0.12),
+              child: Icon(icon, size: 28, color: accentColor),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 18, color: ParishColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CalendarQuickMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _CalendarQuickMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/dashboard/presentation/dialogs/calendar_event_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showCalendarEventModal(BuildContext context, {required String date, required String eventTitle}) {
+  final textColorMuted = ParishColors.textMuted;
+  final textColorDark = ParishColors.textDark;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          const Icon(Icons.event, color: ParishColors.goldAccent, size: 28),
+          const SizedBox(width: 10),
+          Expanded(child: Text(date, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: ParishColors.marianBlueSurface,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Scheduled Activity', style: TextStyle(fontSize: 12, color: textColorMuted)),
+                Text(eventTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Icon(Icons.location_on_outlined, size: 18, color: textColorMuted),
+              const SizedBox(width: 6),
+              Text('Venue: Main Church Altar', style: TextStyle(fontSize: 14, color: textColorDark)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(Icons.person_outline, size: 18, color: textColorMuted),
+              const SizedBox(width: 6),
+              Text('Officiant: Rev. Fr. Parish Priest', style: TextStyle(fontSize: 14, color: textColorDark)),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Close', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/dashboard/presentation/dialogs/notification_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showNotificationModal(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(
+        children: [
+          Icon(Icons.notifications_active, color: ParishColors.marianBlue, size: 28),
+          SizedBox(width: 10),
+          Text('Parish Alerts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildNotificationItem(
+              icon: Icons.warning_amber_rounded,
+              iconColor: ParishColors.mercyRed,
+              title: 'Archive Humidity Alert (68%)',
+              time: '15 mins ago',
+              description: 'Vessel Storage node exceeded 60% relative humidity limit.',
+            ),
+            const Divider(),
+            _buildNotificationItem(
+              icon: Icons.assignment_late_outlined,
+              iconColor: ParishColors.goldAccent,
+              title: 'Priest Approval Required',
+              time: '1 hour ago',
+              description: 'Baptismal certificate for Juan Dela Cruz awaits review.',
+            ),
+            const Divider(),
+            _buildNotificationItem(
+              icon: Icons.calendar_today,
+              iconColor: ParishColors.marianBlue,
+              title: 'Upcoming Nuptial Mass',
+              time: 'Tomorrow, 10:00 AM',
+              description: 'Santos-Ramos Wedding scheduled at Main Altar.',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Dismiss', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildNotificationItem({
+  required IconData icon,
+  required Color iconColor,
+  required String title,
+  required String time,
+  required String description,
+}) {
+  final textColorMuted = ParishColors.textMuted;
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, color: iconColor, size: 26),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(time, style: TextStyle(fontSize: 11, color: textColorMuted)),
+              ],
+            ),
+            SizedBox(height: 2),
+            Text(description, style: TextStyle(fontSize: 12, color: textColorMuted)),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+================================================================================
+FILE: lib/features/dashboard/presentation/pages/parish_calendar_page.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../appointments/presentation/dialogs/appointment_detail_dialog.dart';
+import '../../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
+
+enum CalendarViewMode { month, week, day }
+
+class ParishCalendarPage extends StatefulWidget {
+  const ParishCalendarPage({super.key});
+
+  @override
+  State<ParishCalendarPage> createState() => _ParishCalendarPageState();
+}
+
+class _ParishCalendarPageState extends State<ParishCalendarPage> {
+  CalendarViewMode _currentView = CalendarViewMode.month;
+  DateTime _selectedDate = DateTime(2026, 9, 12); // Simulated active date
+  String _selectedCategory = 'All';
+
+  final List<String> _categories = [
+    'All',
+    'Sacraments',
+    'Mass Intentions',
+    'Pastoral Care',
+    'Diocesan / Admin',
+  ];
+
+  // Rich Parish-Specific Event Data
+  final List<Map<String, dynamic>> _allEvents = [
+    {
+      'id': 'APT-2026-0042',
+      'title': 'Nuptial Mass (Santos-Ramos Wedding)',
+      'date': DateTime(2026, 9, 12),
+      'startTime': '10:00 AM',
+      'endTime': '11:30 AM',
+      'category': 'Sacraments',
+      'venue': 'Main Church Altar',
+      'officiant': 'Rev. Fr. Joseph Santos',
+      'requester': 'Carlos Santos',
+      'contact': '0917-882-9912',
+      'status': 'CONFIRMED',
+      'feeStatus': 'Paid (REC-2026-00870)',
+      'color': ParishColors.marianBlue,
+    },
+    {
+      'id': 'APT-2026-0046',
+      'title': 'Pre-Cana Canonical Interview',
+      'date': DateTime(2026, 9, 12),
+      'startTime': '02:00 PM',
+      'endTime': '03:30 PM',
+      'category': 'Sacraments',
+      'venue': 'Parish Secretariat Office',
+      'officiant': 'Rev. Fr. Joseph Santos',
+      'requester': 'Reyes-Mercado Couple',
+      'contact': '0919-445-1288',
+      'status': 'CONFIRMED',
+      'feeStatus': 'Non-Financial',
+      'color': ParishColors.marianBlue,
+    },
+    {
+      'id': 'APT-2026-0043',
+      'title': 'Community Baptism (Batch A - 12 Infants)',
+      'date': DateTime(2026, 9, 14),
+      'startTime': '09:00 AM',
+      'endTime': '10:30 AM',
+      'category': 'Sacraments',
+      'venue': 'Baptistery & Main Altar',
+      'officiant': 'Rev. Fr. Parochial Vicar',
+      'requester': 'Dela Cruz Family & Others',
+      'contact': '0922-451-2290',
+      'status': 'CONFIRMED',
+      'feeStatus': 'Paid (REC-2026-00892)',
+      'color': ParishColors.marianBlue,
+    },
+    {
+      'id': 'APT-2026-0047',
+      'title': 'Diocesan Financial & Property Inspection',
+      'date': DateTime(2026, 9, 15),
+      'startTime': '09:00 AM',
+      'endTime': '04:00 PM',
+      'category': 'Diocesan / Admin',
+      'venue': 'Parish Conference Room',
+      'officiant': 'Diocesan Auditing Commission',
+      'requester': 'Diocese of San Pablo',
+      'contact': 'Office of the Bishop',
+      'status': 'CONFIRMED',
+      'feeStatus': 'Official Diocesan Visit',
+      'color': ParishColors.mercyRed,
+    },
+    {
+      'id': 'APT-2026-0044',
+      'title': 'Pastoral Sick Call & Viaticum',
+      'date': DateTime(2026, 9, 16),
+      'startTime': '02:00 PM',
+      'endTime': '03:00 PM',
+      'category': 'Pastoral Care',
+      'venue': 'Barangay Labuin Home Visit',
+      'officiant': 'Rev. Fr. Joseph Santos',
+      'requester': 'Remedios Bautista',
+      'contact': '0918-334-5511',
+      'status': 'PENDING',
+      'feeStatus': 'Non-Financial (Pastoral Duty)',
+      'color': ParishColors.oliveGreen,
+    },
+    {
+      'id': 'APT-2026-0045',
+      'title': 'Thanksgiving Dawn Mass Intention',
+      'date': DateTime(2026, 9, 18),
+      'startTime': '06:00 AM',
+      'endTime': '07:00 AM',
+      'category': 'Mass Intentions',
+      'venue': 'Main Church Altar',
+      'officiant': 'Rev. Fr. Joseph Santos',
+      'requester': 'Pedro Alvarez',
+      'contact': '0908-112-9943',
+      'status': 'CONFIRMED',
+      'feeStatus': 'Paid (REC-2026-00891)',
+      'color': ParishColors.goldAccent,
+    },
+    {
+      'id': 'APT-2026-0048',
+      'title': 'Parish Confirmation Rites',
+      'date': DateTime(2026, 9, 20),
+      'startTime': '09:00 AM',
+      'endTime': '11:30 AM',
+      'category': 'Sacraments',
+      'venue': 'Main Church Altar',
+      'officiant': 'Most Rev. Bishop / Delegate',
+      'requester': 'Parish Catechetical Ministry',
+      'contact': 'Secretariat Desk',
+      'status': 'CONFIRMED',
+      'feeStatus': 'Parish Sponsored',
+      'color': ParishColors.marianBlue,
+    },
+  ];
+
+  List<Map<String, dynamic>> get _filteredEvents {
+    return _allEvents.where((e) {
+      final matchesCategory = _selectedCategory == 'All' || e['category'] == _selectedCategory;
+      return matchesCategory;
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _eventsForDate(DateTime date) {
+    return _filteredEvents.where((e) {
+      final eventDate = e['date'] as DateTime;
+      return eventDate.year == date.year &&
+          eventDate.month == date.month &&
+          eventDate.day == date.day;
+    }).toList();
+  }
+
+  void _navigateDate(int delta) {
+    setState(() {
+      if (_currentView == CalendarViewMode.month) {
+        _selectedDate = DateTime(_selectedDate.year, _selectedDate.month + delta, _selectedDate.day);
+      } else if (_currentView == CalendarViewMode.week) {
+        _selectedDate = _selectedDate.add(Duration(days: delta * 7));
+      } else {
+        _selectedDate = _selectedDate.add(Duration(days: delta));
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textColorDark = ParishColors.textDark;
+    final textColorMuted = ParishColors.textMuted;
+    final borderColor = ParishColors.borderGrey;
+    return Scaffold(
+      backgroundColor: ParishColors.backgroundLight,
+      appBar: AppBar(
+        backgroundColor: ParishColors.cardWhite,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Parish Master Calendar',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColorDark),
+            ),
+            Text(
+              'Liturgical & Service Schedule',
+              style: TextStyle(fontSize: 12, color: textColorMuted),
+            ),
+          ],
+        ),
+        actions: [
+          // "Today" Quick Jump Button
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                backgroundColor: ParishColors.marianBlueSurface,
+                foregroundColor: ParishColors.marianBlue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => setState(() => _selectedDate = DateTime(2026, 9, 12)),
+              icon: const Icon(Icons.today, size: 18),
+              label: const Text('Today', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _buildControlHeader(),
+          _buildCategoryFilterRow(),
+          Divider(height: 1, color: borderColor),
+          Expanded(
+            child: _buildCurrentCalendarView(),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: ParishColors.marianBlue,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Schedule Service', style: TextStyle(fontWeight: FontWeight.bold)),
+        onPressed: () => showScheduleAppointmentModal(context),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Top Controls: Month / Week / Day Toggle & Date Stepper
+  // ---------------------------------------------------------------------------
+  Widget _buildControlHeader() {
+    final cardWhiteColor = ParishColors.cardWhite;
+    final backgroundLightColor = ParishColors.backgroundLight;
+    final borderGreyColor = ParishColors.borderGrey;
+
+    return Container(
+      color: cardWhiteColor,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        children: [
+          // View Switcher Tabs (Month / Week / Day)
+          Container(
+            height: 44,
+            decoration: BoxDecoration(
+              color: backgroundLightColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderGreyColor),
+            ),
+            child: Row(
+              children: [
+                _buildViewTab(CalendarViewMode.month, 'Month View', Icons.calendar_view_month),
+                _buildViewTab(CalendarViewMode.week, 'Week View', Icons.calendar_view_week),
+                _buildViewTab(CalendarViewMode.day, 'Day View', Icons.calendar_view_day),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Date Navigator with Arrow Steppers
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, size: 28, color: ParishColors.marianBlue),
+                onPressed: () => _navigateDate(-1),
+              ),
+              Text(
+                _getDateHeaderTitle(),
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, size: 28, color: ParishColors.marianBlue),
+                onPressed: () => _navigateDate(1),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewTab(CalendarViewMode mode, String label, IconData icon) {
+    final isSelected = _currentView == mode;
+    final textMutedColor = ParishColors.textMuted;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _currentView = mode),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: isSelected ? ParishColors.marianBlue : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: isSelected ? Colors.white : textMutedColor),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : textMutedColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getDateHeaderTitle() {
+    final months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    if (_currentView == CalendarViewMode.month) {
+      return '${months[_selectedDate.month - 1]} ${_selectedDate.year}';
+    } else if (_currentView == CalendarViewMode.week) {
+      final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday % 7));
+      final endOfWeek = startOfWeek.add(const Duration(days: 6));
+      return '${months[startOfWeek.month - 1].substring(0, 3)} ${startOfWeek.day} – ${endOfWeek.day}, ${endOfWeek.year}';
+    } else {
+      return '${months[_selectedDate.month - 1]} ${_selectedDate.day}, ${_selectedDate.year}';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Category Filter Chips
+  // ---------------------------------------------------------------------------
+  Widget _buildCategoryFilterRow() {
+    final cardWhiteColor = ParishColors.cardWhite;
+    final goldLightColor = ParishColors.goldLight;
+    final backgroundLightColor = ParishColors.backgroundLight;
+    final textMutedColor = ParishColors.textMuted;
+    final borderGreyColor = ParishColors.borderGrey;
+
+    return Container(
+      color: cardWhiteColor,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _categories.map((cat) {
+            final isSelected = _selectedCategory == cat;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: FilterChip(
+                label: Text(cat),
+                selected: isSelected,
+                selectedColor: goldLightColor,
+                backgroundColor: backgroundLightColor,
+                checkmarkColor: ParishColors.goldAccent,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? ParishColors.goldAccent : textMutedColor,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(
+                    color: isSelected ? ParishColors.goldAccent : borderGreyColor,
+                  ),
+                ),
+                onSelected: (_) => setState(() => _selectedCategory = cat),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentCalendarView() {
+    switch (_currentView) {
+      case CalendarViewMode.month:
+        return _buildMonthView();
+      case CalendarViewMode.week:
+        return _buildWeekView();
+      case CalendarViewMode.day:
+        return _buildDayView();
+    }
+  }
+
+  // ===========================================================================
+  // 1. MONTH VIEW (Grid + Selected Day Event Drawer)
+  // ===========================================================================
+  Widget _buildMonthView() {
+    final daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    final selectedDayEvents = _eventsForDate(_selectedDate);
+    final cardWhiteColor = ParishColors.cardWhite;
+    final borderGreyColor = ParishColors.borderGrey;
+    final goldLightColor = ParishColors.goldLight;
+    final textDarkColor = ParishColors.textDark;
+    final textMutedColor = ParishColors.textMuted;
+    final marianBlueSurfaceColor = ParishColors.marianBlueSurface;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Days of Week Header
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: cardWhiteColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              border: Border.all(color: borderGreyColor),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: daysOfWeek.map((d) {
+                final isSunday = d == 'Sun';
+                return SizedBox(
+                  width: 40,
+                  child: Text(
+                    d,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: isSunday ? ParishColors.mercyRed : ParishColors.marianBlue,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          // 35-Day Calendar Grid
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: cardWhiteColor,
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+              border: Border(
+                left: BorderSide(color: borderGreyColor),
+                right: BorderSide(color: borderGreyColor),
+                bottom: BorderSide(color: borderGreyColor),
+              ),
+            ),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 35,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisSpacing: 6,
+                crossAxisSpacing: 6,
+                childAspectRatio: 0.95,
+              ),
+              itemBuilder: (context, index) {
+                // Fixed offset: Sept 2026 starts on Tuesday (offset = 2)
+                const offset = 2;
+                final dayNum = index - offset + 1;
+                if (dayNum < 1 || dayNum > 30) {
+                  return const SizedBox.shrink();
+                }
+
+                final thisDate = DateTime(_selectedDate.year, _selectedDate.month, dayNum);
+                final dayEvents = _eventsForDate(thisDate);
+                final isSelected = dayNum == _selectedDate.day;
+                final hasEvents = dayEvents.isNotEmpty;
+
+                return InkWell(
+                  onTap: () => setState(() => _selectedDate = thisDate),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? ParishColors.marianBlue
+                          : (hasEvents ? goldLightColor : Colors.transparent),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected
+                            ? ParishColors.marianBlue
+                            : (hasEvents ? ParishColors.goldAccent : borderGreyColor.withValues(alpha: 0.5)),
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$dayNum',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: (hasEvents || isSelected) ? FontWeight.bold : FontWeight.normal,
+                            color: isSelected
+                                ? Colors.white
+                                : (hasEvents ? textDarkColor : textMutedColor),
+                          ),
+                        ),
+                        if (hasEvents) ...[
+                          const SizedBox(height: 3),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: dayEvents.take(3).map((e) {
+                              return Container(
+                                width: 5,
+                                height: 5,
+                                margin: const EdgeInsets.symmetric(horizontal: 1),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? Colors.white : (e['color'] as Color),
+                                  shape: BoxShape.circle,
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Events on the Selected Day
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Events on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: marianBlueSurfaceColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${selectedDayEvents.length} Scheduled',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          if (selectedDayEvents.isEmpty)
+            _buildEmptyDayCard()
+          else
+            ...selectedDayEvents.map((e) => _buildEventCard(e)),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 2. WEEK VIEW (Day Strips with Scheduled Event Cards)
+  // ===========================================================================
+  Widget _buildWeekView() {
+    final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday % 7));
+    final weekDays = List.generate(7, (i) => startOfWeek.add(Duration(days: i)));
+    final cardWhiteColor = ParishColors.cardWhite;
+    final borderGreyColor = ParishColors.borderGrey;
+    final marianBlueSurfaceColor = ParishColors.marianBlueSurface;
+    final backgroundLightColor = ParishColors.backgroundLight;
+    final textDarkColor = ParishColors.textDark;
+    final textMutedColor = ParishColors.textMuted;
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: 7,
+      itemBuilder: (context, index) {
+        final day = weekDays[index];
+        final dayEvents = _eventsForDate(day);
+        final dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        final isSelected = day.day == _selectedDate.day && day.month == _selectedDate.month;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            color: cardWhiteColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected ? ParishColors.marianBlue : borderGreyColor,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Day Header Row
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? marianBlueSurfaceColor : backgroundLightColor,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          dayNames[index],
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: index == 0 ? ParishColors.mercyRed : ParishColors.marianBlue,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${day.month}/${day.day}',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDarkColor),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '${dayEvents.length} services',
+                      style: TextStyle(fontSize: 12, color: textMutedColor),
+                    ),
+                  ],
+                ),
+              ),
+
+              if (dayEvents.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(14.0),
+                  child: Text('No liturgical services scheduled.', style: TextStyle(fontSize: 13, color: textMutedColor)),
+                )
+              else
+                ...dayEvents.map((e) => Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: _buildEventCard(e),
+                )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // 3. DAY VIEW (Hourly Time-Block Timeline)
+  // ===========================================================================
+  Widget _buildDayView() {
+    final dayEvents = _eventsForDate(_selectedDate);
+    final hours = [6, 8, 10, 12, 14, 16, 18];
+    final cardWhiteColor = ParishColors.cardWhite;
+    final borderGreyColor = ParishColors.borderGrey;
+    final marianBlueSurfaceColor = ParishColors.marianBlueSurface;
+    final textMutedColor = ParishColors.textMuted;
+    final backgroundLightColor = ParishColors.backgroundLight;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Summary Header
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cardWhiteColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderGreyColor),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: marianBlueSurfaceColor,
+                child: const Icon(Icons.church, color: ParishColors.marianBlue, size: 28),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${dayEvents.length} Service(s) Scheduled',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    Text('Presiding: Rev. Fr. Joseph Santos', style: TextStyle(fontSize: 13, color: textMutedColor)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Hourly Timeline
+        ...hours.map((hour) {
+          final timeLabel = hour < 12
+              ? '${hour.toString().padLeft(2, '0')}:00 AM'
+              : (hour == 12 ? '12:00 PM' : '${(hour - 12).toString().padLeft(2, '0')}:00 PM');
+
+          // Match simulated events roughly near this hour
+          final slotEvents = dayEvents.where((e) {
+            final start = e['startTime'] as String;
+            if (hour == 6 && start.contains('06:00')) return true;
+            if (hour == 8 && (start.contains('08:') || start.contains('09:'))) return true;
+            if (hour == 10 && start.contains('10:')) return true;
+            if (hour == 14 && start.contains('02:')) return true;
+            if (hour == 16 && start.contains('04:')) return true;
+            return false;
+          }).toList();
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Left Time Label
+              SizedBox(
+                width: 70,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 14.0),
+                  child: Text(
+                    timeLabel,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textMutedColor),
+                  ),
+                ),
+              ),
+              // Right Timeline Block
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: slotEvents.isNotEmpty ? cardWhiteColor : backgroundLightColor.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: slotEvents.isNotEmpty ? borderGreyColor : borderGreyColor.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: slotEvents.isEmpty
+                      ? InkWell(
+                    onTap: () => showScheduleAppointmentModal(context),
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_circle_outline, size: 18, color: textMutedColor),
+                        const SizedBox(width: 8),
+                        Text('Slot Available (Tap to book service)', style: TextStyle(fontSize: 12, color: textMutedColor)),
+                      ],
+                    ),
+                  )
+                      : Column(
+                    children: slotEvents.map((e) => _buildEventCard(e)).toList(),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Reusable Event & Empty State Cards
+  // ===========================================================================
+  Widget _buildEventCard(Map<String, dynamic> event) {
+    final Color categoryColor = event['color'] as Color;
+    final cardWhiteColor = ParishColors.cardWhite;
+    final borderGreyColor = ParishColors.borderGrey;
+    final textMutedColor = ParishColors.textMuted;
+    final textDarkColor = ParishColors.textDark;
+
+    return InkWell(
+      onTap: () => showAppointmentDetailModal(
+        context,
+        refNo: event['id'],
+        serviceName: event['title'],
+        requester: event['requester'],
+        contact: event['contact'],
+        scheduleTime: '${event['startTime']} – ${event['endTime']}',
+        officiant: event['officiant'],
+        status: event['status'],
+        feeStatus: event['feeStatus'],
+      ),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cardWhiteColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderGreyColor),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 5,
+              height: 52,
+              decoration: BoxDecoration(
+                color: categoryColor,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: categoryColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          event['category'],
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: categoryColor),
+                        ),
+                      ),
+                      Text(
+                        '${event['startTime']} – ${event['endTime']}',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textMutedColor),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    event['title'],
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDarkColor),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on_outlined, size: 14, color: textMutedColor),
+                      const SizedBox(width: 4),
+                      Text(event['venue'], style: TextStyle(fontSize: 12, color: textMutedColor)),
+                      const SizedBox(width: 12),
+                      Icon(Icons.person_outline, size: 14, color: textMutedColor),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          event['officiant'],
+                          style: TextStyle(fontSize: 12, color: textMutedColor),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyDayCard() {
+    final cardWhiteColor = ParishColors.cardWhite;
+    final borderGreyColor = ParishColors.borderGrey;
+    final textMutedColor = ParishColors.textMuted;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: cardWhiteColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderGreyColor),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.event_available, size: 40, color: ParishColors.marianBlue),
+          const SizedBox(height: 10),
+          const Text('No Scheduled Services', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text('This date is open for new Mass intentions or sacraments.', style: TextStyle(fontSize: 13, color: textMutedColor)),
+          const SizedBox(height: 14),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => showScheduleAppointmentModal(context),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Book This Day'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/dashboard/presentation/widgets/parish_calendar.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../dialogs/calendar_event_dialog.dart';
+
+class ParishCalendar extends StatelessWidget {
+  const ParishCalendar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final daysOfWeek = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    final eventsMap = {
+      6: 'Sunday Mass & Community Baptism',
+      12: 'Nuptial Mass (Santos-Ramos Wedding)',
+      15: 'Diocesan Asset Audit Inspection',
+      20: 'Parish Confirmation Rites',
+      27: 'Feast Day Preparation Meeting',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ParishColors.borderGrey, width: 1.2),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: daysOfWeek
+                .map((d) => SizedBox(
+              width: 36,
+              child: Text(
+                d,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue, fontSize: 14),
+              ),
+            ))
+                .toList(),
+          ),
+          const SizedBox(height: 10),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 35,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+            ),
+            itemBuilder: (context, index) {
+              const offset = 2; // September 2026 starts on Tuesday
+              final dayNumber = index - offset + 1;
+
+              if (dayNumber < 1 || dayNumber > 30) {
+                return const SizedBox.shrink();
+              }
+
+              final hasEvent = eventsMap.containsKey(dayNumber);
+
+              return InkWell(
+                onTap: hasEvent
+                    ? () => showCalendarEventModal(
+                  context,
+                  date: 'September $dayNumber, 2026',
+                  eventTitle: eventsMap[dayNumber]!,
+                )
+                    : null,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: hasEvent ? ParishColors.goldLight : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: hasEvent ? ParishColors.goldAccent : Colors.transparent,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Text(
+                        '$dayNumber',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: hasEvent ? FontWeight.bold : FontWeight.normal,
+                          color: hasEvent ? ParishColors.textDark : ParishColors.textMuted,
+                        ),
+                      ),
+                      if (hasEvent)
+                        Positioned(
+                          bottom: 4,
+                          child: Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: ParishColors.marianBlue,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/navigation/presentation/main_navigation_shell.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../auth/models/user_model.dart';
+import '../../dashboard/presentation/dashboard_view.dart';
+import '../../sacramental_records/presentation/records_view.dart';
+import '../../receipts/presentation/receipts_view.dart';
+import '../../appointments/presentation/appointments_view.dart';
+import '../../asset_inventory/presentation/asset_inventory_view.dart';
+import '../../smart_archive/presentation/smart_archive_view.dart';
+import '../../profile/presentation/profile_view.dart';
+
+class MainNavigationShell extends StatefulWidget {
+  final UserModel? currentUser;
+
+  const MainNavigationShell({super.key, this.currentUser});
+
+  @override
+  State<MainNavigationShell> createState() => _MainNavigationShellState();
+}
+
+class _MainNavigationShellState extends State<MainNavigationShell> {
+  // Index Mapping:
+  // 0: Overview (Center Button)
+  // 1: Records
+  // 2: Receipts
+  // 3: Appointments
+  // 4: Assets
+  // 5: Smart Archive (IoT)
+  // 6: Profile
+  int _currentIndex = 0;
+
+  late final List<Widget> _views;
+
+  @override
+  void initState() {
+    super.initState();
+    _views = [
+      DashboardView(currentUser: widget.currentUser),
+      const SacramentalRecordsView(),
+      const ReceiptManagementView(),
+      const AppointmentsView(),
+      const AssetInventoryView(),
+      const SmartArchiveView(),
+      ProfileView(currentUser: widget.currentUser),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(child: _views[_currentIndex]),
+      bottomNavigationBar: _buildGcashStyleBottomBar(),
+    );
+  }
+
+  /// GCash-style Navigation Bar with Elevated Center Circular Button
+  Widget _buildGcashStyleBottomBar() {
+    return Container(
+      height: 84,
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 10,
+            offset: Offset(0, -3),
+          ),
+        ],
+        border: Border(top: BorderSide(color: ParishColors.borderGrey, width: 1.2)),
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          // 6 Side Items (3 on Left, 3 on Right)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: _buildNavItem(index: 1, label: 'Records', icon: Icons.menu_book_outlined, activeIcon: Icons.menu_book)),
+              Expanded(child: _buildNavItem(index: 2, label: 'Receipts', icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long)),
+              Expanded(child: _buildNavItem(index: 3, label: 'Appts', icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month)),
+              const SizedBox(width: 72), // Middle spacer for elevated circle
+              Expanded(child: _buildNavItem(index: 4, label: 'Assets', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2)),
+              Expanded(child: _buildNavItem(index: 5, label: 'IoT', icon: Icons.sensors_outlined, activeIcon: Icons.sensors)),
+              Expanded(child: _buildNavItem(index: 6, label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person)),
+            ],
+          ),
+
+          // Elevated Circular Center Button (GCash QR-Style for "Overview / Dashboard")
+          Positioned(
+            top: -22,
+            child: GestureDetector(
+              onTap: () => setState(() => _currentIndex = 0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _currentIndex == 0 ? ParishColors.marianBlue : ParishColors.marianBlueLight,
+                      border: Border.all(color: ParishColors.cardWhite, width: 4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: ParishColors.marianBlue.withOpacity(0.35),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.church,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Overview',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: _currentIndex == 0 ? ParishColors.marianBlue : ParishColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required int index,
+    required String label,
+    required IconData icon,
+    required IconData activeIcon,
+  }) {
+    final bool isSelected = _currentIndex == index;
+
+    return InkWell(
+      onTap: () => setState(() => _currentIndex = index),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isSelected ? activeIcon : icon,
+              size: 24,
+              color: isSelected ? ParishColors.marianBlue : ParishColors.textMuted,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? ParishColors.marianBlue : ParishColors.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/profile/presentation/profile_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../../core/theme/theme_controller.dart';
+import '../../auth/models/user_model.dart';
+import '../../auth/presentation/login_view.dart';
+
+class ProfileView extends StatefulWidget {
+  final UserModel? currentUser;
+
+  const ProfileView({super.key, this.currentUser});
+
+  @override
+  State<ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends State<ProfileView> {
+  bool _largeFontEnabled = true;
+  bool _audioAlertsEnabled = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final user = widget.currentUser;
+    final fullName = user?.fullName ?? 'Parish Staff Member';
+    final role = user?.roleDisplay ?? 'Parish Secretary (Sc)';
+    final userId = user?.userId ?? 'S26-0003';
+    final email = user?.email ?? 'secretary@sjp2parish.ph';
+
+    return Scaffold(
+      backgroundColor: ParishColors.backgroundLight,
+      appBar: AppBar(
+        backgroundColor: ParishColors.cardWhite,
+        elevation: 0,
+        title: Text(
+          'Staff Profile & Settings',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: ParishColors.mercyRed),
+            onPressed: () => _confirmLogout(context),
+            tooltip: 'Sign Out',
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            // Profile Header Card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: ParishColors.cardWhite,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 84,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ParishColors.marianBlueSurface,
+                      border: Border.all(color: ParishColors.goldAccent, width: 3),
+                    ),
+                    child: Center(
+                      child: Text(
+                        fullName.isNotEmpty ? fullName[0].toUpperCase() : 'P',
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.marianBlue,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    fullName,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: ParishColors.marianBlueSurface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      role,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Staff ID: $userId',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Credentials Section
+            _buildSectionHeader('Parish Credentials & Assignment'),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ParishColors.cardWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: ParishColors.borderGrey),
+              ),
+              child: Column(
+                children: [
+                  _buildInfoTile(Icons.email_outlined, 'Official Email', email),
+                  const Divider(height: 20),
+                  _buildInfoTile(Icons.church_outlined, 'Parish Assignment', 'St. John Paul II Parish (Labuin, Sta. Cruz)'),
+                  const Divider(height: 20),
+                  _buildInfoTile(Icons.verified_user_outlined, 'Canonical Authorization', 'Active & Certified'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Accessibility & Theme Preferences Section
+            _buildSectionHeader('Appearance & Accessibility'),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: ParishColors.cardWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: ParishColors.borderGrey),
+              ),
+              child: Column(
+                children: [
+                  // ACTIVE GLOBAL DARK MODE TOGGLE
+                  SwitchListTile(
+                    activeColor: ParishColors.marianBlue,
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Icon(
+                      AppThemeController.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                      color: ParishColors.goldAccent,
+                    ),
+                    title: const Text('Dark Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    subtitle: const Text('Reduce glare and eye strain for night shifts', style: TextStyle(fontSize: 12)),
+                    value: AppThemeController.isDarkMode,
+                    onChanged: (val) {
+                      AppThemeController.toggleTheme(val);
+                      setState(() {});
+                    },
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    activeColor: ParishColors.marianBlue,
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.format_size, color: ParishColors.marianBlue),
+                    title: const Text('Large Font Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    subtitle: const Text('Enhance label readability for staff', style: TextStyle(fontSize: 12)),
+                    value: _largeFontEnabled,
+                    onChanged: (val) => setState(() => _largeFontEnabled = val),
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    activeColor: ParishColors.marianBlue,
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.volume_up_outlined, color: ParishColors.oliveGreen),
+                    title: const Text('ESP32 Telemetry Audio Alert', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    subtitle: const Text('Sound alarm on archive humidity breaches', style: TextStyle(fontSize: 12)),
+                    value: _audioAlertsEnabled,
+                    onChanged: (val) => setState(() => _audioAlertsEnabled = val),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Logout Button
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.mercyRed,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () => _confirmLogout(context),
+                icon: const Icon(Icons.logout, size: 22),
+                label: const Text('LOG OUT OF SYSTEM', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            Text(
+              'ParishServe v1.0.0 • Diocese of San Pablo',
+              style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 8),
+        child: Text(
+          title,
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoTile(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: ParishColors.marianBlue, size: 22),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+              const SizedBox(height: 2),
+              Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _confirmLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Confirm Log Out', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to end your current ParishServe session?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: ParishColors.mercyRed, foregroundColor: Colors.white),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginView()),
+              );
+            },
+            child: const Text('Log Out'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/receipts/presentation/receipts_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import 'dialogs/new_transaction_dialog.dart';
+import 'widgets/receipt_card.dart';
+
+class ReceiptManagementView extends StatelessWidget {
+  const ReceiptManagementView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Parish Receipts', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Issue ecclesiastical receipts & manage service fees', style: TextStyle(color: ParishColors.textMuted)),
+          const SizedBox(height: 18),
+
+          SizedBox(
+            width: double.infinity,
+            height: 58,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.oliveGreen,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () => showNewTransactionModal(context),
+              icon: const Icon(Icons.receipt, size: 26),
+              label: const Text('+ Record New Transaction', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          Text('Recent Ecclesiastical Receipts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 12),
+
+          ReceiptCard(
+            receiptNo: 'REC-2026-00892',
+            payer: 'Theresa Sanchez',
+            purpose: 'Baptismal Certificate Request (Pabuklat)',
+            amount: '₱ 150.00',
+            date: 'Today, 10:15 AM',
+            status: 'PAID',
+          ),
+          ReceiptCard(
+            receiptNo: 'REC-2026-00891',
+            payer: 'Fernando Gomez',
+            purpose: 'Thanksgiving Mass Intention',
+            amount: '₱ 300.00',
+            date: 'Today, 09:30 AM',
+            status: 'PAID',
+          ),
+          ReceiptCard(
+            receiptNo: 'REC-2026-00890',
+            payer: 'Anonymous Benefactor',
+            purpose: 'Church Altar Repair Donation',
+            amount: '₱ 1,000.00',
+            date: 'Yesterday, 04:00 PM',
+            status: 'PAID',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../../core/widgets/dialog_text_field.dart';
+
+void showNewTransactionModal(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Record Ecclesiastical Receipt', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ParishDialogTextField(label: 'Payer / Requester', hint: 'e.g., Maria Santos'),
+            const ParishDialogTextField(label: 'Transaction Purpose', hint: 'Mass Intention / Certificate / Donation'),
+            const ParishDialogTextField(label: 'Amount Received (PHP)', hint: '₱ 0.00'),
+            const ParishDialogTextField(label: 'Auto Generated Receipt #', hint: 'REC-2026-00893', enabled: false),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.oliveGreen,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Issue Receipt'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showReceiptDetailModal(
+    BuildContext context, {
+      required String receiptNo,
+      required String payer,
+      required String purpose,
+      required String amount,
+      required String date,
+    }) {
+  final textColorMuted = ParishColors.textMuted;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('Parish Receipt', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(receiptNo, style: const TextStyle(fontSize: 13, color: ParishColors.marianBlue)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Payer: $payer', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          Text('Date: $date', style: TextStyle(fontSize: 13, color: textColorMuted)),
+          Text('Purpose: $purpose', style: TextStyle(fontSize: 14, color: textColorMuted)),
+          const Divider(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Total Amount:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(amount, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+          onPressed: () => Navigator.pop(ctx),
+          icon: const Icon(Icons.print, size: 18),
+          label: const Text('Reprint'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/receipts/presentation/widgets/receipt_card.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../dialogs/receipt_detail_dialog.dart';
+
+class ReceiptCard extends StatelessWidget {
+  final String receiptNo;
+  final String payer;
+  final String purpose;
+  final String amount;
+  final String date;
+  final String status;
+
+  const ReceiptCard({
+    super.key,
+    required this.receiptNo,
+    required this.payer,
+    required this.purpose,
+    required this.amount,
+    required this.date,
+    required this.status,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => showReceiptDetailModal(
+        context,
+        receiptNo: receiptNo,
+        payer: payer,
+        purpose: purpose,
+        amount: amount,
+        date: date,
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: ParishColors.borderGrey),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ParishColors.oliveGreenSurface,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.description, color: ParishColors.oliveGreen, size: 30),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        receiptNo,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue),
+                      ),
+                      Text(
+                        amount,
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ParishColors.textDark),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(payer, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text(purpose, style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
+                  const SizedBox(height: 4),
+                  Text(date, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/sacramental_records/presentation/records_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import 'dialogs/ocr_scan_dialog.dart';
+import 'dialogs/manual_entry_dialog.dart';
+import 'widgets/record_tile.dart';
+
+class SacramentalRecordsView extends StatelessWidget {
+  const SacramentalRecordsView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Sacramental Records', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('Search registry or digitize manual books', style: TextStyle(color: ParishColors.textMuted)),
+          const SizedBox(height: 18),
+
+          Container(
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ParishColors.marianBlue, width: 1.8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 28, color: ParishColors.marianBlue),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Search by Name, Year, or Book #...',
+                    style: TextStyle(fontSize: 16, color: ParishColors.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => showOcrScanModal(context),
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text('AI OCR Scan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+                      foregroundColor: ParishColors.marianBlue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => showManualEntryModal(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Manual Entry', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          Text('Recent Sacramental Logs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 12),
+
+          RecordTile(
+            name: 'Juan Miguel Dela Cruz',
+            sacrament: 'BAPTISM',
+            bookRef: 'Book 12, Page 143, Entry #04',
+            date: 'Baptized: Oct 14, 2021',
+          ),
+          RecordTile(
+            name: 'Carlos Santos & Maria Ramos',
+            sacrament: 'MATRIMONY',
+            bookRef: 'Book 06, Page 52, Entry #01',
+            date: 'Married: Feb 18, 2023',
+          ),
+          RecordTile(
+            name: 'Gabriel Morales',
+            sacrament: 'CONFIRMATION',
+            bookRef: 'Book 04, Page 88, Entry #19',
+            date: 'Confirmed: Dec 08, 2022',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/sacramental_records/presentation/dialogs/certificate_preview_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showCertificatePreviewModal(
+    BuildContext context, {
+      required String name,
+      required String sacrament,
+      required String bookRef,
+    }) {
+  final textColorMuted = ParishColors.textMuted;
+  final textColorDark = ParishColors.textDark;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text('Certificate Preview', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
+        ],
+      ),
+      content: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: ParishColors.goldAccent, width: 2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.shield_outlined, size: 40, color: ParishColors.marianBlue),
+            const SizedBox(height: 6),
+            const Text(
+              'PAROCHIA SANCTI IOANNIS PAULI II',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
+            ),
+            Text('Diocese of San Pablo', style: TextStyle(fontSize: 11, color: textColorMuted)),
+            const Divider(height: 20),
+            Text('CERTIFICATE OF $sacrament', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 8),
+            Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: ParishColors.marianBlue)),
+            const SizedBox(height: 4),
+            Text(bookRef, style: TextStyle(fontSize: 12, color: textColorMuted)),
+            const SizedBox(height: 14),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                border: Border.all(color: ParishColors.borderGrey),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.qr_code_2, size: 70, color: textColorDark),
+            ),
+            const SizedBox(height: 6),
+            Text('QR Code for Parish Verification', style: TextStyle(fontSize: 10, color: textColorMuted)),
+          ],
+        ),
+      ),
+      actions: [
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.goldAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            icon: const Icon(Icons.print),
+            label: const Text('Print Official Certificate', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/sacramental_records/presentation/dialogs/manual_entry_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../../core/widgets/dialog_text_field.dart';
+
+void showManualEntryModal(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('New Sacramental Entry', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ParishDialogTextField(label: 'Sacrament Type', hint: 'Baptism / Matrimony / Confirmation'),
+            const ParishDialogTextField(label: 'Full Name of Subject', hint: 'First, Middle, Last Name'),
+            const ParishDialogTextField(label: 'Book & Page Reference', hint: 'e.g., Book 12, Page 45, Entry 02'),
+            const ParishDialogTextField(label: 'Parents / Witnesses', hint: 'Names separated by comma'),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Discard')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.marianBlue,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Save Record'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/sacramental_records/presentation/dialogs/ocr_scan_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showOcrScanModal(BuildContext context) {
+  final textColorMuted = ParishColors.textMuted;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(
+        children: [
+          Icon(Icons.document_scanner, color: ParishColors.marianBlue, size: 28),
+          SizedBox(width: 10),
+          Text('AI OCR Document Scan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 150,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: ParishColors.marianBlue, width: 1.5),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.camera_alt_outlined, size: 48, color: ParishColors.marianBlue),
+                const SizedBox(height: 8),
+                Text('Align ledger record inside frame', style: TextStyle(color: textColorMuted, fontSize: 13)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: ParishColors.oliveGreenSurface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 22),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'AI Match Confidence: 98.4%\nAutomated book/page extraction ready.',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text('Cancel', style: TextStyle(fontSize: 16, color: textColorMuted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.marianBlue,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Extract & Digitize', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/sacramental_records/presentation/widgets/record_tile.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../dialogs/certificate_preview_dialog.dart';
+
+class RecordTile extends StatelessWidget {
+  final String name;
+  final String sacrament;
+  final String bookRef;
+  final String date;
+
+  const RecordTile({
+    super.key,
+    required this.name,
+    required this.sacrament,
+    required this.bookRef,
+    required this.date,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: ParishColors.marianBlueSurface,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  sacrament,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
+                ),
+              ),
+              Icon(Icons.qr_code_2, size: 26, color: ParishColors.textMuted),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(name, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 2),
+          Text(bookRef, style: TextStyle(fontSize: 14, color: ParishColors.textMuted)),
+          Text(date, style: TextStyle(fontSize: 14, color: ParishColors.textMuted)),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.goldLight,
+                foregroundColor: ParishColors.textDark,
+                elevation: 0,
+                side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => showCertificatePreviewModal(
+                context,
+                name: name,
+                sacrament: sacrament,
+                bookRef: bookRef,
+              ),
+              icon: Icon(Icons.print, size: 20, color: ParishColors.textDark),
+              label: const Text('Generate Official Certificate', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/smart_archive/presentation/smart_archive_view.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import 'dialogs/configure_thresholds_dialog.dart';
+import 'widgets/storage_node_tile.dart';
+
+class SmartArchiveView extends StatelessWidget {
+  const SmartArchiveView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Smart Archive & IoT', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text('ESP32 telemetry monitoring for sacramental books & asset storage', style: TextStyle(color: ParishColors.textMuted)),
+          const SizedBox(height: 18),
+
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: ParishColors.borderGrey),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ParishColors.marianBlueSurface,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.hub_outlined, color: ParishColors.marianBlue, size: 30),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('4 Active ESP32 Nodes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                      const Text('1 Node Triggered Humidity Alert', style: TextStyle(fontSize: 13, color: ParishColors.mercyRed, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+                foregroundColor: ParishColors.marianBlue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => showConfigureThresholdsModal(context),
+              icon: const Icon(Icons.tune),
+              label: const Text('Configure Environmental Thresholds', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          Text('Monitored Storage Zones', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 12),
+
+          StorageNodeTile(
+            roomTitle: 'Main Sacramental Archive Room',
+            nodeId: 'ESP32-NODE-01',
+            temperature: '24.2 °C',
+            humidity: '54 %',
+            isWarning: false,
+          ),
+          StorageNodeTile(
+            roomTitle: 'Liturgical Vessel & Robe Storage',
+            nodeId: 'ESP32-NODE-02',
+            temperature: '29.1 °C',
+            humidity: '68 %',
+            isWarning: true,
+          ),
+          StorageNodeTile(
+            roomTitle: 'Historical Parish Register Vault',
+            nodeId: 'ESP32-NODE-03',
+            temperature: '23.5 °C',
+            humidity: '51 %',
+            isWarning: false,
+          ),
+          StorageNodeTile(
+            roomTitle: 'Altar Linen & Vestment Closet',
+            nodeId: 'ESP32-NODE-04',
+            temperature: '26.0 °C',
+            humidity: '58 %',
+            isWarning: false,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================================================================================
+FILE: lib/features/smart_archive/presentation/dialogs/configure_thresholds_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../../core/widgets/dialog_text_field.dart';
+
+void showConfigureThresholdsModal(BuildContext context) {
+  final textColorMuted = ParishColors.textMuted;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Configure Safe Limits', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Set safe environmental thresholds for document preservation:', style: TextStyle(fontSize: 13, color: textColorMuted)),
+            const SizedBox(height: 14),
+            const ParishDialogTextField(label: 'Max Relative Humidity (%)', hint: '60 % (Standard Canonical Archive)'),
+            const ParishDialogTextField(label: 'Max Ambient Temperature (°C)', hint: '26 °C'),
+            const ParishDialogTextField(label: 'Telemetry Polling Interval (Sec)', hint: '60 seconds'),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.marianBlue,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Save Parameters'),
+        ),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/smart_archive/presentation/dialogs/sensor_detail_dialog.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showSensorDetailModal(
+    BuildContext context, {
+      required String roomTitle,
+      required String nodeId,
+      required String temperature,
+      required String humidity,
+      required bool isWarning,
+    }) {
+  final textColorMuted = ParishColors.textMuted;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(roomTitle, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Node ID: $nodeId', style: TextStyle(color: textColorMuted, fontSize: 13)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Text('Temperature: $temperature', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const SizedBox(width: 14),
+              Text('Humidity: $humidity', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isWarning ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              isWarning
+                  ? 'CRITICAL ALERT: Safe relative humidity exceeded (Threshold: 60%). Inspect room dehumidifier immediately.'
+                  : 'STATUS OPTIMAL: Environmental conditions are within safe paper preservation ranges.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+      ],
+    ),
+  );
+}
+
+================================================================================
+FILE: lib/features/smart_archive/presentation/widgets/storage_node_tile.dart
+================================================================================
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../dialogs/sensor_detail_dialog.dart';
+
+class StorageNodeTile extends StatelessWidget {
+  final String roomTitle;
+  final String nodeId;
+  final String temperature;
+  final String humidity;
+  final bool isWarning;
+
+  const StorageNodeTile({
+    super.key,
+    required this.roomTitle,
+    required this.nodeId,
+    required this.temperature,
+    required this.humidity,
+    required this.isWarning,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => showSensorDetailModal(
+        context,
+        roomTitle: roomTitle,
+        nodeId: nodeId,
+        temperature: temperature,
+        humidity: humidity,
+        isWarning: isWarning,
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isWarning ? ParishColors.mercyRedSurface : ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isWarning ? ParishColors.mercyRed : ParishColors.borderGrey,
+            width: isWarning ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(roomTitle, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ParishColors.textDark)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    isWarning ? 'HUMIDITY ALERT' : 'SAFE',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(nodeId, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text('Temp: $temperature', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.textDark)),
+                const SizedBox(width: 20),
+                Text('Humidity: $humidity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.textDark)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
