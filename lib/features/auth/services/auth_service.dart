@@ -4,6 +4,9 @@ import '../models/user_model.dart';
 class AuthService {
   static final SupabaseClient _client = Supabase.instance.client;
 
+  /// Stores the currently authenticated user in memory
+  static UserModel? currentUser;
+
   /// Authenticate staff using Username or Email + Password
   static Future<UserModel?> login({
     required String identifier, // username or email
@@ -22,6 +25,8 @@ class AuthService {
       return null;
     }
 
-    return UserModel.fromMap(response);
+    final user = UserModel.fromMap(response);
+    currentUser = user;
+    return user;
   }
 }
