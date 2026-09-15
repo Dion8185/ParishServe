@@ -1,6 +1,6 @@
 {
-    "name": "parishserve",
-    "short_name": "parishserve",
+    "name": "ParishServe",
+    "short_name": "ParishServe",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

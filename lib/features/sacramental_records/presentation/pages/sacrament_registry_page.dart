@@ -5,6 +5,7 @@ import '../../services/baptism_service.dart';
 import '../dialogs/certificate_preview_dialog.dart';
 import '../dialogs/manual_entry_dialog.dart';
 import '../dialogs/ocr_scan_dialog.dart';
+import 'baptism_manual_entry_page.dart';
 
 class SacramentRegistryPage extends StatefulWidget {
   final String sacramentName;
@@ -88,6 +89,22 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     }).toList();
   }
 
+  void _openManualEntry() {
+    if (widget.sacramentName == 'Baptism') {
+      // Dedicated route navigation: Unloads underlying heavy rendering & frees RAM
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => BaptismManualEntryPage(
+            onRecordSaved: _loadBaptismRecords,
+          ),
+        ),
+      );
+    } else {
+      showManualEntryModal(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cardWhiteColor = ParishColors.cardWhite;
@@ -131,7 +148,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Ledger Volume Status Banner
+            // Ledger Status Banner
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
@@ -174,7 +191,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
             ),
             const SizedBox(height: 18),
 
-            // AI OCR Scan & Manual Entry Action Buttons
+            // Action Buttons
             Row(
               children: [
                 Expanded(
@@ -203,10 +220,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                         foregroundColor: widget.themeColor,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      onPressed: () => showManualEntryModal(
-                        context,
-                        onRecordSaved: widget.sacramentName == 'Baptism' ? _loadBaptismRecords : null,
-                      ),
+                      onPressed: _openManualEntry,
                       icon: const Icon(Icons.add, size: 22),
                       label: const Text('Manual Entry', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                     ),
@@ -256,7 +270,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
             ),
             const SizedBox(height: 24),
 
-            // Records List Header
+            // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -279,7 +293,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
             ),
             const SizedBox(height: 12),
 
-            // Records List Area
+            // Records List
             if (widget.sacramentName == 'Baptism') ...[
               if (_isLoading)
                 const Center(
@@ -350,7 +364,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                     );
                   }),
             ] else ...[
-              // Placeholder representation for other sacraments
               _buildSacramentRecordCard(
                 context: context,
                 name: 'Juan Miguel Dela Cruz',

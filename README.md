@@ -1,4 +1,4 @@
-# parishserve
+# ParishServe
 
 Integrated Parish Asset Inventory, Sacramental Records Digitization, Service Appointment, Receipt Management, and ESP32-Based Smart Archive and Asset Monitoring System
 
