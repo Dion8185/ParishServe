@@ -1,44 +1,44 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../models/appointment_model.dart';
 import '../dialogs/appointment_detail_dialog.dart';
 
 class AppointmentCard extends StatelessWidget {
-  final String refNo;
-  final String serviceName;
-  final String requester;
-  final String contact;
-  final String scheduleTime;
-  final String officiant;
-  final String status;
-  final String feeStatus;
+  final AppointmentModel appointment;
+  final VoidCallback? onRefresh;
 
   const AppointmentCard({
     super.key,
-    required this.refNo,
-    required this.serviceName,
-    required this.requester,
-    required this.contact,
-    required this.scheduleTime,
-    required this.officiant,
-    required this.status,
-    required this.feeStatus,
+    required this.appointment,
+    this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bool isConfirmed = status == 'CONFIRMED';
+    final a = appointment;
+    final status = a.appointmentStatus.toLowerCase();
+
+    Color statusColor = ParishColors.goldAccent;
+    Color statusSurface = ParishColors.goldLight;
+    if (status == 'confirmed') {
+      statusColor = ParishColors.oliveGreen;
+      statusSurface = ParishColors.oliveGreenSurface;
+    } else if (status == 'completed') {
+      statusColor = ParishColors.marianBlue;
+      statusSurface = ParishColors.marianBlueSurface;
+    } else if (status == 'cancelled') {
+      statusColor = ParishColors.mercyRed;
+      statusSurface = ParishColors.mercyRedSurface;
+    } else if (status == 'rescheduled') {
+      statusColor = const Color(0xFF7C3AED); // Royal Violet
+      statusSurface = const Color(0xFFF3E8FF);
+    }
 
     return InkWell(
       onTap: () => showAppointmentDetailModal(
         context,
-        refNo: refNo,
-        serviceName: serviceName,
-        requester: requester,
-        contact: contact,
-        scheduleTime: scheduleTime,
-        officiant: officiant,
-        status: status,
-        feeStatus: feeStatus,
+        appointment: a,
+        onStatusUpdated: onRefresh,
       ),
       borderRadius: BorderRadius.circular(14),
       child: Container(
@@ -55,13 +55,13 @@ class AppointmentCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isConfirmed ? ParishColors.marianBlueSurface : ParishColors.goldLight,
+                color: statusSurface,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
-                Icons.calendar_today,
-                color: isConfirmed ? ParishColors.marianBlue : ParishColors.goldAccent,
-                size: 28,
+                Icons.calendar_month,
+                color: statusColor,
+                size: 26,
               ),
             ),
             const SizedBox(width: 14),
@@ -73,35 +73,43 @@ class AppointmentCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        refNo,
+                        a.appointmentId,
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ParishColors.marianBlue),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: isConfirmed ? ParishColors.oliveGreenSurface : ParishColors.goldLight,
+                          color: statusSurface,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          status,
+                          a.appointmentStatus.toUpperCase(),
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10.5,
                             fontWeight: FontWeight.bold,
-                            color: isConfirmed ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                            color: statusColor,
                           ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(serviceName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-                  Text('Requester: $requester', style: TextStyle(fontSize: 13, color: ParishColors.textMuted)),
-                  const SizedBox(height: 4),
+                  Text(a.serviceType, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text('Requester: ${a.requesterName} (${a.contactNumber})', style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted)),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Icon(Icons.access_time, size: 14, color: ParishColors.textMuted),
                       const SizedBox(width: 4),
-                      Text(scheduleTime, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textDark)),
+                      Text('${a.formattedDate} • ${a.formattedTimeRange}', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ParishColors.textDark)),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on_outlined, size: 14, color: ParishColors.textMuted),
+                      const SizedBox(width: 4),
+                      Text(a.venue, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
                     ],
                   ),
                 ],
