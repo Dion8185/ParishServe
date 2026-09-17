@@ -34,8 +34,6 @@ class $AssetsPresentationGen {
   final $AssetsWidgetsGen widgets = const $AssetsWidgetsGen();
   final String receiptsView =
       'lib/features/receipts/presentation/receipts_view.dart';
-  final String secretaryDashboardWidget =
-      'lib/features/receipts/presentation/secretary_dashboard_widget.dart';
 }
 
 class $AssetsDialogsGen {

@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/baptism_record_model.dart';
 import '../../models/confirmation_record_model.dart';
+import '../../models/first_communion_record_model.dart';
 import '../../services/baptism_service.dart';
 import '../../services/confirmation_service.dart';
+import '../../services/first_communion_service.dart';
 import '../dialogs/certificate_preview_dialog.dart';
 import '../dialogs/manual_entry_dialog.dart';
 import '../dialogs/ocr_scan_dialog.dart';
 import 'baptism_manual_entry_page.dart';
 import 'confirmation_manual_entry_page.dart';
+import 'first_communion_manual_entry_page.dart';
 
 class SacramentRegistryPage extends StatefulWidget {
   final String sacramentName;
@@ -34,6 +37,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   final TextEditingController _searchController = TextEditingController();
   List<BaptismRecordModel> _baptismRecords = [];
   List<ConfirmationRecordModel> _confirmationRecords = [];
+  List<FirstCommunionRecordModel> _firstCommunionRecords = [];
   bool _isLoading = false;
   String? _fetchError;
   String _searchQuery = '';
@@ -65,6 +69,10 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
         final records = await ConfirmationService.getConfirmationRecords();
         if (!mounted) return;
         setState(() => _confirmationRecords = records);
+      } else if (widget.sacramentName == 'First Communion') {
+        final records = await FirstCommunionService.getFirstCommunionRecords();
+        if (!mounted) return;
+        setState(() => _firstCommunionRecords = records);
       }
     } catch (e) {
       if (!mounted) return;
@@ -101,6 +109,18 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     }).toList();
   }
 
+  List<FirstCommunionRecordModel> get _filteredFirstCommunionRecords {
+    if (_searchQuery.trim().isEmpty) return _firstCommunionRecords;
+    final q = _searchQuery.toLowerCase();
+    return _firstCommunionRecords.where((r) {
+      final nameMatch = r.communicantFullName.toLowerCase().contains(q);
+      final controlMatch = r.controlNumber.toLowerCase().contains(q);
+      final yearMatch = r.year.toString().contains(q);
+      final parishMatch = r.baptismParish.toLowerCase().contains(q);
+      return nameMatch || controlMatch || yearMatch || parishMatch;
+    }).toList();
+  }
+
   void _openManualEntry() {
     if (widget.sacramentName == 'Baptism') {
       Navigator.push(
@@ -120,6 +140,15 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
           ),
         ),
       );
+    } else if (widget.sacramentName == 'First Communion') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FirstCommunionManualEntryPage(
+            onRecordSaved: _loadRecords,
+          ),
+        ),
+      );
     } else {
       showManualEntryModal(context);
     }
@@ -133,10 +162,12 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     final textMutedColor = ParishColors.textMuted;
     final isBaptism = widget.sacramentName == 'Baptism';
     final isConfirmation = widget.sacramentName == 'Confirmation';
+    final isCommunion = widget.sacramentName == 'First Communion';
 
     int count = 0;
     if (isBaptism) count = _baptismRecords.length;
     if (isConfirmation) count = _confirmationRecords.length;
+    if (isCommunion) count = _firstCommunionRecords.length;
 
     return Scaffold(
       backgroundColor: ParishColors.backgroundLight,
@@ -161,7 +192,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
           ],
         ),
         actions: [
-          if (isBaptism || isConfirmation)
+          if (isBaptism || isConfirmation || isCommunion)
             IconButton(
               icon: Icon(Icons.refresh, color: widget.themeColor),
               onPressed: _loadRecords,
@@ -181,7 +212,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
               decoration: BoxDecoration(
                 color: widget.surfaceColor,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: widget.themeColor.withValues(alpha: 0.4), width: 1.5),
+                border: Border.all(color: widget.themeColor.withOpacity(0.4), width: 1.5),
               ),
               child: Row(
                 children: [
@@ -204,7 +235,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          (isBaptism || isConfirmation)
+                          (isBaptism || isConfirmation || isCommunion)
                               ? 'Live Database Records: $count registered'
                               : 'Digitized registry companion • St. John Paul II Parish',
                           style: TextStyle(fontSize: 12, color: textMutedColor),
@@ -275,7 +306,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                       onChanged: (val) => setState(() => _searchQuery = val),
                       style: TextStyle(fontSize: 14, color: textDarkColor),
                       decoration: InputDecoration(
-                        hintText: 'Search ${widget.sacramentName} records (Name, Book #, Parent)...',
+                        hintText: 'Search ${widget.sacramentName} records...',
                         hintStyle: TextStyle(fontSize: 14, color: textMutedColor),
                         border: InputBorder.none,
                         isDense: true,
@@ -389,6 +420,30 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                           : null,
                     );
                   }),
+              ] else if (isCommunion) ...[
+                if (_filteredFirstCommunionRecords.isEmpty)
+                  _buildEmptyState(
+                    title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered communion records yet.',
+                    subtitle: 'Tap "Manual Entry" above to add the first communion record to Liber Primae Communionis.',
+                  )
+                else
+                  ..._filteredFirstCommunionRecords.map((fcm) {
+                    final parents = (fcm.fatherFullName != '—' || fcm.motherFullName != '—')
+                        ? 'Parents: ${fcm.fatherFullName} & ${fcm.motherFullName}'
+                        : 'Parents: Not Specified in Batch Register';
+
+                    return _buildSacramentRecordCard(
+                      context: context,
+                      name: fcm.communicantFullName,
+                      bookRef: fcm.referenceDisplay,
+                      dateString: 'Received Holy Communion: ${fcm.dateOfCommunion.toIso8601String().substring(0, 10)}',
+                      parentage: parents,
+                      sponsors: 'Baptized at: ${fcm.baptismParish}',
+                      marginalNotation: fcm.remarks != null && fcm.remarks!.trim().isNotEmpty
+                          ? 'Batch / Mass Note: ${fcm.remarks}'
+                          : null,
+                    );
+                  }),
               ] else ...[
                 _buildSacramentRecordCard(
                   context: context,
@@ -493,7 +548,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
               decoration: BoxDecoration(
                 color: widget.surfaceColor,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: widget.themeColor.withValues(alpha: 0.3)),
+                border: Border.all(color: widget.themeColor.withOpacity(0.3)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
