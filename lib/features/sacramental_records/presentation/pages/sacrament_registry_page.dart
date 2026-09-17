@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/baptism_record_model.dart';
+import '../../models/confirmation_record_model.dart';
 import '../../services/baptism_service.dart';
+import '../../services/confirmation_service.dart';
 import '../dialogs/certificate_preview_dialog.dart';
 import '../dialogs/manual_entry_dialog.dart';
 import '../dialogs/ocr_scan_dialog.dart';
 import 'baptism_manual_entry_page.dart';
+import 'confirmation_manual_entry_page.dart';
 
 class SacramentRegistryPage extends StatefulWidget {
   final String sacramentName;
@@ -30,6 +33,7 @@ class SacramentRegistryPage extends StatefulWidget {
 class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   final TextEditingController _searchController = TextEditingController();
   List<BaptismRecordModel> _baptismRecords = [];
+  List<ConfirmationRecordModel> _confirmationRecords = [];
   bool _isLoading = false;
   String? _fetchError;
   String _searchQuery = '';
@@ -37,9 +41,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   @override
   void initState() {
     super.initState();
-    if (widget.sacramentName == 'Baptism') {
-      _loadBaptismRecords();
-    }
+    _loadRecords();
   }
 
   @override
@@ -48,36 +50,32 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     super.dispose();
   }
 
-  Future<void> _loadBaptismRecords() async {
+  Future<void> _loadRecords() async {
     setState(() {
       _isLoading = true;
       _fetchError = null;
     });
 
     try {
-      final records = await BaptismService.getBaptismRecords();
-      if (!mounted) return;
-      setState(() {
-        _baptismRecords = records;
-      });
+      if (widget.sacramentName == 'Baptism') {
+        final records = await BaptismService.getBaptismRecords();
+        if (!mounted) return;
+        setState(() => _baptismRecords = records);
+      } else if (widget.sacramentName == 'Confirmation') {
+        final records = await ConfirmationService.getConfirmationRecords();
+        if (!mounted) return;
+        setState(() => _confirmationRecords = records);
+      }
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _fetchError = e.toString().replaceFirst('Exception: ', '');
-      });
+      setState(() => _fetchError = e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   List<BaptismRecordModel> get _filteredBaptismRecords {
-    if (_searchQuery.trim().isEmpty) {
-      return _baptismRecords;
-    }
+    if (_searchQuery.trim().isEmpty) return _baptismRecords;
     final q = _searchQuery.toLowerCase();
     return _baptismRecords.where((r) {
       final nameMatch = r.childFullName.toLowerCase().contains(q);
@@ -89,14 +87,36 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     }).toList();
   }
 
+  List<ConfirmationRecordModel> get _filteredConfirmationRecords {
+    if (_searchQuery.trim().isEmpty) return _confirmationRecords;
+    final q = _searchQuery.toLowerCase();
+    return _confirmationRecords.where((r) {
+      final nameMatch = r.confirmandFullName.toLowerCase().contains(q);
+      final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
+          'page ${r.pageNumber}'.toLowerCase().contains(q) ||
+          'line ${r.lineNumber}'.toLowerCase().contains(q);
+      final parentMatch = r.fatherFullName.toLowerCase().contains(q) || r.motherFullName.toLowerCase().contains(q);
+      final churchMatch = r.churchBaptized.toLowerCase().contains(q);
+      return nameMatch || bookMatch || parentMatch || churchMatch;
+    }).toList();
+  }
+
   void _openManualEntry() {
     if (widget.sacramentName == 'Baptism') {
-      // Dedicated route navigation: Unloads underlying heavy rendering & frees RAM
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => BaptismManualEntryPage(
-            onRecordSaved: _loadBaptismRecords,
+            onRecordSaved: _loadRecords,
+          ),
+        ),
+      );
+    } else if (widget.sacramentName == 'Confirmation') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ConfirmationManualEntryPage(
+            onRecordSaved: _loadRecords,
           ),
         ),
       );
@@ -111,6 +131,12 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     final borderGreyColor = ParishColors.borderGrey;
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
+    final isBaptism = widget.sacramentName == 'Baptism';
+    final isConfirmation = widget.sacramentName == 'Confirmation';
+
+    int count = 0;
+    if (isBaptism) count = _baptismRecords.length;
+    if (isConfirmation) count = _confirmationRecords.length;
 
     return Scaffold(
       backgroundColor: ParishColors.backgroundLight,
@@ -135,10 +161,10 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
           ],
         ),
         actions: [
-          if (widget.sacramentName == 'Baptism')
+          if (isBaptism || isConfirmation)
             IconButton(
               icon: Icon(Icons.refresh, color: widget.themeColor),
-              onPressed: _loadBaptismRecords,
+              onPressed: _loadRecords,
               tooltip: 'Refresh Database Records',
             ),
         ],
@@ -178,8 +204,8 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          widget.sacramentName == 'Baptism'
-                              ? 'Live Database Records: ${_baptismRecords.length} registered'
+                          (isBaptism || isConfirmation)
+                              ? 'Live Database Records: $count registered'
                               : 'Digitized registry companion • St. John Paul II Parish',
                           style: TextStyle(fontSize: 12, color: textMutedColor),
                         ),
@@ -294,60 +320,39 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
             const SizedBox(height: 12),
 
             // Records List
-            if (widget.sacramentName == 'Baptism') ...[
-              if (_isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (_fetchError != null)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: ParishColors.mercyRedSurface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ParishColors.mercyRed),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: ParishColors.mercyRed),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Database error: $_fetchError',
-                          style: const TextStyle(fontSize: 13, color: ParishColors.mercyRed),
-                        ),
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_fetchError != null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: ParishColors.mercyRedSurface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ParishColors.mercyRed),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: ParishColors.mercyRed),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Database error: $_fetchError',
+                        style: const TextStyle(fontSize: 13, color: ParishColors.mercyRed),
                       ),
-                    ],
-                  ),
-                )
-              else if (_filteredBaptismRecords.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: cardWhiteColor,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: borderGreyColor),
                     ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.inbox_outlined, size: 40, color: textMutedColor),
-                        const SizedBox(height: 8),
-                        Text(
-                          _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered baptism records yet.',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDarkColor),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Tap "Manual Entry" above to add the first baptism record to the database.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: textMutedColor),
-                        ),
-                      ],
-                    ),
+                  ],
+                ),
+              )
+            else if (isBaptism) ...[
+                if (_filteredBaptismRecords.isEmpty)
+                  _buildEmptyState(
+                    title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered baptism records yet.',
+                    subtitle: 'Tap "Manual Entry" above to add the first baptism record.',
                   )
                 else
                   ..._filteredBaptismRecords.map((r) {
@@ -363,19 +368,65 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                           : null,
                     );
                   }),
-            ] else ...[
-              _buildSacramentRecordCard(
-                context: context,
-                name: 'Juan Miguel Dela Cruz',
-                bookRef: 'Book 04, Page 88, Line 03',
-                dateString: 'Administered: Dec 08, 2022',
-                parentage: 'Parents: Roberto Dela Cruz & Teresa Mendoza',
-                sponsors: 'Sponsors: Carlos Ramos (S1) & Elena Santos (S2)',
-                marginalNotation: null,
-              ),
-            ],
+              ] else if (isConfirmation) ...[
+                if (_filteredConfirmationRecords.isEmpty)
+                  _buildEmptyState(
+                    title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered confirmation records yet.',
+                    subtitle: 'Tap "Manual Entry" above to add the first confirmation record to Liber Confirmatorum.',
+                  )
+                else
+                  ..._filteredConfirmationRecords.map((c) {
+                    final s2Text = c.sponsor2FullName != null ? ' & ${c.sponsor2FullName} (S2)' : '';
+                    return _buildSacramentRecordCard(
+                      context: context,
+                      name: c.confirmandFullName,
+                      bookRef: c.bookReference,
+                      dateString: 'Confirmed: ${c.dateOfConfirmation.toIso8601String().substring(0, 10)}',
+                      parentage: 'Parents: ${c.fatherFullName} & ${c.motherFullName}',
+                      sponsors: 'Sponsors: ${c.sponsor1FullName} (S1)$s2Text',
+                      marginalNotation: c.remarks != null && c.remarks!.trim().isNotEmpty
+                          ? 'Marginal Note: ${c.remarks}'
+                          : null,
+                    );
+                  }),
+              ] else ...[
+                _buildSacramentRecordCard(
+                  context: context,
+                  name: 'Sample Record Placeholder',
+                  bookRef: 'Book 01, Page 01, Line 01',
+                  dateString: 'Administered: 2026-09-01',
+                  parentage: 'Parents: Juan Dela Cruz & Maria Dela Cruz',
+                  sponsors: 'Sponsors: Pedro Santos & Ana Santos',
+                  marginalNotation: null,
+                ),
+              ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState({required String title, required String subtitle}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.inbox_outlined, size: 40, color: ParishColors.textMuted),
+          const SizedBox(height: 8),
+          Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+          ),
+        ],
       ),
     );
   }
