@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
-import '../../services/baptism_service.dart';
+import '../../services/confirmation_service.dart';
 
-class BaptismManualEntryPage extends StatefulWidget {
+class ConfirmationManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
 
-  const BaptismManualEntryPage({super.key, this.onRecordSaved});
+  const ConfirmationManualEntryPage({super.key, this.onRecordSaved});
 
   @override
-  State<BaptismManualEntryPage> createState() => _BaptismManualEntryPageState();
+  State<ConfirmationManualEntryPage> createState() => _ConfirmationManualEntryPageState();
 }
 
-class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
+class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
+
+  // Pentecost Theme Accent for Confirmation
+  static const Color _pentecostRed = Color(0xFFB91C1C);
 
   // Pagination State (5 Pages / Steps)
   int _currentStep = 0;
@@ -21,28 +24,18 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
   static const List<String> _stepTitles = [
     'Canonical Record Reference',
-    "Child's Personal Information",
+    "Confirmand's Personal Information",
     "Parents' Lineage & Origin",
-    'Godparents / Sponsors',
-    'Baptism & Minister Details',
+    'Confirmation Sponsors',
+    'Confirmation Administration & Minister',
   ];
 
   static const List<String> _stepDescriptions = [
-    'Specify book, page, line, and entry classification from the physical ledger.',
-    'Enter canonical identification of the child as inscribed in the register.',
-    'Record parental lineage and paternity acknowledgment under Canon 877.',
-    'Record canonical sponsors (godparents) and optional godparents.',
-    'Administration date, place of baptism, clergy, and marginal notations.',
-  ];
-
-  // Canonical options for Legitimacy
-  static const List<String> _canonicalStatusOptions = [
-    'Natural (Nat.)',
-    'Catholic (Cath.)',
-    'Aglipay (Agl.)',
-    'Protestant (Prot.)',
-    'Civil (Civ.)',
-    'Others (Specify)',
+    'Specify book, page, line, and entry classification from the physical register.',
+    'Personal identification, age, required baptismal record, and residence.',
+    'Parental lineage and canonical acknowledgment under Canon 877.',
+    'Canonical sponsors (strictly limited to Sponsor 1 and optional Sponsor 2).',
+    'Confirmation date, administering clergy, stipend, and canonical remarks.',
   ];
 
   // 1. Canonical Record Reference (Page 1)
@@ -52,59 +45,54 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   String _entryStatus = 'ORIGINAL';
   DateTime _registryDate = DateTime.now();
 
-  // 2. Child Information (Page 2)
-  final _childFirstNameController = TextEditingController();
-  final _childMiddleNameController = TextEditingController();
-  final _childLastNameController = TextEditingController();
-  final _childSuffixController = TextEditingController();
+  // 2. Confirmand's Personal Information (Page 2)
+  final _confirmandFirstNameController = TextEditingController();
+  final _confirmandMiddleNameController = TextEditingController();
+  final _confirmandLastNameController = TextEditingController();
+  final _confirmandSuffixController = TextEditingController();
   DateTime? _dateOfBirth;
   final _ageController = TextEditingController();
-  final _placeOfBirthController = TextEditingController();
-  String _gender = 'Male';
-  String _legitimacy = 'Catholic (Cath.)';
-  final _legitimacyOtherController = TextEditingController();
+  DateTime? _dateOfBaptism; // Required canonical date
+  final _churchBaptizedController = TextEditingController(text: 'St. John Paul II Parish Church');
+  final _addressController = TextEditingController();
 
-  // 3. Parents Information (Page 3)
+  // 3. Father Information (Page 3 - Canon 877 §2)
   bool _fatherNotIndicated = false;
   final _fatherFirstNameController = TextEditingController();
   final _fatherMiddleNameController = TextEditingController();
   final _fatherLastNameController = TextEditingController();
-  final _fatherPlaceOfBirthController = TextEditingController();
+  final _fatherOriginController = TextEditingController();
 
+  // 4. Mother Information (Page 3)
   final _motherFirstNameController = TextEditingController();
   final _motherMiddleNameController = TextEditingController();
   final _motherMaidenLastNameController = TextEditingController();
-  final _motherPlaceOfBirthController = TextEditingController();
+  final _motherOriginController = TextEditingController();
 
-  final _parentsContactNumberController = TextEditingController();
-  final _parentsResidenceController = TextEditingController();
-
-  // 4. Sponsors Information (Page 4)
+  // 5. Sponsors (Page 4 - Strictly limited to 2)
   final _sponsor1FirstNameController = TextEditingController();
   final _sponsor1MiddleNameController = TextEditingController();
   final _sponsor1LastNameController = TextEditingController();
-  final _sponsor1ResidenceController = TextEditingController();
+  final _sponsor1OriginAddressController = TextEditingController();
 
   final _sponsor2FirstNameController = TextEditingController();
   final _sponsor2MiddleNameController = TextEditingController();
   final _sponsor2LastNameController = TextEditingController();
-  final _sponsor2ResidenceController = TextEditingController();
+  final _sponsor2OriginAddressController = TextEditingController();
 
-  final _otherGodparentsController = TextEditingController();
-
-  // 5. Baptism & Minister Details (Page 5)
-  final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish Church');
+  // 6. Administration Details (Page 5)
+  DateTime? _dateOfConfirmation = DateTime.now();
+  final _stipendController = TextEditingController();
   final _ministerFirstNameController = TextEditingController(text: 'Joseph');
   final _ministerMiddleNameController = TextEditingController();
   final _ministerLastNameController = TextEditingController(text: 'Santos');
-  DateTime? _dateOfBaptism = DateTime.now();
-  final _stipendController = TextEditingController();
+  final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
 
   bool _isSubmitting = false;
   String? _errorMessage;
-  bool _dateOfBirthHasError = false;
   bool _dateOfBaptismHasError = false;
+  bool _dateOfConfirmationHasError = false;
 
   @override
   void dispose() {
@@ -112,37 +100,34 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     _bookNumberController.dispose();
     _pageNumberController.dispose();
     _lineNumberController.dispose();
-    _childFirstNameController.dispose();
-    _childMiddleNameController.dispose();
-    _childLastNameController.dispose();
-    _childSuffixController.dispose();
+    _confirmandFirstNameController.dispose();
+    _confirmandMiddleNameController.dispose();
+    _confirmandLastNameController.dispose();
+    _confirmandSuffixController.dispose();
     _ageController.dispose();
-    _placeOfBirthController.dispose();
-    _legitimacyOtherController.dispose();
+    _churchBaptizedController.dispose();
+    _addressController.dispose();
     _fatherFirstNameController.dispose();
     _fatherMiddleNameController.dispose();
     _fatherLastNameController.dispose();
-    _fatherPlaceOfBirthController.dispose();
+    _fatherOriginController.dispose();
     _motherFirstNameController.dispose();
     _motherMiddleNameController.dispose();
     _motherMaidenLastNameController.dispose();
-    _motherPlaceOfBirthController.dispose();
-    _parentsContactNumberController.dispose();
-    _parentsResidenceController.dispose();
+    _motherOriginController.dispose();
     _sponsor1FirstNameController.dispose();
     _sponsor1MiddleNameController.dispose();
     _sponsor1LastNameController.dispose();
-    _sponsor1ResidenceController.dispose();
+    _sponsor1OriginAddressController.dispose();
     _sponsor2FirstNameController.dispose();
     _sponsor2MiddleNameController.dispose();
     _sponsor2LastNameController.dispose();
-    _sponsor2ResidenceController.dispose();
-    _otherGodparentsController.dispose();
-    _parishChurchController.dispose();
+    _sponsor2OriginAddressController.dispose();
+    _stipendController.dispose();
     _ministerFirstNameController.dispose();
     _ministerMiddleNameController.dispose();
     _ministerLastNameController.dispose();
-    _stipendController.dispose();
+    _parishNameController.dispose();
     _remarksController.dispose();
     super.dispose();
   }
@@ -172,47 +157,36 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     return null;
   }
 
-  String? _validatePhoneNumber(String? value) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return null;
-
-    final clean = text.replaceAll(RegExp(r'[\s\-]'), '');
-    final phoneRegExp = RegExp(r'^(09\d{9}|\+639\d{9}|\d{7,10})$');
-    if (!phoneRegExp.hasMatch(clean)) {
-      return 'Enter a valid phone number (e.g., 09171234567).';
-    }
-    return null;
-  }
-
   String? _validateStipend(String? value) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) return null;
-
     final amount = double.tryParse(text);
     if (amount == null || amount < 0) {
-      return 'Enter a valid amount (e.g., 150.00).';
+      return 'Enter a valid amount (e.g. 200.00).';
     }
     return null;
   }
 
   Future<void> _selectDate(BuildContext context, int dateType) async {
-    // 0: Registry Date, 1: Date of Birth, 2: Date of Baptism
+    // 0: Registry Date, 1: Date of Birth, 2: Date of Baptism, 3: Date of Confirmation
     final now = DateTime.now();
     DateTime initialDate;
 
     if (dateType == 0) {
       initialDate = _registryDate;
     } else if (dateType == 1) {
-      initialDate = _dateOfBirth ?? DateTime(now.year, 1, 1);
+      initialDate = _dateOfBirth ?? DateTime(now.year - 12, 1, 1);
+    } else if (dateType == 2) {
+      initialDate = _dateOfBaptism ?? DateTime(now.year - 11, 1, 1);
     } else {
-      initialDate = _dateOfBaptism ?? now;
+      initialDate = _dateOfConfirmation ?? now;
     }
 
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
-      lastDate: dateType == 1 ? now : now.add(const Duration(days: 365)),
+      lastDate: now.add(const Duration(days: 365)),
     );
 
     if (picked != null) {
@@ -221,18 +195,14 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
           _registryDate = picked;
         } else if (dateType == 1) {
           _dateOfBirth = picked;
-          _dateOfBirthHasError = false;
-
           final diffYears = (DateTime.now().difference(picked).inDays / 365).floor();
-          if (diffYears >= 1) {
-            _ageController.text = '$diffYears yr(s) old';
-          } else {
-            final diffMonths = (DateTime.now().difference(picked).inDays / 30).floor();
-            _ageController.text = '$diffMonths mo(s) old';
-          }
-        } else {
+          _ageController.text = diffYears >= 0 ? '$diffYears' : '0';
+        } else if (dateType == 2) {
           _dateOfBaptism = picked;
           _dateOfBaptismHasError = false;
+        } else {
+          _dateOfConfirmation = picked;
+          _dateOfConfirmationHasError = false;
         }
       });
     }
@@ -245,16 +215,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         _fatherFirstNameController.text = 'Not Indicated';
         _fatherMiddleNameController.clear();
         _fatherLastNameController.text = 'Not Indicated';
-        _fatherPlaceOfBirthController.clear();
-
-        if (_legitimacy == 'Catholic (Cath.)') {
-          _legitimacy = 'Natural (Nat.)';
-        }
+        _fatherOriginController.clear();
       } else {
         _fatherFirstNameController.clear();
         _fatherMiddleNameController.clear();
         _fatherLastNameController.clear();
-        _fatherPlaceOfBirthController.clear();
+        _fatherOriginController.clear();
       }
     });
   }
@@ -286,38 +252,34 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       }
       return true;
     } else if (step == 1) {
-      // Step 2: Child Information
-      final fnErr = _validateName(_childFirstNameController.text, 'Child First Name', isRequired: true);
+      // Step 2: Confirmand Information
+      final fnErr = _validateName(_confirmandFirstNameController.text, 'Confirmand First Name', isRequired: true);
       if (fnErr != null) {
         setState(() => _errorMessage = fnErr);
         return false;
       }
-      final lnErr = _validateName(_childLastNameController.text, 'Child Last Name', isRequired: true);
+      final lnErr = _validateName(_confirmandLastNameController.text, 'Confirmand Last Name', isRequired: true);
       if (lnErr != null) {
         setState(() => _errorMessage = lnErr);
         return false;
       }
-      if (_dateOfBirth == null) {
+      if (_dateOfBaptism == null) {
         setState(() {
-          _dateOfBirthHasError = true;
-          _errorMessage = 'Date of Birth is required.';
+          _dateOfBaptismHasError = true;
+          _errorMessage = 'Date of Baptism is required for confirmation registration.';
         });
         return false;
       }
-      if (_dateOfBirth!.isAfter(DateTime.now())) {
+      if (_dateOfBirth != null && _dateOfBaptism!.isBefore(_dateOfBirth!)) {
         setState(() {
-          _dateOfBirthHasError = true;
-          _errorMessage = 'Date of Birth cannot be in the future.';
+          _dateOfBaptismHasError = true;
+          _errorMessage = 'Date of Baptism cannot be earlier than Date of Birth.';
         });
         return false;
       }
-      final pobErr = _validateRequiredText(_placeOfBirthController.text, 'Place of birth');
-      if (pobErr != null) {
-        setState(() => _errorMessage = pobErr);
-        return false;
-      }
-      if (_legitimacy == 'Others (Specify)' && _legitimacyOtherController.text.trim().isEmpty) {
-        setState(() => _errorMessage = 'Please specify the legitimacy denomination.');
+      final cbErr = _validateRequiredText(_churchBaptizedController.text, 'Church Baptized');
+      if (cbErr != null) {
+        setState(() => _errorMessage = cbErr);
         return false;
       }
       return true;
@@ -345,14 +307,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         setState(() => _errorMessage = mlnErr);
         return false;
       }
-      final phoneErr = _validatePhoneNumber(_parentsContactNumberController.text);
-      if (phoneErr != null) {
-        setState(() => _errorMessage = phoneErr);
-        return false;
-      }
       return true;
     } else if (step == 3) {
-      // Step 4: Godparents / Sponsors
+      // Step 4: Confirmation Sponsors (Max 2)
       final s1FnErr = _validateName(_sponsor1FirstNameController.text, 'Sponsor 1 First Name', isRequired: true);
       if (s1FnErr != null) {
         setState(() => _errorMessage = s1FnErr);
@@ -363,22 +320,19 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         setState(() => _errorMessage = s1LnErr);
         return false;
       }
-      final s2FnErr = _validateName(_sponsor2FirstNameController.text, 'Sponsor 2 First Name', isRequired: true);
-      if (s2FnErr != null) {
-        setState(() => _errorMessage = s2FnErr);
-        return false;
-      }
-      final s2LnErr = _validateName(_sponsor2LastNameController.text, 'Sponsor 2 Last Name', isRequired: true);
-      if (s2LnErr != null) {
-        setState(() => _errorMessage = s2LnErr);
-        return false;
+      if (_sponsor2FirstNameController.text.trim().isNotEmpty) {
+        final s2LnErr = _validateName(_sponsor2LastNameController.text, 'Sponsor 2 Last Name', isRequired: true);
+        if (s2LnErr != null) {
+          setState(() => _errorMessage = s2LnErr);
+          return false;
+        }
       }
       return true;
     } else if (step == 4) {
       // Step 5: Administration Details
-      final pcErr = _validateRequiredText(_parishChurchController.text, 'Parish / Church of baptism');
-      if (pcErr != null) {
-        setState(() => _errorMessage = pcErr);
+      final pnErr = _validateRequiredText(_parishNameController.text, 'Parish Name');
+      if (pnErr != null) {
+        setState(() => _errorMessage = pnErr);
         return false;
       }
       final mfnErr = _validateName(_ministerFirstNameController.text, 'Minister first name', isRequired: true);
@@ -391,17 +345,17 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         setState(() => _errorMessage = mlnErr);
         return false;
       }
-      if (_dateOfBaptism == null) {
+      if (_dateOfConfirmation == null) {
         setState(() {
-          _dateOfBaptismHasError = true;
-          _errorMessage = 'Date of Baptism is required.';
+          _dateOfConfirmationHasError = true;
+          _errorMessage = 'Date of Confirmation is required.';
         });
         return false;
       }
-      if (_dateOfBirth != null && _dateOfBaptism!.isBefore(_dateOfBirth!)) {
+      if (_dateOfBaptism != null && _dateOfConfirmation!.isBefore(_dateOfBaptism!)) {
         setState(() {
-          _dateOfBaptismHasError = true;
-          _errorMessage = 'Date of Baptism cannot be earlier than Date of Birth.';
+          _dateOfConfirmationHasError = true;
+          _errorMessage = 'Date of Confirmation cannot be earlier than Date of Baptism.';
         });
         return false;
       }
@@ -466,16 +420,13 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       }
     }
 
-    final String finalLegitimacy = _legitimacy == 'Others (Specify)'
-        ? (_legitimacyOtherController.text.trim().isNotEmpty
-        ? 'Others (${_legitimacyOtherController.text.trim()})'
-        : 'Others')
-        : _legitimacy;
-
     setState(() => _isSubmitting = true);
 
     try {
-      final parishChurch = _parishChurchController.text.trim();
+      final int parsedAge = int.tryParse(_ageController.text.trim()) ?? 0;
+      final double parsedStipend = _stipendController.text.trim().isNotEmpty
+          ? (double.tryParse(_stipendController.text.trim()) ?? 0.00)
+          : 0.00;
 
       final recordMap = {
         'book_number': _bookNumberController.text.trim(),
@@ -484,56 +435,46 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         'registry_date': _registryDate.toIso8601String().substring(0, 10),
         'entry_status': _entryStatus,
 
-        'child_first_name': _childFirstNameController.text.trim(),
-        'child_middle_name': _childMiddleNameController.text.trim().isEmpty ? null : _childMiddleNameController.text.trim(),
-        'child_last_name': _childLastNameController.text.trim(),
-        'child_suffix': _childSuffixController.text.trim().isEmpty ? null : _childSuffixController.text.trim(),
-
-        'date_of_birth': _dateOfBirth!.toIso8601String().substring(0, 10),
-        'age': _ageController.text.trim().isEmpty ? null : _ageController.text.trim(),
-        'place_of_birth': _placeOfBirthController.text.trim(),
-        'gender': _gender,
-        'legitimacy': finalLegitimacy,
+        'confirmand_first_name': _confirmandFirstNameController.text.trim(),
+        'confirmand_middle_name': _confirmandMiddleNameController.text.trim().isEmpty ? null : _confirmandMiddleNameController.text.trim(),
+        'confirmand_last_name': _confirmandLastNameController.text.trim(),
+        'confirmand_suffix': _confirmandSuffixController.text.trim().isEmpty ? null : _confirmandSuffixController.text.trim(),
+        'date_of_birth': _dateOfBirth?.toIso8601String().substring(0, 10),
+        'age': parsedAge,
+        'date_of_baptism': _dateOfBaptism!.toIso8601String().substring(0, 10),
+        'church_baptized': _churchBaptizedController.text.trim(),
+        'address': _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
 
         'father_first_name': _fatherFirstNameController.text.trim(),
         'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty ? null : _fatherMiddleNameController.text.trim(),
         'father_last_name': _fatherLastNameController.text.trim(),
-        'father_place_of_birth': _fatherPlaceOfBirthController.text.trim().isEmpty ? null : _fatherPlaceOfBirthController.text.trim(),
+        'father_origin': _fatherOriginController.text.trim().isEmpty ? null : _fatherOriginController.text.trim(),
 
         'mother_first_name': _motherFirstNameController.text.trim(),
         'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty ? null : _motherMiddleNameController.text.trim(),
         'mother_maiden_last_name': _motherMaidenLastNameController.text.trim(),
-        'mother_place_of_birth': _motherPlaceOfBirthController.text.trim().isEmpty ? null : _motherPlaceOfBirthController.text.trim(),
-
-        'parents_contact_number': _parentsContactNumberController.text.trim().isEmpty ? null : _parentsContactNumberController.text.trim(),
-        'parents_residence': _parentsResidenceController.text.trim().isEmpty ? null : _parentsResidenceController.text.trim(),
-        'parents_marriage_type': null,
+        'mother_origin': _motherOriginController.text.trim().isEmpty ? null : _motherOriginController.text.trim(),
 
         'sponsor_1_first_name': _sponsor1FirstNameController.text.trim(),
         'sponsor_1_middle_name': _sponsor1MiddleNameController.text.trim().isEmpty ? null : _sponsor1MiddleNameController.text.trim(),
         'sponsor_1_last_name': _sponsor1LastNameController.text.trim(),
-        'sponsor_1_residence': _sponsor1ResidenceController.text.trim().isEmpty ? null : _sponsor1ResidenceController.text.trim(),
+        'sponsor_1_origin_address': _sponsor1OriginAddressController.text.trim().isEmpty ? null : _sponsor1OriginAddressController.text.trim(),
 
-        'sponsor_2_first_name': _sponsor2FirstNameController.text.trim(),
+        'sponsor_2_first_name': _sponsor2FirstNameController.text.trim().isEmpty ? null : _sponsor2FirstNameController.text.trim(),
         'sponsor_2_middle_name': _sponsor2MiddleNameController.text.trim().isEmpty ? null : _sponsor2MiddleNameController.text.trim(),
-        'sponsor_2_last_name': _sponsor2LastNameController.text.trim(),
-        'sponsor_2_residence': _sponsor2ResidenceController.text.trim().isEmpty ? null : _sponsor2ResidenceController.text.trim(),
+        'sponsor_2_last_name': _sponsor2LastNameController.text.trim().isEmpty ? null : _sponsor2LastNameController.text.trim(),
+        'sponsor_2_origin_address': _sponsor2OriginAddressController.text.trim().isEmpty ? null : _sponsor2OriginAddressController.text.trim(),
 
-        'other_godparents': _otherGodparentsController.text.trim().isEmpty ? null : _otherGodparentsController.text.trim(),
-
-        'parish_name': parishChurch,
-        'place_of_baptism': parishChurch,
-
+        'date_of_confirmation': _dateOfConfirmation!.toIso8601String().substring(0, 10),
+        'stipend': parsedStipend,
         'minister_first_name': _ministerFirstNameController.text.trim(),
         'minister_middle_name': _ministerMiddleNameController.text.trim().isEmpty ? null : _ministerMiddleNameController.text.trim(),
         'minister_last_name': _ministerLastNameController.text.trim(),
-
-        'date_of_baptism': _dateOfBaptism!.toIso8601String().substring(0, 10),
-        'stipend': _stipendController.text.trim().isNotEmpty ? double.tryParse(_stipendController.text.trim()) : null,
+        'parish_name': _parishNameController.text.trim(),
         'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
       };
 
-      await BaptismService.insertManualBaptismRecord(recordMap);
+      await ConfirmationService.insertManualConfirmationRecord(recordMap);
 
       if (!mounted) return;
 
@@ -541,7 +482,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Baptism record registered successfully in Liber Baptismorum.'),
+          content: Text('Confirmation record registered successfully in Liber Confirmatorum.'),
           backgroundColor: ParishColors.oliveGreen,
           duration: Duration(seconds: 3),
         ),
@@ -570,18 +511,18 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         backgroundColor: cardWhiteColor,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+          icon: const Icon(Icons.arrow_back, color: _pentecostRed, size: 26),
           onPressed: _isSubmitting ? null : () => Navigator.pop(context),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Baptism Manual Entry',
+              'Confirmation Manual Entry',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
             ),
             Text(
-              'Canonical Registry Book (Liber Baptismorum)',
+              'Canonical Registry Book (Liber Confirmatorum)',
               style: TextStyle(fontSize: 12, color: textMutedColor),
             ),
           ],
@@ -616,7 +557,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  color: ParishColors.marianBlue,
+                                  color: _pentecostRed,
                                   letterSpacing: 0.5,
                                 ),
                               ),
@@ -637,7 +578,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                               value: (_currentStep + 1) / _totalSteps,
                               minHeight: 6,
                               backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
-                              valueColor: const AlwaysStoppedAnimation<Color>(ParishColors.marianBlue),
+                              valueColor: const AlwaysStoppedAnimation<Color>(_pentecostRed),
                             ),
                           ),
                         ],
@@ -737,7 +678,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _currentStep == _totalSteps - 1
                                     ? ParishColors.oliveGreen
-                                    : ParishColors.marianBlue,
+                                    : _pentecostRed,
                                 foregroundColor: Colors.white,
                                 elevation: 1,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -756,7 +697,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                               label: Text(
                                 _isSubmitting
                                     ? 'Registering...'
-                                    : (_currentStep == _totalSteps - 1 ? 'Save Baptism Record' : 'Continue / Next'),
+                                    : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Continue / Next'),
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                               ),
                             ),
@@ -804,7 +745,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _currentStep == _totalSteps - 1
                                     ? ParishColors.oliveGreen
-                                    : ParishColors.marianBlue,
+                                    : _pentecostRed,
                                 foregroundColor: Colors.white,
                                 elevation: 1,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -823,7 +764,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                               label: Text(
                                 _isSubmitting
                                     ? 'Registering...'
-                                    : (_currentStep == _totalSteps - 1 ? 'Save Baptism Record' : 'Next Section'),
+                                    : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Next Section'),
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                               ),
                             ),
@@ -850,11 +791,11 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       case 0:
         return _buildStep1CanonicalReference(isMobile: isMobile, isSmallMobile: isSmallMobile);
       case 1:
-        return _buildStep2ChildInformation(isMobile: isMobile);
+        return _buildStep2ConfirmandInformation(isMobile: isMobile);
       case 2:
         return _buildStep3ParentsInformation(isMobile: isMobile);
       case 3:
-        return _buildStep4GodparentsInformation(isMobile: isMobile);
+        return _buildStep4SponsorsInformation(isMobile: isMobile);
       case 4:
         return _buildStep5AdministrationDetails(isMobile: isMobile);
       default:
@@ -988,24 +929,24 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // STEP 2: Child Information
-  Widget _buildStep2ChildInformation({required bool isMobile}) {
+  // STEP 2: Confirmand Information
+  Widget _buildStep2ConfirmandInformation({required bool isMobile}) {
     return _buildSectionCard(
-      title: "Child's Canonical Identification",
-      icon: Icons.child_care,
+      title: "Confirmand's Canonical Identification",
+      icon: Icons.local_fire_department,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
-              controller: _childFirstNameController,
-              label: 'First Name',
+              controller: _confirmandFirstNameController,
+              label: 'Confirmand First Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'First name', isRequired: true),
+              validator: (val) => _validateName(val, 'Confirmand first name', isRequired: true),
             ),
             second: _buildTextFormField(
-              controller: _childMiddleNameController,
+              controller: _confirmandMiddleNameController,
               label: 'Middle Name',
               isRequired: false,
               validator: (val) => _validateName(val, 'Middle name', isRequired: false),
@@ -1016,13 +957,13 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
-              controller: _childLastNameController,
-              label: 'Last Name',
+              controller: _confirmandLastNameController,
+              label: 'Confirmand Last Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Last name', isRequired: true),
+              validator: (val) => _validateName(val, 'Confirmand last name', isRequired: true),
             ),
             second: _buildTextFormField(
-              controller: _childSuffixController,
+              controller: _confirmandSuffixController,
               label: 'Suffix',
               isRequired: false,
             ),
@@ -1032,54 +973,40 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildDatePickerField(
-              label: 'Date of Birth',
-              isRequired: true,
+              label: 'Date of Birth (Optional)',
+              isRequired: false,
               value: _dateOfBirth,
-              hasError: _dateOfBirthHasError,
+              hasError: false,
               onTap: () => _selectDate(context, 1),
             ),
             second: _buildTextFormField(
               controller: _ageController,
               label: 'Age',
               isRequired: false,
+              keyboardType: TextInputType.number,
             ),
-          ),
-          _buildTextFormField(
-            controller: _placeOfBirthController,
-            label: 'Place of Birth',
-            isRequired: true,
-            validator: (val) => _validateRequiredText(val, 'Place of birth'),
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
-            first: _buildDropdownField(
-              label: 'Gender',
-              isRequired: false,
-              value: _gender,
-              items: const ['Male', 'Female'],
-              onChanged: (val) => setState(() => _gender = val!),
+            first: _buildDatePickerField(
+              label: 'Date of Baptism',
+              isRequired: true,
+              value: _dateOfBaptism,
+              hasError: _dateOfBaptismHasError,
+              onTap: () => _selectDate(context, 2),
             ),
-            second: _buildDropdownField(
-              label: 'Legitimacy',
-              isRequired: false,
-              value: _legitimacy,
-              items: _canonicalStatusOptions,
-              onChanged: (val) => setState(() => _legitimacy = val!),
+            second: _buildTextFormField(
+              controller: _churchBaptizedController,
+              label: 'Church Baptized',
+              isRequired: true,
+              validator: (val) => _validateRequiredText(val, 'Church baptized'),
             ),
           ),
-          if (_legitimacy == 'Others (Specify)') ...[
-            _buildTextFormField(
-              controller: _legitimacyOtherController,
-              label: 'Specify Legitimacy / Denomination',
-              isRequired: true,
-              validator: (val) {
-                if (_legitimacy == 'Others (Specify)' && (val == null || val.trim().isEmpty)) {
-                  return 'Please specify the denomination or type.';
-                }
-                return null;
-              },
-            ),
-          ],
+          _buildTextFormField(
+            controller: _addressController,
+            label: 'Address / Residence',
+            isRequired: false,
+          ),
         ],
       ),
     );
@@ -1098,7 +1025,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             children: [
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
-                activeColor: ParishColors.marianBlue,
+                activeColor: _pentecostRed,
                 title: const Text(
                   'Father not indicated / acknowledged in COLB (Canon 877 §2)',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
@@ -1138,7 +1065,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   validator: (val) => !_fatherNotIndicated ? _validateName(val, "Father's last name", isRequired: true) : null,
                 ),
                 second: _buildTextFormField(
-                  controller: _fatherPlaceOfBirthController,
+                  controller: _fatherOriginController,
                   label: 'Place of Origin',
                   isRequired: false,
                   enabled: !_fatherNotIndicated,
@@ -1151,7 +1078,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
         // Mother's Information
         _buildSectionCard(
-          title: "Mother's Lineage & Residence",
+          title: "Mother's Lineage & Origin",
           icon: Icons.person_outline,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1175,29 +1102,13 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 isStacked: isMobile,
                 first: _buildTextFormField(
                   controller: _motherMaidenLastNameController,
-                  label: 'Maiden Last Name',
+                  label: 'Mother Maiden Last Name',
                   isRequired: true,
                   validator: (val) => _validateName(val, "Mother's maiden last name", isRequired: true),
                 ),
                 second: _buildTextFormField(
-                  controller: _motherPlaceOfBirthController,
+                  controller: _motherOriginController,
                   label: 'Place of Origin',
-                  isRequired: false,
-                ),
-              ),
-              const Divider(height: 24),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _parentsContactNumberController,
-                  label: 'Parents Contact Number',
-                  isRequired: false,
-                  keyboardType: TextInputType.phone,
-                  validator: _validatePhoneNumber,
-                ),
-                second: _buildTextFormField(
-                  controller: _parentsResidenceController,
-                  label: 'Parents Residence / Address',
                   isRequired: false,
                 ),
               ),
@@ -1208,17 +1119,17 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // STEP 4: Godparents / Sponsors
-  Widget _buildStep4GodparentsInformation({required bool isMobile}) {
+  // STEP 4: Sponsors Information
+  Widget _buildStep4SponsorsInformation({required bool isMobile}) {
     return _buildSectionCard(
-      title: 'Godparents / Sponsors (Compadres)',
+      title: 'Confirmation Sponsors (Strictly Max 2)',
       icon: Icons.people_outline,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Canonical entries require Sponsor 1 and Sponsor 2.',
-            style: TextStyle(fontSize: 12, color: ParishColors.marianBlue, fontWeight: FontWeight.w600),
+            'Canonical Confirmation registers limit sponsors to Sponsor 1 (Required) and Sponsor 2 (Optional).',
+            style: TextStyle(fontSize: 12, color: _pentecostRed, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 14),
 
@@ -1233,7 +1144,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             ),
             second: _buildTextFormField(
               controller: _sponsor1MiddleNameController,
-              label: 'Sponsor 1 Middle Name',
+              label: 'Middle Name',
               isRequired: false,
               validator: (val) => _validateName(val, 'Sponsor 1 middle name', isRequired: false),
             ),
@@ -1247,26 +1158,26 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               validator: (val) => _validateName(val, 'Sponsor 1 last name', isRequired: true),
             ),
             second: _buildTextFormField(
-              controller: _sponsor1ResidenceController,
-              label: 'Sponsor 1 Residence',
+              controller: _sponsor1OriginAddressController,
+              label: 'Sponsor 1 Origin / Address',
               isRequired: false,
             ),
           ),
 
           const Divider(height: 28),
 
-          // Sponsor 2
+          // Sponsor 2 (Optional)
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
               controller: _sponsor2FirstNameController,
-              label: 'Sponsor 2 First Name',
-              isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 2 first name', isRequired: true),
+              label: 'Sponsor 2 First Name (Optional)',
+              isRequired: false,
+              validator: (val) => _validateName(val, 'Sponsor 2 first name', isRequired: false),
             ),
             second: _buildTextFormField(
               controller: _sponsor2MiddleNameController,
-              label: 'Sponsor 2 Middle Name',
+              label: 'Middle Name',
               isRequired: false,
               validator: (val) => _validateName(val, 'Sponsor 2 middle name', isRequired: false),
             ),
@@ -1276,21 +1187,14 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             first: _buildTextFormField(
               controller: _sponsor2LastNameController,
               label: 'Sponsor 2 Last Name',
-              isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 2 last name', isRequired: true),
+              isRequired: false,
+              validator: (val) => _validateName(val, 'Sponsor 2 last name', isRequired: false),
             ),
             second: _buildTextFormField(
-              controller: _sponsor2ResidenceController,
-              label: 'Sponsor 2 Residence',
+              controller: _sponsor2OriginAddressController,
+              label: 'Sponsor 2 Origin / Address',
               isRequired: false,
             ),
-          ),
-
-          const Divider(height: 28),
-          _buildTextFormField(
-            controller: _otherGodparentsController,
-            label: 'Other Godparents (Optional)',
-            isRequired: false,
           ),
         ],
       ),
@@ -1300,46 +1204,46 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   // STEP 5: Administration Details
   Widget _buildStep5AdministrationDetails({required bool isMobile}) {
     return _buildSectionCard(
-      title: 'Baptism Administration & Minister Details',
+      title: 'Confirmation Administration & Minister Details',
       icon: Icons.church,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildTextFormField(
-            controller: _parishChurchController,
-            label: 'Parish / Church of Baptism',
+            controller: _parishNameController,
+            label: 'Parish Name',
             isRequired: true,
-            validator: (val) => _validateRequiredText(val, 'Parish / Church of baptism'),
+            validator: (val) => _validateRequiredText(val, 'Parish name'),
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
               controller: _ministerFirstNameController,
-              label: 'Minister First Name',
+              label: 'Minister / Bishop First Name',
               isRequired: true,
               validator: (val) => _validateName(val, 'Minister first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
-              label: 'Minister Middle Name',
+              label: 'Middle Name',
               isRequired: false,
               validator: (val) => _validateName(val, 'Minister middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
-            label: 'Minister Last Name',
+            label: 'Minister / Bishop Last Name',
             isRequired: true,
             validator: (val) => _validateName(val, 'Minister last name', isRequired: true),
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildDatePickerField(
-              label: 'Date of Baptism',
+              label: 'Date of Confirmation',
               isRequired: true,
-              value: _dateOfBaptism,
-              hasError: _dateOfBaptismHasError,
-              onTap: () => _selectDate(context, 2),
+              value: _dateOfConfirmation,
+              hasError: _dateOfConfirmationHasError,
+              onTap: () => _selectDate(context, 3),
             ),
             second: _buildTextFormField(
               controller: _stipendController,
@@ -1386,12 +1290,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Google Forms Top Color Bar
+          // Google Forms Top Color Bar (Pentecost Red)
           Container(
             height: 8,
             width: double.infinity,
             decoration: const BoxDecoration(
-              color: ParishColors.marianBlue,
+              color: _pentecostRed,
               borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
             ),
           ),
@@ -1408,14 +1312,14 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: ParishColors.marianBlue,
+                        color: _pentecostRed,
                         letterSpacing: 1.0,
                       ),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: ParishColors.marianBlueSurface,
+                        color: const Color(0xFFFDF2F2),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text(
@@ -1423,7 +1327,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: ParishColors.marianBlue,
+                          color: _pentecostRed,
                         ),
                       ),
                     ),
@@ -1496,14 +1400,14 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: ParishColors.marianBlue),
+              Icon(icon, size: 20, color: _pentecostRed),
               const SizedBox(width: 8),
               Text(
                 title,
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: ParishColors.marianBlue,
+                  color: _pentecostRed,
                 ),
               ),
             ],
@@ -1531,7 +1435,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               const TextSpan(
                 text: ' *',
                 style: TextStyle(
-                  color: ParishColors.mercyRed,
+                  color: _pentecostRed,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -1579,18 +1483,18 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+                borderSide: const BorderSide(color: _pentecostRed, width: 1.8),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2),
+                borderSide: const BorderSide(color: _pentecostRed, width: 1.2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.8),
+                borderSide: const BorderSide(color: _pentecostRed, width: 1.8),
               ),
               errorStyle: const TextStyle(
-                color: ParishColors.mercyRed,
+                color: _pentecostRed,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -1608,7 +1512,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     required bool hasError,
     required VoidCallback onTap,
   }) {
-    final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+    final borderColor = hasError ? _pentecostRed : ParishColors.borderGrey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1640,7 +1544,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   Icon(
                     Icons.calendar_month,
                     size: 20,
-                    color: hasError ? ParishColors.mercyRed : ParishColors.marianBlue,
+                    color: _pentecostRed,
                   ),
                 ],
               ),
@@ -1651,7 +1555,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               padding: EdgeInsets.only(top: 6, left: 12),
               child: Text(
                 'Date selection is required.',
-                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+                style: TextStyle(color: _pentecostRed, fontSize: 12, fontWeight: FontWeight.w500),
               ),
             ),
         ],
@@ -1697,7 +1601,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+                borderSide: const BorderSide(color: _pentecostRed, width: 1.8),
               ),
             ),
           ),
