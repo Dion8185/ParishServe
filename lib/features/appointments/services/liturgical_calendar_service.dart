@@ -3,13 +3,9 @@ import 'dart:io';
 import '../models/liturgical_event_model.dart';
 
 class LiturgicalCalendarService {
-  // Primary API endpoint for the Philippine Roman Catholic National Calendar
   static const String _apiEndpoint = 'https://litcal.johnromanodorazio.com/api/dev/calendar/nation/PH';
-
-  // In-memory cache of resolved liturgical events per year
   static final Map<int, List<LiturgicalEvent>> _cachedYears = {};
 
-  /// Fetches the liturgical calendar for the specified year (defaults to current year)
   static Future<List<LiturgicalEvent>> getCalendarForYear(int year) async {
     if (_cachedYears.containsKey(year) && _cachedYears[year]!.isNotEmpty) {
       return _cachedYears[year]!;
@@ -19,8 +15,8 @@ class LiturgicalCalendarService {
 
     try {
       final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 6);
-      final request = await client.getUrl(Uri.parse('$_apiEndpoint?year=$year'));
+      client.connectionTimeout = const Duration(seconds: 5);
+      final request = await client.getUrl(Uri.parse('$_apiEndpoint/$year'));
       final response = await request.close();
 
       if (response.statusCode == 200) {
@@ -35,17 +31,14 @@ class LiturgicalCalendarService {
         }
       }
     } catch (_) {
-      // Fallback to pre-calculated Philippine Catholic Calendar (CBCP & GCatholic)
+      // Fall back to built-in Philippine National defaults
     }
 
-    // Always merge with official Philippine Sanctorale to guarantee all national solemnities are present
     events = _mergeWithPhilippineNationalCalendar(events, year);
-
     _cachedYears[year] = events;
     return events;
   }
 
-  /// Checks if a date has a liturgical celebration that blocks routine appointments
   static Future<bool> isDateBlocked(DateTime date) async {
     final events = await getCalendarForYear(date.year);
     return events.any((e) =>
@@ -55,7 +48,6 @@ class LiturgicalCalendarService {
         e.date.day == date.day);
   }
 
-  /// Gets the blocking celebration on a given date (if any)
   static Future<LiturgicalEvent?> getBlockingCelebration(DateTime date) async {
     final events = await getCalendarForYear(date.year);
     try {
@@ -69,7 +61,6 @@ class LiturgicalCalendarService {
     }
   }
 
-  /// Synchronously checks if a date is blocked using loaded or built-in calendar data
   static bool isDateBlockedSync(DateTime date) {
     final events = _cachedYears[date.year] ?? _getPhilippineNationalDefaults(date.year);
     return events.any((e) =>
@@ -79,7 +70,6 @@ class LiturgicalCalendarService {
         e.date.day == date.day);
   }
 
-  /// Synchronously retrieves celebrations on a given date for calendar view badges
   static List<LiturgicalEvent> getCelebrationsForDateSync(DateTime date) {
     final events = _cachedYears[date.year] ?? _getPhilippineNationalDefaults(date.year);
     return events.where((e) =>
@@ -88,7 +78,6 @@ class LiturgicalCalendarService {
         e.date.day == date.day).toList();
   }
 
-  /// Merges API data with guaranteed CBCP & Philippine Liturgical Observances
   static List<LiturgicalEvent> _mergeWithPhilippineNationalCalendar(List<LiturgicalEvent> apiEvents, int year) {
     final defaults = _getPhilippineNationalDefaults(year);
     final Set<String> existingKeys = apiEvents.map((e) => '${e.date.month}-${e.date.day}').toSet();
@@ -103,55 +92,38 @@ class LiturgicalCalendarService {
     return merged;
   }
 
-  /// Built-in Catholic Liturgical Calendar for the Philippines (CBCP, GCatholic PH-en, & SJP2 Parish)
   static List<LiturgicalEvent> _getPhilippineNationalDefaults(int year) {
-    // Computes moveable feast dates (Easter-based)
     final easter = _calculateEaster(year);
     final ashWednesday = easter.subtract(const Duration(days: 46));
     final holyThursday = easter.subtract(const Duration(days: 3));
     final goodFriday = easter.subtract(const Duration(days: 2));
     final holySaturday = easter.subtract(const Duration(days: 1));
-    final ascension = easter.add(const Duration(days: 42)); // 7th Sunday of Easter in PH
+    final ascension = easter.add(const Duration(days: 42));
     final pentecost = easter.add(const Duration(days: 49));
     final trinitySunday = easter.add(const Duration(days: 56));
     final corpusChristi = easter.add(const Duration(days: 63));
     final sacredHeart = easter.add(const Duration(days: 68));
 
-    // 3rd Sunday of January: Feast of the Santo Niño (National Feast of the Lord in PH)
+    // 3rd Sunday of January: Feast of the Santo Niño
     final jan1 = DateTime(year, 1, 1);
     final daysToFirstSunday = (7 - jan1.weekday) % 7;
     final firstSundayOfJan = jan1.add(Duration(days: daysToFirstSunday));
     final santoNinoDate = firstSundayOfJan.add(const Duration(days: 14));
 
     return [
-      // Solemnities & Holy Days of Obligation in the Philippines
+      // ==========================================
+      // GLOBAL / UNIVERSAL LITURGICAL EVENTS (RED)
+      // ==========================================
       LiturgicalEvent(
         key: 'mary_mother_of_god',
-        name: 'Solemnity of Mary, the Holy Mother of God (Holy Day of Obligation)',
+        name: 'Solemnity of Mary, the Holy Mother of God',
         date: DateTime(year, 1, 1),
         colorName: 'white',
         grade: 6,
         gradeName: 'Solemnity',
         isHolyDayOfObligation: true,
         blocksAppointments: true,
-      ),
-      LiturgicalEvent(
-        key: 'black_nazarene',
-        name: 'Feast of the Black Nazarene (Traslacion)',
-        date: DateTime(year, 1, 9),
-        colorName: 'red',
-        grade: 4,
-        gradeName: 'Feast',
-        blocksAppointments: false,
-      ),
-      LiturgicalEvent(
-        key: 'santo_nino',
-        name: 'Feast of the Santo Niño (Patron of the Philippines)',
-        date: santoNinoDate,
-        colorName: 'white',
-        grade: 5,
-        gradeName: 'Feast of the Lord',
-        blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'ash_wednesday',
@@ -161,6 +133,7 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemn Fast',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'st_joseph',
@@ -170,6 +143,7 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'annunciation',
@@ -179,8 +153,8 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
-      // Sacred Paschal Triduum (Ritual Appointments Strictly Forbidden)
       LiturgicalEvent(
         key: 'holy_thursday',
         name: 'Holy Thursday (Evening Mass of the Lord\'s Supper)',
@@ -189,6 +163,7 @@ class LiturgicalCalendarService {
         grade: 7,
         gradeName: 'Paschal Triduum',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'good_friday',
@@ -198,6 +173,7 @@ class LiturgicalCalendarService {
         grade: 7,
         gradeName: 'Paschal Triduum',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'holy_saturday',
@@ -207,6 +183,7 @@ class LiturgicalCalendarService {
         grade: 7,
         gradeName: 'Paschal Triduum',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'easter_sunday',
@@ -216,6 +193,7 @@ class LiturgicalCalendarService {
         grade: 7,
         gradeName: 'Solemnity of Solemnities',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'ascension',
@@ -225,6 +203,7 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'pentecost',
@@ -234,6 +213,7 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'trinity_sunday',
@@ -243,15 +223,17 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'corpus_christi',
-        name: 'Solemnity of the Most Holy Body and Blood of Christ (Corpus Christi)',
+        name: 'Solemnity of the Most Holy Body and Blood of Christ',
         date: corpusChristi,
         colorName: 'white',
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'sacred_heart',
@@ -261,6 +243,7 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'assumption',
@@ -270,54 +253,28 @@ class LiturgicalCalendarService {
         grade: 6,
         gradeName: 'Solemnity',
         blocksAppointments: true,
-      ),
-      LiturgicalEvent(
-        key: 'st_lorenzo_ruiz',
-        name: 'Feast of Saint Lorenzo Ruiz and Companions (First Filipino Martyr)',
-        date: DateTime(year, 9, 28),
-        colorName: 'red',
-        grade: 4,
-        gradeName: 'Feast in the Philippines',
-        blocksAppointments: false,
-      ),
-      // Parish Titular Solemnity for Saint John Paul II Parish
-      LiturgicalEvent(
-        key: 'st_john_paul_ii',
-        name: 'Solemnity of Saint John Paul II, Pope (Parish Titular Feast Day)',
-        date: DateTime(year, 10, 22),
-        colorName: 'white',
-        grade: 6,
-        gradeName: 'Parish Titular Solemnity',
-        blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'all_saints',
-        name: 'Solemnity of All Saints (Holy Day of Obligation in the Philippines)',
+        name: 'Solemnity of All Saints (Holy Day of Obligation)',
         date: DateTime(year, 11, 1),
         colorName: 'white',
         grade: 6,
         gradeName: 'Solemnity',
         isHolyDayOfObligation: true,
         blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'all_souls',
-        name: 'The Commemoration of All the Faithful Departed (All Souls\' Day)',
+        name: 'The Commemoration of All the Faithful Departed (All Souls)',
         date: DateTime(year, 11, 2),
         colorName: 'purple',
         grade: 5,
         gradeName: 'Major Commemoration',
         blocksAppointments: true,
-      ),
-      LiturgicalEvent(
-        key: 'immaculate_conception',
-        name: 'Solemnity of the Immaculate Conception (Principal Patroness of the Philippines)',
-        date: DateTime(year, 12, 8),
-        colorName: 'white',
-        grade: 6,
-        gradeName: 'Solemnity',
-        isHolyDayOfObligation: true,
-        blocksAppointments: true,
+        isPhilippineSpecific: false,
       ),
       LiturgicalEvent(
         key: 'christmas_day',
@@ -328,11 +285,86 @@ class LiturgicalCalendarService {
         gradeName: 'Solemnity',
         isHolyDayOfObligation: true,
         blocksAppointments: true,
+        isPhilippineSpecific: false,
+      ),
+
+      // ==========================================
+      // PHILIPPINE-SPECIFIC CATHOLIC EVENTS (BLUE)
+      // ==========================================
+      LiturgicalEvent(
+        key: 'black_nazarene',
+        name: 'Feast of the Black Nazarene (Traslacion)',
+        date: DateTime(year, 1, 9),
+        colorName: 'red',
+        grade: 4,
+        gradeName: 'Feast in the Philippines',
+        blocksAppointments: false,
+        isPhilippineSpecific: true,
+      ),
+      LiturgicalEvent(
+        key: 'santo_nino',
+        name: 'Feast of the Santo Niño (Patron of the Philippines)',
+        date: santoNinoDate,
+        colorName: 'white',
+        grade: 5,
+        gradeName: 'Feast of the Lord in the Philippines',
+        blocksAppointments: true,
+        isPhilippineSpecific: true,
+      ),
+      LiturgicalEvent(
+        key: 'nativity_of_mary_ph',
+        name: 'Feast of the Nativity of the Blessed Virgin Mary (National Feast in PH)',
+        date: DateTime(year, 9, 8),
+        colorName: 'white',
+        grade: 4,
+        gradeName: 'Special Feast in the Philippines',
+        blocksAppointments: false,
+        isPhilippineSpecific: true,
+      ),
+      LiturgicalEvent(
+        key: 'st_lorenzo_ruiz',
+        name: 'Feast of Saint Lorenzo Ruiz and Companions (First Filipino Martyr)',
+        date: DateTime(year, 9, 28),
+        colorName: 'red',
+        grade: 4,
+        gradeName: 'National Feast in the Philippines',
+        blocksAppointments: false,
+        isPhilippineSpecific: true,
+      ),
+      LiturgicalEvent(
+        key: 'st_john_paul_ii',
+        name: 'Solemnity of Saint John Paul II, Pope (Parish Titular Feast Day)',
+        date: DateTime(year, 10, 22),
+        colorName: 'white',
+        grade: 6,
+        gradeName: 'Parish Titular Solemnity',
+        blocksAppointments: true,
+        isPhilippineSpecific: true,
+      ),
+      LiturgicalEvent(
+        key: 'immaculate_conception_ph',
+        name: 'Solemnity of the Immaculate Conception (Principal Patroness of the Philippines)',
+        date: DateTime(year, 12, 8),
+        colorName: 'white',
+        grade: 6,
+        gradeName: 'National Patronal Solemnity (PH)',
+        isHolyDayOfObligation: true,
+        blocksAppointments: true,
+        isPhilippineSpecific: true,
+      ),
+      LiturgicalEvent(
+        key: 'our_lady_of_guadalupe',
+        name: 'Feast of Our Lady of Guadalupe (Secondary Patroness of the Philippines)',
+        date: DateTime(year, 12, 12),
+        colorName: 'white',
+        grade: 4,
+        gradeName: 'Feast in the Philippines',
+        blocksAppointments: false,
+        isPhilippineSpecific: true,
       ),
     ];
   }
 
-  /// Calculates Easter Sunday using the Meeus/Jones/Butcher algorithm
   static DateTime _calculateEaster(int year) {
     final a = year % 19;
     final b = year ~/ 100;

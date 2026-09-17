@@ -3,11 +3,18 @@ import '../../../../core/constants/colors.dart';
 import '../../services/appointment_service.dart';
 import '../../services/liturgical_calendar_service.dart';
 
-void showScheduleAppointmentModal(BuildContext context, {VoidCallback? onAppointmentSaved}) {
+void showScheduleAppointmentModal(
+    BuildContext context, {
+      DateTime? initialDate,
+      VoidCallback? onAppointmentSaved,
+    }) {
   showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (ctx) => _ScheduleAppointmentDialog(onAppointmentSaved: onAppointmentSaved),
+    builder: (ctx) => _ScheduleAppointmentDialog(
+      initialDate: initialDate,
+      onAppointmentSaved: onAppointmentSaved,
+    ),
   );
 }
 
@@ -26,9 +33,13 @@ class _ServicePreset {
 }
 
 class _ScheduleAppointmentDialog extends StatefulWidget {
+  final DateTime? initialDate;
   final VoidCallback? onAppointmentSaved;
 
-  const _ScheduleAppointmentDialog({this.onAppointmentSaved});
+  const _ScheduleAppointmentDialog({
+    this.initialDate,
+    this.onAppointmentSaved,
+  });
 
   @override
   State<_ScheduleAppointmentDialog> createState() => _ScheduleAppointmentDialogState();
@@ -128,10 +139,19 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   @override
   void initState() {
     super.initState();
-    _selectedDate = _getInitialValidDate();
+    // Default to clicked calendar date if provided; otherwise next valid day
+    if (widget.initialDate != null) {
+      _selectedDate = DateTime(
+        widget.initialDate!.year,
+        widget.initialDate!.month,
+        widget.initialDate!.day,
+      );
+    } else {
+      _selectedDate = _getInitialValidDate();
+    }
+
     _endTime = _addMinutes(_startTime, _presets[_selectedService]!.durationMinutes);
 
-    // Warm up the Philippine Liturgical Calendar cache for the selected year
     LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
   }
 
@@ -140,7 +160,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     while (date.weekday == DateTime.monday || LiturgicalCalendarService.isDateBlockedSync(date)) {
       date = date.add(const Duration(days: 1));
     }
-    return date;
+    return DateTime(date.year, date.month, date.day);
   }
 
   @override
@@ -174,12 +194,15 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   Future<void> _pickDate() async {
     await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final firstValidDate = _selectedDate.isBefore(today) ? _selectedDate : today;
+
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      // Blocks Mondays (Clergy Rest Day) AND Catholic Liturgical Solemnities / Celebrations
+      firstDate: firstValidDate,
+      lastDate: today.add(const Duration(days: 365)),
       selectableDayPredicate: (DateTime day) {
         if (day.weekday == DateTime.monday) return false;
         if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
@@ -352,7 +375,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Collision / Conflict Warning Banner
                       if (_errorMessage != null) ...[
                         Container(
                           width: double.infinity,
@@ -383,7 +405,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         ),
                       ],
 
-                      // 1. Service Type Dropdown
                       _buildFieldLabel('Service Requested *'),
                       DropdownButtonFormField<String>(
                         value: _selectedService,
@@ -395,7 +416,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 8),
 
-                      // Smart Preset Information Chip
                       if (currentPreset != null) ...[
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -420,7 +440,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ],
                       const SizedBox(height: 14),
 
-                      // 2. Requester Information
                       _buildFieldLabel('Requester Full Name *'),
                       TextFormField(
                         controller: _requesterNameController,
@@ -466,7 +485,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 16),
 
-                      // 3. Date Selection (Mondays & Liturgical Celebrations Blocked)
+                      // Scheduled Date (Defaults to clicked calendar day)
                       _buildFieldLabel('Scheduled Date * (Mondays & Solemnities Restricted)'),
                       InkWell(
                         onTap: _pickDate,
@@ -491,7 +510,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         ),
                       ),
 
-                      // TUESDAY NOTICE
                       if (isTuesday) ...[
                         const SizedBox(height: 8),
                         Container(
@@ -528,7 +546,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ],
                       const SizedBox(height: 14),
 
-                      // 4. Time Pickers (6 AM to 7 PM limit)
                       Row(
                         children: [
                           Expanded(
@@ -590,7 +607,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 14),
 
-                      // 5. Venue Selector
                       _buildFieldLabel('Parish Venue *'),
                       DropdownButtonFormField<String>(
                         value: _selectedVenue,
@@ -600,7 +616,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 14),
 
-                      // 6. Officiant Selector
                       _buildFieldLabel('Presiding Clergy *'),
                       DropdownButtonFormField<String>(
                         value: _selectedOfficiant,
@@ -610,7 +625,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 14),
 
-                      // 7. Remarks
                       _buildFieldLabel('Remarks / Special Intentions (Optional)'),
                       TextFormField(
                         controller: _remarksController,

@@ -9,6 +9,7 @@ class LiturgicalEvent {
   final String gradeName; // Solemnity, Feast, Memorial, etc.
   final bool isHolyDayOfObligation;
   final bool blocksAppointments;
+  final bool isPhilippineSpecific; // true = Philippine Proper (Blue), false = Universal/Global (Red)
   final String? common;
 
   LiturgicalEvent({
@@ -20,22 +21,32 @@ class LiturgicalEvent {
     required this.gradeName,
     this.isHolyDayOfObligation = false,
     this.blocksAppointments = false,
+    this.isPhilippineSpecific = false,
     this.common,
   });
 
-  /// Resolves the official vestment color
+  /// Event category color: Blue for PH-specific, Red for Global
+  Color get categoryBadgeColor {
+    return isPhilippineSpecific ? const Color(0xFF2563EB) : const Color(0xFFDC2626);
+  }
+
+  Color get categorySurfaceColor {
+    return isPhilippineSpecific ? const Color(0xFFEFF6FF) : const Color(0xFFFEF2F2);
+  }
+
+  /// Official vestment color (white/gold, red, violet, green)
   Color get liturgicalColor {
     switch (colorName.toLowerCase()) {
       case 'white':
-        return const Color(0xFFD4AF37); // Liturgical Gold / White
+        return const Color(0xFFD4AF37);
       case 'red':
-        return const Color(0xFFDC2626); // Pentecost / Martyr Red
+        return const Color(0xFFDC2626);
       case 'purple':
       case 'violet':
-        return const Color(0xFF7C3AED); // Penitent Violet
+        return const Color(0xFF7C3AED);
       case 'green':
       default:
-        return const Color(0xFF15803D); // Ordinary Time Green
+        return const Color(0xFF15803D);
     }
   }
 
@@ -50,13 +61,20 @@ class LiturgicalEvent {
     final gradeNum = int.tryParse(json['grade']?.toString() ?? '0') ?? 0;
     final nameStr = json['name']?.toString() ?? 'Liturgical Celebration';
 
-    // Solemnities (grade >= 6) and solemn penances block routine appointments
     final isBlocked = gradeNum >= 6 ||
         nameStr.toLowerCase().contains('ash wednesday') ||
         nameStr.toLowerCase().contains('good friday') ||
         nameStr.toLowerCase().contains('holy saturday') ||
         nameStr.toLowerCase().contains('holy thursday') ||
         nameStr.toLowerCase().contains('all souls');
+
+    final bool isPh = json['is_philippine'] == true ||
+        json['national'] == true ||
+        nameStr.toLowerCase().contains('santo niño') ||
+        nameStr.toLowerCase().contains('nazarene') ||
+        nameStr.toLowerCase().contains('lorenzo ruiz') ||
+        nameStr.toLowerCase().contains('john paul ii') ||
+        nameStr.toLowerCase().contains('philippines');
 
     return LiturgicalEvent(
       key: json['event_key']?.toString() ?? json['key']?.toString() ?? '',
@@ -69,6 +87,7 @@ class LiturgicalEvent {
       gradeName: json['grade_display']?.toString() ?? (gradeNum >= 6 ? 'Solemnity' : 'Feast'),
       isHolyDayOfObligation: json['is_holy_day'] == true || gradeNum == 7,
       blocksAppointments: isBlocked,
+      isPhilippineSpecific: isPh,
       common: json['common']?.toString(),
     );
   }
