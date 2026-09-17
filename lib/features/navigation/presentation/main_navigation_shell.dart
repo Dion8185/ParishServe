@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../auth/models/user_model.dart';
+import '../../auth/presentation/admin_users_page.dart';
 import '../../dashboard/presentation/dashboard_view.dart';
 import '../../dashboard/presentation/dialogs/notification_dialog.dart';
 import '../../sacramental_records/presentation/records_view.dart';
@@ -46,18 +47,97 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     ];
   }
 
+  // ===========================================================================
+  // Role-Based Access Control (RBAC) Governance Engine
+  // ===========================================================================
+  bool _isModuleAllowed(int index) {
+    final role = widget.currentUser?.userRole.toLowerCase() ?? 'user';
+
+    switch (index) {
+      case 0: // Overview (Dashboard)
+        return true;
+
+      case 1: // Sacramental Records Module
+      // Clergy, Secretariat, and Encoders (Canon 535)
+        return role == 'parishpriest' ||
+            role == 'secretary' ||
+            role == 'encoder' ||
+            role == 'superadmin';
+
+      case 2: // Receipts & Cashiering Module
+      // Secretariat, Clergy, PFC Auditors, Parishioners (Personal Receipts)
+        return role == 'parishpriest' ||
+            role == 'secretary' ||
+            role == 'pfc' ||
+            role == 'user' ||
+            role == 'superadmin';
+
+      case 3: // Appointments & Scheduling Module
+      // Secretariat, Clergy, Parishioners (Self-service Bookings)
+        return role == 'parishpriest' ||
+            role == 'secretary' ||
+            role == 'user' ||
+            role == 'superadmin';
+
+      case 4: // Asset Inventory Module (CustodiaIMS)
+      // Staff, Clergy, Encoders (Field Audits), PFC Auditors (Valuation)
+        return role == 'parishpriest' ||
+            role == 'secretary' ||
+            role == 'encoder' ||
+            role == 'pfc' ||
+            role == 'admin' ||
+            role == 'superadmin';
+
+      case 5: // Smart Archive (ESP32 IoT Telemetry)
+      // Technical Administrators, Secretariat, Clergy
+        return role == 'parishpriest' ||
+            role == 'secretary' ||
+            role == 'admin' ||
+            role == 'superadmin';
+
+      case 6: // User Profile & System Preferences
+        return true;
+
+      default:
+        return false;
+    }
+  }
+
+  String _getRestrictedReason(int index) {
+    switch (index) {
+      case 1:
+        return 'Access Restricted: Canonical Sacramental Registers (Canon 535) are restricted to Clergy, Secretariat, and Encoders.';
+      case 2:
+        return 'Access Restricted: Financial records and cashiering are restricted to Secretariat, PFC Auditors, and Clergy.';
+      case 3:
+        return 'Access Restricted: Pastoral scheduling is reserved for Secretariat, Clergy, and Parishioner bookings.';
+      case 4:
+        return 'Access Restricted: Diocesan property inventory and audits are restricted to authorized church personnel and PFC auditors.';
+      case 5:
+        return 'Access Restricted: Archive micro-climate hardware calibration is reserved for Technical Administrators and Clergy.';
+      default:
+        return 'Access Restricted: Your account role does not have authorization to view this module.';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Unified Top Navigation Bar (Visible across all tabs)
       appBar: _buildTopNavigationBar(context),
-      body: SafeArea(child: _views[_currentIndex]),
+      body: SafeArea(
+        child: _isModuleAllowed(_currentIndex)
+            ? _views[_currentIndex]
+            : _buildUnauthorizedView(),
+      ),
       bottomNavigationBar: _buildGcashStyleBottomBar(),
     );
   }
 
-  /// Unified Top Navigation Bar with Parish Logo on Left & Notifications on Right
+  /// Unified Top Navigation Bar
   PreferredSizeWidget _buildTopNavigationBar(BuildContext context) {
+    final role = widget.currentUser?.userRole.toLowerCase() ?? 'user';
+    final isAdmin = role == 'admin' || role == 'superadmin';
+
     return PreferredSize(
       preferredSize: const Size.fromHeight(70),
       child: Container(
@@ -68,7 +148,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -79,7 +159,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: Row(
               children: [
-                // Parish Logo / Emblem Container (Left Side)
+                // Parish Logo / Emblem
                 Container(
                   width: 48,
                   height: 48,
@@ -128,7 +208,23 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                   ),
                 ),
 
-                // Notification Bell with Badge (Right Side)
+                // Admin-Specific User Provisioning Quick Link
+                if (isAdmin)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.manage_accounts, color: ParishColors.marianBlue, size: 24),
+                      tooltip: 'Admin: Manage Accounts',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AdminUsersPage()),
+                        );
+                      },
+                    ),
+                  ),
+
+                // Notification Bell with Badge
                 InkWell(
                   onTap: () => showNotificationModal(context),
                   borderRadius: BorderRadius.circular(12),
@@ -179,7 +275,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     );
   }
 
-  /// GCash-style Navigation Bar with Elevated Center Circular Button
+  /// GCash-style Navigation Bar with Role-Sensitive Item Disabling
   Widget _buildGcashStyleBottomBar() {
     return Container(
       height: 84,
@@ -205,14 +301,14 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
               Expanded(child: _buildNavItem(index: 1, label: 'Records', icon: Icons.menu_book_outlined, activeIcon: Icons.menu_book)),
               Expanded(child: _buildNavItem(index: 2, label: 'Receipts', icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long)),
               Expanded(child: _buildNavItem(index: 3, label: 'Appts', icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month)),
-              const SizedBox(width: 72), // Middle spacer for elevated circle
+              const SizedBox(width: 72), // Spacer for elevated circular center button
               Expanded(child: _buildNavItem(index: 4, label: 'Assets', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2)),
               Expanded(child: _buildNavItem(index: 5, label: 'IoT', icon: Icons.sensors_outlined, activeIcon: Icons.sensors)),
               Expanded(child: _buildNavItem(index: 6, label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person)),
             ],
           ),
 
-          // Elevated Circular Center Button (GCash QR-Style for "Overview / Dashboard")
+          // Elevated Circular Center Button (Always accessible to all users)
           Positioned(
             top: -22,
             child: GestureDetector(
@@ -229,7 +325,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       border: Border.all(color: ParishColors.cardWhite, width: 4),
                       boxShadow: [
                         BoxShadow(
-                          color: ParishColors.marianBlue.withOpacity(0.35),
+                          color: ParishColors.marianBlue.withValues(alpha: 0.35),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -265,19 +361,66 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     required IconData icon,
     required IconData activeIcon,
   }) {
-    final bool isSelected = _currentIndex == index;
+    final bool isAllowed = _isModuleAllowed(index);
+    final bool isSelected = _currentIndex == index && isAllowed;
 
     return InkWell(
-      onTap: () => setState(() => _currentIndex = index),
+      onTap: () {
+        if (!isAllowed) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.lock, color: Colors.white, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _getRestrictedReason(index),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        setState(() => _currentIndex = index);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isSelected ? activeIcon : icon,
-              size: 24,
-              color: isSelected ? ParishColors.marianBlue : ParishColors.textMuted,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Opacity(
+                  opacity: isAllowed ? 1.0 : 0.35,
+                  child: Icon(
+                    isSelected ? activeIcon : icon,
+                    size: 24,
+                    color: isSelected
+                        ? ParishColors.marianBlue
+                        : (isAllowed ? ParishColors.textMuted : ParishColors.borderGrey),
+                  ),
+                ),
+                // Lock overlay for unauthorized modules
+                if (!isAllowed)
+                  const Positioned(
+                    top: -2,
+                    right: -5,
+                    child: Icon(
+                      Icons.lock,
+                      size: 11,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(
@@ -287,8 +430,55 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
               style: TextStyle(
                 fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                color: isSelected ? ParishColors.marianBlue : ParishColors.textMuted,
+                color: isSelected
+                    ? ParishColors.marianBlue
+                    : (isAllowed ? ParishColors.textMuted : const Color(0xFF94A3B8)),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Security Fallback View if an unauthorized index is requested
+  Widget _buildUnauthorizedView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRedSurface,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.shield_outlined, size: 54, color: ParishColors.mercyRed),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Module Access Restricted',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _getRestrictedReason(_currentIndex),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: ParishColors.textMuted, height: 1.4),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              onPressed: () => setState(() => _currentIndex = 0),
+              icon: const Icon(Icons.home, size: 18),
+              label: const Text('Return to Overview'),
             ),
           ],
         ),
