@@ -37,6 +37,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   DateTime? _dateOfBirth;
   final _ageController = TextEditingController();
   final _placeOfBirthController = TextEditingController();
+  String _gender = 'Male';
+  String _legitimacy = 'Catholic (Cath.)';
   final _legitimacyOtherController = TextEditingController();
 
   // 3. Father Information
@@ -74,9 +76,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final _ministerMiddleNameController = TextEditingController();
   final _ministerLastNameController = TextEditingController(text: 'Santos');
   DateTime? _dateOfBaptism = DateTime.now();
-  final _placeOfBaptismController = TextEditingController(text: 'St. John Paul II Parish');
-  String _gender = 'Male';
-  String _legitimacy = 'Natural (Nat.)';
+  final _placeOfBaptismController = TextEditingController(text: 'St. John Paul II Parish Church');
   final _stipendController = TextEditingController();
   final _remarksController = TextEditingController();
 
@@ -161,7 +161,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
   String? _validatePhoneNumber(String? value) {
     final text = value?.trim() ?? '';
-    if (text.isEmpty) return null; // Optional field
+    if (text.isEmpty) return null;
 
     final clean = text.replaceAll(RegExp(r'[\s\-]'), '');
     final phoneRegExp = RegExp(r'^(09\d{9}|\+639\d{9}|\d{7,10})$');
@@ -173,7 +173,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
   String? _validateStipend(String? value) {
     final text = value?.trim() ?? '';
-    if (text.isEmpty) return null; // Optional field
+    if (text.isEmpty) return null;
 
     final amount = double.tryParse(text);
     if (amount == null || amount < 0) {
@@ -372,597 +372,667 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         ),
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_errorMessage != null) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: ParishColors.mercyRed),
-                          ),
-                          child: Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final double availableWidth = constraints.maxWidth;
+            final bool isMobile = availableWidth < 600;
+            final bool isSmallMobile = availableWidth < 480;
+            final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
+
+            return Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: ParishColors.mercyRed,
+                              if (_errorMessage != null) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  margin: const EdgeInsets.only(bottom: 18),
+                                  decoration: BoxDecoration(
+                                    color: ParishColors.mercyRedSurface,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: ParishColors.mercyRed),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          _errorMessage!,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: ParishColors.mercyRed,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                              ],
+
+                              // 1. Record Reference
+                              _buildSectionCard(
+                                title: '1. Canonical Record Reference',
+                                icon: Icons.menu_book,
+                                child: isSmallMobile
+                                    ? Column(
+                                  children: [
+                                    _buildTextFormField(
+                                      controller: _bookNumberController,
+                                      label: 'Book No.',
+                                      isRequired: true,
+                                      keyboardType: TextInputType.number,
+                                      validator: (  val) {
+                                        if (val == null || val.trim().isEmpty) return 'Book number is required';
+                                        final num = int.tryParse(val.trim());
+                                        if (num == null) return 'Must be a valid number';
+                                        if (num < 1 || num > 200) return 'Must be between 1 and 200';
+                                        return null;
+                                      },
+                                    ),
+                                    _buildTextFormField(
+                                      controller: _pageNumberController,
+                                      label: 'Page No.',
+                                      isRequired: true,
+                                      keyboardType: TextInputType.number,
+                                      validator: (val) {
+                                        if (val == null || val.trim().isEmpty) return 'Page number is required';
+                                        final num = int.tryParse(val.trim());
+                                        if (num == null) return 'Must be a valid number';
+                                        if (num < 1 || num > 100) return 'Must be between 1 and 100';
+                                        return null;
+                                      },
+                                    ),
+                                    _buildTextFormField(
+                                      controller: _lineNumberController,
+                                      label: 'Line No.',
+                                      isRequired: true,
+                                      keyboardType: TextInputType.number,
+                                      validator: (val) {
+                                        if (val == null || val.trim().isEmpty) return 'Line number is required';
+                                        final num = int.tryParse(val.trim());
+                                        if (num == null) return 'Must be a valid number';
+                                        if (num < 1 || num > 10) return 'Must be between 1 and 10';
+                                        return null;
+                                      },
+                                    ),
+                                  ],
+                                )
+                                    : Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: _buildTextFormField(
+                                        controller: _bookNumberController,
+                                        label: 'Book No.',
+                                        isRequired: true,
+                                        keyboardType: TextInputType.number,
+                                        validator: (val) {
+                                          if (val == null || val.trim().isEmpty) return 'Required';
+                                          final num = int.tryParse(val.trim());
+                                          if (num == null) return 'Numbers only';
+                                          if (num < 1 || num > 200) return '1 to 200 only';
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _buildTextFormField(
+                                        controller: _pageNumberController,
+                                        label: 'Page No.',
+                                        isRequired: true,
+                                        keyboardType: TextInputType.number,
+                                        validator: (val) {
+                                          if (val == null || val.trim().isEmpty) return 'Required';
+                                          final num = int.tryParse(val.trim());
+                                          if (num == null) return 'Numbers only';
+                                          if (num < 1 || num > 100) return '1 to 100 only';
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _buildTextFormField(
+                                        controller: _lineNumberController,
+                                        label: 'Line No.',
+                                        isRequired: true,
+                                        keyboardType: TextInputType.number,
+                                        validator: (val) {
+                                          if (val == null || val.trim().isEmpty) return 'Required';
+                                          final num = int.tryParse(val.trim());
+                                          if (num == null) return 'Numbers only';
+                                          if (num < 1 || num > 10) return '1 to 10 only';
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
+                              const SizedBox(height: 18),
+
+                              // 2. Child's Information
+                              _buildSectionCard(
+                                title: "2. Child's Information",
+                                icon: Icons.child_care,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _childFirstNameController,
+                                        label: 'First Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, 'First name', isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _childMiddleNameController,
+                                        label: 'Middle Name',
+                                        isRequired: false,
+                                        validator: (val) => _validateName(val, 'Middle name', isRequired: false),
+                                      ),
+                                      flexFirst: 2,
+                                      flexSecond: 1,
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _childLastNameController,
+                                        label: 'Last Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, 'Last name', isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _childSuffixController,
+                                        label: 'Suffix',
+                                        isRequired: false,
+                                      ),
+                                      flexFirst: 2,
+                                      flexSecond: 1,
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildDatePickerField(
+                                        label: 'Date of Birth',
+                                        isRequired: true,
+                                        value: _dateOfBirth,
+                                        hasError: _dateOfBirthHasError,
+                                        onTap: () => _selectDate(context, true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _ageController,
+                                        label: 'Age',
+                                        isRequired: false,
+                                      ),
+                                    ),
+                                    _buildTextFormField(
+                                      controller: _placeOfBirthController,
+                                      label: 'Place of Birth',
+                                      isRequired: true,
+                                      validator: (val) => _validateRequiredText(val, 'Place of birth'),
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildDropdownField(
+                                        label: 'Gender',
+                                        isRequired: false,
+                                        value: _gender,
+                                        items: const ['Male', 'Female'],
+                                        onChanged: (val) => setState(() => _gender = val!),
+                                      ),
+                                      second: _buildDropdownField(
+                                        label: 'Legitimacy',
+                                        isRequired: false,
+                                        value: _legitimacy,
+                                        items: _canonicalStatusOptions,
+                                        onChanged: (val) => setState(() => _legitimacy = val!),
+                                      ),
+                                    ),
+                                    if (_legitimacy == 'Others (Specify)') ...[
+                                      _buildTextFormField(
+                                        controller: _legitimacyOtherController,
+                                        label: 'Specify Legitimacy / Denomination',
+                                        isRequired: true,
+                                        validator: (val) {
+                                          if (_legitimacy == 'Others (Specify)' && (val == null || val.trim().isEmpty)) {
+                                            return 'Please specify the denomination or type.';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              // 3. Father Information
+                              _buildSectionCard(
+                                title: "3. Father's Information",
+                                icon: Icons.person,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _fatherFirstNameController,
+                                        label: 'First Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, "Father's first name", isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _fatherMiddleNameController,
+                                        label: 'Middle Name',
+                                        isRequired: false,
+                                        validator: (val) => _validateName(val, "Father's middle name", isRequired: false),
+                                      ),
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _fatherLastNameController,
+                                        label: 'Last Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, "Father's last name", isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _fatherPlaceOfBirthController,
+                                        label: 'Place of Origin',
+                                        isRequired: false,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              // 4. Mother Information
+                              _buildSectionCard(
+                                title: "4. Mother's Information",
+                                icon: Icons.person_outline,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _motherFirstNameController,
+                                        label: 'First Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, "Mother's first name", isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _motherMiddleNameController,
+                                        label: 'Middle Name',
+                                        isRequired: false,
+                                        validator: (val) => _validateName(val, "Mother's middle name", isRequired: false),
+                                      ),
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _motherMaidenLastNameController,
+                                        label: 'Maiden Last Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, "Mother's maiden last name", isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _motherPlaceOfBirthController,
+                                        label: 'Place of Origin',
+                                        isRequired: false,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              // 5. Parents Contact & Residence
+                              _buildSectionCard(
+                                title: "5. Parents' Contact & Residence",
+                                icon: Icons.home_outlined,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _parentsContactNumberController,
+                                        label: 'Contact Number',
+                                        isRequired: false,
+                                        keyboardType: TextInputType.phone,
+                                        validator: _validatePhoneNumber,
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _parentsResidenceController,
+                                        label: 'Parents Residence / Address',
+                                        isRequired: false,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              // 6. Sponsors / Godparents
+                              _buildSectionCard(
+                                title: '6. Godparents / Sponsors',
+                                icon: Icons.people_outline,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Canonical entries require Sponsor 1 and Sponsor 2.',
+                                      style: TextStyle(fontSize: 12, color: ParishColors.marianBlue, fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 14),
+
+                                    // Sponsor 1
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _sponsor1FirstNameController,
+                                        label: 'Sponsor 1 First Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, 'Sponsor 1 first name', isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _sponsor1MiddleNameController,
+                                        label: 'Sponsor 1 Middle Name',
+                                        isRequired: false,
+                                        validator: (val) => _validateName(val, 'Sponsor 1 middle name', isRequired: false),
+                                      ),
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _sponsor1LastNameController,
+                                        label: 'Sponsor 1 Last Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, 'Sponsor 1 last name', isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _sponsor1ResidenceController,
+                                        label: 'Sponsor 1 Residence',
+                                        isRequired: false,
+                                      ),
+                                    ),
+
+                                    const Divider(height: 28),
+
+                                    // Sponsor 2
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _sponsor2FirstNameController,
+                                        label: 'Sponsor 2 First Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, 'Sponsor 2 first name', isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _sponsor2MiddleNameController,
+                                        label: 'Sponsor 2 Middle Name',
+                                        isRequired: false,
+                                        validator: (val) => _validateName(val, 'Sponsor 2 middle name', isRequired: false),
+                                      ),
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _sponsor2LastNameController,
+                                        label: 'Sponsor 2 Last Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, 'Sponsor 2 last name', isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _sponsor2ResidenceController,
+                                        label: 'Sponsor 2 Residence',
+                                        isRequired: false,
+                                      ),
+                                    ),
+
+                                    const Divider(height: 28),
+                                    _buildTextFormField(
+                                      controller: _otherGodparentsController,
+                                      label: 'Other Godparents',
+                                      isRequired: false,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              // 7. Baptism & Minister Details
+                              _buildSectionCard(
+                                title: '7. Baptism & Minister Details',
+                                icon: Icons.church,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildTextFormField(
+                                      controller: _parishNameController,
+                                      label: 'Parish Name',
+                                      isRequired: true,
+                                      validator: (val) => _validateRequiredText(val, 'Parish name'),
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildTextFormField(
+                                        controller: _ministerFirstNameController,
+                                        label: 'Minister First Name',
+                                        isRequired: true,
+                                        validator: (val) => _validateName(val, 'Minister first name', isRequired: true),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _ministerMiddleNameController,
+                                        label: 'Minister Middle Name',
+                                        isRequired: false,
+                                        validator: (val) => _validateName(val, 'Minister middle name', isRequired: false),
+                                      ),
+                                    ),
+                                    _buildTextFormField(
+                                      controller: _ministerLastNameController,
+                                      label: 'Minister Last Name',
+                                      isRequired: true,
+                                      validator: (val) => _validateName(val, 'Minister last name', isRequired: true),
+                                    ),
+                                    _buildAdaptivePair(
+                                      isStacked: isMobile,
+                                      first: _buildDatePickerField(
+                                        label: 'Date of Baptism',
+                                        isRequired: true,
+                                        value: _dateOfBaptism,
+                                        hasError: _dateOfBaptismHasError,
+                                        onTap: () => _selectDate(context, false),
+                                      ),
+                                      second: _buildTextFormField(
+                                        controller: _stipendController,
+                                        label: 'Stipend (₱)',
+                                        isRequired: false,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        validator: _validateStipend,
+                                      ),
+                                    ),
+                                    _buildTextFormField(
+                                      controller: _placeOfBaptismController,
+                                      label: 'Place of Baptism',
+                                      isRequired: true,
+                                      validator: (val) => _validateRequiredText(val, 'Place of baptism'),
+                                    ),
+                                    _buildTextFormField(
+                                      controller: _remarksController,
+                                      label: 'Canonical Remarks / Marginal Notations',
+                                      isRequired: false,
+                                      maxLines: 2,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 24),
                             ],
                           ),
                         ),
-                      ],
-
-                      // 1. Record Reference
-                      _buildSectionCard(
-                        title: '1. Canonical Record Reference',
-                        icon: Icons.menu_book,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _buildTextFormField(
-                                controller: _bookNumberController,
-                                label: 'Book No.',
-                                isRequired: true,
-                                keyboardType: TextInputType.number,
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return 'Required';
-                                  final num = int.tryParse(val.trim());
-                                  if (num == null) return 'Must be a number';
-                                  if (num < 1 || num > 200) return '1 to 200 only';
-                                  return null;
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildTextFormField(
-                                controller: _pageNumberController,
-                                label: 'Page No.',
-                                isRequired: true,
-                                keyboardType: TextInputType.number,
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return 'Required';
-                                  final num = int.tryParse(val.trim());
-                                  if (num == null) return 'Must be a number';
-                                  if (num < 1 || num > 100) return '1 to 100 only';
-                                  return null;
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildTextFormField(
-                                controller: _lineNumberController,
-                                label: 'Line No.',
-                                isRequired: true,
-                                keyboardType: TextInputType.number,
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return 'Required';
-                                  final num = int.tryParse(val.trim());
-                                  if (num == null) return 'Must be a number';
-                                  if (num < 1 || num > 10) return '1 to 10 only';
-                                  return null;
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
-                      const SizedBox(height: 16),
-
-                      // 2. Child's Information
-                      _buildSectionCard(
-                        title: "2. Child's Information",
-                        icon: Icons.child_care,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: _buildTextFormField(
-                                    controller: _childFirstNameController,
-                                    label: 'First Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, 'First name', isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _childMiddleNameController,
-                                    label: 'Middle Name',
-                                    isRequired: false,
-                                    validator: (val) => _validateName(val, 'Middle name', isRequired: false),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: _buildTextFormField(
-                                    controller: _childLastNameController,
-                                    label: 'Last Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, 'Last name', isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _childSuffixController,
-                                    label: 'Suffix',
-                                    isRequired: false,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildDatePickerField(
-                                    label: 'Date of Birth',
-                                    isRequired: true,
-                                    value: _dateOfBirth,
-                                    hasError: _dateOfBirthHasError,
-                                    onTap: () => _selectDate(context, true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _ageController,
-                                    label: 'Age',
-                                    isRequired: false,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _buildTextFormField(
-                              controller: _placeOfBirthController,
-                              label: 'Place of Birth',
-                              isRequired: true,
-                              validator: (val) => _validateRequiredText(val, 'Place of birth'),
-                            ),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildDropdownField(
-                                    label: 'Gender',
-                                    isRequired: false,
-                                    value: _gender,
-                                    items: const ['Male', 'Female'],
-                                    onChanged: (val) => setState(() => _gender = val!),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildDropdownField(
-                                    label: 'Legitimacy',
-                                    isRequired: false,
-                                    value: _legitimacy,
-                                    items: _canonicalStatusOptions,
-                                    onChanged: (val) => setState(() => _legitimacy = val!),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (_legitimacy == 'Others (Specify)') ...[
-                              _buildTextFormField(
-                                controller: _legitimacyOtherController,
-                                label: 'Specify Legitimacy / Denomination',
-                                isRequired: true,
-                                validator: (val) {
-                                  if (_legitimacy == 'Others (Specify)' && (val == null || val.trim().isEmpty)) {
-                                    return 'Please specify the denomination or type.';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 3. Father Information
-                      _buildSectionCard(
-                        title: "3. Father's Information",
-                        icon: Icons.person,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _fatherFirstNameController,
-                                    label: 'First Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, "Father's first name", isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _fatherMiddleNameController,
-                                    label: 'Middle Name',
-                                    isRequired: false,
-                                    validator: (val) => _validateName(val, "Father's middle name", isRequired: false),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _fatherLastNameController,
-                                    label: 'Last Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, "Father's last name", isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _fatherPlaceOfBirthController,
-                                    label: 'Place of Origin',
-                                    isRequired: false,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 4. Mother Information
-                      _buildSectionCard(
-                        title: "4. Mother's Information",
-                        icon: Icons.person_outline,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _motherFirstNameController,
-                                    label: 'First Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, "Mother's first name", isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _motherMiddleNameController,
-                                    label: 'Middle Name',
-                                    isRequired: false,
-                                    validator: (val) => _validateName(val, "Mother's middle name", isRequired: false),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _motherMaidenLastNameController,
-                                    label: 'Maiden Last Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, "Mother's maiden last name", isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _motherPlaceOfBirthController,
-                                    label: 'Place of Origin',
-                                    isRequired: false,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 5. Parents Contact & Residence
-                      _buildSectionCard(
-                        title: "5. Parents' Contact & Residence",
-                        icon: Icons.home_outlined,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildTextFormField(
-                              controller: _parentsContactNumberController,
-                              label: 'Contact Number',
-                              isRequired: false,
-                              keyboardType: TextInputType.phone,
-                              validator: _validatePhoneNumber,
-                            ),
-                            _buildTextFormField(
-                              controller: _parentsResidenceController,
-                              label: 'Parents Residence / Address',
-                              isRequired: false,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 6. Sponsors / Godparents
-                      _buildSectionCard(
-                        title: '6. Godparents / Sponsors',
-                        icon: Icons.people_outline,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Canonical entries require Sponsor 1 and Sponsor 2.',
-                              style: TextStyle(fontSize: 12, color: ParishColors.marianBlue, fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _sponsor1FirstNameController,
-                                    label: 'Sponsor 1 First Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, 'Sponsor 1 first name', isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _sponsor1MiddleNameController,
-                                    label: 'Sponsor 1 Middle Name',
-                                    isRequired: false,
-                                    validator: (val) => _validateName(val, 'Sponsor 1 middle name', isRequired: false),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _buildTextFormField(
-                              controller: _sponsor1LastNameController,
-                              label: 'Sponsor 1 Last Name',
-                              isRequired: true,
-                              validator: (val) => _validateName(val, 'Sponsor 1 last name', isRequired: true),
-                            ),
-                            _buildTextFormField(
-                              controller: _sponsor1ResidenceController,
-                              label: 'Sponsor 1 Residence',
-                              isRequired: false,
-                            ),
-                            const Divider(height: 24),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _sponsor2FirstNameController,
-                                    label: 'Sponsor 2 First Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, 'Sponsor 2 first name', isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _sponsor2MiddleNameController,
-                                    label: 'Sponsor 2 Middle Name',
-                                    isRequired: false,
-                                    validator: (val) => _validateName(val, 'Sponsor 2 middle name', isRequired: false),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _buildTextFormField(
-                              controller: _sponsor2LastNameController,
-                              label: 'Sponsor 2 Last Name',
-                              isRequired: true,
-                              validator: (val) => _validateName(val, 'Sponsor 2 last name', isRequired: true),
-                            ),
-                            _buildTextFormField(
-                              controller: _sponsor2ResidenceController,
-                              label: 'Sponsor 2 Residence',
-                              isRequired: false,
-                            ),
-                            const Divider(height: 24),
-                            _buildTextFormField(
-                              controller: _otherGodparentsController,
-                              label: 'Other Godparents',
-                              isRequired: false,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 7. Baptism & Minister Details
-                      _buildSectionCard(
-                        title: '7. Baptism & Minister Details',
-                        icon: Icons.church,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _ministerFirstNameController,
-                                    label: 'Minister First Name',
-                                    isRequired: true,
-                                    validator: (val) => _validateName(val, 'Minister first name', isRequired: true),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _ministerMiddleNameController,
-                                    label: 'Minister Middle Name',
-                                    isRequired: false,
-                                    validator: (val) => _validateName(val, 'Minister middle name', isRequired: false),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _buildTextFormField(
-                              controller: _ministerLastNameController,
-                              label: 'Minister Last Name',
-                              isRequired: true,
-                              validator: (val) => _validateName(val, 'Minister last name', isRequired: true),
-                            ),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildDatePickerField(
-                                    label: 'Date of Baptism',
-                                    isRequired: true,
-                                    value: _dateOfBaptism,
-                                    hasError: _dateOfBaptismHasError,
-                                    onTap: () => _selectDate(context, false),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildTextFormField(
-                                    controller: _stipendController,
-                                    label: 'Stipend (₱)',
-                                    isRequired: false,
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    validator: _validateStipend,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _buildTextFormField(
-                              controller: _placeOfBaptismController,
-                              label: 'Place of Baptism',
-                              isRequired: true,
-                              validator: (val) => _validateRequiredText(val, 'Place of baptism'),
-                            ),
-                            _buildTextFormField(
-                              controller: _remarksController,
-                              label: 'Canonical Remarks / Marginal Notations',
-                              isRequired: false,
-                              maxLines: 2,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-            // Sticky Bottom Action Bar
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: cardWhiteColor,
-                border: Border(top: BorderSide(color: borderGreyColor)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, -3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: borderGreyColor, width: 1.5),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                // Responsive Sticky Bottom Action Bar
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: cardWhiteColor,
+                    border: Border(top: BorderSide(color: borderGreyColor)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, -3),
                       ),
-                      onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                      child: Text('Discard / Back', style: TextStyle(fontSize: 15, color: textMutedColor)),
+                    ],
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 960),
+                      child: isSmallMobile
+                          ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: ParishColors.marianBlue,
+                                foregroundColor: Colors.white,
+                                elevation: 1,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: _isSubmitting ? null : _submitForm,
+                              icon: _isSubmitting
+                                  ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                                  : const Icon(Icons.check, size: 20),
+                              label: Text(
+                                _isSubmitting ? 'Registering...' : 'Save Baptism Record',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 44,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: borderGreyColor, width: 1.5),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                              child: Text('Discard / Back', style: TextStyle(fontSize: 14, color: textMutedColor)),
+                            ),
+                          ),
+                        ],
+                      )
+                          : Row(
+                        children: [
+                          SizedBox(
+                            width: isMobile ? 130 : 160,
+                            height: 48,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: borderGreyColor, width: 1.5),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                              child: Text('Discard / Back', style: TextStyle(fontSize: 14, color: textMutedColor)),
+                            ),
+                          ),
+                          const Spacer(),
+                          SizedBox(
+                            width: isMobile ? 190 : 250,
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: ParishColors.marianBlue,
+                                foregroundColor: Colors.white,
+                                elevation: 1,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: _isSubmitting ? null : _submitForm,
+                              icon: _isSubmitting
+                                  ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                                  : const Icon(Icons.check, size: 20),
+                              label: Text(
+                                _isSubmitting ? 'Registering...' : 'Save Baptism Record',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    flex: 2,
-                    child: SizedBox(
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: ParishColors.marianBlue,
-                          foregroundColor: Colors.white,
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: _isSubmitting ? null : _submitForm,
-                        icon: _isSubmitting
-                            ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                        )
-                            : const Icon(Icons.check, size: 20),
-                        label: Text(
-                          _isSubmitting ? 'Registering...' : 'Save Baptism Record',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
   // ===========================================================================
-  // Section & Field Building Blocks
+  // Responsive Building Blocks
   // ===========================================================================
+
+  Widget _buildAdaptivePair({
+    required bool isStacked,
+    required Widget first,
+    required Widget second,
+    int flexFirst = 1,
+    int flexSecond = 1,
+  }) {
+    if (isStacked) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          first,
+          second,
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: flexFirst, child: first),
+        const SizedBox(width: 12),
+        Expanded(flex: flexSecond, child: second),
+      ],
+    );
+  }
 
   Widget _buildSectionCard({
     required String title,
@@ -971,7 +1041,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(14),
@@ -994,7 +1064,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
             ],
           ),
-          const Divider(height: 18),
+          const Divider(height: 20),
           child,
         ],
       ),
@@ -1049,7 +1119,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             validator: validator,
             style: TextStyle(fontSize: 14, color: ParishColors.textDark),
             decoration: InputDecoration(
-              hintText: null, // Input area remains blank without redundant hint
+              hintText: null,
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,

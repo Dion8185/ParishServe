@@ -6,6 +6,52 @@ class Assets {
   Assets._();
 
   static const AssetGenImage logoJp2 = AssetGenImage('images/logo-jp2.png');
+  static const $AssetsLibGen lib = $AssetsLibGen();
+}
+
+class $AssetsLibGen {
+  const $AssetsLibGen();
+
+  final $AssetsFeaturesGen features = const $AssetsFeaturesGen();
+}
+
+class $AssetsFeaturesGen {
+  const $AssetsFeaturesGen();
+
+  final $AssetsReceiptsGen receipts = const $AssetsReceiptsGen();
+}
+
+class $AssetsReceiptsGen {
+  const $AssetsReceiptsGen();
+
+  final $AssetsPresentationGen presentation = const $AssetsPresentationGen();
+}
+
+class $AssetsPresentationGen {
+  const $AssetsPresentationGen();
+
+  final $AssetsDialogsGen dialogs = const $AssetsDialogsGen();
+  final $AssetsWidgetsGen widgets = const $AssetsWidgetsGen();
+  final String receiptsView =
+      'lib/features/receipts/presentation/receipts_view.dart';
+  final String secretaryDashboardWidget =
+      'lib/features/receipts/presentation/secretary_dashboard_widget.dart';
+}
+
+class $AssetsDialogsGen {
+  const $AssetsDialogsGen();
+
+  final String newTransactionDialog =
+      'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
+  final String receiptDetailDialog =
+      'lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart';
+}
+
+class $AssetsWidgetsGen {
+  const $AssetsWidgetsGen();
+
+  final String receiptCard =
+      'lib/features/receipts/presentation/widgets/receipt_card.dart';
 }
 
 class AssetGenImage {

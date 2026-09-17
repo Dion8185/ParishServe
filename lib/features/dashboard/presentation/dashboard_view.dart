@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../auth/models/user_model.dart';
+import '../../auth/presentation/priest_dashboard_widget.dart';
+import '../../receipts/presentation/secretary_dashboard_widget.dart';
+import '../../auth/presentation/encoder_dashboard_widget.dart';
+import '../../auth/presentation/pfc_dashboard_widget.dart';
+import '../../auth/presentation/admin_users_page.dart';
+import '../../auth/presentation/user_dashboard_widget.dart';
 import '../../sacramental_records/presentation/dialogs/ocr_scan_dialog.dart';
 import '../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
 import '../../receipts/presentation/dialogs/new_transaction_dialog.dart';
 import '../../smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
+import 'dialogs/calendar_event_dialog.dart';
 import 'pages/parish_calendar_page.dart';
 
 class DashboardView extends StatelessWidget {
@@ -14,12 +21,29 @@ class DashboardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final role = currentUser?.userRole.toLowerCase() ?? 'secretary';
+
+    // Role-Based Dynamic Workspace Routing
+    if (role == 'parishpriest') {
+      return const PriestDashboardWidget();
+    } else if (role == 'secretary') {
+      return const SecretaryDashboardWidget();
+    } else if (role == 'encoder') {
+      return const EncoderDashboardWidget();
+    } else if (role == 'pfc') {
+      return const PfcDashboardWidget();
+    } else if (role == 'admin' || role == 'superadmin') {
+      return const AdminUsersPage();
+    } else if (role == 'user') {
+      return UserDashboardWidget(currentUser: currentUser);
+    }
+
+    // Default Fallback View
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Welcome Card
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -60,43 +84,58 @@ class DashboardView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-
-          // ESP32 Smart Archive Telemetry Banner
           _buildArchiveTelemetryCard(context),
           const SizedBox(height: 22),
 
-          // Master Calendar Preview Card
+          // Parish Calendar Section with Interactive Grid Preview
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Parish Master Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: ParishColors.goldLight,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'September 2026',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.goldAccent, fontSize: 13),
+              Text('Parish Event Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ParishCalendarPage()),
+                  );
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ParishColors.goldLight,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'September 2026 (Open Full)',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.goldAccent, fontSize: 12),
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
-            'Tap below to view full Month, Week, and Day schedules.',
+            'Tap any date to view details or open the Master Calendar.',
             style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
           ),
           const SizedBox(height: 12),
-          _buildCalendarSummaryCard(context),
+
+          // Clickable Mini-Calendar Grid Preview
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ParishCalendarPage()),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: _buildInteractiveCalendar(context),
+          ),
 
           const SizedBox(height: 24),
-
-          // Operational Actions
           Text('Quick Operational Actions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
-
           _buildLargeActionCard(
             context: context,
             icon: Icons.document_scanner,
@@ -128,72 +167,118 @@ class DashboardView extends StatelessWidget {
     );
   }
 
-  Widget _buildCalendarSummaryCard(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ParishCalendarPage()),
-        );
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: ParishColors.cardWhite,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: ParishColors.borderGrey, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+  Widget _buildInteractiveCalendar(BuildContext context) {
+    final daysOfWeek = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    final eventsMap = {
+      6: 'Sunday Mass & Community Baptism',
+      12: 'Nuptial Mass (Santos-Ramos Wedding)',
+      15: 'Diocesan Asset Audit Inspection',
+      20: 'Parish Confirmation Rites',
+      27: 'Feast Day Preparation Meeting',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ParishColors.borderGrey, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: daysOfWeek
+                .map((d) => SizedBox(
+              width: 36,
+              child: Text(
+                d,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue, fontSize: 14),
+              ),
+            ))
+                .toList(),
+          ),
+          const SizedBox(height: 10),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 35,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
             ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
+            itemBuilder: (context, index) {
+              const offset = 2; // September 2026 starts on Tuesday
+              final dayNumber = index - offset + 1;
+
+              if (dayNumber < 1 || dayNumber > 30) {
+                return const SizedBox.shrink();
+              }
+
+              final hasEvent = eventsMap.containsKey(dayNumber);
+
+              return InkWell(
+                onTap: hasEvent
+                    ? () => showCalendarEventModal(
+                  context,
+                  date: 'September $dayNumber, 2026',
+                  eventTitle: eventsMap[dayNumber]!,
+                )
+                    : () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ParishCalendarPage()),
+                  );
+                },
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
                   decoration: BoxDecoration(
-                    color: ParishColors.marianBlueSurface,
-                    borderRadius: BorderRadius.circular(12),
+                    color: hasEvent ? ParishColors.goldLight : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: hasEvent ? ParishColors.goldAccent : Colors.transparent,
+                      width: 1.5,
+                    ),
                   ),
-                  child: const Icon(Icons.calendar_month, color: ParishColors.marianBlue, size: 30),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Stack(
+                    alignment: Alignment.center,
                     children: [
                       Text(
-                        'Open Master Calendar',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                        '$dayNumber',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: hasEvent ? FontWeight.bold : FontWeight.normal,
+                          color: hasEvent ? ParishColors.textDark : ParishColors.textMuted,
+                        ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Month • Week • Day timeline views',
-                        style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
-                      ),
+                      if (hasEvent)
+                        Positioned(
+                          bottom: 4,
+                          child: Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: ParishColors.marianBlue,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios, size: 18, color: ParishColors.textMuted),
-              ],
-            ),
-            const Divider(height: 24),
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _CalendarQuickMetric(label: 'Today', value: '2 Services', color: ParishColors.marianBlue),
-                _CalendarQuickMetric(label: 'This Week', value: '7 Bookings', color: ParishColors.goldAccent),
-                _CalendarQuickMetric(label: 'Status', value: '1 Alert', color: ParishColors.mercyRed),
-              ],
-            ),
-          ],
-        ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -334,32 +419,6 @@ class DashboardView extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CalendarQuickMetric extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _CalendarQuickMetric({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(label, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
-        ),
-      ],
     );
   }
 }

@@ -31,6 +31,10 @@ class UserModel {
         return 'Records Encoder (E)';
       case 'parishpriest':
         return 'Parish Priest (P)';
+      case 'pfc':
+        return 'Parish Finance Council Auditor (PFC)';
+      case 'user':
+        return 'Parishioner / Client (U)';
       default:
         return userRole.toUpperCase();
     }
