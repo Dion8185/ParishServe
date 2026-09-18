@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/confirmation_service.dart';
+import '../dialogs/discard_entry_dialog.dart';
 
 class ConfirmationManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
@@ -17,6 +18,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
   // Pentecost Theme Accent for Confirmation
   static const Color _pentecostRed = Color(0xFFB91C1C);
+  static const Color _pentecostSurface = Color(0xFFFDF2F2);
 
   // Pagination State (5 Pages / Steps)
   int _currentStep = 0;
@@ -26,7 +28,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     'Canonical Record Reference',
     "Confirmand's Personal Information",
     "Parents' Lineage & Origin",
-    'Confirmation Sponsors',
+    'Confirmation Sponsors (Max 2)',
     'Confirmation Administration & Minister',
   ];
 
@@ -34,7 +36,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     'Specify book, page, line, and entry classification from the physical register.',
     'Personal identification, age, required baptismal record, and residence.',
     'Parental lineage and canonical acknowledgment under Canon 877.',
-    'Canonical sponsors (strictly limited to Sponsor 1 and optional Sponsor 2).',
+    'Canonical sponsors (strictly limited to Sponsor 1 and Sponsor 2).',
     'Confirmation date, administering clergy, stipend, and canonical remarks.',
   ];
 
@@ -226,14 +228,19 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   }
 
   // ===========================================================================
-  // Step-by-Step Google Forms Pagination Logic
+  // Step-by-Step Google Forms Pagination Logic with Live Validation
   // ===========================================================================
 
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
 
+    final isStepValid = _formKey.currentState?.validate() ?? true;
+    if (!isStepValid) {
+      setState(() => _errorMessage = 'Please correct the highlighted errors below before proceeding.');
+      return false;
+    }
+
     if (step == 0) {
-      // Step 1: Canonical Reference
       final b = int.tryParse(_bookNumberController.text.trim());
       final p = int.tryParse(_pageNumberController.text.trim());
       final l = int.tryParse(_lineNumberController.text.trim());
@@ -252,17 +259,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       }
       return true;
     } else if (step == 1) {
-      // Step 2: Confirmand Information
-      final fnErr = _validateName(_confirmandFirstNameController.text, 'Confirmand First Name', isRequired: true);
-      if (fnErr != null) {
-        setState(() => _errorMessage = fnErr);
-        return false;
-      }
-      final lnErr = _validateName(_confirmandLastNameController.text, 'Confirmand Last Name', isRequired: true);
-      if (lnErr != null) {
-        setState(() => _errorMessage = lnErr);
-        return false;
-      }
       if (_dateOfBaptism == null) {
         setState(() {
           _dateOfBaptismHasError = true;
@@ -277,74 +273,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         });
         return false;
       }
-      final cbErr = _validateRequiredText(_churchBaptizedController.text, 'Church Baptized');
-      if (cbErr != null) {
-        setState(() => _errorMessage = cbErr);
-        return false;
-      }
-      return true;
-    } else if (step == 2) {
-      // Step 3: Parents Information
-      if (!_fatherNotIndicated) {
-        final ffnErr = _validateName(_fatherFirstNameController.text, "Father's first name", isRequired: true);
-        if (ffnErr != null) {
-          setState(() => _errorMessage = ffnErr);
-          return false;
-        }
-        final flnErr = _validateName(_fatherLastNameController.text, "Father's last name", isRequired: true);
-        if (flnErr != null) {
-          setState(() => _errorMessage = flnErr);
-          return false;
-        }
-      }
-      final mfnErr = _validateName(_motherFirstNameController.text, "Mother's first name", isRequired: true);
-      if (mfnErr != null) {
-        setState(() => _errorMessage = mfnErr);
-        return false;
-      }
-      final mlnErr = _validateName(_motherMaidenLastNameController.text, "Mother's maiden last name", isRequired: true);
-      if (mlnErr != null) {
-        setState(() => _errorMessage = mlnErr);
-        return false;
-      }
-      return true;
-    } else if (step == 3) {
-      // Step 4: Confirmation Sponsors (Max 2)
-      final s1FnErr = _validateName(_sponsor1FirstNameController.text, 'Sponsor 1 First Name', isRequired: true);
-      if (s1FnErr != null) {
-        setState(() => _errorMessage = s1FnErr);
-        return false;
-      }
-      final s1LnErr = _validateName(_sponsor1LastNameController.text, 'Sponsor 1 Last Name', isRequired: true);
-      if (s1LnErr != null) {
-        setState(() => _errorMessage = s1LnErr);
-        return false;
-      }
-      if (_sponsor2FirstNameController.text.trim().isNotEmpty) {
-        final s2LnErr = _validateName(_sponsor2LastNameController.text, 'Sponsor 2 Last Name', isRequired: true);
-        if (s2LnErr != null) {
-          setState(() => _errorMessage = s2LnErr);
-          return false;
-        }
-      }
       return true;
     } else if (step == 4) {
-      // Step 5: Administration Details
-      final pnErr = _validateRequiredText(_parishNameController.text, 'Parish Name');
-      if (pnErr != null) {
-        setState(() => _errorMessage = pnErr);
-        return false;
-      }
-      final mfnErr = _validateName(_ministerFirstNameController.text, 'Minister first name', isRequired: true);
-      if (mfnErr != null) {
-        setState(() => _errorMessage = mfnErr);
-        return false;
-      }
-      final mlnErr = _validateName(_ministerLastNameController.text, 'Minister last name', isRequired: true);
-      if (mlnErr != null) {
-        setState(() => _errorMessage = mlnErr);
-        return false;
-      }
       if (_dateOfConfirmation == null) {
         setState(() {
           _dateOfConfirmationHasError = true;
@@ -359,12 +289,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         });
         return false;
       }
-      final stErr = _validateStipend(_stipendController.text);
-      if (stErr != null) {
-        setState(() => _errorMessage = stErr);
-        return false;
-      }
-      return true;
     }
     return true;
   }
@@ -383,7 +307,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     }
   }
 
-  void _goToPreviousStep() {
+  Future<void> _goToPreviousStep() async {
     if (_currentStep > 0) {
       setState(() {
         _currentStep--;
@@ -391,7 +315,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       });
       _scrollToTop();
     } else {
-      Navigator.pop(context);
+      final shouldExit = await showDiscardConfirmationDialog(
+        context,
+        accentColor: _pentecostRed,
+      );
+      if (shouldExit && mounted) {
+        Navigator.pop(context);
+      }
     }
   }
 
@@ -505,278 +435,303 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     final cardWhiteColor = ParishColors.cardWhite;
     final borderGreyColor = ParishColors.borderGrey;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: cardWhiteColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: _pentecostRed, size: 26),
-          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_isSubmitting) return;
+        final shouldExit = await showDiscardConfirmationDialog(
+          context,
+          accentColor: _pentecostRed,
+        );
+        if (shouldExit && context.mounted) {
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: ParishColors.backgroundLight,
+        appBar: AppBar(
+          backgroundColor: cardWhiteColor,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: _pentecostRed, size: 26),
+            onPressed: _isSubmitting
+                ? null
+                : () async {
+              final shouldExit = await showDiscardConfirmationDialog(
+                context,
+                accentColor: _pentecostRed,
+              );
+              if (shouldExit && context.mounted) {
+                Navigator.pop(context);
+              }
+            },
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Confirmation Manual Entry',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+              ),
+              Text(
+                'Canonical Registry Book (Liber Confirmatorum)',
+                style: TextStyle(fontSize: 12, color: textMutedColor),
+              ),
+            ],
+          ),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Confirmation Manual Entry',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-            ),
-            Text(
-              'Canonical Registry Book (Liber Confirmatorum)',
-              style: TextStyle(fontSize: 12, color: textMutedColor),
-            ),
-          ],
-        ),
-      ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final double availableWidth = constraints.maxWidth;
-            final bool isMobile = availableWidth < 600;
-            final bool isSmallMobile = availableWidth < 480;
-            final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final double availableWidth = constraints.maxWidth;
+              final bool isMobile = availableWidth < 600;
+              final bool isSmallMobile = availableWidth < 480;
+              final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
 
-            return Column(
-              children: [
-                // Google Forms Progress Banner
-                Container(
-                  width: double.infinity,
-                  color: cardWhiteColor,
-                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Section ${_currentStep + 1} of $_totalSteps',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: _pentecostRed,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              Text(
-                                '${((_currentStep + 1) / _totalSteps * 100).toInt()}% Completed',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: textMutedColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: (_currentStep + 1) / _totalSteps,
-                              minHeight: 6,
-                              backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
-                              valueColor: const AlwaysStoppedAnimation<Color>(_pentecostRed),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Divider(height: 1, color: borderGreyColor),
-
-                // Form Page Content
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 18),
+              return Column(
+                children: [
+                  // Google Forms Progress Banner
+                  Container(
+                    width: double.infinity,
+                    color: cardWhiteColor,
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 960),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Google Forms Header Card
-                              _buildGoogleFormsSectionHeader(
-                                title: _stepTitles[_currentStep],
-                                description: _stepDescriptions[_currentStep],
-                                stepIndex: _currentStep,
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Validation Banner
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: ParishColors.mercyRed),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Section ${_currentStep + 1} of $_totalSteps',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: _pentecostRed,
+                                    letterSpacing: 0.5,
                                   ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                ),
+                                Text(
+                                  '${((_currentStep + 1) / _totalSteps * 100).toInt()}% Completed',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: textMutedColor,
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: (_currentStep + 1) / _totalSteps,
+                                minHeight: 6,
+                                backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
+                                valueColor: const AlwaysStoppedAnimation<Color>(_pentecostRed),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: borderGreyColor),
 
-                              // Paginated Step View Switcher
-                              _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
-                              const SizedBox(height: 24),
-                            ],
+                  // Form Page Content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 18),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 960),
+                          child: Form(
+                            key: _formKey,
+                            autovalidateMode: AutovalidateMode.onUserInteraction, // Live real-time validation feedback
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Google Forms Header Card
+                                _buildGoogleFormsSectionHeader(
+                                  title: _stepTitles[_currentStep],
+                                  description: _stepDescriptions[_currentStep],
+                                  stepIndex: _currentStep,
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Validation Banner
+                                if (_errorMessage != null) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    decoration: BoxDecoration(
+                                      color: ParishColors.mercyRedSurface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: ParishColors.mercyRed),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            _errorMessage!,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: ParishColors.mercyRed,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+
+                                // Paginated Step View Switcher
+                                _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
 
-                // Responsive Sticky Bottom Navigation Bar (Back, Next, Submit)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: cardWhiteColor,
-                    border: Border(top: BorderSide(color: borderGreyColor)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 8,
-                        offset: const Offset(0, -3),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: isSmallMobile
-                          ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _currentStep == _totalSteps - 1
-                                    ? ParishColors.oliveGreen
-                                    : _pentecostRed,
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToNextStep,
-                              icon: _isSubmitting
-                                  ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                                  : Icon(
-                                _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                size: 20,
-                              ),
-                              label: Text(
-                                _isSubmitting
-                                    ? 'Registering...'
-                                    : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Continue / Next'),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 44,
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: borderGreyColor, width: 1.5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToPreviousStep,
-                              child: Text(
-                                _currentStep == 0 ? 'Discard / Exit' : 'Back to Previous Page',
-                                style: TextStyle(fontSize: 14, color: textMutedColor),
+                  // Responsive Sticky Bottom Navigation Bar (Back, Next, Submit)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: cardWhiteColor,
+                      border: Border(top: BorderSide(color: borderGreyColor)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, -3),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: isSmallMobile
+                            ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _currentStep == _totalSteps - 1
+                                      ? ParishColors.oliveGreen
+                                      : _pentecostRed,
+                                  foregroundColor: Colors.white,
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                icon: _isSubmitting
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                                    : Icon(
+                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
+                                  size: 20,
+                                ),
+                                label: Text(
+                                  _isSubmitting
+                                      ? 'Registering...'
+                                      : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Continue / Next'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      )
-                          : Row(
-                        children: [
-                          SizedBox(
-                            width: isMobile ? 130 : 160,
-                            height: 48,
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: borderGreyColor, width: 1.5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToPreviousStep,
-                              child: Text(
-                                _currentStep == 0 ? 'Discard / Exit' : 'Back',
-                                style: TextStyle(fontSize: 14, color: textMutedColor),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: borderGreyColor, width: 1.5),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToPreviousStep,
+                                child: Text(
+                                  _currentStep == 0 ? 'Discard / Exit' : 'Back to Previous Page',
+                                  style: TextStyle(fontSize: 14, color: textMutedColor),
+                                ),
                               ),
                             ),
-                          ),
-                          const Spacer(),
-                          SizedBox(
-                            width: isMobile ? 180 : 250,
-                            height: 48,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _currentStep == _totalSteps - 1
-                                    ? ParishColors.oliveGreen
-                                    : _pentecostRed,
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToNextStep,
-                              icon: _isSubmitting
-                                  ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                                  : Icon(
-                                _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                size: 20,
-                              ),
-                              label: Text(
-                                _isSubmitting
-                                    ? 'Registering...'
-                                    : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Next Section'),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ],
+                        )
+                            : Row(
+                          children: [
+                            SizedBox(
+                              width: isMobile ? 130 : 160,
+                              height: 48,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: borderGreyColor, width: 1.5),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToPreviousStep,
+                                child: Text(
+                                  _currentStep == 0 ? 'Discard / Exit' : 'Back',
+                                  style: TextStyle(fontSize: 14, color: textMutedColor),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                            const Spacer(),
+                            SizedBox(
+                              width: isMobile ? 180 : 250,
+                              height: 48,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _currentStep == _totalSteps - 1
+                                      ? ParishColors.oliveGreen
+                                      : _pentecostRed,
+                                  foregroundColor: Colors.white,
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                icon: _isSubmitting
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                                    : Icon(
+                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
+                                  size: 20,
+                                ),
+                                label: Text(
+                                  _isSubmitting
+                                      ? 'Registering...'
+                                      : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Next Section'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1119,7 +1074,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 
-  // STEP 4: Sponsors Information
+  // STEP 4: Sponsors Information (Strictly Max 2)
   Widget _buildStep4SponsorsInformation({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Confirmation Sponsors (Strictly Max 2)',
@@ -1265,7 +1220,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   }
 
   // ===========================================================================
-  // Google Forms Visual Components
+  // Google Forms Header & UI Blocks
   // ===========================================================================
 
   Widget _buildGoogleFormsSectionHeader({
@@ -1290,7 +1245,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Google Forms Top Color Bar (Pentecost Red)
           Container(
             height: 8,
             width: double.infinity,
@@ -1319,7 +1273,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFDF2F2),
+                        color: _pentecostSurface,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text(
@@ -1544,7 +1498,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   Icon(
                     Icons.calendar_month,
                     size: 20,
-                    color: _pentecostRed,
+                    color: hasError ? _pentecostRed : _pentecostRed,
                   ),
                 ],
               ),
