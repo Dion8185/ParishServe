@@ -3,15 +3,18 @@ import '../../../../core/constants/colors.dart';
 import '../../models/baptism_record_model.dart';
 import '../../models/confirmation_record_model.dart';
 import '../../models/first_communion_record_model.dart';
+import '../../models/matrimony_record_model.dart';
 import '../../services/baptism_service.dart';
 import '../../services/confirmation_service.dart';
 import '../../services/first_communion_service.dart';
+import '../../services/matrimony_service.dart';
 import '../dialogs/certificate_preview_dialog.dart';
 import '../dialogs/manual_entry_dialog.dart';
 import '../dialogs/ocr_scan_dialog.dart';
 import 'baptism_manual_entry_page.dart';
 import 'confirmation_manual_entry_page.dart';
 import 'first_communion_manual_entry_page.dart';
+import 'matrimony_manual_entry_page.dart';
 
 class SacramentRegistryPage extends StatefulWidget {
   final String sacramentName;
@@ -38,6 +41,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   List<BaptismRecordModel> _baptismRecords = [];
   List<ConfirmationRecordModel> _confirmationRecords = [];
   List<FirstCommunionRecordModel> _firstCommunionRecords = [];
+  List<MatrimonyRecordModel> _matrimonyRecords = [];
   bool _isLoading = false;
   String? _fetchError;
   String _searchQuery = '';
@@ -73,6 +77,10 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
         final records = await FirstCommunionService.getFirstCommunionRecords();
         if (!mounted) return;
         setState(() => _firstCommunionRecords = records);
+      } else if (widget.sacramentName == 'Matrimony') {
+        final records = await MatrimonyService.getMatrimonyRecords();
+        if (!mounted) return;
+        setState(() => _matrimonyRecords = records);
       }
     } catch (e) {
       if (!mounted) return;
@@ -121,6 +129,18 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     }).toList();
   }
 
+  List<MatrimonyRecordModel> get _filteredMatrimonyRecords {
+    if (_searchQuery.trim().isEmpty) return _matrimonyRecords;
+    final q = _searchQuery.toLowerCase();
+    return _matrimonyRecords.where((r) {
+      final nameMatch = r.groomFullName.toLowerCase().contains(q) || r.brideFullName.toLowerCase().contains(q);
+      final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
+          'page ${r.pageNumber}'.toLowerCase().contains(q) ||
+          'line ${r.lineNumber}'.toLowerCase().contains(q);
+      return nameMatch || bookMatch;
+    }).toList();
+  }
+
   void _openManualEntry() {
     if (widget.sacramentName == 'Baptism') {
       Navigator.push(
@@ -149,6 +169,15 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
           ),
         ),
       );
+    } else if (widget.sacramentName == 'Matrimony') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MatrimonyManualEntryPage(
+            onRecordSaved: _loadRecords,
+          ),
+        ),
+      );
     } else {
       showManualEntryModal(context);
     }
@@ -163,11 +192,13 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     final isBaptism = widget.sacramentName == 'Baptism';
     final isConfirmation = widget.sacramentName == 'Confirmation';
     final isCommunion = widget.sacramentName == 'First Communion';
+    final isMatrimony = widget.sacramentName == 'Matrimony';
 
     int count = 0;
     if (isBaptism) count = _baptismRecords.length;
     if (isConfirmation) count = _confirmationRecords.length;
     if (isCommunion) count = _firstCommunionRecords.length;
+    if (isMatrimony) count = _matrimonyRecords.length;
 
     return Scaffold(
       backgroundColor: ParishColors.backgroundLight,
@@ -192,7 +223,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
           ],
         ),
         actions: [
-          if (isBaptism || isConfirmation || isCommunion)
+          if (isBaptism || isConfirmation || isCommunion || isMatrimony)
             IconButton(
               icon: Icon(Icons.refresh, color: widget.themeColor),
               onPressed: _loadRecords,
@@ -235,7 +266,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          (isBaptism || isConfirmation || isCommunion)
+                          (isBaptism || isConfirmation || isCommunion || isMatrimony)
                               ? 'Live Database Records: $count registered'
                               : 'Digitized registry companion • St. John Paul II Parish',
                           style: TextStyle(fontSize: 12, color: textMutedColor),
@@ -403,7 +434,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                 if (_filteredConfirmationRecords.isEmpty)
                   _buildEmptyState(
                     title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered confirmation records yet.',
-                    subtitle: 'Tap "Manual Entry" above to add the first confirmation record to Liber Confirmatorum.',
+                    subtitle: 'Tap "Manual Entry" above to add the first confirmation record.',
                   )
                 else
                   ..._filteredConfirmationRecords.map((c) {
@@ -424,7 +455,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                 if (_filteredFirstCommunionRecords.isEmpty)
                   _buildEmptyState(
                     title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered communion records yet.',
-                    subtitle: 'Tap "Manual Entry" above to add the first communion record to Liber Primae Communionis.',
+                    subtitle: 'Tap "Manual Entry" above to add the first communion record.',
                   )
                 else
                   ..._filteredFirstCommunionRecords.map((fcm) {
@@ -441,6 +472,27 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                       sponsors: 'Baptized at: ${fcm.baptismParish}',
                       marginalNotation: fcm.remarks != null && fcm.remarks!.trim().isNotEmpty
                           ? 'Batch / Mass Note: ${fcm.remarks}'
+                          : null,
+                    );
+                  }),
+              ] else if (isMatrimony) ...[
+                if (_filteredMatrimonyRecords.isEmpty)
+                  _buildEmptyState(
+                    title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered matrimony records yet.',
+                    subtitle: 'Tap "Manual Entry" above to add the first marriage record to Liber Matrimoniorum.',
+                  )
+                else
+                  ..._filteredMatrimonyRecords.map((m) {
+                    final coupleName = '${m.groomFullName}  &  ${m.brideFullName}';
+                    return _buildSacramentRecordCard(
+                      context: context,
+                      name: coupleName,
+                      bookRef: m.bookReference,
+                      dateString: 'Married: ${m.dateOfMarriage.toIso8601String().substring(0, 10)} (${m.marriageType})',
+                      parentage: 'Primary Sponsors: ${m.sponsor1FirstName} ${m.sponsor1LastName} & ${m.sponsor2FirstName} ${m.sponsor2LastName}',
+                      sponsors: 'Solemnized by: Rev. Fr. ${m.solemnizerFirstName} ${m.solemnizerLastName}',
+                      marginalNotation: m.remarks != null && m.remarks!.trim().isNotEmpty
+                          ? 'Marriage Note: ${m.remarks}'
                           : null,
                     );
                   }),

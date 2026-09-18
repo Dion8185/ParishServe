@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/baptism_service.dart';
+import '../dialogs/discard_entry_dialog.dart';
 
 class BaptismManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
@@ -31,8 +32,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     'Specify book, page, line, and entry classification from the physical ledger.',
     'Enter canonical identification of the child as inscribed in the register.',
     'Record parental lineage and paternity acknowledgment under Canon 877.',
-    'Record canonical sponsors (godparents) and optional godparents.',
-    'Administration date, place of baptism, clergy, and marginal notations.',
+    'Record canonical sponsors and additional witnesses (using [+] Add Godparent).',
+    'Administration date, place of baptism, clergy, stipend, and marginal notations.',
   ];
 
   // Canonical options for Legitimacy
@@ -90,7 +91,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final _sponsor2LastNameController = TextEditingController();
   final _sponsor2ResidenceController = TextEditingController();
 
-  final _otherGodparentsController = TextEditingController();
+  // Dynamic Other Godparents List (Plus button implementation)
+  final List<TextEditingController> _otherGodparentControllers = [];
 
   // 5. Baptism & Minister Details (Page 5)
   final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish Church');
@@ -137,7 +139,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     _sponsor2MiddleNameController.dispose();
     _sponsor2LastNameController.dispose();
     _sponsor2ResidenceController.dispose();
-    _otherGodparentsController.dispose();
+    for (var c in _otherGodparentControllers) {
+      c.dispose();
+    }
     _parishChurchController.dispose();
     _ministerFirstNameController.dispose();
     _ministerMiddleNameController.dispose();
@@ -259,12 +263,31 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     });
   }
 
+  void _addOtherGodparentField() {
+    setState(() {
+      _otherGodparentControllers.add(TextEditingController());
+    });
+  }
+
+  void _removeOtherGodparentField(int index) {
+    setState(() {
+      _otherGodparentControllers[index].dispose();
+      _otherGodparentControllers.removeAt(index);
+    });
+  }
+
   // ===========================================================================
-  // Step-by-Step Google Forms Pagination Logic
+  // Step-by-Step Google Forms Pagination Logic with Live Validation
   // ===========================================================================
 
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
+
+    final isStepValid = _formKey.currentState?.validate() ?? true;
+    if (!isStepValid) {
+      setState(() => _errorMessage = 'Please correct the highlighted errors below before proceeding.');
+      return false;
+    }
 
     if (step == 0) {
       // Step 1: Canonical Reference
@@ -287,16 +310,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       return true;
     } else if (step == 1) {
       // Step 2: Child Information
-      final fnErr = _validateName(_childFirstNameController.text, 'Child First Name', isRequired: true);
-      if (fnErr != null) {
-        setState(() => _errorMessage = fnErr);
-        return false;
-      }
-      final lnErr = _validateName(_childLastNameController.text, 'Child Last Name', isRequired: true);
-      if (lnErr != null) {
-        setState(() => _errorMessage = lnErr);
-        return false;
-      }
       if (_dateOfBirth == null) {
         setState(() {
           _dateOfBirthHasError = true;
@@ -311,86 +324,13 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         });
         return false;
       }
-      final pobErr = _validateRequiredText(_placeOfBirthController.text, 'Place of birth');
-      if (pobErr != null) {
-        setState(() => _errorMessage = pobErr);
-        return false;
-      }
       if (_legitimacy == 'Others (Specify)' && _legitimacyOtherController.text.trim().isEmpty) {
         setState(() => _errorMessage = 'Please specify the legitimacy denomination.');
         return false;
       }
       return true;
-    } else if (step == 2) {
-      // Step 3: Parents Information
-      if (!_fatherNotIndicated) {
-        final ffnErr = _validateName(_fatherFirstNameController.text, "Father's first name", isRequired: true);
-        if (ffnErr != null) {
-          setState(() => _errorMessage = ffnErr);
-          return false;
-        }
-        final flnErr = _validateName(_fatherLastNameController.text, "Father's last name", isRequired: true);
-        if (flnErr != null) {
-          setState(() => _errorMessage = flnErr);
-          return false;
-        }
-      }
-      final mfnErr = _validateName(_motherFirstNameController.text, "Mother's first name", isRequired: true);
-      if (mfnErr != null) {
-        setState(() => _errorMessage = mfnErr);
-        return false;
-      }
-      final mlnErr = _validateName(_motherMaidenLastNameController.text, "Mother's maiden last name", isRequired: true);
-      if (mlnErr != null) {
-        setState(() => _errorMessage = mlnErr);
-        return false;
-      }
-      final phoneErr = _validatePhoneNumber(_parentsContactNumberController.text);
-      if (phoneErr != null) {
-        setState(() => _errorMessage = phoneErr);
-        return false;
-      }
-      return true;
-    } else if (step == 3) {
-      // Step 4: Godparents / Sponsors
-      final s1FnErr = _validateName(_sponsor1FirstNameController.text, 'Sponsor 1 First Name', isRequired: true);
-      if (s1FnErr != null) {
-        setState(() => _errorMessage = s1FnErr);
-        return false;
-      }
-      final s1LnErr = _validateName(_sponsor1LastNameController.text, 'Sponsor 1 Last Name', isRequired: true);
-      if (s1LnErr != null) {
-        setState(() => _errorMessage = s1LnErr);
-        return false;
-      }
-      final s2FnErr = _validateName(_sponsor2FirstNameController.text, 'Sponsor 2 First Name', isRequired: true);
-      if (s2FnErr != null) {
-        setState(() => _errorMessage = s2FnErr);
-        return false;
-      }
-      final s2LnErr = _validateName(_sponsor2LastNameController.text, 'Sponsor 2 Last Name', isRequired: true);
-      if (s2LnErr != null) {
-        setState(() => _errorMessage = s2LnErr);
-        return false;
-      }
-      return true;
     } else if (step == 4) {
       // Step 5: Administration Details
-      final pcErr = _validateRequiredText(_parishChurchController.text, 'Parish / Church of baptism');
-      if (pcErr != null) {
-        setState(() => _errorMessage = pcErr);
-        return false;
-      }
-      final mfnErr = _validateName(_ministerFirstNameController.text, 'Minister first name', isRequired: true);
-      if (mfnErr != null) {
-        setState(() => _errorMessage = mfnErr);
-        return false;
-      }
-      final mlnErr = _validateName(_ministerLastNameController.text, 'Minister last name', isRequired: true);
-      if (mlnErr != null) {
-        setState(() => _errorMessage = mlnErr);
-        return false;
-      }
       if (_dateOfBaptism == null) {
         setState(() {
           _dateOfBaptismHasError = true;
@@ -405,12 +345,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         });
         return false;
       }
-      final stErr = _validateStipend(_stipendController.text);
-      if (stErr != null) {
-        setState(() => _errorMessage = stErr);
-        return false;
-      }
-      return true;
     }
     return true;
   }
@@ -429,7 +363,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     }
   }
 
-  void _goToPreviousStep() {
+  Future<void> _goToPreviousStep() async {
     if (_currentStep > 0) {
       setState(() {
         _currentStep--;
@@ -437,7 +371,13 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       });
       _scrollToTop();
     } else {
-      Navigator.pop(context);
+      final shouldExit = await showDiscardConfirmationDialog(
+        context,
+        accentColor: ParishColors.marianBlue,
+      );
+      if (shouldExit && mounted) {
+        Navigator.pop(context);
+      }
     }
   }
 
@@ -476,6 +416,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
     try {
       final parishChurch = _parishChurchController.text.trim();
+      List<String> collectedOtherGodparents = _otherGodparentControllers
+          .map((c) => c.text.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
 
       final recordMap = {
         'book_number': _bookNumberController.text.trim(),
@@ -519,7 +463,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         'sponsor_2_last_name': _sponsor2LastNameController.text.trim(),
         'sponsor_2_residence': _sponsor2ResidenceController.text.trim().isEmpty ? null : _sponsor2ResidenceController.text.trim(),
 
-        'other_godparents': _otherGodparentsController.text.trim().isEmpty ? null : _otherGodparentsController.text.trim(),
+        'other_godparents': collectedOtherGodparents.join('\n'),
 
         'parish_name': parishChurch,
         'place_of_baptism': parishChurch,
@@ -564,278 +508,303 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     final cardWhiteColor = ParishColors.cardWhite;
     final borderGreyColor = ParishColors.borderGrey;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: cardWhiteColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
-          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_isSubmitting) return;
+        final shouldExit = await showDiscardConfirmationDialog(
+          context,
+          accentColor: ParishColors.marianBlue,
+        );
+        if (shouldExit && context.mounted) {
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: ParishColors.backgroundLight,
+        appBar: AppBar(
+          backgroundColor: cardWhiteColor,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+            onPressed: _isSubmitting
+                ? null
+                : () async {
+              final shouldExit = await showDiscardConfirmationDialog(
+                context,
+                accentColor: ParishColors.marianBlue,
+              );
+              if (shouldExit && context.mounted) {
+                Navigator.pop(context);
+              }
+            },
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Baptism Manual Entry',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+              ),
+              Text(
+                'Canonical Registry Book (Liber Baptismorum)',
+                style: TextStyle(fontSize: 12, color: textMutedColor),
+              ),
+            ],
+          ),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Baptism Manual Entry',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-            ),
-            Text(
-              'Canonical Registry Book (Liber Baptismorum)',
-              style: TextStyle(fontSize: 12, color: textMutedColor),
-            ),
-          ],
-        ),
-      ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final double availableWidth = constraints.maxWidth;
-            final bool isMobile = availableWidth < 600;
-            final bool isSmallMobile = availableWidth < 480;
-            final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final double availableWidth = constraints.maxWidth;
+              final bool isMobile = availableWidth < 600;
+              final bool isSmallMobile = availableWidth < 480;
+              final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
 
-            return Column(
-              children: [
-                // Google Forms Progress Banner
-                Container(
-                  width: double.infinity,
-                  color: cardWhiteColor,
-                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Section ${_currentStep + 1} of $_totalSteps',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: ParishColors.marianBlue,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              Text(
-                                '${((_currentStep + 1) / _totalSteps * 100).toInt()}% Completed',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: textMutedColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: (_currentStep + 1) / _totalSteps,
-                              minHeight: 6,
-                              backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
-                              valueColor: const AlwaysStoppedAnimation<Color>(ParishColors.marianBlue),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Divider(height: 1, color: borderGreyColor),
-
-                // Form Page Content
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 18),
+              return Column(
+                children: [
+                  // Google Forms Progress Banner
+                  Container(
+                    width: double.infinity,
+                    color: cardWhiteColor,
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 960),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Google Forms Header Card
-                              _buildGoogleFormsSectionHeader(
-                                title: _stepTitles[_currentStep],
-                                description: _stepDescriptions[_currentStep],
-                                stepIndex: _currentStep,
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Validation Banner
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: ParishColors.mercyRed),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Section ${_currentStep + 1} of $_totalSteps',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.marianBlue,
+                                    letterSpacing: 0.5,
                                   ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                ),
+                                Text(
+                                  '${((_currentStep + 1) / _totalSteps * 100).toInt()}% Completed',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: textMutedColor,
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: (_currentStep + 1) / _totalSteps,
+                                minHeight: 6,
+                                backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
+                                valueColor: const AlwaysStoppedAnimation<Color>(ParishColors.marianBlue),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: borderGreyColor),
 
-                              // Paginated Step View Switcher
-                              _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
-                              const SizedBox(height: 24),
-                            ],
+                  // Form Page Content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 18),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 960),
+                          child: Form(
+                            key: _formKey,
+                            autovalidateMode: AutovalidateMode.onUserInteraction, // Live real-time validation feedback
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Google Forms Header Card
+                                _buildGoogleFormsSectionHeader(
+                                  title: _stepTitles[_currentStep],
+                                  description: _stepDescriptions[_currentStep],
+                                  stepIndex: _currentStep,
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Validation Banner
+                                if (_errorMessage != null) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    decoration: BoxDecoration(
+                                      color: ParishColors.mercyRedSurface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: ParishColors.mercyRed),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            _errorMessage!,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: ParishColors.mercyRed,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+
+                                // Paginated Step View Switcher
+                                _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
 
-                // Responsive Sticky Bottom Navigation Bar (Back, Next, Submit)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: cardWhiteColor,
-                    border: Border(top: BorderSide(color: borderGreyColor)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 8,
-                        offset: const Offset(0, -3),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: isSmallMobile
-                          ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _currentStep == _totalSteps - 1
-                                    ? ParishColors.oliveGreen
-                                    : ParishColors.marianBlue,
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToNextStep,
-                              icon: _isSubmitting
-                                  ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                                  : Icon(
-                                _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                size: 20,
-                              ),
-                              label: Text(
-                                _isSubmitting
-                                    ? 'Registering...'
-                                    : (_currentStep == _totalSteps - 1 ? 'Save Baptism Record' : 'Continue / Next'),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 44,
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: borderGreyColor, width: 1.5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToPreviousStep,
-                              child: Text(
-                                _currentStep == 0 ? 'Discard / Exit' : 'Back to Previous Page',
-                                style: TextStyle(fontSize: 14, color: textMutedColor),
+                  // Responsive Sticky Bottom Navigation Bar (Back, Next, Submit)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: cardWhiteColor,
+                      border: Border(top: BorderSide(color: borderGreyColor)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, -3),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: isSmallMobile
+                            ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _currentStep == _totalSteps - 1
+                                      ? ParishColors.oliveGreen
+                                      : ParishColors.marianBlue,
+                                  foregroundColor: Colors.white,
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                icon: _isSubmitting
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                                    : Icon(
+                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
+                                  size: 20,
+                                ),
+                                label: Text(
+                                  _isSubmitting
+                                      ? 'Registering...'
+                                      : (_currentStep == _totalSteps - 1 ? 'Save Baptism Record' : 'Continue / Next'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      )
-                          : Row(
-                        children: [
-                          SizedBox(
-                            width: isMobile ? 130 : 160,
-                            height: 48,
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: borderGreyColor, width: 1.5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToPreviousStep,
-                              child: Text(
-                                _currentStep == 0 ? 'Discard / Exit' : 'Back',
-                                style: TextStyle(fontSize: 14, color: textMutedColor),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: borderGreyColor, width: 1.5),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToPreviousStep,
+                                child: Text(
+                                  _currentStep == 0 ? 'Discard / Exit' : 'Back to Previous Page',
+                                  style: TextStyle(fontSize: 14, color: textMutedColor),
+                                ),
                               ),
                             ),
-                          ),
-                          const Spacer(),
-                          SizedBox(
-                            width: isMobile ? 180 : 250,
-                            height: 48,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _currentStep == _totalSteps - 1
-                                    ? ParishColors.oliveGreen
-                                    : ParishColors.marianBlue,
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _isSubmitting ? null : _goToNextStep,
-                              icon: _isSubmitting
-                                  ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                                  : Icon(
-                                _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                size: 20,
-                              ),
-                              label: Text(
-                                _isSubmitting
-                                    ? 'Registering...'
-                                    : (_currentStep == _totalSteps - 1 ? 'Save Baptism Record' : 'Next Section'),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ],
+                        )
+                            : Row(
+                          children: [
+                            SizedBox(
+                              width: isMobile ? 130 : 160,
+                              height: 48,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: borderGreyColor, width: 1.5),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToPreviousStep,
+                                child: Text(
+                                  _currentStep == 0 ? 'Discard / Exit' : 'Back',
+                                  style: TextStyle(fontSize: 14, color: textMutedColor),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                            const Spacer(),
+                            SizedBox(
+                              width: isMobile ? 180 : 250,
+                              height: 48,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _currentStep == _totalSteps - 1
+                                      ? ParishColors.oliveGreen
+                                      : ParishColors.marianBlue,
+                                  foregroundColor: Colors.white,
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                icon: _isSubmitting
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                                    : Icon(
+                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
+                                  size: 20,
+                                ),
+                                label: Text(
+                                  _isSubmitting
+                                      ? 'Registering...'
+                                      : (_currentStep == _totalSteps - 1 ? 'Save Baptism Record' : 'Next Section'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1208,99 +1177,156 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // STEP 4: Godparents / Sponsors
+  // STEP 4: Godparents / Sponsors (Primary + Dynamic Additional Godparents with [+] Add Godparent)
   Widget _buildStep4GodparentsInformation({required bool isMobile}) {
-    return _buildSectionCard(
-      title: 'Godparents / Sponsors (Compadres)',
-      icon: Icons.people_outline,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Canonical entries require Sponsor 1 and Sponsor 2.',
-            style: TextStyle(fontSize: 12, color: ParishColors.marianBlue, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 14),
+    return Column(
+      children: [
+        _buildSectionCard(
+          title: 'Primary Sponsors (Godparents 1 & 2)',
+          icon: Icons.people_outline,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Canonical entries require Sponsor 1 and Sponsor 2.',
+                style: TextStyle(fontSize: 12, color: ParishColors.marianBlue, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 14),
 
-          // Sponsor 1
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _sponsor1FirstNameController,
-              label: 'Sponsor 1 First Name',
-              isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 1 first name', isRequired: true),
-            ),
-            second: _buildTextFormField(
-              controller: _sponsor1MiddleNameController,
-              label: 'Sponsor 1 Middle Name',
-              isRequired: false,
-              validator: (val) => _validateName(val, 'Sponsor 1 middle name', isRequired: false),
-            ),
-          ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _sponsor1LastNameController,
-              label: 'Sponsor 1 Last Name',
-              isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 1 last name', isRequired: true),
-            ),
-            second: _buildTextFormField(
-              controller: _sponsor1ResidenceController,
-              label: 'Sponsor 1 Residence',
-              isRequired: false,
-            ),
-          ),
+              // Sponsor 1
+              _buildAdaptivePair(
+                isStacked: isMobile,
+                first: _buildTextFormField(
+                  controller: _sponsor1FirstNameController,
+                  label: 'Sponsor 1 First Name',
+                  isRequired: true,
+                  validator: (val) => _validateName(val, 'Sponsor 1 first name', isRequired: true),
+                ),
+                second: _buildTextFormField(
+                  controller: _sponsor1MiddleNameController,
+                  label: 'Sponsor 1 Middle Name',
+                  isRequired: false,
+                  validator: (val) => _validateName(val, 'Sponsor 1 middle name', isRequired: false),
+                ),
+              ),
+              _buildAdaptivePair(
+                isStacked: isMobile,
+                first: _buildTextFormField(
+                  controller: _sponsor1LastNameController,
+                  label: 'Sponsor 1 Last Name',
+                  isRequired: true,
+                  validator: (val) => _validateName(val, 'Sponsor 1 last name', isRequired: true),
+                ),
+                second: _buildTextFormField(
+                  controller: _sponsor1ResidenceController,
+                  label: 'Sponsor 1 Residence',
+                  isRequired: false,
+                ),
+              ),
 
-          const Divider(height: 28),
+              const Divider(height: 28),
 
-          // Sponsor 2
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _sponsor2FirstNameController,
-              label: 'Sponsor 2 First Name',
-              isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 2 first name', isRequired: true),
-            ),
-            second: _buildTextFormField(
-              controller: _sponsor2MiddleNameController,
-              label: 'Sponsor 2 Middle Name',
-              isRequired: false,
-              validator: (val) => _validateName(val, 'Sponsor 2 middle name', isRequired: false),
-            ),
+              // Sponsor 2
+              _buildAdaptivePair(
+                isStacked: isMobile,
+                first: _buildTextFormField(
+                  controller: _sponsor2FirstNameController,
+                  label: 'Sponsor 2 First Name',
+                  isRequired: true,
+                  validator: (val) => _validateName(val, 'Sponsor 2 first name', isRequired: true),
+                ),
+                second: _buildTextFormField(
+                  controller: _sponsor2MiddleNameController,
+                  label: 'Sponsor 2 Middle Name',
+                  isRequired: false,
+                  validator: (val) => _validateName(val, 'Sponsor 2 middle name', isRequired: false),
+                ),
+              ),
+              _buildAdaptivePair(
+                isStacked: isMobile,
+                first: _buildTextFormField(
+                  controller: _sponsor2LastNameController,
+                  label: 'Sponsor 2 Last Name',
+                  isRequired: true,
+                  validator: (val) => _validateName(val, 'Sponsor 2 last name', isRequired: true),
+                ),
+                second: _buildTextFormField(
+                  controller: _sponsor2ResidenceController,
+                  label: 'Sponsor 2 Residence',
+                  isRequired: false,
+                ),
+              ),
+            ],
           ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _sponsor2LastNameController,
-              label: 'Sponsor 2 Last Name',
-              isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 2 last name', isRequired: true),
-            ),
-            second: _buildTextFormField(
-              controller: _sponsor2ResidenceController,
-              label: 'Sponsor 2 Residence',
-              isRequired: false,
-            ),
+        ),
+        const SizedBox(height: 16),
+        _buildSectionCard(
+          title: 'Additional Godparents / Witnesses',
+          icon: Icons.group_add_outlined,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Click "[+] Add Godparent" to include additional secondary sponsors individually.',
+                style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+              ),
+              const SizedBox(height: 12),
+              ..._otherGodparentControllers.asMap().entries.map((entry) {
+                int idx = entry.key;
+                var controller = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: controller,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: InputDecoration(
+                            labelText: 'Godparent / Witness #${idx + 1} Full Name & Residence',
+                            filled: true,
+                            fillColor: ParishColors.backgroundLight,
+                            isDense: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, color: ParishColors.mercyRed),
+                        onPressed: () => _removeOtherGodparentField(idx),
+                        tooltip: 'Remove Godparent',
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+                    foregroundColor: ParishColors.marianBlue,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: _addOtherGodparentField,
+                  icon: const Icon(Icons.add_circle_outline, size: 18),
+                  label: const Text('Add Godparent', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ),
-
-          const Divider(height: 28),
-          _buildTextFormField(
-            controller: _otherGodparentsController,
-            label: 'Other Godparents (Optional)',
-            isRequired: false,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   // STEP 5: Administration Details
   Widget _buildStep5AdministrationDetails({required bool isMobile}) {
     return _buildSectionCard(
-      title: 'Baptism Administration & Minister Details',
+      title: 'Baptism & Minister Details',
       icon: Icons.church,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1677,7 +1703,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             items: items.map((item) {
               return DropdownMenuItem<String>(
                 value: item,
-                child: Text(item, style: TextStyle(fontSize: 13, color: ParishColors.textDark)),
+                child: Text(
+                  item,
+                  style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+                ),
               );
             }).toList(),
             onChanged: onChanged,
