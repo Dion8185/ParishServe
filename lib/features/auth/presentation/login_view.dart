@@ -4,6 +4,7 @@ import '../../navigation/presentation/main_navigation_shell.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import 'dialogs/login_help_dialog.dart';
+import 'parishioner_register_view.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -13,7 +14,7 @@ class LoginView extends StatefulWidget {
 }
 
 class _LoginViewState extends State<LoginView> {
-  final TextEditingController _identifierController = TextEditingController(text: 'secretary');
+  final TextEditingController _identifierController = TextEditingController(text: 'lucator51plus1@gmail.com');
   final TextEditingController _passwordController = TextEditingController(text: 'ParishServe@123');
 
   bool _obscurePassword = true;
@@ -59,7 +60,7 @@ class _LoginViewState extends State<LoginView> {
       }
     } catch (e) {
       if (!mounted) return;
-      _showErrorDialog('Network connection error. Could not connect to Supabase: $e');
+      _showErrorDialog('Sign In Error: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -115,7 +116,7 @@ class _LoginViewState extends State<LoginView> {
                     border: Border.all(color: ParishColors.goldAccent, width: 3),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withValues(alpha: 0.06),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -168,7 +169,7 @@ class _LoginViewState extends State<LoginView> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Staff Sign In',
+                        'Portal Sign In',
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                       ),
                       const SizedBox(height: 4),
@@ -219,11 +220,12 @@ class _LoginViewState extends State<LoginView> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
+                            _buildQuickAccountChip('lucator51plus1@gmail.com', 'Superadmin'),
                             _buildQuickAccountChip('secretary', 'Secretary'),
                             _buildQuickAccountChip('parishpriest', 'Priest'),
                             _buildQuickAccountChip('admin', 'Admin'),
                             _buildQuickAccountChip('encoder', 'Encoder'),
-                            _buildQuickAccountChip('superadmin', 'Superadmin'),
+                            _buildQuickAccountChip('pfc_auditor', 'PFC'),
                           ],
                         ),
                       ),
@@ -255,6 +257,35 @@ class _LoginViewState extends State<LoginView> {
                                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                               ),
                             ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Parishioner Self-Registration Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+                            foregroundColor: ParishColors.marianBlue,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: _isLoading
+                              ? null
+                              : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ParishionerRegisterView(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.person_add_alt_1, size: 20),
+                          label: const Text(
+                            'New Parishioner? Create an Account',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
@@ -299,7 +330,7 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 
-  Widget _buildQuickAccountChip(String username, String label) {
+  Widget _buildQuickAccountChip(String identifier, String label) {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: ActionChip(
@@ -307,7 +338,7 @@ class _LoginViewState extends State<LoginView> {
         label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
         onPressed: () {
           setState(() {
-            _identifierController.text = username;
+            _identifierController.text = identifier;
             _passwordController.text = 'ParishServe@123';
           });
         },
