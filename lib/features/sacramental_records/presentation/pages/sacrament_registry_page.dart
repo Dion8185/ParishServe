@@ -4,10 +4,12 @@ import '../../models/baptism_record_model.dart';
 import '../../models/confirmation_record_model.dart';
 import '../../models/first_communion_record_model.dart';
 import '../../models/matrimony_record_model.dart';
+import '../../models/death_record_model.dart';
 import '../../services/baptism_service.dart';
 import '../../services/confirmation_service.dart';
 import '../../services/first_communion_service.dart';
 import '../../services/matrimony_service.dart';
+import '../../services/death_service.dart';
 import '../dialogs/certificate_preview_dialog.dart';
 import '../dialogs/manual_entry_dialog.dart';
 import '../dialogs/ocr_scan_dialog.dart';
@@ -15,6 +17,7 @@ import 'baptism_manual_entry_page.dart';
 import 'confirmation_manual_entry_page.dart';
 import 'first_communion_manual_entry_page.dart';
 import 'matrimony_manual_entry_page.dart';
+import 'death_manual_entry_page.dart';
 
 class SacramentRegistryPage extends StatefulWidget {
   final String sacramentName;
@@ -42,6 +45,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   List<ConfirmationRecordModel> _confirmationRecords = [];
   List<FirstCommunionRecordModel> _firstCommunionRecords = [];
   List<MatrimonyRecordModel> _matrimonyRecords = [];
+  List<DeathRecordModel> _deathRecords = [];
   bool _isLoading = false;
   String? _fetchError;
   String _searchQuery = '';
@@ -81,6 +85,10 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
         final records = await MatrimonyService.getMatrimonyRecords();
         if (!mounted) return;
         setState(() => _matrimonyRecords = records);
+      } else if (widget.sacramentName == 'Death') {
+        final records = await DeathService.getDeathRecords();
+        if (!mounted) return;
+        setState(() => _deathRecords = records);
       }
     } catch (e) {
       if (!mounted) return;
@@ -141,41 +149,53 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     }).toList();
   }
 
+  List<DeathRecordModel> get _filteredDeathRecords {
+    if (_searchQuery.trim().isEmpty) return _deathRecords;
+    final q = _searchQuery.toLowerCase();
+    return _deathRecords.where((d) {
+      final nameMatch = d.deceasedFullName.toLowerCase().contains(q);
+      final bookMatch = 'book ${d.bookNumber}'.toLowerCase().contains(q) ||
+          'page ${d.pageNumber}'.toLowerCase().contains(q) ||
+          'line ${d.lineNumber}'.toLowerCase().contains(q);
+      final placeMatch = d.placeOfBurial.toLowerCase().contains(q);
+      return nameMatch || bookMatch || placeMatch;
+    }).toList();
+  }
+
   void _openManualEntry() {
     if (widget.sacramentName == 'Baptism') {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => BaptismManualEntryPage(
-            onRecordSaved: _loadRecords,
-          ),
+          builder: (context) => BaptismManualEntryPage(onRecordSaved: _loadRecords),
         ),
       );
     } else if (widget.sacramentName == 'Confirmation') {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => ConfirmationManualEntryPage(
-            onRecordSaved: _loadRecords,
-          ),
+          builder: (context) => ConfirmationManualEntryPage(onRecordSaved: _loadRecords),
         ),
       );
     } else if (widget.sacramentName == 'First Communion') {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => FirstCommunionManualEntryPage(
-            onRecordSaved: _loadRecords,
-          ),
+          builder: (context) => FirstCommunionManualEntryPage(onRecordSaved: _loadRecords),
         ),
       );
     } else if (widget.sacramentName == 'Matrimony') {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => MatrimonyManualEntryPage(
-            onRecordSaved: _loadRecords,
-          ),
+          builder: (context) => MatrimonyManualEntryPage(onRecordSaved: _loadRecords),
+        ),
+      );
+    } else if (widget.sacramentName == 'Death') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DeathManualEntryPage(onRecordSaved: _loadRecords),
         ),
       );
     } else {
@@ -193,12 +213,14 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     final isConfirmation = widget.sacramentName == 'Confirmation';
     final isCommunion = widget.sacramentName == 'First Communion';
     final isMatrimony = widget.sacramentName == 'Matrimony';
+    final isDeath = widget.sacramentName == 'Death';
 
     int count = 0;
     if (isBaptism) count = _baptismRecords.length;
     if (isConfirmation) count = _confirmationRecords.length;
     if (isCommunion) count = _firstCommunionRecords.length;
     if (isMatrimony) count = _matrimonyRecords.length;
+    if (isDeath) count = _deathRecords.length;
 
     return Scaffold(
       backgroundColor: ParishColors.backgroundLight,
@@ -223,7 +245,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
           ],
         ),
         actions: [
-          if (isBaptism || isConfirmation || isCommunion || isMatrimony)
+          if (isBaptism || isConfirmation || isCommunion || isMatrimony || isDeath)
             IconButton(
               icon: Icon(Icons.refresh, color: widget.themeColor),
               onPressed: _loadRecords,
@@ -266,7 +288,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          (isBaptism || isConfirmation || isCommunion || isMatrimony)
+                          (isBaptism || isConfirmation || isCommunion || isMatrimony || isDeath)
                               ? 'Live Database Records: $count registered'
                               : 'Digitized registry companion • St. John Paul II Parish',
                           style: TextStyle(fontSize: 12, color: textMutedColor),
@@ -479,7 +501,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                 if (_filteredMatrimonyRecords.isEmpty)
                   _buildEmptyState(
                     title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered matrimony records yet.',
-                    subtitle: 'Tap "Manual Entry" above to add the first marriage record to Liber Matrimoniorum.',
+                    subtitle: 'Tap "Manual Entry" above to add the first marriage record.',
                   )
                 else
                   ..._filteredMatrimonyRecords.map((m) {
@@ -493,6 +515,30 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                       sponsors: 'Solemnized by: Rev. Fr. ${m.solemnizerFirstName} ${m.solemnizerLastName}',
                       marginalNotation: m.remarks != null && m.remarks!.trim().isNotEmpty
                           ? 'Marriage Note: ${m.remarks}'
+                          : null,
+                    );
+                  }),
+              ] else if (isDeath) ...[
+                if (_filteredDeathRecords.isEmpty)
+                  _buildEmptyState(
+                    title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered death records yet.',
+                    subtitle: 'Tap "Manual Entry" above to add the first record to Liber Defunctorum.',
+                  )
+                else
+                  ..._filteredDeathRecords.map((d) {
+                    final relativeInfo = d.spouseFullName != '—'
+                        ? 'Surviving Spouse: ${d.spouseFullName}'
+                        : 'Parents: ${d.parentsFullName}';
+
+                    return _buildSacramentRecordCard(
+                      context: context,
+                      name: d.deceasedFullName,
+                      bookRef: d.bookReference,
+                      dateString: 'Buried: ${d.dateOfBurial.toIso8601String().substring(0, 10)} (Died: ${d.dateOfDeath.toIso8601String().substring(0, 10)})',
+                      parentage: '$relativeInfo • Age: ${d.age} (${d.civilStatus})',
+                      sponsors: 'Cemetery: ${d.placeOfBurial} • Rite: ${d.liturgicalService}',
+                      marginalNotation: d.remarks != null && d.remarks!.trim().isNotEmpty
+                          ? 'Burial Note: ${d.remarks}'
                           : null,
                     );
                   }),
