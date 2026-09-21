@@ -150,4 +150,5 @@ class BaptismService {
       return 'BAP-$yearSuffix-$timestampSeq';
     }
   }
+
 }
