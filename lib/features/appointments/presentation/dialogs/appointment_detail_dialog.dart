@@ -113,11 +113,76 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
     }
   }
 
+  Future<void> _verifyIdDocument() async {
+    setState(() => _isUpdating = true);
+    try {
+      await AppointmentService.updateIdVerification(
+        appointmentId: _id,
+        isVerified: true,
+        notes: 'Verified and approved by Secretariat.',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Valid ID document approved and verified.'),
+          backgroundColor: ParishColors.oliveGreen,
+        ),
+      );
+      widget.onStatusUpdated?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error verifying ID: $e'), backgroundColor: ParishColors.mercyRed),
+      );
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
+    }
+  }
+
+  Future<void> _openIdDocumentPreview(String filePath) async {
+    final signedUrl = await AppointmentService.getSignedIdDocumentUrl(filePath);
+    if (!mounted || signedUrl == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load ID document image.'), backgroundColor: ParishColors.mercyRed),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 650),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Identification Inspection', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                ],
+              ),
+              Expanded(
+                child: Center(
+                  child: Image.network(signedUrl, fit: BoxFit.contain),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final status = _currentStatus;
+    final apt = widget.appointment;
 
     Color statusColor = ParishColors.goldAccent;
     Color statusSurface = ParishColors.goldLight;
@@ -130,9 +195,6 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
     } else if (status == 'cancelled') {
       statusColor = ParishColors.mercyRed;
       statusSurface = ParishColors.mercyRedSurface;
-    } else if (status == 'rescheduled') {
-      statusColor = const Color(0xFF7C3AED); // Royal Violet
-      statusSurface = const Color(0xFFF3E8FF);
     }
 
     return AlertDialog(
@@ -150,63 +212,72 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: ParishColors.marianBlueSurface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: ParishColors.borderGrey),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Service Requested', style: TextStyle(fontSize: 12, color: textMuted)),
-                  Text(_service, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            _buildDetailRow(Icons.person_outline, 'Requester', _reqName),
-            _buildDetailRow(Icons.phone_outlined, 'Contact', _contactNo),
-            if (_email != null) _buildDetailRow(Icons.email_outlined, 'Email', _email!),
-            _buildDetailRow(Icons.access_time, 'Schedule', _timeDisplay),
-            _buildDetailRow(Icons.location_on_outlined, 'Parish Venue', _venue),
-            _buildDetailRow(Icons.church_outlined, 'Presiding Clergy', _priest),
-            if (_fee != null) _buildDetailRow(Icons.payments_outlined, 'Fee Status', _fee!),
-            if (_remarks != null) ...[
-              const SizedBox(height: 6),
+            // ID Clearance Card (Visible if uploaded)
+            if (apt != null && (apt.idType != null || apt.idDocumentUrl != null)) ...[
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: ParishColors.backgroundLight,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: ParishColors.borderGrey),
+                  color: (apt.isIdVerified) ? ParishColors.oliveGreenSurface : ParishColors.goldLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: (apt.isIdVerified) ? ParishColors.oliveGreen : ParishColors.goldAccent),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Remarks / Reschedule History:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Valid ID Clearance:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: textDark)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (apt.isIdVerified) ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text((apt.isIdVerified) ? 'VERIFIED' : 'NEEDS CLEARANCE', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 4),
-                    Text(_remarks!, style: TextStyle(fontSize: 12, color: textDark)),
+                    Text('Type: ${apt.idType ?? 'Government ID'}', style: TextStyle(fontSize: 12, color: textDark)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        if (apt.idDocumentUrl != null)
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: ParishColors.marianBlue),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            ),
+                            onPressed: () => _openIdDocumentPreview(apt.idDocumentUrl!),
+                            icon: const Icon(Icons.remove_red_eye, size: 14),
+                            label: const Text('View ID Photo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        const SizedBox(width: 8),
+                        if (!apt.isIdVerified)
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ParishColors.oliveGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            ),
+                            onPressed: _verifyIdDocument,
+                            icon: const Icon(Icons.check, size: 14),
+                            label: const Text('Approve ID', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
+              const SizedBox(height: 14),
             ],
-            const SizedBox(height: 12),
 
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: statusSurface,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'STATUS: ${status.toUpperCase()}',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: statusColor),
-              ),
-            ),
+            _buildDetailRow(Icons.person_outline, 'Requester', _reqName),
+            _buildDetailRow(Icons.phone_outlined, 'Contact', _contactNo),
+            _buildDetailRow(Icons.access_time, 'Schedule', _timeDisplay),
+            _buildDetailRow(Icons.location_on_outlined, 'Venue', _venue),
           ],
         ),
       ),
@@ -214,39 +285,6 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
         if (_isUpdating)
           const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()))
         else ...[
-          if (status != 'cancelled' && status != 'completed') ...[
-            // Dedicated Reschedule Action
-            if (widget.appointment != null)
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF7C3AED)),
-                  foregroundColor: const Color(0xFF7C3AED),
-                ),
-                onPressed: () => showRescheduleAppointmentModal(
-                  context,
-                  appointment: widget.appointment!,
-                  onRescheduled: widget.onStatusUpdated,
-                ),
-                icon: const Icon(Icons.update, size: 16),
-                label: const Text('Reschedule'),
-              ),
-            TextButton(
-              onPressed: () => _updateStatus('cancelled'),
-              child: const Text('Cancel Booking', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold)),
-            ),
-            if (status == 'pending' || status == 'rescheduled')
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.oliveGreen, foregroundColor: Colors.white),
-                onPressed: () => _updateStatus('confirmed'),
-                child: const Text('Confirm'),
-              ),
-            if (status == 'confirmed')
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
-                onPressed: () => _updateStatus('completed'),
-                child: const Text('Mark Completed'),
-              ),
-          ],
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Close', style: TextStyle(color: textMuted)),

@@ -2,6 +2,7 @@ class AppointmentModel {
   final String appointmentId;
   final String? scheduleId;
   final String? serviceRequestId;
+  final String? createdBy;
   final String requesterName;
   final String contactNumber;
   final String? email;
@@ -13,6 +14,16 @@ class AppointmentModel {
   final String officiantName;
   final String appointmentStatus; // pending, confirmed, completed, rescheduled, cancelled
   final String? appointmentRemarks;
+
+  // Valid ID Verification Fields
+  final String? idType;
+  final String? idNumber;
+  final String? idDocumentUrl;
+  final bool isIdVerified;
+  final String? idVerifiedBy;
+  final DateTime? idVerifiedAt;
+  final String? idVerificationNotes;
+
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -20,6 +31,7 @@ class AppointmentModel {
     required this.appointmentId,
     this.scheduleId,
     this.serviceRequestId,
+    this.createdBy,
     required this.requesterName,
     required this.contactNumber,
     this.email,
@@ -31,6 +43,13 @@ class AppointmentModel {
     required this.officiantName,
     this.appointmentStatus = 'pending',
     this.appointmentRemarks,
+    this.idType,
+    this.idNumber,
+    this.idDocumentUrl,
+    this.isIdVerified = false,
+    this.idVerifiedBy,
+    this.idVerifiedAt,
+    this.idVerificationNotes,
     this.createdAt,
     this.updatedAt,
   });
@@ -62,6 +81,7 @@ class AppointmentModel {
       appointmentId: map['appointment_id'] ?? '',
       scheduleId: map['schedule_id'],
       serviceRequestId: map['service_request_id'],
+      createdBy: map['created_by'],
       requesterName: map['requester_name'] ?? '',
       contactNumber: map['contact_number'] ?? '',
       email: map['email'],
@@ -73,6 +93,13 @@ class AppointmentModel {
       officiantName: map['officiant_name'] ?? 'Rev. Fr. Joseph Santos',
       appointmentStatus: map['appointment_status'] ?? 'pending',
       appointmentRemarks: map['appointment_remarks'],
+      idType: map['id_type'],
+      idNumber: map['id_number'],
+      idDocumentUrl: map['id_document_url'],
+      isIdVerified: map['is_id_verified'] ?? false,
+      idVerifiedBy: map['id_verified_by'],
+      idVerifiedAt: map['id_verified_at'] != null ? DateTime.tryParse(map['id_verified_at'].toString()) : null,
+      idVerificationNotes: map['id_verification_notes'],
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
       updatedAt: map['updated_at'] != null ? DateTime.tryParse(map['updated_at'].toString()) : null,
     );
@@ -83,6 +110,7 @@ class AppointmentModel {
       'appointment_id': appointmentId,
       'schedule_id': scheduleId,
       'service_request_id': serviceRequestId,
+      'created_by': createdBy,
       'requester_name': requesterName,
       'contact_number': contactNumber,
       'email': email,
@@ -92,6 +120,13 @@ class AppointmentModel {
       'end_time': endTime,
       'venue': venue,
       'officiant_name': officiantName,
+      'id_type': idType,
+      'id_number': idNumber,
+      'id_document_url': idDocumentUrl,
+      'is_id_verified': isIdVerified,
+      'id_verified_by': idVerifiedBy,
+      'id_verified_at': idVerifiedAt?.toIso8601String(),
+      'id_verification_notes': idVerificationNotes,
       'appointment_status': appointmentStatus,
       'appointment_remarks': appointmentRemarks,
     };

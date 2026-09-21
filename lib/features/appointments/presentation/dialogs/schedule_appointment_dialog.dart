@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
+import '../../models/appointment_model.dart';
 import '../../services/appointment_service.dart';
 import '../../services/liturgical_calendar_service.dart';
+import 'appointment_submission_success_dialog.dart';
 
 void showScheduleAppointmentModal(
     BuildContext context, {
@@ -106,6 +111,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   final _requesterNameController = TextEditingController();
   final _contactNumberController = TextEditingController();
   final _emailController = TextEditingController();
+  final _idNumberController = TextEditingController();
   final _remarksController = TextEditingController();
 
   final FocusNode _nameFocusNode = FocusNode();
@@ -115,6 +121,13 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   String _selectedService = 'Nuptial Mass (Wedding)';
   String _selectedVenue = 'Main Church Altar';
   String _selectedOfficiant = 'Rev. Fr. Joseph Santos';
+  String _selectedIdType = 'Philippine National ID (PhilID / ePhilID)';
+
+  // Attached File State (Web & Mobile Compatible)
+  Uint8List? _attachedIdFileBytes;
+  String? _attachedIdFileName;
+  int? _attachedIdFileSize;
+  bool _idFileHasError = false;
 
   late DateTime _selectedDate;
   TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
@@ -130,6 +143,22 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   Map<String, TimeOfDay>? _suggestedSlot;
   Timer? _debounceTimer;
 
+  bool get _isParishioner =>
+      AuthService.currentUser?.userRole.toLowerCase() == 'user';
+
+  final List<String> _philippineIdTypes = const [
+    'Philippine National ID (PhilID / ePhilID)',
+    'Driver\'s License (LTO)',
+    'UMID (SSS / GSIS)',
+    'Passport (DFA)',
+    'Postal ID (PhilPost)',
+    'Senior Citizen ID',
+    'Voter\'s ID / Certification (COMELEC)',
+    'Barangay ID / Certificate of Residency',
+    'PRC Professional ID',
+    'Solo Parent / PWD ID',
+  ];
+
   final Map<String, _ServicePreset> _presets = const {
     'Nuptial Mass (Wedding)': _ServicePreset(
       durationMinutes: 90,
@@ -142,7 +171,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       defaultVenue: 'Baptistery & Main Altar',
       defaultOfficiant: 'Rev. Fr. Parochial Vicar',
       durationLabel: '1 hour',
-      isCommunityBaptism: true, // Restricted to Weekends & 11 AM - 1 PM
+      isCommunityBaptism: true,
     ),
     'Funeral Mass & Blessing': _ServicePreset(
       durationMinutes: 60,
@@ -200,6 +229,13 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   @override
   void initState() {
     super.initState();
+
+    final user = AuthService.currentUser;
+    if (user != null && _isParishioner) {
+      _requesterNameController.text = user.fullName;
+      _emailController.text = user.email;
+    }
+
     if (widget.initialDate != null) {
       var target = DateTime(
         widget.initialDate!.year,
@@ -244,6 +280,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     _requesterNameController.dispose();
     _contactNumberController.dispose();
     _emailController.dispose();
+    _idNumberController.dispose();
     _remarksController.dispose();
     _nameFocusNode.dispose();
     _contactFocusNode.dispose();
@@ -251,9 +288,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     super.dispose();
   }
 
-  // ===========================================================================
-  // Validation Helpers (Positive Green Reinforcement)
-  // ===========================================================================
   bool get _isNameValid {
     final text = _requesterNameController.text.trim();
     if (text.isEmpty) return false;
@@ -268,7 +302,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   bool get _isEmailValid {
     final text = _emailController.text.trim();
-    if (text.isEmpty) return true;
+    if (text.isEmpty) return !_isParishioner;
     return RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(text);
   }
 
@@ -282,7 +316,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   void _applyPresetInitialTimes() {
     final preset = _presets[_selectedService]!;
     if (preset.isCommunityBaptism) {
-      _startTime = const TimeOfDay(hour: 11, minute: 0); // 11:00 AM mandatory start
+      _startTime = const TimeOfDay(hour: 11, minute: 0);
     }
     _endTime = _addMinutes(_startTime, preset.durationMinutes);
   }
@@ -300,7 +334,51 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     return '$hour:$minute $period';
   }
 
-  /// Live Conflict & Duplicate Requester Checker (Debounced)
+  Future<void> _pickIdDocument() async {
+    try {
+      // file_picker 13.x syntax: pickFile() returns PlatformFile?
+      final PlatformFile? file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      );
+
+      if (file != null) {
+        // file_picker 13.x syntax: length() returns Future<int?>
+        final int fileSize = (await file.length()) ?? 0;
+        if (fileSize > 5 * 1024 * 1024) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('File size exceeds 5MB limit. Please attach a smaller image.'),
+              backgroundColor: ParishColors.mercyRed,
+            ),
+          );
+          return;
+        }
+
+        // file_picker 13.x syntax: readAsBytes() returns Future<Uint8List>
+        final Uint8List bytes = await file.readAsBytes();
+
+        setState(() {
+          _attachedIdFileBytes = bytes;
+          _attachedIdFileName = file.name;
+          _attachedIdFileSize = fileSize;
+          _idFileHasError = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error picking ID file: $e');
+    }
+  }
+
+  void _removeAttachedIdDocument() {
+    setState(() {
+      _attachedIdFileBytes = null;
+      _attachedIdFileName = null;
+      _attachedIdFileSize = null;
+    });
+  }
+
   void _triggerDebouncedValidation() {
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 400), () {
@@ -520,9 +598,17 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   }
 
   Future<void> _submitAppointment() async {
-    setState(() => _errorMessage = null);
+    setState(() {
+      _errorMessage = null;
+      _idFileHasError = _isParishioner && _attachedIdFileBytes == null;
+    });
 
     if (!_formKey.currentState!.validate()) return;
+
+    if (_isParishioner && _attachedIdFileBytes == null) {
+      setState(() => _errorMessage = 'Please attach a photo or copy of your valid identification card.');
+      return;
+    }
 
     final preset = _presets[_selectedService];
     if (preset?.isCommunityBaptism == true) {
@@ -550,17 +636,33 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
     try {
       final dateStr = '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+      final emailValue = _emailController.text.trim();
 
-      await AppointmentService.createAppointment(
+      String? uploadedDocumentPath;
+      final tempId = 'TEMP-${DateTime.now().millisecondsSinceEpoch}';
+
+      // Upload valid ID file to Supabase Private Storage if attached
+      if (_attachedIdFileBytes != null && _attachedIdFileName != null) {
+        uploadedDocumentPath = await AppointmentService.uploadIdDocument(
+          appointmentId: tempId,
+          fileBytes: _attachedIdFileBytes!,
+          fileName: _attachedIdFileName!,
+        );
+      }
+
+      final createdAppointment = await AppointmentService.createAppointment(
         serviceType: _selectedService,
         requesterName: _requesterNameController.text.trim(),
         contactNumber: _contactNumberController.text.trim(),
-        email: _emailController.text.trim(),
+        email: emailValue,
         date: dateStr,
         startTime: startStr,
         endTime: endStr,
         venue: _selectedVenue,
         officiant: _selectedOfficiant,
+        idType: _selectedIdType,
+        idNumber: _idNumberController.text.trim(),
+        idDocumentUrl: uploadedDocumentPath,
         remarks: _remarksController.text.trim(),
       );
 
@@ -568,16 +670,10 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
       Navigator.pop(context);
 
-      final isTuesday = _selectedDate.weekday == DateTime.tuesday;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isTuesday
-              ? 'Appointment submitted for Tuesday! Marked as PENDING for Priest approval.'
-              : 'Appointment registered and confirmed successfully!'),
-          backgroundColor: isTuesday ? ParishColors.goldAccent : ParishColors.oliveGreen,
-          duration: const Duration(seconds: 4),
-        ),
+      showAppointmentSubmissionSuccessModal(
+        context,
+        appointment: createdAppointment,
+        userEmail: emailValue,
       );
 
       widget.onAppointmentSaved?.call();
@@ -637,7 +733,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Schedule Parish Service',
+                          _isParishioner ? 'Request Parish Service' : 'Schedule Parish Service',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
                         ),
                         Text(
@@ -670,7 +766,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Form Error Banner
                       if (_errorMessage != null) ...[
                         Container(
                           width: double.infinity,
@@ -738,11 +833,14 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ],
                       const SizedBox(height: 14),
 
-                      // Requester Full Name (with Title Case & Gentle Validation)
-                      _buildFieldLabel('Requester Full Name *'),
+                      // Requester Full Name
+                      _buildFieldLabel(_isParishioner
+                          ? 'Requester Full Name (Account Linked)'
+                          : 'Requester Full Name *'),
                       TextFormField(
                         controller: _requesterNameController,
                         focusNode: _nameFocusNode,
+                        enabled: !_isParishioner,
                         inputFormatters: [TitleCaseInputFormatter()],
                         onChanged: (_) {
                           setState(() {});
@@ -760,17 +858,23 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                           }
                           return null;
                         },
-                        style: const TextStyle(fontSize: 14),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _isParishioner ? textMutedColor : textDarkColor,
+                          fontWeight: _isParishioner ? FontWeight.w600 : FontWeight.normal,
+                        ),
                         decoration: _inputDecoration(
                           hint: 'First Name and Last Name',
+                          prefixIcon: _isParishioner
+                              ? const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue)
+                              : null,
                           suffixIcon: _isNameValid
                               ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20)
                               : null,
                         ),
                       ),
 
-                      // Duplicate Requester Same-Day Notice
-                      if (_duplicateRequesterWarning != null) ...[
+                      if (_duplicateRequesterWarning != null && !_isParishioner) ...[
                         const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.all(10),
@@ -795,7 +899,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ],
                       const SizedBox(height: 14),
 
-                      // Contact & Email
+                      // Contact & Email Fields
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -837,23 +941,36 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildFieldLabel('Email (Optional)'),
+                                _buildFieldLabel(_isParishioner
+                                    ? 'Email Address (Account Linked) *'
+                                    : 'Email (Optional)'),
                                 TextFormField(
                                   controller: _emailController,
                                   focusNode: _emailFocusNode,
+                                  enabled: !_isParishioner,
                                   keyboardType: TextInputType.emailAddress,
                                   onChanged: (_) => setState(() {}),
                                   validator: (v) {
                                     final text = (v ?? '').trim();
-                                    if (text.isEmpty) return null;
-                                    if (!RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(text)) {
+                                    if (_isParishioner && text.isEmpty) {
+                                      return 'Email address is required';
+                                    }
+                                    if (text.isNotEmpty &&
+                                        !RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(text)) {
                                       return 'Invalid email address';
                                     }
                                     return null;
                                   },
-                                  style: const TextStyle(fontSize: 14),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: _isParishioner ? textMutedColor : textDarkColor,
+                                    fontWeight: _isParishioner ? FontWeight.w600 : FontWeight.normal,
+                                  ),
                                   decoration: _inputDecoration(
                                     hint: 'name@email.com',
+                                    prefixIcon: _isParishioner
+                                        ? const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue)
+                                        : const Icon(Icons.email_outlined, size: 18, color: ParishColors.marianBlue),
                                     suffixIcon: _emailController.text.trim().isNotEmpty
                                         ? (_isEmailValid
                                         ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20)
@@ -867,6 +984,133 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         ],
                       ),
                       const SizedBox(height: 16),
+
+                      // Valid ID Section
+                      _buildFieldLabel(_isParishioner
+                          ? 'Identification Document for Verification * (Required)'
+                          : 'Identification Document for Verification *'),
+                      DropdownButtonFormField<String>(
+                        value: _selectedIdType,
+                        items: _philippineIdTypes
+                            .map((id) => DropdownMenuItem(
+                          value: id,
+                          child: Text(id, style: const TextStyle(fontSize: 13)),
+                        ))
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedIdType = val);
+                        },
+                        decoration: _inputDecoration(),
+                      ),
+                      const SizedBox(height: 10),
+
+                      TextFormField(
+                        controller: _idNumberController,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: _inputDecoration(
+                          hint: 'ID Serial / Control Number (Optional)',
+                          prefixIcon: const Icon(Icons.badge_outlined, size: 18, color: ParishColors.marianBlue),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // File Upload Attachment Box (file_picker 13.x API)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _attachedIdFileBytes != null
+                              ? ParishColors.oliveGreenSurface
+                              : (_idFileHasError ? ParishColors.mercyRedSurface : ParishColors.backgroundLight),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _attachedIdFileBytes != null
+                                ? ParishColors.oliveGreen
+                                : (_idFileHasError ? ParishColors.mercyRed : borderGreyColor),
+                            width: _idFileHasError || _attachedIdFileBytes != null ? 1.4 : 1.0,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      _attachedIdFileBytes != null
+                                          ? Icons.check_circle
+                                          : Icons.attach_file,
+                                      size: 18,
+                                      color: _attachedIdFileBytes != null
+                                          ? ParishColors.oliveGreen
+                                          : ParishColors.marianBlue,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _attachedIdFileBytes != null
+                                          ? 'Valid ID Document Attached'
+                                          : (_isParishioner ? 'Attach Valid ID Photo * (Required)' : 'Attach Valid ID Photo (Optional)'),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: _attachedIdFileBytes != null
+                                            ? ParishColors.oliveGreen
+                                            : textDarkColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (_attachedIdFileBytes != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
+                                    onPressed: _removeAttachedIdDocument,
+                                    tooltip: 'Remove Attached File',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            if (_attachedIdFileBytes == null) ...[
+                              Text(
+                                'Upload a clear front photo of your selected Philippine ID (JPG, PNG, or PDF, max 5MB).',
+                                style: TextStyle(fontSize: 11.5, color: textMutedColor),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 38,
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: ParishColors.marianBlue, width: 1.2),
+                                    foregroundColor: ParishColors.marianBlue,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onPressed: _pickIdDocument,
+                                  icon: const Icon(Icons.upload_file, size: 16),
+                                  label: const Text('Select ID Photo / File', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                            ] else ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.insert_drive_file, size: 16, color: ParishColors.oliveGreen),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      '${_attachedIdFileName ?? 'valid_id.jpg'} (${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB)',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.oliveGreen),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
 
                       // Scheduled Date
                       _buildFieldLabel(currentPreset?.isCommunityBaptism == true
@@ -1011,7 +1255,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: ParishColors.mercyRed),
                           ),
                           child: Column(
@@ -1109,7 +1353,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 14),
 
-                      // Remarks with Character Counter
+                      // Remarks
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -1163,7 +1407,9 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       style: ElevatedButton.styleFrom(
                         backgroundColor: hasConflict
                             ? ParishColors.borderGrey
-                            : (isTuesday ? ParishColors.goldAccent : ParishColors.marianBlue),
+                            : (isTuesday || _isParishioner
+                            ? ParishColors.goldAccent
+                            : ParishColors.marianBlue),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1174,8 +1420,10 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                           : const Icon(Icons.check, size: 20),
                       label: Text(
                         _isSubmitting
-                            ? 'Validating...'
-                            : (isTuesday ? 'Submit for Priest Approval' : 'Confirm Schedule'),
+                            ? 'Validating & Uploading...'
+                            : (_isParishioner
+                            ? 'Submit for Office Approval'
+                            : (isTuesday ? 'Submit for Priest Approval' : 'Confirm Schedule')),
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                     ),
@@ -1199,9 +1447,10 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     );
   }
 
-  InputDecoration _inputDecoration({String? hint, Widget? suffixIcon}) {
+  InputDecoration _inputDecoration({String? hint, Widget? prefixIcon, Widget? suffixIcon}) {
     return InputDecoration(
       hintText: hint,
+      prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: ParishColors.backgroundLight,

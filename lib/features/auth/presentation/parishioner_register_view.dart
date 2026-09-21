@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
-import '../../navigation/presentation/main_navigation_shell.dart';
+import '../../navigation/presentation/parishioner_navigation_shell.dart';
 import '../services/auth_service.dart';
 
 class ParishionerRegisterView extends StatefulWidget {
@@ -141,10 +141,11 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
       ),
     );
 
+    // ---- ROLE-BASED REDIRECTION ----
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (context) => MainNavigationShell(currentUser: user),
+        builder: (context) => ParishionerNavigationShell(currentUser: user),
       ),
           (route) => false,
     );

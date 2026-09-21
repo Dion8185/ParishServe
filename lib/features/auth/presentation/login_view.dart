@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../navigation/presentation/main_navigation_shell.dart';
+import '../../navigation/presentation/parishioner_navigation_shell.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import 'dialogs/login_help_dialog.dart';
@@ -51,12 +52,24 @@ class _LoginViewState extends State<LoginView> {
       } else if (!user.accountStatus) {
         _showErrorDialog('This account (${user.userId}) has been deactivated. Please contact the Parish Priest or Administrator.');
       } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => MainNavigationShell(currentUser: user),
-          ),
-        );
+        // ---- ROLE-BASED REDIRECTION ----
+        if (user.userRole.toLowerCase() == 'user') {
+          // Send Parishioners to the Client Web Portal
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ParishionerNavigationShell(currentUser: user),
+            ),
+          );
+        } else {
+          // Send Internal Staff to the Staff Management Portal
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainNavigationShell(currentUser: user),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (!mounted) return;
