@@ -19,7 +19,6 @@ class ConfirmationService {
 
   /// Validates and inserts a manual Confirmation Record into public.confirmation_records
   static Future<ConfirmationRecordModel> insertManualConfirmationRecord(Map<String, dynamic> data) async {
-    // 1. Validate required fields (including date_of_baptism)
     final requiredFields = {
       'book_number': 'Book Number',
       'page_number': 'Page Number',
@@ -47,7 +46,6 @@ class ConfirmationService {
       }
     }
 
-    // 2. Physical reference limits (Canon 535)
     final bookNum = int.tryParse(data['book_number'].toString().trim());
     if (bookNum == null || bookNum < 1 || bookNum > 200) {
       throw 'Book Number must be between 1 and 200.';
@@ -71,7 +69,6 @@ class ConfirmationService {
     data['page_number'] = cleanPage;
     data['line_number'] = cleanLine;
 
-    // 3. Duplicate physical reference check
     final duplicate = await _client
         .from('confirmation_records')
         .select('record_id')
@@ -84,12 +81,10 @@ class ConfirmationService {
       throw 'This Book, Page, and Line reference is already registered in the Confirmation Register.';
     }
 
-    // 4. Generate unique record ID: CNF-YY-XXXX
     if (data['record_id'] == null || data['record_id'].toString().trim().isEmpty) {
       data['record_id'] = await _generateRecordId();
     }
 
-    // 5. Automatic encoded_by user mapping
     String? encoderId = AuthService.currentUser?.userId;
     if (encoderId == null || encoderId.isEmpty) {
       final userQuery = await _client
@@ -102,14 +97,12 @@ class ConfirmationService {
     }
     data['encoded_by'] = encoderId;
 
-    // 6. Set defaults
     data['is_verified'] = false;
     data['scanned_image_url'] = null;
     data['ocr_raw_text'] = null;
     data['entry_status'] = data['entry_status'] ?? 'ORIGINAL';
     data['stipend'] = data['stipend'] ?? 0.00;
 
-    // 7. Insert record
     final response = await _client
         .from('confirmation_records')
         .insert(data)
@@ -119,7 +112,48 @@ class ConfirmationService {
     return ConfirmationRecordModel.fromMap(response);
   }
 
-  /// Generates a sequential record ID: CNF-YY-XXXX
+  /// Updates an existing manual Confirmation Record
+  static Future<ConfirmationRecordModel> updateConfirmationRecord(String recordId, Map<String, dynamic> data) async {
+    final requiredFields = {
+      'confirmand_first_name': 'Confirmand First Name',
+      'confirmand_last_name': 'Confirmand Last Name',
+      'date_of_baptism': 'Date of Baptism',
+      'church_baptized': 'Church of Baptism',
+      'father_first_name': 'Father First Name',
+      'father_last_name': 'Father Last Name',
+      'mother_first_name': 'Mother First Name',
+      'mother_maiden_last_name': 'Mother Maiden Last Name',
+      'sponsor_1_first_name': 'Sponsor 1 First Name',
+      'sponsor_1_last_name': 'Sponsor 1 Last Name',
+      'date_of_confirmation': 'Date of Confirmation',
+      'minister_first_name': 'Minister First Name',
+      'minister_last_name': 'Minister Last Name',
+      'parish_name': 'Parish Name',
+    };
+
+    for (final entry in requiredFields.entries) {
+      final val = data[entry.key];
+      if (val == null || (val is String && val.trim().isEmpty)) {
+        throw '${entry.value} is required.';
+      }
+    }
+
+    // Protect physical coordinates from being altered
+    data.remove('record_id');
+    data.remove('book_number');
+    data.remove('page_number');
+    data.remove('line_number');
+
+    final response = await _client
+        .from('confirmation_records')
+        .update(data)
+        .eq('record_id', recordId)
+        .select()
+        .single();
+
+    return ConfirmationRecordModel.fromMap(response);
+  }
+
   static Future<String> _generateRecordId() async {
     final now = DateTime.now();
     final yearSuffix = (now.year % 100).toString().padLeft(2, '0');

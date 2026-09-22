@@ -5,8 +5,13 @@ import '../dialogs/discard_entry_dialog.dart';
 
 class MatrimonyManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
+  final Map<String, dynamic>? initialData; // Enables Edit Record Mode
 
-  const MatrimonyManualEntryPage({super.key, this.onRecordSaved});
+  const MatrimonyManualEntryPage({
+    super.key,
+    this.onRecordSaved,
+    this.initialData,
+  });
 
   @override
   State<MatrimonyManualEntryPage> createState() => _MatrimonyManualEntryPageState();
@@ -15,6 +20,8 @@ class MatrimonyManualEntryPage extends StatefulWidget {
 class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
+
+  bool get isEditMode => widget.initialData != null;
 
   // Royal Amethyst / Burgundy Theme Accent for Matrimony
   static const Color _matrimonyBurgundy = Color(0xFF9D174D);
@@ -117,6 +124,96 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   bool _dateOfMarriageHasError = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (isEditMode) {
+      _populateExistingData(widget.initialData!);
+    }
+  }
+
+  void _populateExistingData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+    _entryStatus = data['entry_status']?.toString() ?? 'ORIGINAL';
+    _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
+
+    // Groom
+    _groomFirstNameController.text = data['groom_first_name']?.toString() ?? '';
+    _groomMiddleNameController.text = data['groom_middle_name']?.toString() ?? '';
+    _groomLastNameController.text = data['groom_last_name']?.toString() ?? '';
+    _groomSuffixController.text = data['groom_suffix']?.toString() ?? '';
+    _groomCivilStatus = data['groom_civil_status']?.toString() ?? 'Single';
+    _groomAgeController.text = data['groom_age']?.toString() ?? '';
+    _groomDateOfBirth = DateTime.tryParse(data['groom_date_of_birth']?.toString() ?? '');
+    _groomPlaceOfBirthController.text = data['groom_place_of_birth']?.toString() ?? '';
+    _groomAddressController.text = data['groom_address']?.toString() ?? '';
+    _groomFatherFirstNameController.text = data['groom_father_first_name']?.toString() ?? '';
+    _groomFatherMiddleNameController.text = data['groom_father_middle_name']?.toString() ?? '';
+    _groomFatherLastNameController.text = data['groom_father_last_name']?.toString() ?? '';
+    _groomMotherFirstNameController.text = data['groom_mother_first_name']?.toString() ?? '';
+    _groomMotherMiddleNameController.text = data['groom_mother_middle_name']?.toString() ?? '';
+    _groomMotherMaidenLastController.text = data['groom_mother_maiden_last']?.toString() ?? '';
+
+    // Bride
+    _brideFirstNameController.text = data['bride_first_name']?.toString() ?? '';
+    _brideMiddleNameController.text = data['bride_middle_name']?.toString() ?? '';
+    _brideLastNameController.text = data['bride_last_name']?.toString() ?? '';
+    _brideSuffixController.text = data['bride_suffix']?.toString() ?? '';
+    _brideCivilStatus = data['bride_civil_status']?.toString() ?? 'Single';
+    _brideAgeController.text = data['bride_age']?.toString() ?? '';
+    _brideDateOfBirth = DateTime.tryParse(data['bride_date_of_birth']?.toString() ?? '');
+    _bridePlaceOfBirthController.text = data['bride_place_of_birth']?.toString() ?? '';
+    _brideAddressController.text = data['bride_address']?.toString() ?? '';
+    _brideFatherFirstNameController.text = data['bride_father_first_name']?.toString() ?? '';
+    _brideFatherMiddleNameController.text = data['bride_father_middle_name']?.toString() ?? '';
+    _brideFatherLastNameController.text = data['bride_father_last_name']?.toString() ?? '';
+    _brideMotherFirstNameController.text = data['bride_mother_first_name']?.toString() ?? '';
+    _brideMotherMiddleNameController.text = data['bride_mother_middle_name']?.toString() ?? '';
+    _brideMotherMaidenLastController.text = data['bride_mother_maiden_last']?.toString() ?? '';
+
+    // Sponsors
+    _sponsor1FirstNameController.text = data['sponsor_1_first_name']?.toString() ?? '';
+    _sponsor1MiddleNameController.text = data['sponsor_1_middle_name']?.toString() ?? '';
+    _sponsor1LastNameController.text = data['sponsor_1_last_name']?.toString() ?? '';
+    _sponsor1OriginAddressController.text = data['sponsor_1_origin_address']?.toString() ?? '';
+
+    _sponsor2FirstNameController.text = data['sponsor_2_first_name']?.toString() ?? '';
+    _sponsor2MiddleNameController.text = data['sponsor_2_middle_name']?.toString() ?? '';
+    _sponsor2LastNameController.text = data['sponsor_2_last_name']?.toString() ?? '';
+    _sponsor2OriginAddressController.text = data['sponsor_2_origin_address']?.toString() ?? '';
+
+    final rawOtherSponsors = data['other_sponsors']?.toString() ?? '';
+    if (rawOtherSponsors.trim().isNotEmpty) {
+      final list = rawOtherSponsors.contains('\n')
+          ? rawOtherSponsors.split('\n')
+          : rawOtherSponsors.split(',');
+      for (var s in list) {
+        if (s.trim().isNotEmpty) {
+          _otherSponsorControllers.add(TextEditingController(text: s.trim()));
+        }
+      }
+    }
+
+    // Ceremony Details
+    _dateOfMarriage = DateTime.tryParse(data['date_of_marriage']?.toString() ?? '');
+    _marriageType = data['marriage_type']?.toString() ?? 'Between Catholics';
+    _isFilipinoForeigner = data['is_filipino_foreigner'] == true;
+    _marriageLicenseNoController.text = data['marriage_license_no']?.toString() ?? '';
+    _licenseDateRegistered = DateTime.tryParse(data['license_date_registered']?.toString() ?? '');
+    _licensePlaceIssuedController.text = data['license_place_issued']?.toString() ?? '';
+
+    _solemnizerFirstNameController.text = data['solemnizer_first_name']?.toString() ?? '';
+    _solemnizerMiddleNameController.text = data['solemnizer_middle_name']?.toString() ?? '';
+    _solemnizerLastNameController.text = data['solemnizer_last_name']?.toString() ?? '';
+    _crasmNumberController.text = data['crasm_number']?.toString() ?? '';
+    _crasmValidityDate = DateTime.tryParse(data['crasm_validity_date']?.toString() ?? '');
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     _bookNumberController.dispose();
@@ -171,10 +268,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     super.dispose();
   }
 
-  // ===========================================================================
-  // Validation Helpers
-  // ===========================================================================
-
   String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) {
@@ -207,7 +300,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   }
 
   Future<void> _selectDate(BuildContext context, int dateType) async {
-    // 0: Registry, 1: Groom DOB, 2: Bride DOB, 3: Marriage Date, 4: License Registered, 5: CRASM Validity
     final now = DateTime.now();
     DateTime initialDate = now;
 
@@ -252,10 +344,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       _otherSponsorControllers.removeAt(index);
     });
   }
-
-  // ===========================================================================
-  // Step Validation with Live Form State Checking
-  // ===========================================================================
 
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
@@ -429,16 +517,25 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
         'parish_name': _parishNameController.text.trim(),
       };
 
-      await MatrimonyService.insertManualMatrimonyRecord(recordMap);
+      if (isEditMode) {
+        await MatrimonyService.updateMatrimonyRecord(
+          widget.initialData!['record_id'].toString(),
+          recordMap,
+        );
+      } else {
+        await MatrimonyService.insertManualMatrimonyRecord(recordMap);
+      }
 
       if (!mounted) return;
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Matrimony record successfully registered in Liber Matrimoniorum.'),
+        SnackBar(
+          content: Text(isEditMode
+              ? 'Matrimony record updated successfully in Liber Matrimoniorum.'
+              : 'Matrimony record successfully registered in Liber Matrimoniorum.'),
           backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
 
@@ -495,11 +592,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Matrimony Manual Entry',
+                isEditMode ? 'Edit Matrimony Record' : 'Matrimony Manual Entry',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
               ),
               Text(
-                'Canonical Registry Book (Liber Matrimoniorum)',
+                isEditMode
+                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
+                    : 'Canonical Registry Book (Liber Matrimoniorum)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
@@ -515,7 +614,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
 
               return Column(
                 children: [
-                  // Google Forms Progress Banner
                   Container(
                     width: double.infinity,
                     color: cardWhiteColor,
@@ -530,7 +628,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Section ${_currentStep + 1} of $_totalSteps',
+                                  isEditMode
+                                      ? 'EDITING SECTION ${_currentStep + 1} OF $_totalSteps'
+                                      : 'SECTION ${_currentStep + 1} OF $_totalSteps',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -565,7 +665,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   ),
                   Divider(height: 1, color: borderGreyColor),
 
-                  // Form Page Content
                   Expanded(
                     child: SingleChildScrollView(
                       controller: _scrollController,
@@ -575,7 +674,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                           constraints: const BoxConstraints(maxWidth: 960),
                           child: Form(
                             key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction, // Live real-time validation feedback
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -625,7 +724,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     ),
                   ),
 
-                  // Sticky Bottom Bar
+                  // Bottom Action Bar
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
                     decoration: BoxDecoration(
@@ -671,8 +770,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Matrimony Record' : 'Continue / Next'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Matrimony Record' : 'Save Matrimony Record')
+                                      : 'Continue / Next'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -714,7 +815,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                             ),
                             const Spacer(),
                             SizedBox(
-                              width: isMobile ? 190 : 260,
+                              width: isMobile ? 210 : 270,
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
@@ -738,8 +839,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Matrimony Record' : 'Next Section'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Matrimony Record' : 'Save Matrimony Record')
+                                      : 'Next Section'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -758,10 +861,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Step Views Router
-  // ===========================================================================
-
   Widget _buildActiveStepContent({required bool isMobile, required bool isSmallMobile}) {
     switch (_currentStep) {
       case 0:
@@ -779,30 +878,54 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     }
   }
 
-  // STEP 1: Canonical Reference
   Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
     return _buildSectionCard(
-      title: 'Canonical Ledger Designation',
+      title: isEditMode
+          ? 'Canonical Ledger Designation (Coordinates Locked)'
+          : 'Canonical Ledger Designation',
       icon: Icons.menu_book,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isEditMode) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _burgundySurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _matrimonyBurgundy.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock, size: 16, color: _matrimonyBurgundy),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Book, Page, and Line coordinates are permanent canonical markers and cannot be altered.',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _matrimonyBurgundy),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           isSmallMobile
               ? Column(
             children: [
-              _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
-              _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
-              _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
+              _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
+              _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
+              _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
             ],
           )
               : Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
+              Expanded(child: _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
+              Expanded(child: _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
+              Expanded(child: _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
             ],
           ),
           _buildAdaptivePair(
@@ -827,7 +950,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  // STEP 2: Groom Information
   Widget _buildStep2GroomInformation({required bool isMobile}) {
     return Column(
       children: [
@@ -961,7 +1083,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  // STEP 3: Bride Information
   Widget _buildStep3BrideInformation({required bool isMobile}) {
     return Column(
       children: [
@@ -1095,7 +1216,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  // STEP 4: Sponsors (Primary + Dynamic Other Sponsors with [+] Add Witness)
   Widget _buildStep4SponsorsInformation({required bool isMobile}) {
     return Column(
       children: [
@@ -1197,7 +1317,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  // STEP 5: Ceremony & Civil Compliance
   Widget _buildStep5CeremonyAndLegal({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Marriage Ceremony, License & Officiating Minister',
@@ -1266,10 +1385,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Google Forms Header & UI Blocks
-  // ===========================================================================
-
   Widget _buildGoogleFormsSectionHeader({required String title, required String description, required int stepIndex}) {
     return Container(
       width: double.infinity,
@@ -1298,11 +1413,19 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('SECTION ${stepIndex + 1} OF $_totalSteps', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _matrimonyBurgundy, letterSpacing: 1.0)),
+                    Text(
+                      isEditMode
+                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
+                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _matrimonyBurgundy, letterSpacing: 1.0),
+                    ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(color: _burgundySurface, borderRadius: BorderRadius.circular(6)),
-                      child: const Text('Matrimony Register', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _matrimonyBurgundy)),
+                      child: Text(
+                        isEditMode ? 'Edit Record Mode' : 'Matrimony Register',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _matrimonyBurgundy),
+                      ),
                     ),
                   ],
                 ),
@@ -1373,7 +1496,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  Widget _buildTextFormField({required TextEditingController controller, required String label, required bool isRequired, bool enabled = true, TextInputType keyboardType = TextInputType.text, int maxLines = 1, String? Function(String?)? validator}) {
+  Widget _buildTextFormField({
+    required TextEditingController controller,
+    required String label,
+    required bool isRequired,
+    bool enabled = true,
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -1405,7 +1536,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  Widget _buildDatePickerField({required String label, required bool isRequired, required DateTime? value, required bool hasError, required VoidCallback onTap}) {
+  Widget _buildDatePickerField({
+    required String label,
+    required bool isRequired,
+    required DateTime? value,
+    required bool hasError,
+    required VoidCallback onTap,
+  }) {
     final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1438,7 +1575,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  Widget _buildDropdownField({required String label, required bool isRequired, required String value, required List<String> items, required void Function(String?) onChanged}) {
+  Widget _buildDropdownField({
+    required String label,
+    required bool isRequired,
+    required String value,
+    required List<String> items,
+    required void Function(String?) onChanged,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(

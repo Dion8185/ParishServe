@@ -29,7 +29,6 @@ class FirstCommunionService {
       int highest = 0;
       for (final item in records) {
         final cNo = item['control_number']?.toString() ?? '';
-        // Expected format: FCM-YYYY-XXXX or similar with hyphens
         final parts = cNo.split('-');
         if (parts.length >= 3) {
           final seq = int.tryParse(parts.last);
@@ -49,7 +48,6 @@ class FirstCommunionService {
 
   /// Validates and inserts a manual First Communion record into public.first_communion_records
   static Future<FirstCommunionRecordModel> insertManualFirstCommunionRecord(Map<String, dynamic> data) async {
-    // 1. Required fields validation
     final requiredFields = {
       'year': 'Communion Year',
       'control_number': 'Control Number',
@@ -77,7 +75,6 @@ class FirstCommunionService {
     final controlNum = data['control_number'].toString().trim();
     data['control_number'] = controlNum;
 
-    // 2. Duplicate control number check within the specified reception year
     final duplicate = await _client
         .from('first_communion_records')
         .select('record_id')
@@ -89,12 +86,10 @@ class FirstCommunionService {
       throw 'Control Number "$controlNum" is already registered for the year $yearNum.';
     }
 
-    // 3. Generate unique record ID (shares the same FCM-Year-Number sequence string)
     if (data['record_id'] == null || data['record_id'].toString().trim().isEmpty) {
       data['record_id'] = controlNum;
     }
 
-    // 4. Automatic encoded_by mapping
     String? encoderId = AuthService.currentUser?.userId;
     if (encoderId == null || encoderId.isEmpty) {
       final defaultUser = await _client
@@ -107,13 +102,45 @@ class FirstCommunionService {
     }
     data['encoded_by'] = encoderId;
 
-    // 5. Managed defaults
     data['is_verified'] = false;
     data['scanned_image_url'] = null;
 
     final response = await _client
         .from('first_communion_records')
         .insert(data)
+        .select()
+        .single();
+
+    return FirstCommunionRecordModel.fromMap(response);
+  }
+
+  /// Updates an existing manual First Communion record in public.first_communion_records
+  static Future<FirstCommunionRecordModel> updateFirstCommunionRecord(String recordId, Map<String, dynamic> data) async {
+    final requiredFields = {
+      'communicant_first_name': 'Communicant First Name',
+      'communicant_last_name': 'Communicant Last Name',
+      'date_of_communion': 'Date of First Holy Communion',
+      'baptism_parish': 'Church of Baptism',
+      'minister_first_name': 'Minister First Name',
+      'minister_last_name': 'Minister Last Name',
+    };
+
+    for (final entry in requiredFields.entries) {
+      final val = data[entry.key];
+      if (val == null || (val is String && val.trim().isEmpty)) {
+        throw '${entry.value} is required.';
+      }
+    }
+
+    // Protect control number and year coordinates from being altered
+    data.remove('record_id');
+    data.remove('year');
+    data.remove('control_number');
+
+    final response = await _client
+        .from('first_communion_records')
+        .update(data)
+        .eq('record_id', recordId)
         .select()
         .single();
 

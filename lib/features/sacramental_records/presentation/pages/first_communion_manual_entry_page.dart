@@ -5,8 +5,13 @@ import '../dialogs/discard_entry_dialog.dart';
 
 class FirstCommunionManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
+  final Map<String, dynamic>? initialData; // Enables Edit Record Mode
 
-  const FirstCommunionManualEntryPage({super.key, this.onRecordSaved});
+  const FirstCommunionManualEntryPage({
+    super.key,
+    this.onRecordSaved,
+    this.initialData,
+  });
 
   @override
   State<FirstCommunionManualEntryPage> createState() => _FirstCommunionManualEntryPageState();
@@ -15,6 +20,8 @@ class FirstCommunionManualEntryPage extends StatefulWidget {
 class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
+
+  bool get isEditMode => widget.initialData != null;
 
   // Eucharistic Gold Accent Colors
   static const Color _eucharisticGold = Color(0xFFD49B18);
@@ -73,7 +80,37 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   @override
   void initState() {
     super.initState();
-    _loadAutoControlNumber();
+    if (isEditMode) {
+      _populateExistingData(widget.initialData!);
+    } else {
+      _loadAutoControlNumber();
+    }
+  }
+
+  void _populateExistingData(Map<String, dynamic> data) {
+    _yearController.text = data['year']?.toString() ?? '${DateTime.now().year}';
+    _controlNumberController.text = data['control_number']?.toString() ?? '';
+    _dateOfCommunion = DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
+    _communicantFirstNameController.text = data['communicant_first_name']?.toString() ?? '';
+    _communicantMiddleNameController.text = data['communicant_middle_name']?.toString() ?? '';
+    _communicantLastNameController.text = data['communicant_last_name']?.toString() ?? '';
+    _baptismParishController.text = data['baptism_parish']?.toString() ?? '';
+    _baptismDate = DateTime.tryParse(data['baptism_date']?.toString() ?? '');
+
+    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+
+    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+
+    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
+    _remarksController.text = data['remarks']?.toString() ?? '';
+
+    _isLoadingControlNo = false;
   }
 
   Future<void> _loadAutoControlNumber() async {
@@ -116,10 +153,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     _remarksController.dispose();
     super.dispose();
   }
-
-  // ===========================================================================
-  // Validation Helpers
-  // ===========================================================================
 
   String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
     final text = value?.trim() ?? '';
@@ -170,10 +203,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       });
     }
   }
-
-  // ===========================================================================
-  // Google Forms Step Validation with Live AutovalidateMode
-  // ===========================================================================
 
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
@@ -298,17 +327,26 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
         'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
       };
 
-      await FirstCommunionService.insertManualFirstCommunionRecord(recordMap);
+      if (isEditMode) {
+        await FirstCommunionService.updateFirstCommunionRecord(
+          widget.initialData!['record_id'].toString(),
+          recordMap,
+        );
+      } else {
+        await FirstCommunionService.insertManualFirstCommunionRecord(recordMap);
+      }
 
       if (!mounted) return;
 
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('First Communion record saved in Liber Primae Communionis.'),
+        SnackBar(
+          content: Text(isEditMode
+              ? 'First Communion record updated successfully in Liber Primae Communionis.'
+              : 'First Communion record saved in Liber Primae Communionis.'),
           backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
 
@@ -365,11 +403,13 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'First Communion Manual Entry',
+                isEditMode ? 'Edit First Communion Record' : 'First Communion Manual Entry',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
               ),
               Text(
-                'Canonical Registry Book (Liber Primae Communionis)',
+                isEditMode
+                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
+                    : 'Canonical Registry Book (Liber Primae Communionis)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
@@ -385,7 +425,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
 
               return Column(
                 children: [
-                  // Google Forms Progress Banner
                   Container(
                     width: double.infinity,
                     color: cardWhiteColor,
@@ -400,7 +439,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Section ${_currentStep + 1} of $_totalSteps',
+                                  isEditMode
+                                      ? 'Editing Section ${_currentStep + 1} of $_totalSteps'
+                                      : 'Section ${_currentStep + 1} of $_totalSteps',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -434,8 +475,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     ),
                   ),
                   Divider(height: 1, color: borderGreyColor),
-
-                  // Form Page Content
                   Expanded(
                     child: SingleChildScrollView(
                       controller: _scrollController,
@@ -445,19 +484,16 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                           constraints: const BoxConstraints(maxWidth: 960),
                           child: Form(
                             key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction, // Live real-time validation feedback
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Google Forms Header Card
                                 _buildGoogleFormsSectionHeader(
                                   title: _stepTitles[_currentStep],
                                   description: _stepDescriptions[_currentStep],
                                   stepIndex: _currentStep,
                                 ),
                                 const SizedBox(height: 16),
-
-                                // Validation Banner
                                 if (_errorMessage != null) ...[
                                   Container(
                                     width: double.infinity,
@@ -486,8 +522,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                                     ),
                                   ),
                                 ],
-
-                                // Paginated Step View Switcher
                                 _buildActiveStepContent(isMobile: isMobile),
                                 const SizedBox(height: 24),
                               ],
@@ -497,8 +531,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                       ),
                     ),
                   ),
-
-                  // Responsive Sticky Bottom Navigation Bar (Back, Next, Submit)
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
                     decoration: BoxDecoration(
@@ -544,8 +576,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Communion Record' : 'Continue / Next'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Communion Record' : 'Save Communion Record')
+                                      : 'Continue / Next'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -611,8 +645,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Communion Record' : 'Next Section'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Communion Record' : 'Save Communion Record')
+                                      : 'Next Section'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -631,10 +667,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     );
   }
 
-  // ===========================================================================
-  // Step Views
-  // ===========================================================================
-
   Widget _buildActiveStepContent({required bool isMobile}) {
     switch (_currentStep) {
       case 0:
@@ -650,20 +682,45 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     }
   }
 
-  // STEP 1: Record Tracking & Reference (Auto-generated Read-only Control Number)
   Widget _buildStep1TrackingAndReference({required bool isMobile}) {
     return _buildSectionCard(
-      title: 'Canonical Ledger & Control Reference',
+      title: isEditMode
+          ? 'Canonical Ledger & Control Reference (Locked)'
+          : 'Canonical Ledger & Control Reference',
       icon: Icons.bookmark_outline,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isEditMode) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _goldSurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _eucharisticGold.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock, size: 16, color: _eucharisticGold),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Archival Year and Control Number are permanent canonical identifiers and cannot be altered.',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _eucharisticGold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
               controller: _yearController,
               label: 'Archival Reception Year',
               isRequired: true,
+              enabled: !isEditMode, // Locked in Edit Mode
               keyboardType: TextInputType.number,
               onChanged: (_) => _loadAutoControlNumber(),
               validator: (val) {
@@ -682,7 +739,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   controller: _controlNumberController,
                   label: 'Control Number (Auto-Generated)',
                   isRequired: true,
-                  enabled: false, // Cannot be edited by encoder
+                  enabled: false,
                 ),
                 const Padding(
                   padding: EdgeInsets.only(top: 2, left: 4),
@@ -707,7 +764,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     );
   }
 
-  // STEP 2: Communicant Identity & Baptism
   Widget _buildStep2CommunicantIdentity({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Communicant Identity & Proof of Baptism',
@@ -755,7 +811,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     );
   }
 
-  // STEP 3: Parents' Information (Batch/Parish Optional)
   Widget _buildStep3ParentsInformation({required bool isMobile}) {
     return Column(
       children: [
@@ -846,7 +901,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     );
   }
 
-  // STEP 4: Officiating Clergy & Canonical Remarks
   Widget _buildStep4ClergyAndRemarks({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Officiating Clergy & Archival Annotations',
@@ -885,10 +939,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       ),
     );
   }
-
-  // ===========================================================================
-  // Google Forms Header & UI Blocks
-  // ===========================================================================
 
   Widget _buildGoogleFormsSectionHeader({
     required String title,
@@ -929,7 +979,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'SECTION ${stepIndex + 1} OF $_totalSteps',
+                      isEditMode
+                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
+                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -943,9 +995,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                         color: _goldSurface,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Eucharistic Register',
-                        style: TextStyle(
+                      child: Text(
+                        isEditMode ? 'Edit Record Mode' : 'Eucharistic Register',
+                        style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                           color: _eucharisticGold,

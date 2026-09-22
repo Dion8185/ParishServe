@@ -110,10 +110,57 @@ class BaptismService {
     data['scanned_image_url'] = null;
     data['ocr_raw_text'] = null;
 
-    // 7. Insert into existing public.baptism_records table
+    // 7. Insert into public.baptism_records table
     final response = await _client
         .from('baptism_records')
         .insert(data)
+        .select()
+        .single();
+
+    return BaptismRecordModel.fromMap(response);
+  }
+
+  /// Updates an existing manual Baptism Record in public.baptism_records
+  static Future<BaptismRecordModel> updateBaptismRecord(String recordId, Map<String, dynamic> data) async {
+    // 1. Required fields validation
+    final requiredFields = {
+      'child_first_name': 'Child First Name',
+      'child_last_name': 'Child Last Name',
+      'date_of_birth': 'Date of Birth',
+      'place_of_birth': 'Place of Birth',
+      'father_first_name': 'Father First Name',
+      'father_last_name': 'Father Last Name',
+      'mother_first_name': 'Mother First Name',
+      'mother_maiden_last_name': 'Mother Maiden Last Name',
+      'sponsor_1_first_name': 'Sponsor 1 First Name',
+      'sponsor_1_last_name': 'Sponsor 1 Last Name',
+      'sponsor_2_first_name': 'Sponsor 2 First Name',
+      'sponsor_2_last_name': 'Sponsor 2 Last Name',
+      'parish_name': 'Parish Name',
+      'minister_first_name': 'Minister First Name',
+      'minister_last_name': 'Minister Last Name',
+      'date_of_baptism': 'Date of Baptism',
+      'place_of_baptism': 'Place of Baptism',
+    };
+
+    for (final entry in requiredFields.entries) {
+      final val = data[entry.key];
+      if (val == null || (val is String && val.trim().isEmpty)) {
+        throw '${entry.value} is required.';
+      }
+    }
+
+    // 2. Lock and protect physical canonical coordinates from being modified
+    data.remove('record_id');
+    data.remove('book_number');
+    data.remove('page_number');
+    data.remove('line_number');
+
+    // 3. Update existing row matching record_id
+    final response = await _client
+        .from('baptism_records')
+        .update(data)
+        .eq('record_id', recordId)
         .select()
         .single();
 
@@ -150,5 +197,4 @@ class BaptismService {
       return 'BAP-$yearSuffix-$timestampSeq';
     }
   }
-
 }

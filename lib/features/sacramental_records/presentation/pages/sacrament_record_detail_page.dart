@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../dialogs/certificate_preview_dialog.dart';
+import 'baptism_manual_entry_page.dart';
+import 'confirmation_manual_entry_page.dart';
+import 'first_communion_manual_entry_page.dart';
+import 'matrimony_manual_entry_page.dart';
+import 'death_manual_entry_page.dart';
+import 'conversion_manual_entry_page.dart';
 
 class SacramentRecordDetailPage extends StatelessWidget {
   final String sacramentName;
@@ -32,23 +38,105 @@ class SacramentRecordDetailPage extends StatelessWidget {
     this.onRecordUpdated,
   });
 
+  /// Opens the matching manual entry form in Edit Record Mode
+  void _openEditRecord(BuildContext context) {
+    Widget? editPage;
+
+    if (sacramentName == 'Baptism') {
+      editPage = BaptismManualEntryPage(
+        initialData: rawRecordData,
+        onRecordSaved: () {
+          onRecordUpdated?.call();
+          Navigator.pop(context); // Close detail page so user returns to refreshed registry
+        },
+      );
+    } else if (sacramentName == 'Confirmation') {
+      editPage = ConfirmationManualEntryPage(
+        initialData: rawRecordData,
+        onRecordSaved: () {
+          onRecordUpdated?.call();
+          Navigator.pop(context);
+        },
+      );
+    } else if (sacramentName == 'First Communion') {
+      editPage = FirstCommunionManualEntryPage(
+        initialData: rawRecordData,
+        onRecordSaved: () {
+          onRecordUpdated?.call();
+          Navigator.pop(context);
+        },
+      );
+    } else if (sacramentName == 'Matrimony') {
+      editPage = MatrimonyManualEntryPage(
+        initialData: rawRecordData,
+        onRecordSaved: () {
+          onRecordUpdated?.call();
+          Navigator.pop(context);
+        },
+      );
+    } else if (sacramentName == 'Death') {
+      editPage = DeathManualEntryPage(
+        initialData: rawRecordData,
+        onRecordSaved: () {
+          onRecordUpdated?.call();
+          Navigator.pop(context);
+        },
+      );
+    } else if (sacramentName == 'Conversion') {
+      editPage = ConversionManualEntryPage(
+        initialData: rawRecordData,
+        onRecordSaved: () {
+          onRecordUpdated?.call();
+          Navigator.pop(context);
+        },
+      );
+    }
+
+    if (editPage != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => editPage!),
+      );
+    }
+  }
+
   /// Safely extracts and formats data from the raw database map
   String _val(String key) {
     final v = rawRecordData[key];
-    if (v == null || v.toString().trim().isEmpty) return '—';
-    // Format boolean values gracefully
+    if (v == null) return '—';
+    final str = v.toString().trim();
+    if (str.isEmpty) return '—';
     if (v is bool) return v ? 'Yes' : 'No';
-    return v.toString();
+    return str;
   }
 
-  /// Constructs a full name from separate database fields
+  /// Constructs a full name from separate database fields without trailing or misplaced dashes
   String _fullName(String prefix) {
     final f = _val('${prefix}_first_name');
     final m = _val('${prefix}_middle_name');
-    final l = _val('${prefix}_last_name');
+
+    // Check all possible schema column variants for surnames
+    String l = _val('${prefix}_last_name');
+    if (l == '—') {
+      l = _val('${prefix}_maiden_last_name');
+    }
+    if (l == '—') {
+      l = _val('${prefix}_maiden_last');
+    }
+
     final s = _val('${prefix}_suffix');
+
+    // Check for Canon 877 §2 placeholder
+    if (f.toLowerCase() == 'not indicated') return '—';
     if (f == '—' && l == '—') return '—';
-    return [f, if (m != '—') m, l, if (s != '—') s].join(' ');
+
+    final parts = <String>[];
+    if (f != '—') parts.add(f);
+    if (m != '—') parts.add(m);
+    if (l != '—') parts.add(l);
+    if (s != '—') parts.add(s);
+
+    return parts.isEmpty ? '—' : parts.join(' ');
   }
 
   @override
@@ -83,16 +171,8 @@ class SacramentRecordDetailPage extends StatelessWidget {
         actions: [
           IconButton(
             icon: Icon(Icons.edit_outlined, color: themeColor),
-            tooltip: 'Update Record',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Record editing mode activated.'),
-                  backgroundColor: themeColor,
-                ),
-              );
-              // Hook into manual entry edit view routing here in the future
-            },
+            tooltip: 'Edit Record',
+            onPressed: () => _openEditRecord(context),
           ),
         ],
       ),
@@ -130,6 +210,7 @@ class SacramentRecordDetailPage extends StatelessWidget {
                           children: [
                             Text(
                               name,
+                              softWrap: true,
                               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: themeColor),
                             ),
                             const SizedBox(height: 4),
@@ -441,6 +522,7 @@ class SacramentRecordDetailPage extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           value,
+          softWrap: true,
           style: TextStyle(fontSize: 14, color: ParishColors.textDark, fontWeight: FontWeight.w600, height: 1.4),
         ),
       ],

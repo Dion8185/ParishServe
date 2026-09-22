@@ -5,8 +5,13 @@ import '../dialogs/discard_entry_dialog.dart';
 
 class ConfirmationManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
+  final Map<String, dynamic>? initialData; // Enables Edit Record Mode
 
-  const ConfirmationManualEntryPage({super.key, this.onRecordSaved});
+  const ConfirmationManualEntryPage({
+    super.key,
+    this.onRecordSaved,
+    this.initialData,
+  });
 
   @override
   State<ConfirmationManualEntryPage> createState() => _ConfirmationManualEntryPageState();
@@ -15,6 +20,8 @@ class ConfirmationManualEntryPage extends StatefulWidget {
 class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
+
+  bool get isEditMode => widget.initialData != null;
 
   // Pentecost Theme Accent for Confirmation
   static const Color _pentecostRed = Color(0xFFB91C1C);
@@ -54,7 +61,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   final _confirmandSuffixController = TextEditingController();
   DateTime? _dateOfBirth;
   final _ageController = TextEditingController();
-  DateTime? _dateOfBaptism; // Required canonical date
+  DateTime? _dateOfBaptism;
   final _churchBaptizedController = TextEditingController(text: 'St. John Paul II Parish Church');
   final _addressController = TextEditingController();
 
@@ -97,6 +104,61 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   bool _dateOfConfirmationHasError = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (isEditMode) {
+      _populateExistingData(widget.initialData!);
+    }
+  }
+
+  void _populateExistingData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+    _entryStatus = data['entry_status']?.toString() ?? 'ORIGINAL';
+    _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
+
+    _confirmandFirstNameController.text = data['confirmand_first_name']?.toString() ?? '';
+    _confirmandMiddleNameController.text = data['confirmand_middle_name']?.toString() ?? '';
+    _confirmandLastNameController.text = data['confirmand_last_name']?.toString() ?? '';
+    _confirmandSuffixController.text = data['confirmand_suffix']?.toString() ?? '';
+    _dateOfBirth = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    _ageController.text = data['age']?.toString() ?? '';
+    _dateOfBaptism = DateTime.tryParse(data['date_of_baptism']?.toString() ?? '');
+    _churchBaptizedController.text = data['church_baptized']?.toString() ?? '';
+    _addressController.text = data['address']?.toString() ?? '';
+
+    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+    _fatherOriginController.text = data['father_origin']?.toString() ?? '';
+    _fatherNotIndicated = _fatherFirstNameController.text.toLowerCase() == 'not indicated';
+
+    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+    _motherOriginController.text = data['mother_origin']?.toString() ?? '';
+
+    _sponsor1FirstNameController.text = data['sponsor_1_first_name']?.toString() ?? '';
+    _sponsor1MiddleNameController.text = data['sponsor_1_middle_name']?.toString() ?? '';
+    _sponsor1LastNameController.text = data['sponsor_1_last_name']?.toString() ?? '';
+    _sponsor1OriginAddressController.text = data['sponsor_1_origin_address']?.toString() ?? '';
+
+    _sponsor2FirstNameController.text = data['sponsor_2_first_name']?.toString() ?? '';
+    _sponsor2MiddleNameController.text = data['sponsor_2_middle_name']?.toString() ?? '';
+    _sponsor2LastNameController.text = data['sponsor_2_last_name']?.toString() ?? '';
+    _sponsor2OriginAddressController.text = data['sponsor_2_origin_address']?.toString() ?? '';
+
+    _dateOfConfirmation = DateTime.tryParse(data['date_of_confirmation']?.toString() ?? '');
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
+    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     _bookNumberController.dispose();
@@ -134,10 +196,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     super.dispose();
   }
 
-  // ===========================================================================
-  // Validation Helpers
-  // ===========================================================================
-
   String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) {
@@ -170,7 +228,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   }
 
   Future<void> _selectDate(BuildContext context, int dateType) async {
-    // 0: Registry Date, 1: Date of Birth, 2: Date of Baptism, 3: Date of Confirmation
     final now = DateTime.now();
     DateTime initialDate;
 
@@ -226,10 +283,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       }
     });
   }
-
-  // ===========================================================================
-  // Step-by-Step Google Forms Pagination Logic with Live Validation
-  // ===========================================================================
 
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
@@ -337,10 +390,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     });
   }
 
-  // ===========================================================================
-  // Final Form Submission
-  // ===========================================================================
-
   Future<void> _submitForm() async {
     for (int s = 0; s < _totalSteps; s++) {
       if (!_validateStep(s)) {
@@ -404,17 +453,26 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
       };
 
-      await ConfirmationService.insertManualConfirmationRecord(recordMap);
+      if (isEditMode) {
+        await ConfirmationService.updateConfirmationRecord(
+          widget.initialData!['record_id'].toString(),
+          recordMap,
+        );
+      } else {
+        await ConfirmationService.insertManualConfirmationRecord(recordMap);
+      }
 
       if (!mounted) return;
 
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Confirmation record registered successfully in Liber Confirmatorum.'),
+        SnackBar(
+          content: Text(isEditMode
+              ? 'Confirmation record updated successfully in Liber Confirmatorum.'
+              : 'Confirmation record registered successfully in Liber Confirmatorum.'),
           backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
 
@@ -471,11 +529,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Confirmation Manual Entry',
+                isEditMode ? 'Edit Confirmation Record' : 'Confirmation Manual Entry',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
               ),
               Text(
-                'Canonical Registry Book (Liber Confirmatorum)',
+                isEditMode
+                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
+                    : 'Canonical Registry Book (Liber Confirmatorum)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
@@ -491,7 +551,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
               return Column(
                 children: [
-                  // Google Forms Progress Banner
                   Container(
                     width: double.infinity,
                     color: cardWhiteColor,
@@ -506,7 +565,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Section ${_currentStep + 1} of $_totalSteps',
+                                  isEditMode
+                                      ? 'Editing Section ${_currentStep + 1} of $_totalSteps'
+                                      : 'Section ${_currentStep + 1} of $_totalSteps',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -540,8 +601,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     ),
                   ),
                   Divider(height: 1, color: borderGreyColor),
-
-                  // Form Page Content
                   Expanded(
                     child: SingleChildScrollView(
                       controller: _scrollController,
@@ -551,19 +610,16 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                           constraints: const BoxConstraints(maxWidth: 960),
                           child: Form(
                             key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction, // Live real-time validation feedback
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Google Forms Header Card
                                 _buildGoogleFormsSectionHeader(
                                   title: _stepTitles[_currentStep],
                                   description: _stepDescriptions[_currentStep],
                                   stepIndex: _currentStep,
                                 ),
                                 const SizedBox(height: 16),
-
-                                // Validation Banner
                                 if (_errorMessage != null) ...[
                                   Container(
                                     width: double.infinity,
@@ -592,8 +648,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                                     ),
                                   ),
                                 ],
-
-                                // Paginated Step View Switcher
                                 _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
                                 const SizedBox(height: 24),
                               ],
@@ -603,8 +657,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                       ),
                     ),
                   ),
-
-                  // Responsive Sticky Bottom Navigation Bar (Back, Next, Submit)
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
                     decoration: BoxDecoration(
@@ -650,8 +702,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Continue / Next'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Confirmation Record' : 'Save Confirmation Record')
+                                      : 'Continue / Next'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -693,7 +747,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                             ),
                             const Spacer(),
                             SizedBox(
-                              width: isMobile ? 180 : 250,
+                              width: isMobile ? 210 : 270,
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
@@ -717,8 +771,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Confirmation Record' : 'Next Section'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Confirmation Record' : 'Save Confirmation Record')
+                                      : 'Next Section'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -737,10 +793,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 
-  // ===========================================================================
-  // Step Content Views
-  // ===========================================================================
-
   Widget _buildActiveStepContent({required bool isMobile, required bool isSmallMobile}) {
     switch (_currentStep) {
       case 0:
@@ -758,14 +810,38 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     }
   }
 
-  // STEP 1: Canonical Reference
   Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
     return _buildSectionCard(
-      title: 'Canonical Ledger Designation',
+      title: isEditMode
+          ? 'Canonical Ledger Designation (Coordinates Locked)'
+          : 'Canonical Ledger Designation',
       icon: Icons.menu_book,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isEditMode) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _pentecostSurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _pentecostRed.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock, size: 16, color: _pentecostRed),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Book, Page, and Line coordinates are immutable physical coordinates and cannot be modified.',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _pentecostRed),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           isSmallMobile
               ? Column(
             children: [
@@ -773,6 +849,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 controller: _bookNumberController,
                 label: 'Book No.',
                 isRequired: true,
+                enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) return 'Book number is required';
@@ -786,6 +863,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 controller: _pageNumberController,
                 label: 'Page No.',
                 isRequired: true,
+                enabled: !isEditMode,
                 keyboardType: TextInputType.number,
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) return 'Page number is required';
@@ -799,6 +877,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 controller: _lineNumberController,
                 label: 'Line No.',
                 isRequired: true,
+                enabled: !isEditMode,
                 keyboardType: TextInputType.number,
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) return 'Line number is required';
@@ -818,6 +897,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   controller: _bookNumberController,
                   label: 'Book No.',
                   isRequired: true,
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) return 'Required';
@@ -834,6 +914,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   controller: _pageNumberController,
                   label: 'Page No.',
                   isRequired: true,
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) return 'Required';
@@ -850,6 +931,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   controller: _lineNumberController,
                   label: 'Line No.',
                   isRequired: true,
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) return 'Required';
@@ -884,7 +966,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 
-  // STEP 2: Confirmand Information
   Widget _buildStep2ConfirmandInformation({required bool isMobile}) {
     return _buildSectionCard(
       title: "Confirmand's Canonical Identification",
@@ -967,11 +1048,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 
-  // STEP 3: Parents Information
   Widget _buildStep3ParentsInformation({required bool isMobile}) {
     return Column(
       children: [
-        // Father's Information
         _buildSectionCard(
           title: "Father's Lineage & Canon 877 §2",
           icon: Icons.person,
@@ -1030,8 +1109,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
           ),
         ),
         const SizedBox(height: 16),
-
-        // Mother's Information
         _buildSectionCard(
           title: "Mother's Lineage & Origin",
           icon: Icons.person_outline,
@@ -1074,7 +1151,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 
-  // STEP 4: Sponsors Information (Strictly Max 2)
   Widget _buildStep4SponsorsInformation({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Confirmation Sponsors (Strictly Max 2)',
@@ -1087,8 +1163,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             style: TextStyle(fontSize: 12, color: _pentecostRed, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 14),
-
-          // Sponsor 1
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
@@ -1118,10 +1192,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               isRequired: false,
             ),
           ),
-
           const Divider(height: 28),
-
-          // Sponsor 2 (Optional)
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
@@ -1156,7 +1227,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 
-  // STEP 5: Administration Details
   Widget _buildStep5AdministrationDetails({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Confirmation Administration & Minister Details',
@@ -1219,10 +1289,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 
-  // ===========================================================================
-  // Google Forms Header & UI Blocks
-  // ===========================================================================
-
   Widget _buildGoogleFormsSectionHeader({
     required String title,
     required String description,
@@ -1262,7 +1328,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'SECTION ${stepIndex + 1} OF $_totalSteps',
+                      isEditMode
+                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
+                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -1276,9 +1344,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                         color: _pentecostSurface,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Canonical Step',
-                        style: TextStyle(
+                      child: Text(
+                        isEditMode ? 'Edit Record Mode' : 'Canonical Step',
+                        style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                           color: _pentecostRed,

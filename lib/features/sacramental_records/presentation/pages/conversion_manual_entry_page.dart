@@ -5,8 +5,13 @@ import '../dialogs/discard_entry_dialog.dart';
 
 class ConversionManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
+  final Map<String, dynamic>? initialData; // Enables Edit Record Mode
 
-  const ConversionManualEntryPage({super.key, this.onRecordSaved});
+  const ConversionManualEntryPage({
+    super.key,
+    this.onRecordSaved,
+    this.initialData,
+  });
 
   @override
   State<ConversionManualEntryPage> createState() => _ConversionManualEntryPageState();
@@ -15,6 +20,8 @@ class ConversionManualEntryPage extends StatefulWidget {
 class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
+
+  bool get isEditMode => widget.initialData != null;
 
   // Olive Green Theme Accent for Conversion & Reception records
   static const Color _conversionOlive = Color(0xFF2D6A4F);
@@ -103,6 +110,65 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   bool _dateOfBirthHasError = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (isEditMode) {
+      _populateExistingData(widget.initialData!);
+    }
+  }
+
+  void _populateExistingData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+    _dateOfReception = DateTime.tryParse(data['date_of_reception']?.toString() ?? '');
+
+    _convertFirstNameController.text = data['convert_first_name']?.toString() ?? '';
+    _convertMiddleNameController.text = data['convert_middle_name']?.toString() ?? '';
+    _convertLastNameController.text = data['convert_last_name']?.toString() ?? '';
+    _convertSuffixController.text = data['convert_suffix']?.toString() ?? '';
+    _dateOfBirth = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    _placeOfBirthController.text = data['place_of_birth']?.toString() ?? '';
+
+    _priorBaptismDate = DateTime.tryParse(data['prior_baptism_date']?.toString() ?? '');
+    final rawChurch = data['prior_baptism_church']?.toString();
+    if (rawChurch == null || rawChurch.trim().isEmpty) {
+      _priorBaptismChurch = 'None / Not Specified';
+    } else if (_priorChurchOptions.contains(rawChurch)) {
+      _priorBaptismChurch = rawChurch;
+    } else {
+      _priorBaptismChurch = 'Others (Specify)';
+      _priorBaptismChurchOtherController.text = rawChurch;
+    }
+    _priorBaptismPlaceController.text = data['prior_baptism_place']?.toString() ?? '';
+
+    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+    _fatherReligionController.text = data['father_religion']?.toString() ?? '';
+
+    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+    _motherReligionController.text = data['mother_religion']?.toString() ?? '';
+
+    _witness1FirstNameController.text = data['witness_1_first_name']?.toString() ?? '';
+    _witness1MiddleNameController.text = data['witness_1_middle_name']?.toString() ?? '';
+    _witness1LastNameController.text = data['witness_1_last_name']?.toString() ?? '';
+
+    _witness2FirstNameController.text = data['witness_2_first_name']?.toString() ?? '';
+    _witness2MiddleNameController.text = data['witness_2_middle_name']?.toString() ?? '';
+    _witness2LastNameController.text = data['witness_2_last_name']?.toString() ?? '';
+
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
+    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     _bookNumberController.dispose();
@@ -138,10 +204,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     super.dispose();
   }
 
-  // ===========================================================================
-  // Validation Helpers
-  // ===========================================================================
-
   String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) {
@@ -174,7 +236,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   }
 
   Future<void> _selectDate(BuildContext context, int dateType) async {
-    // 0: Date of Reception, 1: Date of Birth, 2: Prior Baptism Date
     final now = DateTime.now();
     DateTime initialDate;
 
@@ -207,10 +268,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       });
     }
   }
-
-  // ===========================================================================
-  // Step-by-Step Google Forms Pagination Logic with Strict Validation
-  // ===========================================================================
 
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
@@ -334,7 +391,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     setState(() => _isSubmitting = true);
 
     try {
-      final stipendValue = _stipendController.text.trim().isNotEmpty
+      final double stipendValue = _stipendController.text.trim().isNotEmpty
           ? (double.tryParse(_stipendController.text.trim()) ?? 0.00)
           : 0.00;
 
@@ -395,16 +452,25 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
         'parish_name': _parishNameController.text.trim(),
       };
 
-      await ConversionService.insertManualConversionRecord(recordMap);
+      if (isEditMode) {
+        await ConversionService.updateConversionRecord(
+          widget.initialData!['record_id'].toString(),
+          recordMap,
+        );
+      } else {
+        await ConversionService.insertManualConversionRecord(recordMap);
+      }
 
       if (!mounted) return;
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Conversion record successfully registered in Liber Conversorum.'),
+        SnackBar(
+          content: Text(isEditMode
+              ? 'Conversion record updated successfully in Liber Conversorum.'
+              : 'Conversion record successfully registered in Liber Conversorum.'),
           backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
 
@@ -461,11 +527,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Conversion Manual Entry',
+                isEditMode ? 'Edit Conversion Record' : 'Conversion Manual Entry',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
               ),
               Text(
-                'Canonical Registry Book (Liber Conversorum)',
+                isEditMode
+                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
+                    : 'Canonical Registry Book (Liber Conversorum)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
@@ -481,7 +549,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
               return Column(
                 children: [
-                  // Google Forms Progress Banner
                   Container(
                     width: double.infinity,
                     color: cardWhiteColor,
@@ -496,7 +563,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Section ${_currentStep + 1} of $_totalSteps',
+                                  isEditMode
+                                      ? 'EDITING SECTION ${_currentStep + 1} OF $_totalSteps'
+                                      : 'SECTION ${_currentStep + 1} OF $_totalSteps',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -531,7 +600,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   ),
                   Divider(height: 1, color: borderGreyColor),
 
-                  // Form Page Content
                   Expanded(
                     child: SingleChildScrollView(
                       controller: _scrollController,
@@ -541,7 +609,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                           constraints: const BoxConstraints(maxWidth: 960),
                           child: Form(
                             key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction, // Live real-time validation
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -591,7 +659,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     ),
                   ),
 
-                  // Sticky Bottom Bar
+                  // Bottom Action Buttons
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
                     decoration: BoxDecoration(
@@ -637,8 +705,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Conversion Record' : 'Continue / Next'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Conversion Record' : 'Save Conversion Record')
+                                      : 'Continue / Next'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -704,8 +774,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Conversion Record' : 'Next Section'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Conversion Record' : 'Save Conversion Record')
+                                      : 'Next Section'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -724,10 +796,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Step Views Router
-  // ===========================================================================
-
   Widget _buildActiveStepContent({required bool isMobile, required bool isSmallMobile}) {
     switch (_currentStep) {
       case 0:
@@ -743,14 +811,38 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     }
   }
 
-  // STEP 1: Coordinates & Reception Date
   Widget _buildStep1CanonicalCoordinates({required bool isMobile, required bool isSmallMobile}) {
     return _buildSectionCard(
-      title: 'Canonical Coordinates & Reception Date (Conversionis)',
+      title: isEditMode
+          ? 'Canonical Coordinates & Reception Date (Coordinates Locked)'
+          : 'Canonical Coordinates & Reception Date (Conversionis)',
       icon: Icons.menu_book,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isEditMode) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _oliveSurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _conversionOlive.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock, size: 16, color: _conversionOlive),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Book, Page, and Line coordinates are permanent canonical coordinates and cannot be modified.',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _conversionOlive),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           isSmallMobile
               ? Column(
             children: [
@@ -758,6 +850,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 controller: _bookNumberController,
                 label: 'Book No.',
                 isRequired: true,
+                enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
                 validator: (v) {
                   final n = int.tryParse(v?.trim() ?? '');
@@ -769,6 +862,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 controller: _pageNumberController,
                 label: 'Page No.',
                 isRequired: true,
+                enabled: !isEditMode,
                 keyboardType: TextInputType.number,
                 validator: (v) {
                   final n = int.tryParse(v?.trim() ?? '');
@@ -780,6 +874,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 controller: _lineNumberController,
                 label: 'Line No.',
                 isRequired: true,
+                enabled: !isEditMode,
                 keyboardType: TextInputType.number,
                 validator: (v) {
                   final n = int.tryParse(v?.trim() ?? '');
@@ -797,6 +892,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _bookNumberController,
                   label: 'Book No.',
                   isRequired: true,
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   validator: (v) {
                     final n = int.tryParse(v?.trim() ?? '');
@@ -811,6 +907,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _pageNumberController,
                   label: 'Page No.',
                   isRequired: true,
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   validator: (v) {
                     final n = int.tryParse(v?.trim() ?? '');
@@ -825,6 +922,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _lineNumberController,
                   label: 'Line No.',
                   isRequired: true,
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   validator: (v) {
                     final n = int.tryParse(v?.trim() ?? '');
@@ -847,7 +945,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  // STEP 2: Convert Identity & Prior Baptism
   Widget _buildStep2ConvertIdentity({required bool isMobile}) {
     return Column(
       children: [
@@ -961,7 +1058,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  // STEP 3: Parents & Religions (Optional)
   Widget _buildStep3ParentsInfo({required bool isMobile}) {
     return Column(
       children: [
@@ -1046,7 +1142,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  // STEP 4: Witnesses, Offering & Minister
   Widget _buildStep4WitnessesAndOffering({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Witnesses, Minister & Offering (Testium & Ministri)',
@@ -1148,10 +1243,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Google Forms Header & UI Blocks
-  // ===========================================================================
-
   Widget _buildGoogleFormsSectionHeader({required String title, required String description, required int stepIndex}) {
     return Container(
       width: double.infinity,
@@ -1180,11 +1271,19 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('SECTION ${stepIndex + 1} OF $_totalSteps', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _conversionOlive, letterSpacing: 1.0)),
+                    Text(
+                      isEditMode
+                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
+                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _conversionOlive, letterSpacing: 1.0),
+                    ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(color: _oliveSurface, borderRadius: BorderRadius.circular(6)),
-                      child: const Text('Conversion Register', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _conversionOlive)),
+                      child: Text(
+                        isEditMode ? 'Edit Record Mode' : 'Conversion Register',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _conversionOlive),
+                      ),
                     ),
                   ],
                 ),

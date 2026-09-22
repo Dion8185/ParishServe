@@ -114,6 +114,47 @@ class MatrimonyService {
     return MatrimonyRecordModel.fromMap(response);
   }
 
+  /// Updates an existing manual Matrimony record in public.matrimony_records
+  static Future<MatrimonyRecordModel> updateMatrimonyRecord(String recordId, Map<String, dynamic> data) async {
+    final requiredFields = {
+      'groom_first_name': 'Groom First Name',
+      'groom_last_name': 'Groom Last Name',
+      'groom_address': 'Groom Address',
+      'bride_first_name': 'Bride First Name',
+      'bride_last_name': 'Bride Last Name',
+      'bride_address': 'Bride Address',
+      'sponsor_1_first_name': 'Primary Sponsor 1 First Name',
+      'sponsor_1_last_name': 'Primary Sponsor 1 Last Name',
+      'sponsor_2_first_name': 'Primary Sponsor 2 First Name',
+      'sponsor_2_last_name': 'Primary Sponsor 2 Last Name',
+      'date_of_marriage': 'Date of Marriage',
+      'solemnizer_first_name': 'Solemnizing Minister First Name',
+      'solemnizer_last_name': 'Solemnizing Minister Last Name',
+    };
+
+    for (final entry in requiredFields.entries) {
+      final val = data[entry.key];
+      if (val == null || (val is String && val.trim().isEmpty)) {
+        throw '${entry.value} is required.';
+      }
+    }
+
+    // Protect immutable physical coordinates from being altered
+    data.remove('record_id');
+    data.remove('book_number');
+    data.remove('page_number');
+    data.remove('line_number');
+
+    final response = await _client
+        .from('matrimony_records')
+        .update(data)
+        .eq('record_id', recordId)
+        .select()
+        .single();
+
+    return MatrimonyRecordModel.fromMap(response);
+  }
+
   /// Generates sequential record ID: MAT-YY-XXXX
   static Future<String> _generateRecordId() async {
     final now = DateTime.now();

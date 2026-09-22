@@ -5,8 +5,13 @@ import '../dialogs/discard_entry_dialog.dart';
 
 class DeathManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
+  final Map<String, dynamic>? initialData; // Enables Edit Record Mode
 
-  const DeathManualEntryPage({super.key, this.onRecordSaved});
+  const DeathManualEntryPage({
+    super.key,
+    this.onRecordSaved,
+    this.initialData,
+  });
 
   @override
   State<DeathManualEntryPage> createState() => _DeathManualEntryPageState();
@@ -15,6 +20,8 @@ class DeathManualEntryPage extends StatefulWidget {
 class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
+
+  bool get isEditMode => widget.initialData != null;
 
   // Solemn Violet Theme Accent for Death & Burial Registers
   static const Color _deathViolet = Color(0xFF6B21A8);
@@ -86,6 +93,55 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   bool _dateOfBurialHasError = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (isEditMode) {
+      _populateExistingData(widget.initialData!);
+    }
+  }
+
+  void _populateExistingData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+
+    _deceasedFirstNameController.text = data['deceased_first_name']?.toString() ?? '';
+    _deceasedMiddleNameController.text = data['deceased_middle_name']?.toString() ?? '';
+    _deceasedLastNameController.text = data['deceased_last_name']?.toString() ?? '';
+    _deceasedSuffixController.text = data['deceased_suffix']?.toString() ?? '';
+    _gender = data['gender']?.toString() ?? 'Male';
+    _ageController.text = data['age']?.toString() ?? '';
+    _civilStatus = data['civil_status']?.toString() ?? 'Single';
+    _residenceController.text = data['residence']?.toString() ?? '';
+
+    _spouseFirstNameController.text = data['spouse_first_name']?.toString() ?? '';
+    _spouseMiddleNameController.text = data['spouse_middle_name']?.toString() ?? '';
+    _spouseLastNameController.text = data['spouse_last_name']?.toString() ?? '';
+
+    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+
+    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+
+    _dateOfDeath = DateTime.tryParse(data['date_of_death']?.toString() ?? '');
+    _dateOfBurial = DateTime.tryParse(data['date_of_burial']?.toString() ?? '');
+    _placeOfBurialController.text = data['place_of_burial']?.toString() ?? '';
+    _causeOfDeathController.text = data['cause_of_death']?.toString() ?? '';
+    _sacramentsReceived = data['sacraments_received'] == true;
+
+    _liturgicalService = data['liturgical_service']?.toString() ?? 'Funeral Mass';
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
+    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     _bookNumberController.dispose();
@@ -116,10 +172,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     _remarksController.dispose();
     super.dispose();
   }
-
-  // ===========================================================================
-  // Validation Helpers
-  // ===========================================================================
 
   String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
     final text = value?.trim() ?? '';
@@ -166,7 +218,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   }
 
   Future<void> _selectDate(BuildContext context, int dateType) async {
-    // 0: Date of Death, 1: Date of Burial
     final now = DateTime.now();
     DateTime initialDate = (dateType == 0) ? (_dateOfDeath ?? now) : (_dateOfBurial ?? now);
 
@@ -189,10 +240,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
       });
     }
   }
-
-  // ===========================================================================
-  // Step-by-Step Google Forms Pagination Logic
-  // ===========================================================================
 
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
@@ -334,7 +381,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
         'place_of_burial': _placeOfBurialController.text.trim(),
         'cause_of_death': _causeOfDeathController.text.trim().isEmpty ? null : _causeOfDeathController.text.trim(),
         'sacraments_received': _sacramentsReceived,
-        'sacraments_notes': null, // Field removed
+        'sacraments_notes': null,
 
         'liturgical_service': _liturgicalService,
         'stipend': _stipendController.text.trim().isNotEmpty ? double.parse(_stipendController.text.trim()) : 0.00,
@@ -346,16 +393,25 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
         'parish_name': _parishNameController.text.trim(),
       };
 
-      await DeathService.insertManualDeathRecord(recordMap);
+      if (isEditMode) {
+        await DeathService.updateDeathRecord(
+          widget.initialData!['record_id'].toString(),
+          recordMap,
+        );
+      } else {
+        await DeathService.insertManualDeathRecord(recordMap);
+      }
 
       if (!mounted) return;
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Death record successfully registered in Liber Defunctorum.'),
+        SnackBar(
+          content: Text(isEditMode
+              ? 'Death record updated successfully in Liber Defunctorum.'
+              : 'Death record successfully registered in Liber Defunctorum.'),
           backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
 
@@ -412,11 +468,13 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Death & Burial Manual Entry',
+                isEditMode ? 'Edit Death Record' : 'Death & Burial Manual Entry',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
               ),
               Text(
-                'Canonical Registry Book (Liber Defunctorum • Libro de Entierros)',
+                isEditMode
+                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
+                    : 'Canonical Registry Book (Liber Defunctorum • Libro de Entierros)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
@@ -432,7 +490,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
 
               return Column(
                 children: [
-                  // Google Forms Progress Banner
                   Container(
                     width: double.infinity,
                     color: cardWhiteColor,
@@ -447,7 +504,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Section ${_currentStep + 1} of $_totalSteps',
+                                  isEditMode
+                                      ? 'EDITING SECTION ${_currentStep + 1} OF $_totalSteps'
+                                      : 'SECTION ${_currentStep + 1} OF $_totalSteps',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -482,7 +541,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   ),
                   Divider(height: 1, color: borderGreyColor),
 
-                  // Form Page Content
                   Expanded(
                     child: SingleChildScrollView(
                       controller: _scrollController,
@@ -492,7 +550,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                           constraints: const BoxConstraints(maxWidth: 960),
                           child: Form(
                             key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction, // Live real-time validation
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -542,7 +600,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     ),
                   ),
 
-                  // Sticky Bottom Bar
+                  // Bottom Actions
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
                     decoration: BoxDecoration(
@@ -588,8 +646,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Death Record' : 'Continue / Next'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Death Record' : 'Save Death Record')
+                                      : 'Continue / Next'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -655,8 +715,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                                 ),
                                 label: Text(
                                   _isSubmitting
-                                      ? 'Registering...'
-                                      : (_currentStep == _totalSteps - 1 ? 'Save Death Record' : 'Next Section'),
+                                      ? (isEditMode ? 'Updating...' : 'Registering...')
+                                      : (_currentStep == _totalSteps - 1
+                                      ? (isEditMode ? 'Update Death Record' : 'Save Death Record')
+                                      : 'Next Section'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                               ),
@@ -675,10 +737,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Step Views Router
-  // ===========================================================================
-
   Widget _buildActiveStepContent({required bool isMobile, required bool isSmallMobile}) {
     switch (_currentStep) {
       case 0:
@@ -694,99 +752,133 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     }
   }
 
-  // STEP 1: Canonical Reference
   Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
     return _buildSectionCard(
-      title: 'Physical Register Book Coordinates',
+      title: isEditMode
+          ? 'Physical Register Book Coordinates (Coordinates Locked)'
+          : 'Physical Register Book Coordinates',
       icon: Icons.menu_book,
-      child: isSmallMobile
-          ? Column(
-        children: [
-          _buildTextFormField(
-            controller: _bookNumberController,
-            label: 'Book No.',
-            isRequired: true,
-            keyboardType: TextInputType.number,
-            validator: (v) {
-              final n = int.tryParse(v?.trim() ?? '');
-              if (n == null || n < 1 || n > 200) return 'Must be between 1 and 200';
-              return null;
-            },
-          ),
-          _buildTextFormField(
-            controller: _pageNumberController,
-            label: 'Page No.',
-            isRequired: true,
-            keyboardType: TextInputType.number,
-            validator: (v) {
-              final n = int.tryParse(v?.trim() ?? '');
-              if (n == null || n < 1 || n > 100) return 'Must be between 1 and 100';
-              return null;
-            },
-          ),
-          _buildTextFormField(
-            controller: _lineNumberController,
-            label: 'Line No.',
-            isRequired: true,
-            keyboardType: TextInputType.number,
-            validator: (v) {
-              final n = int.tryParse(v?.trim() ?? '');
-              if (n == null || n < 1 || n > 10) return 'Must be between 1 and 10';
-              return null;
-            },
-          ),
-        ],
-      )
-          : Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: _buildTextFormField(
-              controller: _bookNumberController,
-              label: 'Book No.',
-              isRequired: true,
-              keyboardType: TextInputType.number,
-              validator: (v) {
-                final n = int.tryParse(v?.trim() ?? '');
-                if (n == null || n < 1 || n > 200) return '1 to 200';
-                return null;
-              },
+          if (isEditMode) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _violetSurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _deathViolet.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock, size: 16, color: _deathViolet),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Book, Page, and Line coordinates are permanent canonical coordinates and cannot be modified.',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _deathViolet),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildTextFormField(
-              controller: _pageNumberController,
-              label: 'Page No.',
-              isRequired: true,
-              keyboardType: TextInputType.number,
-              validator: (v) {
-                final n = int.tryParse(v?.trim() ?? '');
-                if (n == null || n < 1 || n > 100) return '1 to 100';
-                return null;
-              },
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildTextFormField(
-              controller: _lineNumberController,
-              label: 'Line No.',
-              isRequired: true,
-              keyboardType: TextInputType.number,
-              validator: (v) {
-                final n = int.tryParse(v?.trim() ?? '');
-                if (n == null || n < 1 || n > 10) return '1 to 10';
-                return null;
-              },
-            ),
+          ],
+          isSmallMobile
+              ? Column(
+            children: [
+              _buildTextFormField(
+                controller: _bookNumberController,
+                label: 'Book No.',
+                isRequired: true,
+                enabled: !isEditMode, // Locked in Edit Mode
+                keyboardType: TextInputType.number,
+                validator: (v) {
+                  final n = int.tryParse(v?.trim() ?? '');
+                  if (n == null || n < 1 || n > 200) return 'Must be between 1 and 200';
+                  return null;
+                },
+              ),
+              _buildTextFormField(
+                controller: _pageNumberController,
+                label: 'Page No.',
+                isRequired: true,
+                enabled: !isEditMode,
+                keyboardType: TextInputType.number,
+                validator: (v) {
+                  final n = int.tryParse(v?.trim() ?? '');
+                  if (n == null || n < 1 || n > 100) return 'Must be between 1 and 100';
+                  return null;
+                },
+              ),
+              _buildTextFormField(
+                controller: _lineNumberController,
+                label: 'Line No.',
+                isRequired: true,
+                enabled: !isEditMode,
+                keyboardType: TextInputType.number,
+                validator: (v) {
+                  final n = int.tryParse(v?.trim() ?? '');
+                  if (n == null || n < 1 || n > 10) return 'Must be between 1 and 10';
+                  return null;
+                },
+              ),
+            ],
+          )
+              : Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _bookNumberController,
+                  label: 'Book No.',
+                  isRequired: true,
+                  enabled: !isEditMode,
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    final n = int.tryParse(v?.trim() ?? '');
+                    if (n == null || n < 1 || n > 200) return '1 to 200';
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _pageNumberController,
+                  label: 'Page No.',
+                  isRequired: true,
+                  enabled: !isEditMode,
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    final n = int.tryParse(v?.trim() ?? '');
+                    if (n == null || n < 1 || n > 100) return '1 to 100';
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _lineNumberController,
+                  label: 'Line No.',
+                  isRequired: true,
+                  enabled: !isEditMode,
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    final n = int.tryParse(v?.trim() ?? '');
+                    if (n == null || n < 1 || n > 10) return '1 to 10';
+                    return null;
+                  },
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // STEP 2: Deceased Identity
   Widget _buildStep2DeceasedIdentity({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Canonical Identity of the Deceased (Defuncti)',
@@ -860,7 +952,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     );
   }
 
-  // STEP 3: Next of Kin (Spouse or Parents)
   Widget _buildStep3NextOfKin({required bool isMobile}) {
     return Column(
       children: [
@@ -942,7 +1033,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     );
   }
 
-  // STEP 4: Burial, Sacraments & Liturgical Rites
   Widget _buildStep4BurialAndMinistry({required bool isMobile}) {
     return _buildSectionCard(
       title: 'Burial, Sacraments & Clergy (Sepelii & Ministri)',
@@ -997,7 +1087,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               label: 'Liturgical Service',
               isRequired: true,
               value: _liturgicalService,
-              items: const ['Funeral Mass', 'Funeral Blessing'], // Graveside Rite removed
+              items: const ['Funeral Mass', 'Funeral Blessing'],
               onChanged: (val) => setState(() => _liturgicalService = val!),
             ),
             second: _buildTextFormField(
@@ -1045,10 +1135,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Google Forms Header & UI Blocks
-  // ===========================================================================
-
   Widget _buildGoogleFormsSectionHeader({required String title, required String description, required int stepIndex}) {
     return Container(
       width: double.infinity,
@@ -1077,11 +1163,19 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('SECTION ${stepIndex + 1} OF $_totalSteps', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _deathViolet, letterSpacing: 1.0)),
+                    Text(
+                      isEditMode
+                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
+                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _deathViolet, letterSpacing: 1.0),
+                    ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(color: _violetSurface, borderRadius: BorderRadius.circular(6)),
-                      child: const Text('Burial Register', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _deathViolet)),
+                      child: Text(
+                        isEditMode ? 'Edit Record Mode' : 'Burial Register',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _deathViolet),
+                      ),
                     ),
                   ],
                 ),

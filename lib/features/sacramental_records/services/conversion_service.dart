@@ -111,6 +111,43 @@ class ConversionService {
     return ConversionRecordModel.fromMap(response);
   }
 
+  /// Updates an existing manual Conversion record in public.conversion_records
+  static Future<ConversionRecordModel> updateConversionRecord(String recordId, Map<String, dynamic> data) async {
+    final requiredFields = {
+      'date_of_reception': 'Date of Reception into Full Communion',
+      'convert_first_name': 'Convert First Name',
+      'convert_last_name': 'Convert Last Name',
+      'date_of_birth': 'Date of Birth',
+      'place_of_birth': 'Place of Birth',
+      'witness_1_first_name': 'Witness 1 First Name',
+      'witness_1_last_name': 'Witness 1 Last Name',
+      'minister_first_name': 'Minister First Name',
+      'minister_last_name': 'Minister Last Name',
+    };
+
+    for (final entry in requiredFields.entries) {
+      final val = data[entry.key];
+      if (val == null || (val is String && val.trim().isEmpty)) {
+        throw '${entry.value} is required.';
+      }
+    }
+
+    // Protect immutable physical coordinates from being altered
+    data.remove('record_id');
+    data.remove('book_number');
+    data.remove('page_number');
+    data.remove('line_number');
+
+    final response = await _client
+        .from('conversion_records')
+        .update(data)
+        .eq('record_id', recordId)
+        .select()
+        .single();
+
+    return ConversionRecordModel.fromMap(response);
+  }
+
   /// Generates sequential record ID: CNV-YY-XXXX
   static Future<String> _generateRecordId() async {
     final now = DateTime.now();

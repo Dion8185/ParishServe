@@ -113,6 +113,45 @@ class DeathService {
     return DeathRecordModel.fromMap(response);
   }
 
+  /// Updates an existing manual Death record in public.death_records
+  static Future<DeathRecordModel> updateDeathRecord(String recordId, Map<String, dynamic> data) async {
+    final requiredFields = {
+      'deceased_first_name': 'Deceased First Name',
+      'deceased_last_name': 'Deceased Last Name',
+      'gender': 'Gender',
+      'age': 'Age',
+      'civil_status': 'Civil Status',
+      'residence': 'Residence Address',
+      'date_of_death': 'Date of Death',
+      'date_of_burial': 'Date of Burial',
+      'place_of_burial': 'Place of Burial / Cemetery',
+      'minister_first_name': 'Minister First Name',
+      'minister_last_name': 'Minister Last Name',
+    };
+
+    for (final entry in requiredFields.entries) {
+      final val = data[entry.key];
+      if (val == null || (val is String && val.trim().isEmpty)) {
+        throw '${entry.value} is required.';
+      }
+    }
+
+    // Protect immutable physical coordinates from being altered
+    data.remove('record_id');
+    data.remove('book_number');
+    data.remove('page_number');
+    data.remove('line_number');
+
+    final response = await _client
+        .from('death_records')
+        .update(data)
+        .eq('record_id', recordId)
+        .select()
+        .single();
+
+    return DeathRecordModel.fromMap(response);
+  }
+
   /// Generates sequential record ID: DTH-YY-XXXX
   static Future<String> _generateRecordId() async {
     final now = DateTime.now();
