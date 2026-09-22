@@ -104,6 +104,29 @@ class SacramentalValidators {
     return null;
   }
 
+  /// Validates place fields (Place of Birth, Origins, Residences, Cemeteries, Parishes)
+  /// with strict length constraints.
+  static String? validatePlace(
+      String? value,
+      String fieldName, {
+        bool isRequired = true,
+        int minLength = 2,
+        int maxLength = 100,
+      }) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      if (isRequired) return '$fieldName is required.';
+      return null;
+    }
+    if (text.length < minLength) {
+      return '$fieldName must be at least $minLength characters.';
+    }
+    if (text.length > maxLength) {
+      return '$fieldName cannot exceed $maxLength characters.';
+    }
+    return null;
+  }
+
   // ===========================================================================
   // 3. Contact, Demographics & Stipends
   // ===========================================================================
@@ -186,16 +209,65 @@ class SacramentalValidators {
   }
 
   // ===========================================================================
-  // 4. Chronological & Canonical Integrity Checks
+  // 4. Chronological, Canonical Integrity & Age Computation Engine
   // ===========================================================================
 
-  /// Validates Date of Birth (Must not be in the future).
-  static String? validateDateOfBirth(DateTime? dob) {
-    if (dob == null) return 'Date of Birth is required.';
-    if (dob.isAfter(DateTime.now())) {
+  /// Validates Date of Birth with realism bounds (not in the future, and not older than 125 years).
+  static String? validateDateOfBirth(
+      DateTime? dob, {
+        bool isRequired = true,
+        int maxAgeYears = 125,
+      }) {
+    if (dob == null) {
+      if (isRequired) return 'Date of Birth is required.';
+      return null;
+    }
+
+    final now = DateTime.now();
+    if (dob.isAfter(now)) {
       return 'Date of Birth cannot be in the future.';
     }
+
+    final earliestRealisticDate = DateTime(now.year - maxAgeYears, now.month, now.day);
+    if (dob.isBefore(earliestRealisticDate)) {
+      return 'Please enter a realistic Date of Birth (within the last $maxAgeYears years).';
+    }
+
     return null;
+  }
+
+  /// Computes whole number age at the time of the administered sacrament:
+  /// (Date of Sacrament - Date of Birth).
+  static int calculateAgeInYears(DateTime birthDate, DateTime sacramentDate) {
+    if (sacramentDate.isBefore(birthDate)) return 0;
+
+    int age = sacramentDate.year - birthDate.year;
+    if (sacramentDate.month < birthDate.month ||
+        (sacramentDate.month == birthDate.month && sacramentDate.day < birthDate.day)) {
+      age--;
+    }
+    return age < 0 ? 0 : age;
+  }
+
+  /// Computes a descriptive age representation (years, months, or days)
+  /// specifically tailored for infant and adult Baptism records:
+  /// (Date of Sacrament - Date of Birth).
+  static String calculateFormattedAge(DateTime birthDate, DateTime sacramentDate) {
+    if (sacramentDate.isBefore(birthDate)) return '0 days old';
+
+    final totalDays = sacramentDate.difference(birthDate).inDays;
+    final years = calculateAgeInYears(birthDate, sacramentDate);
+
+    if (years >= 1) {
+      return '$years yr(s) old';
+    }
+
+    final months = (totalDays / 30.44).floor();
+    if (months >= 1) {
+      return '$months mo(s) old';
+    }
+
+    return '$totalDays day(s) old';
   }
 
   /// Validates Date of Baptism relative to Date of Birth.

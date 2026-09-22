@@ -224,6 +224,18 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
         return false;
       }
       return true;
+    } else if (step == 1) {
+      final residenceError = SacramentalValidators.validatePlace(
+        _residenceController.text,
+        'Residence address',
+        isRequired: true,
+        maxLength: 150,
+      );
+      if (residenceError != null) {
+        setState(() => _errorMessage = residenceError);
+        return false;
+      }
+      return true;
     } else if (step == 3) {
       final burialError = SacramentalValidators.validateBurialDate(_dateOfBurial, _dateOfDeath);
       if (burialError != null) {
@@ -235,6 +247,17 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
           }
           _errorMessage = burialError;
         });
+        return false;
+      }
+
+      final placeBurialError = SacramentalValidators.validatePlace(
+        _placeOfBurialController.text,
+        'Place of burial',
+        isRequired: true,
+        maxLength: 150,
+      );
+      if (placeBurialError != null) {
+        setState(() => _errorMessage = placeBurialError);
         return false;
       }
     }
@@ -868,7 +891,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _residenceController,
               label: 'Residence Address (Residentia)',
               isRequired: true,
-              validator: (v) => SacramentalValidators.validateRequiredText(v, 'Residence address'),
+              maxLength: 150, // Length limit enforced
+              validator: (v) => SacramentalValidators.validatePlace(v, 'Residence address', isRequired: true, maxLength: 150),
             ),
           ),
         ],
@@ -996,12 +1020,14 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _placeOfBurialController,
               label: 'Place of Burial / Cemetery (Sepelii Locus)',
               isRequired: true,
-              validator: (v) => SacramentalValidators.validateRequiredText(v, 'Place of burial'),
+              maxLength: 150, // Length limit enforced
+              validator: (v) => SacramentalValidators.validatePlace(v, 'Place of burial', isRequired: true, maxLength: 150),
             ),
             second: _buildTextFormField(
               controller: _causeOfDeathController,
               label: 'Cause of Death (Causa Mortis)',
               isRequired: false,
+              maxLength: 100, // Length limit enforced
             ),
           ),
           const Divider(height: 24),
@@ -1056,13 +1082,15 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             controller: _parishNameController,
             label: 'Parish Name',
             isRequired: true,
-            validator: (v) => SacramentalValidators.validateRequiredText(v, 'Parish name'),
+            maxLength: 150, // Length limit enforced
+            validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
           ),
           _buildTextFormField(
             controller: _remarksController,
             label: 'Remarks / Observanda',
             isRequired: false,
             maxLines: 2,
+            maxLength: 255,
           ),
         ],
       ),
@@ -1187,6 +1215,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     bool enabled = true,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    int? maxLength,
     String? Function(String?)? validator,
   }) {
     return Padding(
@@ -1200,6 +1229,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             enabled: enabled,
             keyboardType: keyboardType,
             maxLines: maxLines,
+            maxLength: maxLength,
+            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
             validator: validator,
             style: TextStyle(fontSize: 14, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(

@@ -273,12 +273,24 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       }
       return true;
     } else if (step == 1) {
-      final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth);
+      // Validate realism of date of birth
+      final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
       if (dobError != null) {
         setState(() {
           _dateOfBirthHasError = true;
           _errorMessage = dobError;
         });
+        return false;
+      }
+
+      final placeError = SacramentalValidators.validatePlace(
+        _placeOfBirthController.text,
+        'Place of birth',
+        isRequired: true,
+        maxLength: 100,
+      );
+      if (placeError != null) {
+        setState(() => _errorMessage = placeError);
         return false;
       }
 
@@ -940,7 +952,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _placeOfBirthController,
                   label: 'Place of Birth',
                   isRequired: true,
-                  validator: (v) => SacramentalValidators.validateRequiredText(v, 'Place of birth'),
+                  maxLength: 100, // Length limit enforced
+                  validator: (v) => SacramentalValidators.validatePlace(v, 'Place of birth', isRequired: true, maxLength: 100),
                 ),
               ),
             ],
@@ -979,6 +992,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _priorBaptismPlaceController,
                   label: 'Congregation Location / Municipality',
                   isRequired: false,
+                  maxLength: 150, // Length limit enforced
+                  validator: (v) => SacramentalValidators.validatePlace(v, 'Congregation location', isRequired: false, maxLength: 150),
                 ),
               ),
               if (_priorBaptismChurch == 'Others (Specify)') ...[
@@ -987,6 +1002,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _priorBaptismChurchOtherController,
                   label: 'Specify Prior Church / Denomination *',
                   isRequired: true,
+                  maxLength: 100,
                   validator: (v) {
                     if (_priorBaptismChurch == 'Others (Specify)' && (v == null || v.trim().isEmpty)) {
                       return 'Please specify the prior church / denomination.';
@@ -1038,6 +1054,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _fatherReligionController,
                   label: "Father's Religion (e.g. Catholic, Methodist)",
                   isRequired: false,
+                  maxLength: 100,
                 ),
               ),
             ],
@@ -1077,6 +1094,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _motherReligionController,
                   label: "Mother's Religion",
                   isRequired: false,
+                  maxLength: 100,
                 ),
               ),
             ],
@@ -1174,13 +1192,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             controller: _parishNameController,
             label: 'Parish Name',
             isRequired: true,
-            validator: (v) => SacramentalValidators.validateRequiredText(v, 'Parish name'),
+            maxLength: 150, // Length limit enforced
+            validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
           ),
           _buildTextFormField(
             controller: _remarksController,
             label: 'Remarks (Observanda: Confirmation, Marriage noted)',
             isRequired: false,
             maxLines: 2,
+            maxLength: 255,
           ),
         ],
       ),
@@ -1305,6 +1325,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     bool enabled = true,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    int? maxLength,
     String? Function(String?)? validator,
   }) {
     return Padding(
@@ -1318,6 +1339,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             enabled: enabled,
             keyboardType: keyboardType,
             maxLines: maxLines,
+            maxLength: maxLength,
+            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
             validator: validator,
             style: TextStyle(fontSize: 14, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(

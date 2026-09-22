@@ -157,6 +157,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
     _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
     _remarksController.text = data['remarks']?.toString() ?? '';
+
+    if (_dateOfBirth != null) {
+      _recomputeAge();
+    }
   }
 
   @override
@@ -197,6 +201,17 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     super.dispose();
   }
 
+  /// Automatically computes age as (Date of Confirmation - Date of Birth) when birth is indicated.
+  void _recomputeAge() {
+    if (_dateOfBirth != null && _dateOfConfirmation != null) {
+      final years = SacramentalValidators.calculateAgeInYears(
+        _dateOfBirth!,
+        _dateOfConfirmation!,
+      );
+      _ageController.text = '$years';
+    }
+  }
+
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
@@ -213,7 +228,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(now) && dateType == 1 ? now : initialDate,
       firstDate: DateTime(1900),
       lastDate: now.add(const Duration(days: 365)),
     );
@@ -224,14 +239,14 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
           _registryDate = picked;
         } else if (dateType == 1) {
           _dateOfBirth = picked;
-          final diffYears = (DateTime.now().difference(picked).inDays / 365).floor();
-          _ageController.text = diffYears >= 0 ? '$diffYears' : '0';
+          _recomputeAge();
         } else if (dateType == 2) {
           _dateOfBaptism = picked;
           _dateOfBaptismHasError = false;
         } else {
           _dateOfConfirmation = picked;
           _dateOfConfirmationHasError = false;
+          _recomputeAge();
         }
       });
     }
@@ -254,10 +269,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     });
   }
 
-  // ===========================================================================
-  // Step-by-Step Google Forms Pagination Logic with Canonical Validators
-  // ===========================================================================
-
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
 
@@ -268,19 +279,16 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     }
 
     if (step == 0) {
-      // Step 1: Canonical Coordinates Bounds
       final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
       if (bookError != null) {
         setState(() => _errorMessage = bookError);
         return false;
       }
-
       final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
       if (pageError != null) {
         setState(() => _errorMessage = pageError);
         return false;
       }
-
       final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
       if (lineError != null) {
         setState(() => _errorMessage = lineError);
@@ -288,7 +296,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       }
       return true;
     } else if (step == 1) {
-      // Step 2: Confirmand Information & Prior Baptism
+      // Validate realism of date of birth if indicated
+      final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: false);
+      if (dobError != null) {
+        setState(() => _errorMessage = dobError);
+        return false;
+      }
+
       if (_dateOfBaptism == null) {
         setState(() {
           _dateOfBaptismHasError = true;
@@ -307,7 +321,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       }
       return true;
     } else if (step == 4) {
-      // Step 5: Administration & Confirmation Chronology
       final confError = SacramentalValidators.validateConfirmationDate(_dateOfConfirmation, _dateOfBaptism);
       if (confError != null) {
         setState(() {
@@ -905,6 +918,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   }
 
   Widget _buildStep2ConfirmandInformation({required bool isMobile}) {
+    final bool hasBirthIndicated = _dateOfBirth != null;
+
     return _buildSectionCard(
       title: "Confirmand's Canonical Identification",
       icon: Icons.local_fire_department,
@@ -955,10 +970,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             ),
             second: _buildTextFormField(
               controller: _ageController,
-              label: 'Age',
-              isRequired: false,
+              label: hasBirthIndicated ? 'Age (Autocomputed)' : 'Age (Enter in Years)',
+              isRequired: !hasBirthIndicated,
+              enabled: !hasBirthIndicated, // Editable only if birth is not indicated!
               keyboardType: TextInputType.number,
-              validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: false),
+              validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: !hasBirthIndicated),
             ),
           ),
           _buildAdaptivePair(
@@ -974,13 +990,16 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _churchBaptizedController,
               label: 'Church Baptized',
               isRequired: true,
-              validator: (val) => SacramentalValidators.validateRequiredText(val, 'Church baptized'),
+              maxLength: 150, // Length limit enforced
+              validator: (val) => SacramentalValidators.validatePlace(val, 'Church baptized', isRequired: true, maxLength: 150),
             ),
           ),
           _buildTextFormField(
             controller: _addressController,
             label: 'Address / Residence',
             isRequired: false,
+            maxLength: 150, // Length limit enforced
+            validator: (val) => SacramentalValidators.validatePlace(val, 'Address / Residence', isRequired: false, maxLength: 150),
           ),
         ],
       ),
@@ -1042,6 +1061,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   label: 'Place of Origin',
                   isRequired: false,
                   enabled: !_fatherNotIndicated,
+                  maxLength: 100, // Length limit enforced
+                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's place of origin", isRequired: false, maxLength: 100) : null,
                 ),
               ),
             ],
@@ -1081,6 +1102,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   controller: _motherOriginController,
                   label: 'Place of Origin',
                   isRequired: false,
+                  maxLength: 100, // Length limit enforced
+                  validator: (val) => SacramentalValidators.validatePlace(val, "Mother's place of origin", isRequired: false, maxLength: 100),
                 ),
               ),
             ],
@@ -1129,6 +1152,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _sponsor1OriginAddressController,
               label: 'Sponsor 1 Origin / Address',
               isRequired: false,
+              maxLength: 150, // Length limit enforced
+              validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 1 origin / address', isRequired: false, maxLength: 150),
             ),
           ),
           const Divider(height: 28),
@@ -1159,6 +1184,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _sponsor2OriginAddressController,
               label: 'Sponsor 2 Origin / Address',
               isRequired: false,
+              maxLength: 150, // Length limit enforced
+              validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 2 origin / address', isRequired: false, maxLength: 150),
             ),
           ),
         ],
@@ -1177,7 +1204,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             controller: _parishNameController,
             label: 'Parish Name',
             isRequired: true,
-            validator: (val) => SacramentalValidators.validateRequiredText(val, 'Parish name'),
+            maxLength: 150, // Length limit enforced
+            validator: (val) => SacramentalValidators.validatePlace(val, 'Parish name', isRequired: true, maxLength: 150),
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
@@ -1222,6 +1250,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             label: 'Canonical Remarks / Marginal Notations',
             isRequired: false,
             maxLines: 2,
+            maxLength: 255,
           ),
         ],
       ),
@@ -1414,6 +1443,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     bool enabled = true,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    int? maxLength,
     String? Function(String?)? validator,
   }) {
     return Padding(
@@ -1427,6 +1457,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             enabled: enabled,
             keyboardType: keyboardType,
             maxLines: maxLines,
+            maxLength: maxLength,
+            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
             validator: validator,
             style: TextStyle(fontSize: 14, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
@@ -1505,7 +1537,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   Icon(
                     Icons.calendar_month,
                     size: 20,
-                    color: _pentecostRed,
+                    color: hasError ? _pentecostRed : _pentecostRed,
                   ),
                 ],
               ),
