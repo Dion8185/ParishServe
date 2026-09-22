@@ -3,6 +3,7 @@ import '../../../../core/constants/colors.dart';
 import '../../auth/models/user_model.dart';
 import '../../appointments/models/appointment_model.dart';
 import '../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
+import '../../appointments/presentation/dialogs/mass_intention_dialog.dart';
 import '../../appointments/presentation/dialogs/parishioner_appointment_detail_dialog.dart';
 import '../../auth/services/user_service.dart';
 import '../../appointments/services/liturgical_calendar_service.dart';
@@ -160,7 +161,7 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Welcome to the St. John Paul II Parish Client Portal. Securely book sacraments, request official records, and track your parish transactions directly from this dashboard.',
+            'Welcome to the St. John Paul II Parish Client Portal. Securely book sacraments, request mass intentions, and track your parish transactions directly from this dashboard.',
             style: TextStyle(
                 fontSize: isDesktop ? 16 : 14,
                 color: Colors.white.withOpacity(0.9),
@@ -184,18 +185,26 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
         GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: isDesktop ? 2 : 1,
+          crossAxisCount: isDesktop ? 3 : 1,
           mainAxisSpacing: 16,
           crossAxisSpacing: 16,
-          childAspectRatio: isDesktop ? 3.0 : 3.8,
+          childAspectRatio: isDesktop ? 2.5 : 3.8,
           children: [
             _buildActionCard(
-              title: 'Schedule Appointment',
+              title: 'Schedule Sacrament',
               subtitle: 'Baptisms, Weddings & Blessings',
               icon: Icons.edit_calendar,
               color: ParishColors.marianBlue,
               onTap: () => showScheduleAppointmentModal(context,
                   onAppointmentSaved: _loadDashboardData),
+            ),
+            _buildActionCard(
+              title: 'Mass Intentions',
+              subtitle: 'Wed/Fri (5:30PM) • Sun (8AM/4PM)',
+              icon: Icons.volunteer_activism,
+              color: ParishColors.goldAccent,
+              onTap: () => showMassIntentionModal(context,
+                  onIntentionSaved: _loadDashboardData),
             ),
             _buildActionCard(
               title: 'Request Record (Pabuklat)',
@@ -241,9 +250,9 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
               decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   shape: BoxShape.circle),
-              child: Icon(icon, color: color, size: 26),
+              child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -251,13 +260,13 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
                 children: [
                   Text(title,
                       style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.bold,
                           color: ParishColors.textDark)),
                   const SizedBox(height: 3),
                   Text(subtitle,
                       style: TextStyle(
-                          fontSize: 12.5, color: ParishColors.textMuted)),
+                          fontSize: 11.5, color: ParishColors.textMuted)),
                 ],
               ),
             ),

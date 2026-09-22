@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
 import '../../models/appointment_model.dart';
 import '../../services/appointment_service.dart';
 import '../../services/liturgical_calendar_service.dart';
@@ -29,10 +30,12 @@ class _RescheduleAppointmentDialog extends StatefulWidget {
   });
 
   @override
-  State<_RescheduleAppointmentDialog> createState() => _RescheduleAppointmentDialogState();
+  State<_RescheduleAppointmentDialog> createState() =>
+      _RescheduleAppointmentDialogState();
 }
 
-class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDialog> {
+class _RescheduleAppointmentDialogState
+    extends State<_RescheduleAppointmentDialog> {
   final _formKey = GlobalKey<FormState>();
   final _reasonController = TextEditingController();
 
@@ -50,12 +53,15 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
   String? _liveConflictWarning;
   Map<String, TimeOfDay>? _suggestedSlot;
 
+  bool get _isParishioner =>
+      AuthService.currentUser?.userRole.toLowerCase() == 'user';
+
   final List<String> _quickReasons = [
     'Parishioner Request',
     'Inclement Weather / Typhoon',
     'Late Document Submissions',
-    'Clergy Pastoral Reassignment',
-    'Family Emergency',
+    'Family Emergency / Medical',
+    'Work / Travel Conflict',
   ];
 
   final List<String> _venues = [
@@ -78,7 +84,8 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
     super.initState();
     final a = widget.appointment;
     var target = a.requestedDate.add(const Duration(days: 7));
-    while (target.weekday == DateTime.monday || LiturgicalCalendarService.isDateBlockedSync(target)) {
+    while (target.weekday == DateTime.monday ||
+        LiturgicalCalendarService.isDateBlockedSync(target)) {
       target = target.add(const Duration(days: 1));
     }
     _newDate = target;
@@ -141,7 +148,8 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
       _suggestedSlot = null;
     });
 
-    final dateStr = '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}';
+    final dateStr =
+        '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}';
     final startStr = _formatTimeOfDay(_newStartTime);
     final endStr = _formatTimeOfDay(_newEndTime);
 
@@ -222,8 +230,10 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
       setState(() {
         if (isStart) {
           _newStartTime = picked;
-          final durationMinutes = _getDurationMinutes(_newStartTime, _newEndTime);
-          _newEndTime = _addMinutes(picked, durationMinutes > 0 ? durationMinutes : 60);
+          final durationMinutes =
+          _getDurationMinutes(_newStartTime, _newEndTime);
+          _newEndTime = _addMinutes(
+              picked, durationMinutes > 0 ? durationMinutes : 60);
         } else {
           _newEndTime = picked;
         }
@@ -244,7 +254,10 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
             Expanded(
               child: Text(
                 'Schedule Conflict Detected',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: ParishColors.mercyRed),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    color: ParishColors.mercyRed),
               ),
             ),
           ],
@@ -261,7 +274,7 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Adjust Time/Date'),
+            child: const Text('Adjust Schedule'),
           ),
         ],
       ),
@@ -285,7 +298,8 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
     setState(() => _isSubmitting = true);
 
     try {
-      final dateStr = '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}';
+      final dateStr =
+          '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}';
       final a = widget.appointment;
 
       await AppointmentService.rescheduleAppointment(
@@ -303,17 +317,22 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
 
       if (!mounted) return;
 
-      Navigator.pop(context);
-      Navigator.pop(context);
+      Navigator.pop(context); // Close reschedule dialog
+      Navigator.pop(context); // Close parent detail dialog
 
       final isTuesday = _newDate.weekday == DateTime.tuesday;
+      final isParishioner = _isParishioner;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isTuesday
+          content: Text(isParishioner
+              ? 'Reschedule request submitted! Marked as PENDING for Parish Office re-approval.'
+              : (isTuesday
               ? 'Appointment rescheduled to Tuesday! Marked as PENDING for Priest approval.'
-              : 'Appointment successfully rescheduled!'),
-          backgroundColor: isTuesday ? ParishColors.goldAccent : ParishColors.oliveGreen,
+              : 'Appointment successfully rescheduled!')),
+          backgroundColor: (isParishioner || isTuesday)
+              ? ParishColors.goldAccent
+              : ParishColors.oliveGreen,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -373,7 +392,7 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Reschedule Service',
+                          _isParishioner ? 'Request Reschedule' : 'Reschedule Service',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
@@ -391,7 +410,7 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
               ),
             ),
 
-            // Content
+            // Form
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
@@ -472,7 +491,7 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                         ),
                       ),
 
-                      if (isTuesday) ...[
+                      if (isTuesday || _isParishioner) ...[
                         const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.all(12),
@@ -488,7 +507,9 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'Tuesday Notice: Rescheduling to a Tuesday requires approval from the Parish Priest before finalization. The status will update to PENDING.',
+                                  _isParishioner
+                                      ? 'Reschedule Notice: Submitting a new schedule will change this appointment to PENDING status until verified and re-approved by Parish Staff.'
+                                      : 'Tuesday Notice: Rescheduling to a Tuesday requires approval from the Parish Priest before finalization. The status will update to PENDING.',
                                   style: TextStyle(fontSize: 11.5, color: textDark, height: 1.3),
                                 ),
                               ),
@@ -561,9 +582,7 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                         ],
                       ),
 
-                      // =======================================================
-                      // LIVE CONFLICT BANNER & AUTO-SET NEXT AVAILABLE TIME
-                      // =======================================================
+                      // Live Conflict Checker
                       const SizedBox(height: 10),
                       if (_isLiveChecking)
                         Padding(
@@ -652,12 +671,13 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                       ],
                       const SizedBox(height: 14),
 
-                      Text('Parish Venue *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                      // Venue Selector (Locked for parishioners, staff-assigned)
+                      Text(_isParishioner ? 'Parish Venue (Staff Assigned)' : 'Parish Venue *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
                         value: _venue,
                         items: _venues.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 13)))).toList(),
-                        onChanged: (val) {
+                        onChanged: _isParishioner ? null : (val) {
                           if (val != null) {
                             setState(() => _venue = val);
                             _runLiveConflictCheck();
@@ -665,19 +685,20 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                         },
                         decoration: InputDecoration(
                           filled: true,
-                          fillColor: ParishColors.backgroundLight,
+                          fillColor: _isParishioner ? ParishColors.borderGrey.withValues(alpha: 0.15) : ParishColors.backgroundLight,
                           isDense: true,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderGrey)),
                         ),
                       ),
                       const SizedBox(height: 14),
 
-                      Text('Presiding Clergy *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                      // Presider Selector (Locked for parishioners, parish priest assigned)
+                      Text(_isParishioner ? 'Presiding Clergy (Parish Assigned)' : 'Presiding Clergy *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
                         value: _officiant,
                         items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13)))).toList(),
-                        onChanged: (val) {
+                        onChanged: _isParishioner ? null : (val) {
                           if (val != null) {
                             setState(() => _officiant = val);
                             _runLiveConflictCheck();
@@ -685,7 +706,7 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                         },
                         decoration: InputDecoration(
                           filled: true,
-                          fillColor: ParishColors.backgroundLight,
+                          fillColor: _isParishioner ? ParishColors.borderGrey.withValues(alpha: 0.15) : ParishColors.backgroundLight,
                           isDense: true,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderGrey)),
                         ),
@@ -761,7 +782,9 @@ class _RescheduleAppointmentDialogState extends State<_RescheduleAppointmentDial
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.check, size: 20),
                       label: Text(
-                        _isSubmitting ? 'Checking Conflicts...' : 'Confirm Reschedule',
+                        _isSubmitting
+                            ? 'Checking Conflicts...'
+                            : (_isParishioner ? 'Submit Reschedule Request' : 'Confirm Reschedule'),
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/appointment_model.dart';
 import '../../services/appointment_service.dart';
+import 'reschedule_appointment_dialog.dart';
 
 void showParishionerAppointmentDetailModal(
     BuildContext context, {
@@ -103,6 +104,7 @@ class _ParishionerAppointmentDetailDialogState
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final status = a.appointmentStatus.toLowerCase();
+    final bool canModify = status != 'cancelled' && status != 'completed';
 
     Color statusColor = ParishColors.goldAccent;
     Color statusSurface = ParishColors.goldLight;
@@ -252,7 +254,23 @@ class _ParishionerAppointmentDetailDialogState
                   padding: EdgeInsets.all(8.0),
                   child: CircularProgressIndicator()))
         else ...[
-          if (status == 'pending')
+          if (canModify) ...[
+            // Parishioner Reschedule Request Action
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF7C3AED)),
+                foregroundColor: const Color(0xFF7C3AED),
+              ),
+              onPressed: () {
+                showRescheduleAppointmentModal(
+                  context,
+                  appointment: widget.appointment,
+                  onRescheduled: widget.onStatusUpdated,
+                );
+              },
+              icon: const Icon(Icons.update, size: 16),
+              label: const Text('Request Reschedule'),
+            ),
             TextButton(
               onPressed: _cancelBooking,
               child: const Text('Cancel Request',
@@ -260,6 +278,7 @@ class _ParishionerAppointmentDetailDialogState
                       color: ParishColors.mercyRed,
                       fontWeight: FontWeight.bold)),
             ),
+          ],
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ParishColors.marianBlue,

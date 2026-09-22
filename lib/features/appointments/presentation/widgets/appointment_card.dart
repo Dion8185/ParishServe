@@ -17,6 +17,7 @@ class AppointmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final a = appointment;
     final status = a.appointmentStatus.toLowerCase();
+    final bool hasId = a.idType != null || a.idDocumentUrl != null;
 
     Color statusColor = ParishColors.goldAccent;
     Color statusSurface = ParishColors.goldLight;
@@ -94,14 +95,23 @@ class AppointmentCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(a.serviceType, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-                  Text('Requester: ${a.requesterName} (${a.contactNumber})', style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted)),
+                  Text(
+                    a.serviceType,
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                  ),
+                  Text(
+                    'Requester: ${a.requesterName} (${a.contactNumber})',
+                    style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                  ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
                       Icon(Icons.access_time, size: 14, color: ParishColors.textMuted),
                       const SizedBox(width: 4),
-                      Text('${a.formattedDate} • ${a.formattedTimeRange}', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ParishColors.textDark)),
+                      Text(
+                        '${a.formattedDate} • ${a.formattedTimeRange}',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -112,6 +122,48 @@ class AppointmentCard extends StatelessWidget {
                       Text(a.venue, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
                     ],
                   ),
+
+                  // ID Clearance Indicator Pill for Staff Triage
+                  if (hasId) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: a.isIdVerified
+                                ? ParishColors.oliveGreenSurface
+                                : ParishColors.goldLight,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: a.isIdVerified
+                                  ? ParishColors.oliveGreen.withValues(alpha: 0.5)
+                                  : ParishColors.goldAccent.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                a.isIdVerified ? Icons.verified : Icons.badge_outlined,
+                                size: 12,
+                                color: a.isIdVerified ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                a.isIdVerified ? 'ID Verified' : 'ID Clearance Needed',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: a.isIdVerified ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

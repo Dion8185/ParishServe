@@ -336,14 +336,12 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   Future<void> _pickIdDocument() async {
     try {
-      // file_picker 13.x syntax: pickFile() returns PlatformFile?
       final PlatformFile? file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
       );
 
       if (file != null) {
-        // file_picker 13.x syntax: length() returns Future<int?>
         final int fileSize = (await file.length()) ?? 0;
         if (fileSize > 5 * 1024 * 1024) {
           if (!mounted) return;
@@ -356,7 +354,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
           return;
         }
 
-        // file_picker 13.x syntax: readAsBytes() returns Future<Uint8List>
         final Uint8List bytes = await file.readAsBytes();
 
         setState(() {
@@ -561,19 +558,31 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     }
   }
 
-  void _showConflictPromptDialog(String message) {
+  void _showErrorPromptDialog(String message) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 28),
-            SizedBox(width: 10),
+            Icon(
+              message.toLowerCase().contains('conflict')
+                  ? Icons.warning_amber_rounded
+                  : Icons.error_outline,
+              color: ParishColors.mercyRed,
+              size: 28,
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Schedule Conflict Detected',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: ParishColors.mercyRed),
+                message.toLowerCase().contains('conflict')
+                    ? 'Schedule Conflict Detected'
+                    : 'Booking Notice',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                  color: ParishColors.mercyRed,
+                ),
               ),
             ),
           ],
@@ -590,7 +599,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Adjust Schedule'),
+            child: const Text('Understood'),
           ),
         ],
       ),
@@ -628,7 +637,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
     if (startStr.compareTo(endStr) >= 0) {
       setState(() => _errorMessage = 'End Time must be later than Start Time.');
-      _showConflictPromptDialog('End Time must be later than Start Time.');
+      _showErrorPromptDialog('End Time must be later than Start Time.');
       return;
     }
 
@@ -641,7 +650,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       String? uploadedDocumentPath;
       final tempId = 'TEMP-${DateTime.now().millisecondsSinceEpoch}';
 
-      // Upload valid ID file to Supabase Private Storage if attached
       if (_attachedIdFileBytes != null && _attachedIdFileName != null) {
         uploadedDocumentPath = await AppointmentService.uploadIdDocument(
           appointmentId: tempId,
@@ -682,7 +690,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       setState(() {
         _errorMessage = cleanError;
       });
-      _showConflictPromptDialog(cleanError);
+      _showErrorPromptDialog(cleanError);
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -1014,7 +1022,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 10),
 
-                      // File Upload Attachment Box (file_picker 13.x API)
+                      // File Upload Attachment Box
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
