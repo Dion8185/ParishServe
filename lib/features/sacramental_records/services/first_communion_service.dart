@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/first_communion_record_model.dart';
+import '../validators/sacramental_validators.dart';
 
 class FirstCommunionService {
   static final SupabaseClient _client = Supabase.instance.client;
@@ -66,14 +67,20 @@ class FirstCommunionService {
       }
     }
 
-    final yearNum = int.tryParse(data['year'].toString().trim());
-    if (yearNum == null || yearNum < 1900 || yearNum > DateTime.now().year + 1) {
-      throw 'Please provide a valid communion year.';
-    }
+    final yearError = SacramentalValidators.validateCommunionYear(data['year']?.toString());
+    if (yearError != null) throw yearError;
+    final yearNum = int.parse(data['year'].toString().trim());
     data['year'] = yearNum;
 
     final controlNum = data['control_number'].toString().trim();
+    final controlError = SacramentalValidators.validateCommunionControlNumber(controlNum);
+    if (controlError != null) throw controlError;
     data['control_number'] = controlNum;
+
+    final communionDate = DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
+    final baptismDate = DateTime.tryParse(data['baptism_date']?.toString() ?? '');
+    final communionDateError = SacramentalValidators.validateCommunionDate(communionDate, baptismDate);
+    if (communionDateError != null) throw communionDateError;
 
     final duplicate = await _client
         .from('first_communion_records')
@@ -131,6 +138,11 @@ class FirstCommunionService {
         throw '${entry.value} is required.';
       }
     }
+
+    final communionDate = DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
+    final baptismDate = DateTime.tryParse(data['baptism_date']?.toString() ?? '');
+    final communionDateError = SacramentalValidators.validateCommunionDate(communionDate, baptismDate);
+    if (communionDateError != null) throw communionDateError;
 
     // Protect control number and year coordinates from being altered
     data.remove('record_id');

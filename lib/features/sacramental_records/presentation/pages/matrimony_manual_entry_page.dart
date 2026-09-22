@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/matrimony_service.dart';
+import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
 
 class MatrimonyManualEntryPage extends StatefulWidget {
@@ -268,37 +269,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     super.dispose();
   }
 
-  String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) {
-      if (isRequired) return '$fieldName is required.';
-      return null;
-    }
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    final nameRegExp = RegExp(r"^[a-zA-ZÀ-ÿÑñ\s\.\-\'’]+$");
-    if (!nameRegExp.hasMatch(text)) {
-      return 'Enter a valid name (letters only).';
-    }
-    return null;
-  }
-
-  String? _validateRequiredText(String? value, String fieldName) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return '$fieldName is required.';
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    return null;
-  }
-
-  String? _validateStipend(String? value) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return null;
-    final amount = double.tryParse(text);
-    if (amount == null || amount < 0) {
-      return 'Enter a valid amount (e.g. 500.00).';
-    }
-    return null;
-  }
-
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate = now;
@@ -356,20 +326,19 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     }
 
     if (step == 0) {
-      final b = int.tryParse(_bookNumberController.text.trim());
-      final p = int.tryParse(_pageNumberController.text.trim());
-      final l = int.tryParse(_lineNumberController.text.trim());
-
-      if (b == null || b < 1 || b > 200) {
-        setState(() => _errorMessage = 'Book number must be between 1 and 200.');
+      final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+      if (bookError != null) {
+        setState(() => _errorMessage = bookError);
         return false;
       }
-      if (p == null || p < 1 || p > 100) {
-        setState(() => _errorMessage = 'Page number must be between 1 and 100.');
+      final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+      if (pageError != null) {
+        setState(() => _errorMessage = pageError);
         return false;
       }
-      if (l == null || l < 1 || l > 10) {
-        setState(() => _errorMessage = 'Line number must be between 1 and 10.');
+      final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+      if (lineError != null) {
+        setState(() => _errorMessage = lineError);
         return false;
       }
       return true;
@@ -913,19 +882,19 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           isSmallMobile
               ? Column(
             children: [
-              _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
-              _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
-              _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null),
+              _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateBookNumber),
+              _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validatePageNumber),
+              _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateLineNumber),
             ],
           )
               : Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
+              Expanded(child: _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateBookNumber)),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
+              Expanded(child: _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validatePageNumber)),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Required' : null)),
+              Expanded(child: _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateLineNumber)),
             ],
           ),
           _buildAdaptivePair(
@@ -965,12 +934,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomFirstNameController,
                   label: "Groom's First Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Groom's first name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Groom's first name"),
                 ),
                 second: _buildTextFormField(
                   controller: _groomMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
+                  validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false),
                 ),
               ),
               _buildAdaptivePair(
@@ -979,7 +949,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomLastNameController,
                   label: "Groom's Last Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Groom's last name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Groom's last name"),
                 ),
                 second: _buildTextFormField(
                   controller: _groomSuffixController,
@@ -1001,7 +971,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Age',
                   isRequired: true,
                   keyboardType: TextInputType.number,
-                  validator: (val) => int.tryParse(val?.trim() ?? '') == null ? 'Enter valid age' : null,
+                  validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
                 ),
               ),
               _buildAdaptivePair(
@@ -1023,7 +993,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                 controller: _groomAddressController,
                 label: "Groom's Residential Address",
                 isRequired: true,
-                validator: (val) => _validateRequiredText(val, "Groom's address"),
+                validator: (val) => SacramentalValidators.validateRequiredText(val, "Groom's address"),
               ),
             ],
           ),
@@ -1041,19 +1011,20 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomFatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Father's first name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name"),
                 ),
                 second: _buildTextFormField(
                   controller: _groomFatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _groomFatherLastNameController,
                 label: "Father's Last Name",
                 isRequired: true,
-                validator: (val) => _validateName(val, "Father's last name"),
+                validator: (val) => SacramentalValidators.validateName(val, "Father's last name"),
               ),
               const Divider(height: 24),
               _buildAdaptivePair(
@@ -1062,19 +1033,20 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomMotherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Mother's first name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name"),
                 ),
                 second: _buildTextFormField(
                   controller: _groomMotherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _groomMotherMaidenLastController,
                 label: "Mother's Maiden Last Name",
                 isRequired: true,
-                validator: (val) => _validateName(val, "Mother's maiden last name"),
+                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name"),
               ),
             ],
           ),
@@ -1098,12 +1070,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideFirstNameController,
                   label: "Bride's First Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Bride's first name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Bride's first name"),
                 ),
                 second: _buildTextFormField(
                   controller: _brideMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
+                  validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false),
                 ),
               ),
               _buildAdaptivePair(
@@ -1112,7 +1085,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideLastNameController,
                   label: "Bride's Last Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Bride's last name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Bride's last name"),
                 ),
                 second: _buildTextFormField(
                   controller: _brideSuffixController,
@@ -1134,7 +1107,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Age',
                   isRequired: true,
                   keyboardType: TextInputType.number,
-                  validator: (val) => int.tryParse(val?.trim() ?? '') == null ? 'Enter valid age' : null,
+                  validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
                 ),
               ),
               _buildAdaptivePair(
@@ -1156,7 +1129,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                 controller: _brideAddressController,
                 label: "Bride's Residential Address",
                 isRequired: true,
-                validator: (val) => _validateRequiredText(val, "Bride's address"),
+                validator: (val) => SacramentalValidators.validateRequiredText(val, "Bride's address"),
               ),
             ],
           ),
@@ -1174,19 +1147,20 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideFatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Father's first name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name"),
                 ),
                 second: _buildTextFormField(
                   controller: _brideFatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _brideFatherLastNameController,
                 label: "Father's Last Name",
                 isRequired: true,
-                validator: (val) => _validateName(val, "Father's last name"),
+                validator: (val) => SacramentalValidators.validateName(val, "Father's last name"),
               ),
               const Divider(height: 24),
               _buildAdaptivePair(
@@ -1195,19 +1169,20 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideMotherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Mother's first name"),
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name"),
                 ),
                 second: _buildTextFormField(
                   controller: _brideMotherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _brideMotherMaidenLastController,
                 label: "Mother's Maiden Last Name",
                 isRequired: true,
-                validator: (val) => _validateName(val, "Mother's maiden last name"),
+                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name"),
               ),
             ],
           ),
@@ -1229,12 +1204,12 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               const SizedBox(height: 8),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor1FirstNameController, label: 'First Name', isRequired: true, validator: (v) => _validateName(v, 'Sponsor 1 first name')),
-                second: _buildTextFormField(controller: _sponsor1MiddleNameController, label: 'Middle Name', isRequired: false),
+                first: _buildTextFormField(controller: _sponsor1FirstNameController, label: 'First Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 first name')),
+                second: _buildTextFormField(controller: _sponsor1MiddleNameController, label: 'Middle Name', isRequired: false, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 middle name', isRequired: false)),
               ),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor1LastNameController, label: 'Last Name', isRequired: true, validator: (v) => _validateName(v, 'Sponsor 1 last name')),
+                first: _buildTextFormField(controller: _sponsor1LastNameController, label: 'Last Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 last name')),
                 second: _buildTextFormField(controller: _sponsor1OriginAddressController, label: 'Origin / Address', isRequired: false),
               ),
               const Divider(height: 28),
@@ -1242,12 +1217,12 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               const SizedBox(height: 8),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor2FirstNameController, label: 'First Name', isRequired: true, validator: (v) => _validateName(v, 'Sponsor 2 first name')),
-                second: _buildTextFormField(controller: _sponsor2MiddleNameController, label: 'Middle Name', isRequired: false),
+                first: _buildTextFormField(controller: _sponsor2FirstNameController, label: 'First Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 first name')),
+                second: _buildTextFormField(controller: _sponsor2MiddleNameController, label: 'Middle Name', isRequired: false, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 middle name', isRequired: false)),
               ),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor2LastNameController, label: 'Last Name', isRequired: true, validator: (v) => _validateName(v, 'Sponsor 2 last name')),
+                first: _buildTextFormField(controller: _sponsor2LastNameController, label: 'Last Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 last name')),
                 second: _buildTextFormField(controller: _sponsor2OriginAddressController, label: 'Origin / Address', isRequired: false),
               ),
             ],
@@ -1294,7 +1269,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     ],
                   ),
                 );
-              }).toList(),
+              }),
               const SizedBox(height: 4),
               SizedBox(
                 width: double.infinity,
@@ -1365,10 +1340,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           const SizedBox(height: 10),
           _buildAdaptivePair(
             isStacked: isMobile,
-            first: _buildTextFormField(controller: _solemnizerFirstNameController, label: 'Minister First Name', isRequired: true, validator: (v) => _validateName(v, 'Minister first name')),
-            second: _buildTextFormField(controller: _solemnizerMiddleNameController, label: 'Middle Name', isRequired: false),
+            first: _buildTextFormField(controller: _solemnizerFirstNameController, label: 'Minister First Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Minister first name')),
+            second: _buildTextFormField(controller: _solemnizerMiddleNameController, label: 'Middle Name', isRequired: false, validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false)),
           ),
-          _buildTextFormField(controller: _solemnizerLastNameController, label: 'Minister Last Name', isRequired: true, validator: (v) => _validateName(v, 'Minister last name')),
+          _buildTextFormField(controller: _solemnizerLastNameController, label: 'Minister Last Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Minister last name')),
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(controller: _crasmNumberController, label: 'CRASM Number', isRequired: false),
@@ -1376,8 +1351,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
-            first: _buildTextFormField(controller: _parishNameController, label: 'Parish Name', isRequired: true, validator: (v) => _validateRequiredText(v, 'Parish name')),
-            second: _buildTextFormField(controller: _stipendController, label: 'Stipend (₱)', isRequired: false, keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: _validateStipend),
+            first: _buildTextFormField(controller: _parishNameController, label: 'Parish Name', isRequired: true, validator: (v) => SacramentalValidators.validateRequiredText(v, 'Parish name')),
+            second: _buildTextFormField(controller: _stipendController, label: 'Stipend (₱)', isRequired: false, keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: SacramentalValidators.validateStipend),
           ),
           _buildTextFormField(controller: _remarksController, label: 'Remarks / Marginal Notations', isRequired: false, maxLines: 2),
         ],

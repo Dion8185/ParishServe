@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/confirmation_service.dart';
+import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
 
 class ConfirmationManualEntryPage extends StatefulWidget {
@@ -196,37 +197,6 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     super.dispose();
   }
 
-  String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) {
-      if (isRequired) return '$fieldName is required.';
-      return null;
-    }
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    final nameRegExp = RegExp(r"^[a-zA-ZÀ-ÿÑñ\s\.\-\'’]+$");
-    if (!nameRegExp.hasMatch(text)) {
-      return 'Enter a valid name (letters only).';
-    }
-    return null;
-  }
-
-  String? _validateRequiredText(String? value, String fieldName) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return '$fieldName is required.';
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    return null;
-  }
-
-  String? _validateStipend(String? value) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return null;
-    final amount = double.tryParse(text);
-    if (amount == null || amount < 0) {
-      return 'Enter a valid amount (e.g. 200.00).';
-    }
-    return null;
-  }
-
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
@@ -284,6 +254,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     });
   }
 
+  // ===========================================================================
+  // Step-by-Step Google Forms Pagination Logic with Canonical Validators
+  // ===========================================================================
+
   bool _validateStep(int step) {
     setState(() => _errorMessage = null);
 
@@ -294,24 +268,27 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     }
 
     if (step == 0) {
-      final b = int.tryParse(_bookNumberController.text.trim());
-      final p = int.tryParse(_pageNumberController.text.trim());
-      final l = int.tryParse(_lineNumberController.text.trim());
+      // Step 1: Canonical Coordinates Bounds
+      final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+      if (bookError != null) {
+        setState(() => _errorMessage = bookError);
+        return false;
+      }
 
-      if (b == null || b < 1 || b > 200) {
-        setState(() => _errorMessage = 'Book number must be a valid number between 1 and 200.');
+      final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+      if (pageError != null) {
+        setState(() => _errorMessage = pageError);
         return false;
       }
-      if (p == null || p < 1 || p > 100) {
-        setState(() => _errorMessage = 'Page number must be a valid number between 1 and 100.');
-        return false;
-      }
-      if (l == null || l < 1 || l > 10) {
-        setState(() => _errorMessage = 'Line number must be a valid number between 1 and 10.');
+
+      final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+      if (lineError != null) {
+        setState(() => _errorMessage = lineError);
         return false;
       }
       return true;
     } else if (step == 1) {
+      // Step 2: Confirmand Information & Prior Baptism
       if (_dateOfBaptism == null) {
         setState(() {
           _dateOfBaptismHasError = true;
@@ -319,26 +296,23 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         });
         return false;
       }
-      if (_dateOfBirth != null && _dateOfBaptism!.isBefore(_dateOfBirth!)) {
+
+      final baptismError = SacramentalValidators.validateBaptismDate(_dateOfBaptism, _dateOfBirth);
+      if (baptismError != null) {
         setState(() {
           _dateOfBaptismHasError = true;
-          _errorMessage = 'Date of Baptism cannot be earlier than Date of Birth.';
+          _errorMessage = baptismError;
         });
         return false;
       }
       return true;
     } else if (step == 4) {
-      if (_dateOfConfirmation == null) {
+      // Step 5: Administration & Confirmation Chronology
+      final confError = SacramentalValidators.validateConfirmationDate(_dateOfConfirmation, _dateOfBaptism);
+      if (confError != null) {
         setState(() {
           _dateOfConfirmationHasError = true;
-          _errorMessage = 'Date of Confirmation is required.';
-        });
-        return false;
-      }
-      if (_dateOfBaptism != null && _dateOfConfirmation!.isBefore(_dateOfBaptism!)) {
-        setState(() {
-          _dateOfConfirmationHasError = true;
-          _errorMessage = 'Date of Confirmation cannot be earlier than Date of Baptism.';
+          _errorMessage = confError;
         });
         return false;
       }
@@ -851,13 +825,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Book number is required';
-                  final num = int.tryParse(val.trim());
-                  if (num == null) return 'Numbers only';
-                  if (num < 1 || num > 200) return 'Must be between 1 and 200';
-                  return null;
-                },
+                validator: SacramentalValidators.validateBookNumber,
               ),
               _buildTextFormField(
                 controller: _pageNumberController,
@@ -865,13 +833,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Page number is required';
-                  final num = int.tryParse(val.trim());
-                  if (num == null) return 'Numbers only';
-                  if (num < 1 || num > 100) return 'Must be between 1 and 100';
-                  return null;
-                },
+                validator: SacramentalValidators.validatePageNumber,
               ),
               _buildTextFormField(
                 controller: _lineNumberController,
@@ -879,13 +841,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Line number is required';
-                  final num = int.tryParse(val.trim());
-                  if (num == null) return 'Numbers only';
-                  if (num < 1 || num > 10) return 'Must be between 1 and 10';
-                  return null;
-                },
+                validator: SacramentalValidators.validateLineNumber,
               ),
             ],
           )
@@ -899,13 +855,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) return 'Required';
-                    final num = int.tryParse(val.trim());
-                    if (num == null) return 'Numbers only';
-                    if (num < 1 || num > 200) return '1 to 200 only';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validateBookNumber,
                 ),
               ),
               const SizedBox(width: 12),
@@ -916,13 +866,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) return 'Required';
-                    final num = int.tryParse(val.trim());
-                    if (num == null) return 'Numbers only';
-                    if (num < 1 || num > 100) return '1 to 100 only';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validatePageNumber,
                 ),
               ),
               const SizedBox(width: 12),
@@ -933,13 +877,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) return 'Required';
-                    final num = int.tryParse(val.trim());
-                    if (num == null) return 'Numbers only';
-                    if (num < 1 || num > 10) return '1 to 10 only';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validateLineNumber,
                 ),
               ),
             ],
@@ -979,13 +917,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _confirmandFirstNameController,
               label: 'Confirmand First Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Confirmand first name', isRequired: true),
+              validator: (val) => SacramentalValidators.validateName(val, 'Confirmand first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _confirmandMiddleNameController,
               label: 'Middle Name',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Middle name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false),
             ),
             flexFirst: 2,
             flexSecond: 1,
@@ -996,7 +934,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _confirmandLastNameController,
               label: 'Confirmand Last Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Confirmand last name', isRequired: true),
+              validator: (val) => SacramentalValidators.validateName(val, 'Confirmand last name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _confirmandSuffixController,
@@ -1020,6 +958,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               label: 'Age',
               isRequired: false,
               keyboardType: TextInputType.number,
+              validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: false),
             ),
           ),
           _buildAdaptivePair(
@@ -1035,7 +974,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _churchBaptizedController,
               label: 'Church Baptized',
               isRequired: true,
-              validator: (val) => _validateRequiredText(val, 'Church baptized'),
+              validator: (val) => SacramentalValidators.validateRequiredText(val, 'Church baptized'),
             ),
           ),
           _buildTextFormField(
@@ -1079,14 +1018,14 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   label: 'Father First Name',
                   isRequired: !_fatherNotIndicated,
                   enabled: !_fatherNotIndicated,
-                  validator: (val) => !_fatherNotIndicated ? _validateName(val, "Father's first name", isRequired: true) : null,
+                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true) : null,
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
                   enabled: !_fatherNotIndicated,
-                  validator: (val) => !_fatherNotIndicated ? _validateName(val, "Father's middle name", isRequired: false) : null,
+                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false) : null,
                 ),
               ),
               _buildAdaptivePair(
@@ -1096,7 +1035,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   label: 'Father Last Name',
                   isRequired: !_fatherNotIndicated,
                   enabled: !_fatherNotIndicated,
-                  validator: (val) => !_fatherNotIndicated ? _validateName(val, "Father's last name", isRequired: true) : null,
+                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true) : null,
                 ),
                 second: _buildTextFormField(
                   controller: _fatherOriginController,
@@ -1121,13 +1060,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   controller: _motherFirstNameController,
                   label: 'Mother First Name',
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Mother's first name", isRequired: true),
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => _validateName(val, "Mother's middle name", isRequired: false),
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
                 ),
               ),
               _buildAdaptivePair(
@@ -1136,7 +1075,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   controller: _motherMaidenLastNameController,
                   label: 'Mother Maiden Last Name',
                   isRequired: true,
-                  validator: (val) => _validateName(val, "Mother's maiden last name", isRequired: true),
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true),
                 ),
                 second: _buildTextFormField(
                   controller: _motherOriginController,
@@ -1169,13 +1108,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _sponsor1FirstNameController,
               label: 'Sponsor 1 First Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 1 first name', isRequired: true),
+              validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _sponsor1MiddleNameController,
               label: 'Middle Name',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Sponsor 1 middle name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false),
             ),
           ),
           _buildAdaptivePair(
@@ -1184,7 +1123,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _sponsor1LastNameController,
               label: 'Sponsor 1 Last Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Sponsor 1 last name', isRequired: true),
+              validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _sponsor1OriginAddressController,
@@ -1199,13 +1138,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _sponsor2FirstNameController,
               label: 'Sponsor 2 First Name (Optional)',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Sponsor 2 first name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: false),
             ),
             second: _buildTextFormField(
               controller: _sponsor2MiddleNameController,
               label: 'Middle Name',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Sponsor 2 middle name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false),
             ),
           ),
           _buildAdaptivePair(
@@ -1214,7 +1153,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _sponsor2LastNameController,
               label: 'Sponsor 2 Last Name',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Sponsor 2 last name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: false),
             ),
             second: _buildTextFormField(
               controller: _sponsor2OriginAddressController,
@@ -1238,7 +1177,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             controller: _parishNameController,
             label: 'Parish Name',
             isRequired: true,
-            validator: (val) => _validateRequiredText(val, 'Parish name'),
+            validator: (val) => SacramentalValidators.validateRequiredText(val, 'Parish name'),
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
@@ -1246,20 +1185,20 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               controller: _ministerFirstNameController,
               label: 'Minister / Bishop First Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Minister first name', isRequired: true),
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Middle Name',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Minister middle name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Minister / Bishop Last Name',
             isRequired: true,
-            validator: (val) => _validateName(val, 'Minister last name', isRequired: true),
+            validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true),
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
@@ -1275,7 +1214,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               label: 'Stipend (₱)',
               isRequired: false,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              validator: _validateStipend,
+              validator: SacramentalValidators.validateStipend,
             ),
           ),
           _buildTextFormField(
@@ -1566,7 +1505,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   Icon(
                     Icons.calendar_month,
                     size: 20,
-                    color: hasError ? _pentecostRed : _pentecostRed,
+                    color: _pentecostRed,
                   ),
                 ],
               ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/first_communion_service.dart';
+import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
 
 class FirstCommunionManualEntryPage extends StatefulWidget {
@@ -154,27 +155,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     super.dispose();
   }
 
-  String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) {
-      if (isRequired) return '$fieldName is required.';
-      return null;
-    }
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    final nameRegExp = RegExp(r"^[a-zA-ZÀ-ÿÑñ\s\.\-\'’]+$");
-    if (!nameRegExp.hasMatch(text)) {
-      return 'Enter a valid name (letters only).';
-    }
-    return null;
-  }
-
-  String? _validateRequiredText(String? value, String fieldName) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return '$fieldName is required.';
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    return null;
-  }
-
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
@@ -214,16 +194,18 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     }
 
     if (step == 0) {
-      final y = int.tryParse(_yearController.text.trim());
-      if (y == null || y < 1900 || y > DateTime.now().year + 1) {
-        setState(() => _errorMessage = 'Please specify a valid communion year.');
+      final yearError = SacramentalValidators.validateCommunionYear(_yearController.text);
+      if (yearError != null) {
+        setState(() => _errorMessage = yearError);
         return false;
       }
-      final cnErr = _validateRequiredText(_controlNumberController.text, 'Control Number');
-      if (cnErr != null) {
-        setState(() => _errorMessage = cnErr);
+
+      final controlError = SacramentalValidators.validateCommunionControlNumber(_controlNumberController.text);
+      if (controlError != null && !isEditMode) {
+        setState(() => _errorMessage = controlError);
         return false;
       }
+
       if (_dateOfCommunion == null) {
         setState(() {
           _dateOfCommunionHasError = true;
@@ -233,8 +215,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       }
       return true;
     } else if (step == 1) {
-      if (_baptismDate != null && _dateOfCommunion != null && _dateOfCommunion!.isBefore(_baptismDate!)) {
-        setState(() => _errorMessage = 'Date of First Communion cannot be earlier than Date of Baptism.');
+      final communionError = SacramentalValidators.validateCommunionDate(_dateOfCommunion, _baptismDate);
+      if (communionError != null) {
+        setState(() => _errorMessage = communionError);
         return false;
       }
       return true;
@@ -723,14 +706,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               enabled: !isEditMode, // Locked in Edit Mode
               keyboardType: TextInputType.number,
               onChanged: (_) => _loadAutoControlNumber(),
-              validator: (val) {
-                if (val == null || val.trim().isEmpty) return 'Year is required';
-                final y = int.tryParse(val.trim());
-                if (y == null || y < 1900 || y > DateTime.now().year + 1) {
-                  return 'Valid year required';
-                }
-                return null;
-              },
+              validator: SacramentalValidators.validateCommunionYear,
             ),
             second: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -740,6 +716,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   label: 'Control Number (Auto-Generated)',
                   isRequired: true,
                   enabled: false,
+                  validator: SacramentalValidators.validateCommunionControlNumber,
                 ),
                 const Padding(
                   padding: EdgeInsets.only(top: 2, left: 4),
@@ -777,27 +754,27 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               controller: _communicantFirstNameController,
               label: 'Communicant First Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Communicant first name', isRequired: true),
+              validator: (val) => SacramentalValidators.validateName(val, 'Communicant first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _communicantMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Middle name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _communicantLastNameController,
             label: 'Communicant Last Name',
             isRequired: true,
-            validator: (val) => _validateName(val, 'Communicant last name', isRequired: true),
+            validator: (val) => SacramentalValidators.validateName(val, 'Communicant last name', isRequired: true),
           ),
           const Divider(height: 24),
           _buildTextFormField(
             controller: _baptismParishController,
             label: 'Church of Baptism',
             isRequired: true,
-            validator: (val) => _validateRequiredText(val, 'Church of baptism'),
+            validator: (val) => SacramentalValidators.validateRequiredText(val, 'Church of baptism'),
           ),
           _buildDatePickerField(
             label: 'Date of Baptism (Optional)',
@@ -848,20 +825,20 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   controller: _fatherFirstNameController,
                   label: 'Father First Name',
                   isRequired: false,
-                  validator: (val) => _validateName(val, "Father's first name", isRequired: false),
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => _validateName(val, "Father's middle name", isRequired: false),
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _fatherLastNameController,
                 label: 'Father Last Name',
                 isRequired: false,
-                validator: (val) => _validateName(val, "Father's last name", isRequired: false),
+                validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: false),
               ),
             ],
           ),
@@ -879,20 +856,20 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   controller: _motherFirstNameController,
                   label: 'Mother First Name',
                   isRequired: false,
-                  validator: (val) => _validateName(val, "Mother's first name", isRequired: false),
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => _validateName(val, "Mother's middle name", isRequired: false),
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _motherMaidenLastNameController,
                 label: 'Mother Maiden Last Name',
                 isRequired: false,
-                validator: (val) => _validateName(val, "Mother's maiden last name", isRequired: false),
+                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: false),
               ),
             ],
           ),
@@ -914,20 +891,20 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               controller: _ministerFirstNameController,
               label: 'Minister First Name',
               isRequired: true,
-              validator: (val) => _validateName(val, 'Minister first name', isRequired: true),
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (val) => _validateName(val, 'Minister middle name', isRequired: false),
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Minister Last Name',
             isRequired: true,
-            validator: (val) => _validateName(val, 'Minister last name', isRequired: true),
+            validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true),
           ),
           _buildTextFormField(
             controller: _remarksController,

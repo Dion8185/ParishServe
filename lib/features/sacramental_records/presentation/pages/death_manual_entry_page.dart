@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/death_service.dart';
+import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
 
 class DeathManualEntryPage extends StatefulWidget {
@@ -173,50 +174,6 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     super.dispose();
   }
 
-  String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) {
-      if (isRequired) return '$fieldName is required.';
-      return null;
-    }
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    final nameRegExp = RegExp(r"^[a-zA-ZÀ-ÿÑñ\s\.\-\'’]+$");
-    if (!nameRegExp.hasMatch(text)) {
-      return 'Enter a valid name (letters only).';
-    }
-    return null;
-  }
-
-  String? _validateRequiredText(String? value, String fieldName) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return '$fieldName is required.';
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    return null;
-  }
-
-  String? _validateWholeNumberAge(String? value) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return 'Age at death is required.';
-    final number = int.tryParse(text);
-    if (number == null || number < 0) {
-      return 'Please enter a valid whole number (e.g. 72).';
-    }
-    if (number > 150) {
-      return 'Please enter a realistic age.';
-    }
-    return null;
-  }
-
-  String? _validateStipend(String? value) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return null;
-    final amount = double.tryParse(text);
-    if (amount == null || amount < 0) {
-      return 'Enter a valid amount (e.g. 300.00).';
-    }
-    return null;
-  }
-
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate = (dateType == 0) ? (_dateOfDeath ?? now) : (_dateOfBurial ?? now);
@@ -251,42 +208,32 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     }
 
     if (step == 0) {
-      final b = int.tryParse(_bookNumberController.text.trim());
-      final p = int.tryParse(_pageNumberController.text.trim());
-      final l = int.tryParse(_lineNumberController.text.trim());
-
-      if (b == null || b < 1 || b > 200) {
-        setState(() => _errorMessage = 'Book number must be between 1 and 200.');
+      final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+      if (bookError != null) {
+        setState(() => _errorMessage = bookError);
         return false;
       }
-      if (p == null || p < 1 || p > 100) {
-        setState(() => _errorMessage = 'Page number must be between 1 and 100.');
+      final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+      if (pageError != null) {
+        setState(() => _errorMessage = pageError);
         return false;
       }
-      if (l == null || l < 1 || l > 10) {
-        setState(() => _errorMessage = 'Line number must be between 1 and 10.');
+      final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+      if (lineError != null) {
+        setState(() => _errorMessage = lineError);
         return false;
       }
       return true;
     } else if (step == 3) {
-      if (_dateOfDeath == null) {
+      final burialError = SacramentalValidators.validateBurialDate(_dateOfBurial, _dateOfDeath);
+      if (burialError != null) {
         setState(() {
-          _dateOfDeathHasError = true;
-          _errorMessage = 'Date of Death is required.';
-        });
-        return false;
-      }
-      if (_dateOfBurial == null) {
-        setState(() {
-          _dateOfBurialHasError = true;
-          _errorMessage = 'Date of Burial is required.';
-        });
-        return false;
-      }
-      if (_dateOfBurial!.isBefore(_dateOfDeath!)) {
-        setState(() {
-          _dateOfBurialHasError = true;
-          _errorMessage = 'Date of Burial cannot be earlier than Date of Death.';
+          if (_dateOfDeath == null) {
+            _dateOfDeathHasError = true;
+          } else {
+            _dateOfBurialHasError = true;
+          }
+          _errorMessage = burialError;
         });
         return false;
       }
@@ -793,11 +740,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
-                validator: (v) {
-                  final n = int.tryParse(v?.trim() ?? '');
-                  if (n == null || n < 1 || n > 200) return 'Must be between 1 and 200';
-                  return null;
-                },
+                validator: SacramentalValidators.validateBookNumber,
               ),
               _buildTextFormField(
                 controller: _pageNumberController,
@@ -805,11 +748,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
-                validator: (v) {
-                  final n = int.tryParse(v?.trim() ?? '');
-                  if (n == null || n < 1 || n > 100) return 'Must be between 1 and 100';
-                  return null;
-                },
+                validator: SacramentalValidators.validatePageNumber,
               ),
               _buildTextFormField(
                 controller: _lineNumberController,
@@ -817,11 +756,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
-                validator: (v) {
-                  final n = int.tryParse(v?.trim() ?? '');
-                  if (n == null || n < 1 || n > 10) return 'Must be between 1 and 10';
-                  return null;
-                },
+                validator: SacramentalValidators.validateLineNumber,
               ),
             ],
           )
@@ -835,11 +770,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (v) {
-                    final n = int.tryParse(v?.trim() ?? '');
-                    if (n == null || n < 1 || n > 200) return '1 to 200';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validateBookNumber,
                 ),
               ),
               const SizedBox(width: 12),
@@ -850,11 +781,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (v) {
-                    final n = int.tryParse(v?.trim() ?? '');
-                    if (n == null || n < 1 || n > 100) return '1 to 100';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validatePageNumber,
                 ),
               ),
               const SizedBox(width: 12),
@@ -865,11 +792,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (v) {
-                    final n = int.tryParse(v?.trim() ?? '');
-                    if (n == null || n < 1 || n > 10) return '1 to 10';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validateLineNumber,
                 ),
               ),
             ],
@@ -892,12 +815,13 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _deceasedFirstNameController,
               label: 'First Name',
               isRequired: true,
-              validator: (v) => _validateName(v, 'First name'),
+              validator: (v) => SacramentalValidators.validateName(v, 'First name'),
             ),
             second: _buildTextFormField(
               controller: _deceasedMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
+              validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false),
             ),
           ),
           _buildAdaptivePair(
@@ -906,7 +830,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _deceasedLastNameController,
               label: 'Last Name',
               isRequired: true,
-              validator: (v) => _validateName(v, 'Last name'),
+              validator: (v) => SacramentalValidators.validateName(v, 'Last name'),
             ),
             second: _buildTextFormField(
               controller: _deceasedSuffixController,
@@ -928,7 +852,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               label: 'Age at Death (Whole Number)',
               isRequired: true,
               keyboardType: TextInputType.number,
-              validator: _validateWholeNumberAge,
+              validator: (v) => SacramentalValidators.validateWholeNumberAge(v, isRequired: true),
             ),
           ),
           _buildAdaptivePair(
@@ -944,7 +868,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _residenceController,
               label: 'Residence Address (Residentia)',
               isRequired: true,
-              validator: (v) => _validateRequiredText(v, 'Residence address'),
+              validator: (v) => SacramentalValidators.validateRequiredText(v, 'Residence address'),
             ),
           ),
         ],
@@ -967,17 +891,20 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   controller: _spouseFirstNameController,
                   label: "Spouse's First Name",
                   isRequired: false,
+                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's first name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _spouseMiddleNameController,
                   label: "Spouse's Middle Name",
                   isRequired: false,
+                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _spouseLastNameController,
                 label: "Spouse's Last Name",
                 isRequired: false,
+                validator: (v) => SacramentalValidators.validateName(v, "Spouse's last name", isRequired: false),
               ),
             ],
           ),
@@ -995,17 +922,20 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   controller: _fatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: false,
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _fatherLastNameController,
                 label: "Father's Last Name",
                 isRequired: false,
+                validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false),
               ),
               const Divider(height: 24),
               _buildAdaptivePair(
@@ -1014,17 +944,20 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   controller: _motherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: false,
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false),
                 ),
               ),
               _buildTextFormField(
                 controller: _motherMaidenLastNameController,
                 label: "Mother's Maiden Last Name",
                 isRequired: false,
+                validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false),
               ),
             ],
           ),
@@ -1063,7 +996,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _placeOfBurialController,
               label: 'Place of Burial / Cemetery (Sepelii Locus)',
               isRequired: true,
-              validator: (v) => _validateRequiredText(v, 'Place of burial'),
+              validator: (v) => SacramentalValidators.validateRequiredText(v, 'Place of burial'),
             ),
             second: _buildTextFormField(
               controller: _causeOfDeathController,
@@ -1095,7 +1028,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               label: 'Stipend (₱)',
               isRequired: false,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              validator: _validateStipend,
+              validator: SacramentalValidators.validateStipend,
             ),
           ),
           _buildAdaptivePair(
@@ -1104,25 +1037,26 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _ministerFirstNameController,
               label: 'Officiating Priest First Name',
               isRequired: true,
-              validator: (v) => _validateName(v, 'Minister first name'),
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister first name'),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Officiating Priest Last Name',
             isRequired: true,
-            validator: (v) => _validateName(v, 'Minister last name'),
+            validator: (v) => SacramentalValidators.validateName(v, 'Minister last name'),
           ),
           _buildTextFormField(
             controller: _parishNameController,
             label: 'Parish Name',
             isRequired: true,
-            validator: (v) => _validateRequiredText(v, 'Parish name'),
+            validator: (v) => SacramentalValidators.validateRequiredText(v, 'Parish name'),
           ),
           _buildTextFormField(
             controller: _remarksController,

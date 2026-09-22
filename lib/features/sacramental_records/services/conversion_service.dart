@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/conversion_record_model.dart';
+import '../validators/sacramental_validators.dart';
 
 class ConversionService {
   static final SupabaseClient _client = Supabase.instance.client;
@@ -43,31 +44,40 @@ class ConversionService {
       }
     }
 
-    // 2. Physical reference limits (Canon 535)
-    final bookNum = int.tryParse(data['book_number'].toString().trim());
-    if (bookNum == null || bookNum < 1 || bookNum > 200) {
-      throw 'Book Number must be between 1 and 200.';
-    }
+    // 2. Physical reference limits (Canon 535) using SacramentalValidators
+    final bookError = SacramentalValidators.validateBookNumber(data['book_number']?.toString());
+    if (bookError != null) throw bookError;
 
-    final pageNum = int.tryParse(data['page_number'].toString().trim());
-    if (pageNum == null || pageNum < 1 || pageNum > 100) {
-      throw 'Page Number must be between 1 and 100.';
-    }
+    final pageError = SacramentalValidators.validatePageNumber(data['page_number']?.toString());
+    if (pageError != null) throw pageError;
 
-    final lineNum = int.tryParse(data['line_number'].toString().trim());
-    if (lineNum == null || lineNum < 1 || lineNum > 10) {
-      throw 'Line Number must be between 1 and 10.';
-    }
+    final lineError = SacramentalValidators.validateLineNumber(data['line_number']?.toString());
+    if (lineError != null) throw lineError;
 
-    final cleanBook = bookNum.toString();
-    final cleanPage = pageNum.toString();
-    final cleanLine = lineNum.toString();
+    final cleanBook = int.parse(data['book_number'].toString().trim()).toString();
+    final cleanPage = int.parse(data['page_number'].toString().trim()).toString();
+    final cleanLine = int.parse(data['line_number'].toString().trim()).toString();
 
     data['book_number'] = cleanBook;
     data['page_number'] = cleanPage;
     data['line_number'] = cleanLine;
 
-    // 3. Duplicate physical reference check
+    // 3. Chronological consistency checks
+    final dob = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    final dobError = SacramentalValidators.validateDateOfBirth(dob);
+    if (dobError != null) throw dobError;
+
+    final receptionDate = DateTime.tryParse(data['date_of_reception']?.toString() ?? '');
+    final receptionError = SacramentalValidators.validateReceptionDate(receptionDate, dob);
+    if (receptionError != null) throw receptionError;
+
+    final priorBaptismDate = data['prior_baptism_date'] != null
+        ? DateTime.tryParse(data['prior_baptism_date'].toString())
+        : null;
+    final priorBaptismError = SacramentalValidators.validatePriorBaptismDate(priorBaptismDate, dob);
+    if (priorBaptismError != null) throw priorBaptismError;
+
+    // 4. Duplicate physical reference check
     final duplicate = await _client
         .from('conversion_records')
         .select('record_id')
@@ -80,12 +90,12 @@ class ConversionService {
       throw 'This Book, Page, and Line reference is already registered in the Conversion Register.';
     }
 
-    // 4. Generate unique record ID: CNV-YY-XXXX
+    // 5. Generate unique record ID: CNV-YY-XXXX
     if (data['record_id'] == null || data['record_id'].toString().trim().isEmpty) {
       data['record_id'] = await _generateRecordId();
     }
 
-    // 5. Automatic encoded_by mapping
+    // 6. Automatic encoded_by mapping
     String? encoderId = AuthService.currentUser?.userId;
     if (encoderId == null || encoderId.isEmpty) {
       final defaultUser = await _client
@@ -131,6 +141,17 @@ class ConversionService {
         throw '${entry.value} is required.';
       }
     }
+
+    final dob = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    final receptionDate = DateTime.tryParse(data['date_of_reception']?.toString() ?? '');
+    final receptionError = SacramentalValidators.validateReceptionDate(receptionDate, dob);
+    if (receptionError != null) throw receptionError;
+
+    final priorBaptismDate = data['prior_baptism_date'] != null
+        ? DateTime.tryParse(data['prior_baptism_date'].toString())
+        : null;
+    final priorBaptismError = SacramentalValidators.validatePriorBaptismDate(priorBaptismDate, dob);
+    if (priorBaptismError != null) throw priorBaptismError;
 
     // Protect immutable physical coordinates from being altered
     data.remove('record_id');

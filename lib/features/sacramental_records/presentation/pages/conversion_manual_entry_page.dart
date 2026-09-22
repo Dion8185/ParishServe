@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/conversion_service.dart';
+import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
 
 class ConversionManualEntryPage extends StatefulWidget {
@@ -204,37 +205,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     super.dispose();
   }
 
-  String? _validateName(String? value, String fieldName, {bool isRequired = true}) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) {
-      if (isRequired) return '$fieldName is required.';
-      return null;
-    }
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    final nameRegExp = RegExp(r"^[a-zA-ZÀ-ÿÑñ\s\.\-\'’]+$");
-    if (!nameRegExp.hasMatch(text)) {
-      return 'Enter a valid name (letters only).';
-    }
-    return null;
-  }
-
-  String? _validateRequiredText(String? value, String fieldName) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return '$fieldName is required.';
-    if (text.length < 2) return '$fieldName must be at least 2 characters.';
-    return null;
-  }
-
-  String? _validateStipend(String? value) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) return null;
-    final amount = double.tryParse(text);
-    if (amount == null || amount < 0) {
-      return 'Enter a valid amount (e.g. 200.00).';
-    }
-    return null;
-  }
-
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
@@ -279,20 +249,19 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     }
 
     if (step == 0) {
-      final b = int.tryParse(_bookNumberController.text.trim());
-      final p = int.tryParse(_pageNumberController.text.trim());
-      final l = int.tryParse(_lineNumberController.text.trim());
-
-      if (b == null || b < 1 || b > 200) {
-        setState(() => _errorMessage = 'Book number must be between 1 and 200.');
+      final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+      if (bookError != null) {
+        setState(() => _errorMessage = bookError);
         return false;
       }
-      if (p == null || p < 1 || p > 100) {
-        setState(() => _errorMessage = 'Page number must be between 1 and 100.');
+      final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+      if (pageError != null) {
+        setState(() => _errorMessage = pageError);
         return false;
       }
-      if (l == null || l < 1 || l > 10) {
-        setState(() => _errorMessage = 'Line number must be between 1 and 10.');
+      final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+      if (lineError != null) {
+        setState(() => _errorMessage = lineError);
         return false;
       }
       if (_dateOfReception == null) {
@@ -304,28 +273,27 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       }
       return true;
     } else if (step == 1) {
-      if (_dateOfBirth == null) {
+      final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth);
+      if (dobError != null) {
         setState(() {
           _dateOfBirthHasError = true;
-          _errorMessage = 'Date of Birth is required.';
+          _errorMessage = dobError;
         });
         return false;
       }
-      if (_dateOfBirth!.isAfter(DateTime.now())) {
-        setState(() {
-          _dateOfBirthHasError = true;
-          _errorMessage = 'Date of Birth cannot be in the future.';
-        });
+
+      final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
+      if (receptionError != null) {
+        setState(() => _errorMessage = receptionError);
         return false;
       }
-      if (_dateOfReception != null && _dateOfReception!.isBefore(_dateOfBirth!)) {
-        setState(() => _errorMessage = 'Date of Reception cannot be earlier than Date of Birth.');
+
+      final priorBaptismError = SacramentalValidators.validatePriorBaptismDate(_priorBaptismDate, _dateOfBirth);
+      if (priorBaptismError != null) {
+        setState(() => _errorMessage = priorBaptismError);
         return false;
       }
-      if (_priorBaptismDate != null && _priorBaptismDate!.isBefore(_dateOfBirth!)) {
-        setState(() => _errorMessage = 'Prior Baptism date cannot be earlier than Date of Birth.');
-        return false;
-      }
+
       if (_priorBaptismChurch == 'Others (Specify)' && _priorBaptismChurchOtherController.text.trim().isEmpty) {
         setState(() => _errorMessage = 'Please specify the prior church / denomination.');
         return false;
@@ -852,11 +820,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
-                validator: (v) {
-                  final n = int.tryParse(v?.trim() ?? '');
-                  if (n == null || n < 1 || n > 200) return 'Between 1 and 200';
-                  return null;
-                },
+                validator: SacramentalValidators.validateBookNumber,
               ),
               _buildTextFormField(
                 controller: _pageNumberController,
@@ -864,11 +828,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
-                validator: (v) {
-                  final n = int.tryParse(v?.trim() ?? '');
-                  if (n == null || n < 1 || n > 100) return 'Between 1 and 100';
-                  return null;
-                },
+                validator: SacramentalValidators.validatePageNumber,
               ),
               _buildTextFormField(
                 controller: _lineNumberController,
@@ -876,11 +836,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
-                validator: (v) {
-                  final n = int.tryParse(v?.trim() ?? '');
-                  if (n == null || n < 1 || n > 10) return 'Between 1 and 10';
-                  return null;
-                },
+                validator: SacramentalValidators.validateLineNumber,
               ),
             ],
           )
@@ -894,11 +850,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (v) {
-                    final n = int.tryParse(v?.trim() ?? '');
-                    if (n == null || n < 1 || n > 200) return '1 to 200';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validateBookNumber,
                 ),
               ),
               const SizedBox(width: 12),
@@ -909,11 +861,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (v) {
-                    final n = int.tryParse(v?.trim() ?? '');
-                    if (n == null || n < 1 || n > 100) return '1 to 100';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validatePageNumber,
                 ),
               ),
               const SizedBox(width: 12),
@@ -924,11 +872,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
-                  validator: (v) {
-                    final n = int.tryParse(v?.trim() ?? '');
-                    if (n == null || n < 1 || n > 10) return '1 to 10';
-                    return null;
-                  },
+                  validator: SacramentalValidators.validateLineNumber,
                 ),
               ),
             ],
@@ -960,13 +904,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _convertFirstNameController,
                   label: 'First Name',
                   isRequired: true,
-                  validator: (v) => _validateName(v, 'First name', isRequired: true),
+                  validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true),
                 ),
                 second: _buildTextFormField(
                   controller: _convertMiddleNameController,
                   label: 'Middle Name (Optional)',
                   isRequired: false,
-                  validator: (v) => _validateName(v, 'Middle name', isRequired: false),
+                  validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false),
                 ),
               ),
               _buildAdaptivePair(
@@ -975,7 +919,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _convertLastNameController,
                   label: 'Last Name',
                   isRequired: true,
-                  validator: (v) => _validateName(v, 'Last name', isRequired: true),
+                  validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true),
                 ),
                 second: _buildTextFormField(
                   controller: _convertSuffixController,
@@ -996,7 +940,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _placeOfBirthController,
                   label: 'Place of Birth',
                   isRequired: true,
-                  validator: (v) => _validateRequiredText(v, 'Place of birth'),
+                  validator: (v) => SacramentalValidators.validateRequiredText(v, 'Place of birth'),
                 ),
               ),
             ],
@@ -1073,13 +1017,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _fatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: false,
-                  validator: (v) => _validateName(v, "Father's first name", isRequired: false),
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
-                  validator: (v) => _validateName(v, "Father's middle name", isRequired: false),
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false),
                 ),
               ),
               _buildAdaptivePair(
@@ -1088,7 +1032,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _fatherLastNameController,
                   label: "Father's Last Name",
                   isRequired: false,
-                  validator: (v) => _validateName(v, "Father's last name", isRequired: false),
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherReligionController,
@@ -1112,13 +1056,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _motherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: false,
-                  validator: (v) => _validateName(v, "Mother's first name", isRequired: false),
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
-                  validator: (v) => _validateName(v, "Mother's middle name", isRequired: false),
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false),
                 ),
               ),
               _buildAdaptivePair(
@@ -1127,7 +1071,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _motherMaidenLastNameController,
                   label: "Mother's Maiden Last Name",
                   isRequired: false,
-                  validator: (v) => _validateName(v, "Mother's maiden last name", isRequired: false),
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false),
                 ),
                 second: _buildTextFormField(
                   controller: _motherReligionController,
@@ -1157,20 +1101,20 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               controller: _witness1FirstNameController,
               label: 'Witness 1 First Name',
               isRequired: true,
-              validator: (v) => _validateName(v, 'Witness 1 first name', isRequired: true),
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _witness1MiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => _validateName(v, 'Witness 1 middle name', isRequired: false),
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _witness1LastNameController,
             label: 'Witness 1 Last Name',
             isRequired: true,
-            validator: (v) => _validateName(v, 'Witness 1 last name', isRequired: true),
+            validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 last name', isRequired: true),
           ),
           const Divider(height: 24),
           const Text('Secondary Witness (Sponsor 2 - Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _conversionOlive)),
@@ -1181,20 +1125,20 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               controller: _witness2FirstNameController,
               label: 'Witness 2 First Name',
               isRequired: false,
-              validator: (v) => _validateName(v, 'Witness 2 first name', isRequired: false),
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 first name', isRequired: false),
             ),
             second: _buildTextFormField(
               controller: _witness2MiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => _validateName(v, 'Witness 2 middle name', isRequired: false),
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _witness2LastNameController,
             label: 'Witness 2 Last Name',
             isRequired: false,
-            validator: (v) => _validateName(v, 'Witness 2 last name', isRequired: false),
+            validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 last name', isRequired: false),
           ),
           const Divider(height: 24),
           _buildTextFormField(
@@ -1202,7 +1146,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             label: 'Stipend (₱) (Leave blank or 0 for Gratis)',
             isRequired: false,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            validator: _validateStipend,
+            validator: SacramentalValidators.validateStipend,
           ),
           const Divider(height: 24),
           _buildAdaptivePair(
@@ -1211,26 +1155,26 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               controller: _ministerFirstNameController,
               label: 'Officiating Priest First Name',
               isRequired: true,
-              validator: (v) => _validateName(v, 'Minister first name', isRequired: true),
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => _validateName(v, 'Minister middle name', isRequired: false),
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Officiating Priest Last Name',
             isRequired: true,
-            validator: (v) => _validateName(v, 'Minister last name', isRequired: true),
+            validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true),
           ),
           _buildTextFormField(
             controller: _parishNameController,
             label: 'Parish Name',
             isRequired: true,
-            validator: (v) => _validateRequiredText(v, 'Parish name'),
+            validator: (v) => SacramentalValidators.validateRequiredText(v, 'Parish name'),
           ),
           _buildTextFormField(
             controller: _remarksController,

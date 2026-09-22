@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/confirmation_record_model.dart';
+import '../validators/sacramental_validators.dart';
 
 class ConfirmationService {
   static final SupabaseClient _client = Supabase.instance.client;
@@ -46,28 +47,28 @@ class ConfirmationService {
       }
     }
 
-    final bookNum = int.tryParse(data['book_number'].toString().trim());
-    if (bookNum == null || bookNum < 1 || bookNum > 200) {
-      throw 'Book Number must be between 1 and 200.';
-    }
+    final bookError = SacramentalValidators.validateBookNumber(data['book_number']?.toString());
+    if (bookError != null) throw bookError;
 
-    final pageNum = int.tryParse(data['page_number'].toString().trim());
-    if (pageNum == null || pageNum < 1 || pageNum > 100) {
-      throw 'Page Number must be between 1 and 100.';
-    }
+    final pageError = SacramentalValidators.validatePageNumber(data['page_number']?.toString());
+    if (pageError != null) throw pageError;
 
-    final lineNum = int.tryParse(data['line_number'].toString().trim());
-    if (lineNum == null || lineNum < 1 || lineNum > 10) {
-      throw 'Line Number must be between 1 and 10.';
-    }
+    final lineError = SacramentalValidators.validateLineNumber(data['line_number']?.toString());
+    if (lineError != null) throw lineError;
 
-    final cleanBook = bookNum.toString();
-    final cleanPage = pageNum.toString();
-    final cleanLine = lineNum.toString();
+    final cleanBook = int.parse(data['book_number'].toString().trim()).toString();
+    final cleanPage = int.parse(data['page_number'].toString().trim()).toString();
+    final cleanLine = int.parse(data['line_number'].toString().trim()).toString();
 
     data['book_number'] = cleanBook;
     data['page_number'] = cleanPage;
     data['line_number'] = cleanLine;
+
+    // Chronological validation
+    final baptismDate = DateTime.tryParse(data['date_of_baptism']?.toString() ?? '');
+    final confirmationDate = DateTime.tryParse(data['date_of_confirmation']?.toString() ?? '');
+    final confDateError = SacramentalValidators.validateConfirmationDate(confirmationDate, baptismDate);
+    if (confDateError != null) throw confDateError;
 
     final duplicate = await _client
         .from('confirmation_records')
@@ -137,6 +138,11 @@ class ConfirmationService {
         throw '${entry.value} is required.';
       }
     }
+
+    final baptismDate = DateTime.tryParse(data['date_of_baptism']?.toString() ?? '');
+    final confirmationDate = DateTime.tryParse(data['date_of_confirmation']?.toString() ?? '');
+    final confDateError = SacramentalValidators.validateConfirmationDate(confirmationDate, baptismDate);
+    if (confDateError != null) throw confDateError;
 
     // Protect physical coordinates from being altered
     data.remove('record_id');
