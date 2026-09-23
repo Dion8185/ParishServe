@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
-import '../../navigation/presentation/parishioner_navigation_shell.dart';
 import '../services/auth_service.dart';
+import 'otp_verification_view.dart';
 
 class ParishionerRegisterView extends StatefulWidget {
   const ParishionerRegisterView({super.key});
@@ -20,65 +20,323 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _otpController = TextEditingController();
+
+  // Focus nodes to track blur (only show errors when user leaves a field)
+  final _firstNameFocus = FocusNode();
+  final _lastNameFocus = FocusNode();
+  final _usernameFocus = FocusNode();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  final _confirmPasswordFocus = FocusNode();
+
+  bool _firstNameBlurred = false;
+  bool _lastNameBlurred = false;
+  bool _usernameBlurred = false;
+  bool _emailBlurred = false;
+  bool _passwordBlurred = false;
+  bool _confirmPasswordBlurred = false;
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
-  bool _isAwaitingVerification = false;
+  bool _hasAttemptedSubmit = false;
   String? _errorMessage;
+
+  // QWERTY keyboard sequences used for anti-gibberish detection
+  static const List<String> _keyboardWalks = [
+    'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
+    'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
+    'zxcv', 'xcvb', 'cvbn', 'vbnm',
+    'fdsa', 'gfds', 'hgfd', 'jhgf', 'kjhg', 'lkjh',
+    'rewq', 'trew', 'ytre', 'uytr', 'iuyt', 'poiuy',
+    'vcxz', 'bvcx', 'nbvc', 'mnbv',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+
+    _firstNameFocus.addListener(() {
+      if (!_firstNameFocus.hasFocus) setState(() => _firstNameBlurred = true);
+    });
+    _lastNameFocus.addListener(() {
+      if (!_lastNameFocus.hasFocus) setState(() => _lastNameBlurred = true);
+    });
+    _usernameFocus.addListener(() {
+      if (!_usernameFocus.hasFocus) setState(() => _usernameBlurred = true);
+    });
+    _emailFocus.addListener(() {
+      if (!_emailFocus.hasFocus) setState(() => _emailBlurred = true);
+    });
+    _passwordFocus.addListener(() {
+      if (!_passwordFocus.hasFocus) setState(() => _passwordBlurred = true);
+    });
+    _confirmPasswordFocus.addListener(() {
+      if (!_confirmPasswordFocus.hasFocus) setState(() => _confirmPasswordBlurred = true);
+    });
+
+    _passwordController.addListener(() => setState(() {}));
+    _confirmPasswordController.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
+    _firstNameFocus.dispose();
+    _lastNameFocus.dispose();
+    _usernameFocus.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
+    _confirmPasswordFocus.dispose();
+
     _firstNameController.dispose();
     _lastNameController.dispose();
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _otpController.dispose();
     super.dispose();
   }
 
+  // ===========================================================================
+  // Validation Rules (Anti-Spam, Anti-Gibberish & Canonical Compliance)
+  // ===========================================================================
+
+  String? _validateName(String? value, String fieldLabel) {
+    if (value == null || value.trim().isEmpty) {
+      return '$fieldLabel is required.';
+    }
+    if (value.startsWith(' ')) {
+      return '$fieldLabel cannot start with a space.';
+    }
+    if (value.endsWith(' ')) {
+      return '$fieldLabel cannot end with a space.';
+    }
+    if (value.contains(RegExp(r'\s{2,}'))) {
+      return '$fieldLabel cannot contain consecutive spaces.';
+    }
+
+    final trimmed = value.trim();
+    if (trimmed.length < 2) {
+      return '$fieldLabel must be at least 2 characters.';
+    }
+    if (trimmed.length > 50) {
+      return '$fieldLabel cannot exceed 50 characters.';
+    }
+
+    // 1. Basic allowed characters (letters, accents, hyphens, periods, apostrophes, spaces)
+    final nameRegex = RegExp(r"^[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s.\-’']+$");
+    if (!nameRegex.hasMatch(trimmed)) {
+      return '$fieldLabel contains invalid characters.';
+    }
+
+    final lower = trimmed.toLowerCase();
+
+    // 2. Reject 3 or more identical letters in a row (e.g. aaaaaaaaaa, bbbb, xxx)
+    // Legitimate double-letters like 'Aaron' or 'Lloyd' are fully permitted.
+    if (RegExp(r'(.)\1{2,}', caseSensitive: false).hasMatch(trimmed)) {
+      return '$fieldLabel cannot contain 3 or more of the same letter in a row.';
+    }
+
+    // 3. Reject repetitive syllable mashing (e.g. asdasdasd, qweqweqwe, hahahaha)
+    if (RegExp(r'(.{2,4})\1{2,}', caseSensitive: false).hasMatch(lower)) {
+      return 'Please enter a valid $fieldLabel (repetitive pattern detected).';
+    }
+
+    // 4. Reject 4-character keyboard walks (e.g. asdf, qwer, zxcv)
+    for (final walk in _keyboardWalks) {
+      if (lower.contains(walk)) {
+        return '$fieldLabel cannot be a keyboard sequence (e.g. "$walk").';
+      }
+    }
+
+    // 5. Pronounceability / Vowel check: Names of 3+ letters must contain at least 1 vowel sound (a,e,i,o,u,y, accents)
+    final onlyLetters = lower.replaceAll(RegExp(r'[^a-zà-ÿñ]'), '');
+    if (onlyLetters.length >= 3) {
+      final hasVowel = RegExp(r'[aeiouyà-ÿ]').hasMatch(onlyLetters);
+      if (!hasVowel) {
+        return '$fieldLabel must contain at least one vowel.';
+      }
+
+      // 6. Reject 5 or more consecutive consonants (e.g. bcdfgh)
+      if (RegExp(r'[bcdfghjklmnpqrstvwxz]{5,}').hasMatch(onlyLetters)) {
+        return '$fieldLabel contains too many consecutive consonants.';
+      }
+    }
+
+    return null;
+  }
+
+  String? _validateUsername(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Username is required.';
+    }
+    if (value.contains(' ')) {
+      return 'Username cannot contain spaces.';
+    }
+    final trimmed = value.trim();
+    if (trimmed.length < 3) {
+      return 'Username must be at least 3 characters.';
+    }
+    if (trimmed.length > 30) {
+      return 'Username cannot exceed 30 characters.';
+    }
+
+    // Reject repetitive spam (e.g. asdasdasd)
+    if (RegExp(r'(.{2,})\1{2,}', caseSensitive: false).hasMatch(trimmed)) {
+      return 'Username contains an invalid repetitive pattern.';
+    }
+
+    final usernameRegex = RegExp(r'^[a-zA-Z0-9_\-]+$');
+    if (!usernameRegex.hasMatch(trimmed)) {
+      return 'Only letters, numbers, underscores (_), and hyphens (-) are allowed.';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Email address is required.';
+    }
+    if (value.contains(' ')) {
+      return 'Email address cannot contain spaces.';
+    }
+    final trimmed = value.trim();
+    if (trimmed.length > 254) {
+      return 'Email address cannot exceed 254 characters.';
+    }
+
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (!emailRegex.hasMatch(trimmed)) {
+      return 'Please enter a valid email address (e.g. name@domain.com).';
+    }
+    return null;
+  }
+
+  bool _containsPredictablePatterns(String password) {
+    final lower = password.toLowerCase();
+    const commonSequences = [
+      '123', '234', '345', '456', '567', '678', '789',
+      'abc', 'bcd', 'cde', 'def', 'qwe', 'wer', 'ert', 'rty',
+      'asd', 'sdf', 'dfg', 'zxc', 'xcv',
+      'password', 'admin', 'parish',
+    ];
+    for (final seq in commonSequences) {
+      if (lower.contains(seq)) return true;
+    }
+    return false;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required.';
+    }
+    if (value.startsWith(' ') || value.endsWith(' ')) {
+      return 'Password cannot begin or end with spaces.';
+    }
+
+    // Non-space character count (spaces cannot cheat the minimum length)
+    final nonSpaceCount = value.replaceAll(' ', '').length;
+    if (nonSpaceCount < 8) {
+      return 'Password must contain at least 8 non-space characters.';
+    }
+    if (value.length > 128) {
+      return 'Password cannot exceed 128 characters.';
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(value)) {
+      return 'Password must include at least one uppercase letter (A-Z).';
+    }
+    if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]').hasMatch(value)) {
+      return 'Password must include at least one special character.';
+    }
+    if (!RegExp(r'[0-9]').hasMatch(value)) {
+      return 'Password must include at least one number (0-9).';
+    }
+
+    if (_containsPredictablePatterns(value)) {
+      return 'Password is too predictable. Avoid sequences like 123, asd, or common words.';
+    }
+
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please confirm your password.';
+    }
+    if (value != _passwordController.text) {
+      return 'Passwords do not match.';
+    }
+    return null;
+  }
+
+  // ===========================================================================
+  // Password Strength Evaluation
+  // ===========================================================================
+
+  bool get _hasMinRealLength => _passwordController.text.replaceAll(' ', '').length >= 8;
+  bool get _hasNoOuterSpaces =>
+      _passwordController.text.isNotEmpty &&
+          !_passwordController.text.startsWith(' ') &&
+          !_passwordController.text.endsWith(' ');
+  bool get _hasUppercase => RegExp(r'[A-Z]').hasMatch(_passwordController.text);
+  bool get _hasSpecialChar =>
+      RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]').hasMatch(_passwordController.text);
+  bool get _hasNumber => RegExp(r'[0-9]').hasMatch(_passwordController.text);
+  bool get _isNotPredictable => !_containsPredictablePatterns(_passwordController.text);
+
+  int get _strengthScore {
+    final text = _passwordController.text;
+    final nonSpaceLength = text.replaceAll(' ', '').length;
+    if (nonSpaceLength == 0) return 0;
+
+    int score = 0;
+    if (_hasMinRealLength && _hasNoOuterSpaces) score++;
+    if (_hasUppercase) score++;
+    if (_hasSpecialChar) score++;
+    if (_hasNumber) score++;
+
+    // Penalty: passwords with predictable walks or under 10 chars are capped at Fair
+    if (_containsPredictablePatterns(text) || nonSpaceLength < 10) {
+      if (score > 2) score = 2;
+    }
+
+    return score;
+  }
+
+  // ===========================================================================
+  // Form Submission
+  // ===========================================================================
+
   Future<void> _handleRegister() async {
-    setState(() => _errorMessage = null);
+    setState(() {
+      _hasAttemptedSubmit = true;
+      _errorMessage = null;
+    });
 
     if (!_formKey.currentState!.validate()) return;
-
-    if (_passwordController.text != _confirmPasswordController.text) {
-      setState(() => _errorMessage = 'Passwords do not match. Please re-enter your password.');
-      return;
-    }
 
     setState(() => _isLoading = true);
 
     try {
+      final cleanEmail = _emailController.text.trim();
+
       final result = await AuthService.registerParishioner(
-        firstName: _firstNameController.text,
-        lastName: _lastNameController.text,
-        username: _usernameController.text,
-        email: _emailController.text,
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        username: _usernameController.text.trim(),
+        email: cleanEmail,
         password: _passwordController.text,
       );
 
       if (!mounted) return;
 
       if (result['requiresVerification'] == true) {
-        // Switch view to 6-digit OTP entry screen
-        setState(() {
-          _isAwaitingVerification = true;
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Verification code sent! Please check your email inbox (and spam folder).'),
-            backgroundColor: ParishColors.marianBlue,
-            duration: Duration(seconds: 5),
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OtpVerificationView(email: cleanEmail),
           ),
         );
-      } else {
-        final newUser = result['user'];
-        _navigateToDashboard(newUser);
       }
     } catch (e) {
       setState(() {
@@ -86,69 +344,6 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
         _isLoading = false;
       });
     }
-  }
-
-  Future<void> _handleVerifyOtp() async {
-    setState(() => _errorMessage = null);
-    final token = _otpController.text.trim();
-
-    if (token.length < 6) {
-      setState(() => _errorMessage = 'Please enter the full 6-digit verification code.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final verifiedUser = await AuthService.verifyEmailOtp(
-        email: _emailController.text,
-        token: token,
-      );
-
-      if (!mounted) return;
-      _navigateToDashboard(verifiedUser);
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _handleResendOtp() async {
-    try {
-      await AuthService.resendVerificationEmail(_emailController.text);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A new verification code has been sent to your email.'),
-          backgroundColor: ParishColors.oliveGreen,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error resending code: $e'), backgroundColor: ParishColors.mercyRed),
-      );
-    }
-  }
-
-  void _navigateToDashboard(dynamic user) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Welcome to ParishServe, ${user.firstName}! Account successfully verified.'),
-        backgroundColor: ParishColors.oliveGreen,
-        duration: const Duration(seconds: 4),
-      ),
-    );
-
-    // ---- ROLE-BASED REDIRECTION ----
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ParishionerNavigationShell(currentUser: user),
-      ),
-          (route) => false,
-    );
   }
 
   @override
@@ -171,7 +366,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _isAwaitingVerification ? 'Email Verification' : 'Parishioner Registration',
+              'Parishioner Registration',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
             ),
             Text(
@@ -197,8 +392,8 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                       shape: BoxShape.circle,
                       border: Border.all(color: ParishColors.goldAccent, width: 2.5),
                     ),
-                    child: Icon(
-                      _isAwaitingVerification ? Icons.mark_email_read_outlined : Icons.person_add_alt_1,
+                    child: const Icon(
+                      Icons.person_add_alt_1,
                       size: 36,
                       color: ParishColors.marianBlue,
                     ),
@@ -206,7 +401,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                   const SizedBox(height: 12),
 
                   Text(
-                    _isAwaitingVerification ? 'Check Your Email' : 'Create Your Parishioner Account',
+                    'Create Your Parishioner Account',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 22,
@@ -216,15 +411,12 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _isAwaitingVerification
-                        ? 'We sent a verification link and 6-digit code to\n${_emailController.text}'
-                        : 'Book sacrament appointments, request mass intentions, and track your contributions.',
+                    'Book sacrament appointments, request mass intentions, and track your contributions.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 13, color: textMutedColor, height: 1.4),
                   ),
                   const SizedBox(height: 20),
 
-                  // Form Container Card
                   Container(
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
@@ -233,78 +425,13 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                       border: Border.all(color: borderGreyColor, width: 1.2),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
+                          color: Colors.black.withOpacity(0.03),
                           blurRadius: 10,
                           offset: const Offset(0, 3),
                         ),
                       ],
                     ),
-                    child: _isAwaitingVerification
-                        ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_errorMessage != null) ...[
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: 16),
-                            decoration: BoxDecoration(
-                              color: ParishColors.mercyRedSurface,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: ParishColors.mercyRed),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _errorMessage!,
-                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        _buildFieldLabel('Enter 6-Digit Verification Code *'),
-                        TextFormField(
-                          controller: _otpController,
-                          keyboardType: TextInputType.number,
-                          maxLength: 6,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
-                          decoration: _inputDecoration(hint: '000000').copyWith(counterText: ''),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: ParishColors.marianBlue,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: _isLoading ? null : _handleVerifyOtp,
-                            child: _isLoading
-                                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                                : const Text('VERIFY & CONTINUE', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Center(
-                          child: TextButton(
-                            onPressed: _isLoading ? null : _handleResendOtp,
-                            child: const Text(
-                              'Didn\'t receive a code? Resend email',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                        : Form(
+                    child: Form(
                       key: _formKey,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -320,7 +447,6 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                                 border: Border.all(color: ParishColors.mercyRed),
                               ),
                               child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 20),
                                   const SizedBox(width: 8),
@@ -345,8 +471,19 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                                     _buildFieldLabel('First Name *'),
                                     TextFormField(
                                       controller: _firstNameController,
+                                      focusNode: _firstNameFocus,
+                                      keyboardType: TextInputType.name,
                                       textCapitalization: TextCapitalization.words,
-                                      validator: (v) => (v?.trim().isEmpty ?? true) ? 'Required' : null,
+                                      autofillHints: const [AutofillHints.givenName],
+                                      onChanged: (_) {
+                                        if (_hasAttemptedSubmit || _firstNameBlurred) {
+                                          _formKey.currentState?.validate();
+                                        }
+                                      },
+                                      validator: (v) {
+                                        if (!_hasAttemptedSubmit && !_firstNameBlurred) return null;
+                                        return _validateName(v, 'First name');
+                                      },
                                       style: TextStyle(fontSize: 14, color: textDarkColor),
                                       decoration: _inputDecoration(hint: 'e.g. Maria'),
                                     ),
@@ -361,8 +498,19 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                                     _buildFieldLabel('Last Name *'),
                                     TextFormField(
                                       controller: _lastNameController,
+                                      focusNode: _lastNameFocus,
+                                      keyboardType: TextInputType.name,
                                       textCapitalization: TextCapitalization.words,
-                                      validator: (v) => (v?.trim().isEmpty ?? true) ? 'Required' : null,
+                                      autofillHints: const [AutofillHints.familyName],
+                                      onChanged: (_) {
+                                        if (_hasAttemptedSubmit || _lastNameBlurred) {
+                                          _formKey.currentState?.validate();
+                                        }
+                                      },
+                                      validator: (v) {
+                                        if (!_hasAttemptedSubmit && !_lastNameBlurred) return null;
+                                        return _validateName(v, 'Last name');
+                                      },
                                       style: TextStyle(fontSize: 14, color: textDarkColor),
                                       decoration: _inputDecoration(hint: 'e.g. Santos'),
                                     ),
@@ -373,26 +521,48 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                           ),
                           const SizedBox(height: 14),
 
-                          // 2. Username
+                          // 2. Username Field
                           _buildFieldLabel('Username *'),
                           TextFormField(
                             controller: _usernameController,
+                            focusNode: _usernameFocus,
+                            keyboardType: TextInputType.text,
                             inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
-                            validator: (v) => (v?.trim().length ?? 0) < 3 ? 'Min 3 characters' : null,
+                            autofillHints: const [AutofillHints.username],
+                            onChanged: (_) {
+                              if (_hasAttemptedSubmit || _usernameBlurred) {
+                                _formKey.currentState?.validate();
+                              }
+                            },
+                            validator: (v) {
+                              if (!_hasAttemptedSubmit && !_usernameBlurred) return null;
+                              return _validateUsername(v);
+                            },
                             style: TextStyle(fontSize: 14, color: textDarkColor),
                             decoration: _inputDecoration(
-                              hint: 'e.g. mariasantos',
+                              hint: 'e.g. mariasantos_01',
                               prefixIcon: const Icon(Icons.alternate_email, size: 18, color: ParishColors.marianBlue),
                             ),
                           ),
                           const SizedBox(height: 14),
 
-                          // 3. Email
+                          // 3. Email Field
                           _buildFieldLabel('Email Address *'),
                           TextFormField(
                             controller: _emailController,
+                            focusNode: _emailFocus,
                             keyboardType: TextInputType.emailAddress,
-                            validator: (v) => !(v?.contains('@') ?? false) ? 'Valid email required' : null,
+                            inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
+                            autofillHints: const [AutofillHints.email],
+                            onChanged: (_) {
+                              if (_hasAttemptedSubmit || _emailBlurred) {
+                                _formKey.currentState?.validate();
+                              }
+                            },
+                            validator: (v) {
+                              if (!_hasAttemptedSubmit && !_emailBlurred) return null;
+                              return _validateEmail(v);
+                            },
                             style: TextStyle(fontSize: 14, color: textDarkColor),
                             decoration: _inputDecoration(
                               hint: 'name@email.com',
@@ -401,43 +571,79 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                           ),
                           const SizedBox(height: 14),
 
-                          // 4. Password
+                          // 4. Password Field
                           _buildFieldLabel('Password *'),
                           TextFormField(
                             controller: _passwordController,
+                            focusNode: _passwordFocus,
                             obscureText: _obscurePassword,
-                            validator: (v) => (v?.length ?? 0) < 6 ? 'Min 6 characters' : null,
+                            keyboardType: TextInputType.visiblePassword,
+                            autofillHints: const [AutofillHints.newPassword],
+                            onChanged: (_) {
+                              if (_hasAttemptedSubmit || _passwordBlurred) {
+                                _formKey.currentState?.validate();
+                              }
+                            },
+                            validator: (v) {
+                              if (!_hasAttemptedSubmit && !_passwordBlurred) return null;
+                              return _validatePassword(v);
+                            },
                             style: TextStyle(fontSize: 14, color: textDarkColor),
                             decoration: _inputDecoration(
-                              hint: 'Minimum 6 characters',
+                              hint: 'Min. 8 chars with uppercase & symbol',
                               prefixIcon: const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue),
                               suffixIcon: IconButton(
-                                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 20, color: textMutedColor),
+                                icon: Icon(
+                                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                                  size: 20,
+                                  color: textMutedColor,
+                                ),
                                 onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                               ),
                             ),
                           ),
+                          const SizedBox(height: 10),
+
+                          // Live Password Strength Meter
+                          _buildPasswordStrengthWidget(),
                           const SizedBox(height: 14),
 
-                          // 5. Confirm Password
+                          // 5. Confirm Password Field
                           _buildFieldLabel('Confirm Password *'),
                           TextFormField(
                             controller: _confirmPasswordController,
+                            focusNode: _confirmPasswordFocus,
                             obscureText: _obscureConfirmPassword,
-                            validator: (v) => v != _passwordController.text ? 'Passwords do not match' : null,
+                            keyboardType: TextInputType.visiblePassword,
+                            autofillHints: const [AutofillHints.newPassword],
+                            onChanged: (_) {
+                              if (_hasAttemptedSubmit || _confirmPasswordBlurred || _confirmPasswordController.text.isNotEmpty) {
+                                _formKey.currentState?.validate();
+                              }
+                            },
+                            validator: (v) {
+                              // Only show if user has interacted with confirm password or tried submitting
+                              if (!_hasAttemptedSubmit && !_confirmPasswordBlurred && (_confirmPasswordController.text.isEmpty)) {
+                                return null;
+                              }
+                              return _validateConfirmPassword(v);
+                            },
                             style: TextStyle(fontSize: 14, color: textDarkColor),
                             decoration: _inputDecoration(
-                              hint: 'Re-enter your password',
+                              hint: 'Re-enter your password exactly',
                               prefixIcon: const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue),
                               suffixIcon: IconButton(
-                                icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, size: 20, color: textMutedColor),
+                                icon: Icon(
+                                  _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                                  size: 20,
+                                  color: textMutedColor,
+                                ),
                                 onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                               ),
                             ),
                           ),
                           const SizedBox(height: 16),
 
-                          // Data Privacy Notice
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
@@ -452,7 +658,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Protected under RA 10173 and Catholic Archival Standards. A verification code will be sent to your email.',
+                                    'Protected under RA 10173 and Canonical Archive Standards. A 6-digit verification code will be sent to your email.',
                                     style: TextStyle(fontSize: 11, color: textMutedColor, height: 1.35),
                                   ),
                                 ),
@@ -461,7 +667,6 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                           ),
                           const SizedBox(height: 20),
 
-                          // Submit Button
                           SizedBox(
                             width: double.infinity,
                             height: 54,
@@ -493,21 +698,19 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                   ),
                   const SizedBox(height: 18),
 
-                  if (!_isAwaitingVerification) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('Already have an account?', style: TextStyle(fontSize: 13, color: textMutedColor)),
-                        TextButton(
-                          onPressed: _isLoading ? null : () => Navigator.pop(context),
-                          child: const Text(
-                            'Sign In here',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                          ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Already have an account?', style: TextStyle(fontSize: 13, color: textMutedColor)),
+                      TextButton(
+                        onPressed: _isLoading ? null : () => Navigator.pop(context),
+                        child: const Text(
+                          'Sign In here',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 6),
 
                   const Text(
@@ -526,6 +729,96 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Visual Password Strength Meter & Checklist
+  // ===========================================================================
+
+  Widget _buildPasswordStrengthWidget() {
+    final text = _passwordController.text;
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    final score = _strengthScore;
+    Color strengthColor = ParishColors.mercyRed;
+    String strengthLabel = 'Weak';
+
+    if (score == 2) {
+      strengthColor = Colors.orange;
+      strengthLabel = 'Fair';
+    } else if (score == 3) {
+      strengthColor = ParishColors.goldAccent;
+      strengthLabel = 'Good';
+    } else if (score >= 4) {
+      strengthColor = ParishColors.oliveGreen;
+      strengthLabel = 'Strong';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Password Strength:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+              Text(
+                strengthLabel,
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: strengthColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: (score / 4.0).clamp(0.2, 1.0),
+              minHeight: 5,
+              backgroundColor: ParishColors.borderGrey.withOpacity(0.3),
+              valueColor: AlwaysStoppedAnimation<Color>(strengthColor),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Live Criteria Checklist
+          _buildChecklistItem('At least 8 non-space characters', _hasMinRealLength && _hasNoOuterSpaces),
+          _buildChecklistItem('At least 1 uppercase letter (A-Z) (Required)', _hasUppercase),
+          _buildChecklistItem('At least 1 special character (!@#\$...) (Required)', _hasSpecialChar),
+          _buildChecklistItem('At least 1 number (0-9)', _hasNumber),
+          _buildChecklistItem('No predictable patterns (123, asd, passwords)', _isNotPredictable),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChecklistItem(String label, bool isSatisfied) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3.0),
+      child: Row(
+        children: [
+          Icon(
+            isSatisfied ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: 14,
+            color: isSatisfied ? ParishColors.oliveGreen : ParishColors.textMuted.withOpacity(0.6),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSatisfied ? FontWeight.bold : FontWeight.normal,
+              color: isSatisfied ? ParishColors.textDark : ParishColors.textMuted,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -552,6 +845,9 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8)),
+      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2)),
+      focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.8)),
+      errorStyle: const TextStyle(fontSize: 11.5, color: ParishColors.mercyRed, fontWeight: FontWeight.w500),
     );
   }
 }
