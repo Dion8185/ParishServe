@@ -1,4 +1,7 @@
+import 'certificate_canvas_element.dart';
+
 class CertificateStyleConfig {
+  // Simple Mode Controls (Word-Processor Style)
   final String fontFamily; // 'serif' (Times), 'sans' (Helvetica), 'courier' (Typewriter)
   final double titleFontSize; // e.g. 14.0 - 24.0
   final String titleFontWeight; // 'bold', 'normal'
@@ -7,12 +10,14 @@ class CertificateStyleConfig {
   final double bodyLineSpacing; // e.g. 3.0 - 8.0
   final String textAlignment; // 'center', 'justify', 'left'
 
-  // Snap-to-Anchor Positions for Floating Elements
+  // Snap Anchors for Simple Mode
   final String qrPosition; // 'bottom-left', 'bottom-center', 'bottom-right', 'none'
   final String signatoryPosition; // 'bottom-right', 'bottom-center', 'bottom-left'
-
-  // Section Drag-and-Drop Sequence
   final List<String> sectionOrder; // e.g. ['header', 'title', 'body', 'footer']
+
+  // Canva-Style Advanced Mode Toggle & Elements
+  final bool useVisualCanvas; // Toggle between Simple Mode and Canva Drag & Drop
+  final List<CertificateCanvasElement> canvasElements;
 
   const CertificateStyleConfig({
     this.fontFamily = 'serif',
@@ -25,6 +30,8 @@ class CertificateStyleConfig {
     this.qrPosition = 'bottom-left',
     this.signatoryPosition = 'bottom-right',
     this.sectionOrder = const ['header', 'title', 'body', 'footer'],
+    this.useVisualCanvas = false,
+    this.canvasElements = const [],
   });
 
   static const CertificateStyleConfig defaultConfig = CertificateStyleConfig();
@@ -39,6 +46,16 @@ class CertificateStyleConfig {
       return const ['header', 'title', 'body', 'footer'];
     }
 
+    List<CertificateCanvasElement> parseCanvasElements(dynamic raw) {
+      if (raw is List) {
+        return raw
+            .whereType<Map<String, dynamic>>()
+            .map((e) => CertificateCanvasElement.fromMap(e))
+            .toList();
+      }
+      return const [];
+    }
+
     return CertificateStyleConfig(
       fontFamily: map['fontFamily']?.toString() ?? 'serif',
       titleFontSize: (map['titleFontSize'] as num?)?.toDouble() ?? 16.0,
@@ -50,6 +67,8 @@ class CertificateStyleConfig {
       qrPosition: map['qrPosition']?.toString() ?? 'bottom-left',
       signatoryPosition: map['signatoryPosition']?.toString() ?? 'bottom-right',
       sectionOrder: parseOrder(map['sectionOrder']),
+      useVisualCanvas: map['useVisualCanvas'] ?? false,
+      canvasElements: parseCanvasElements(map['canvasElements']),
     );
   }
 
@@ -65,6 +84,8 @@ class CertificateStyleConfig {
       'qrPosition': qrPosition,
       'signatoryPosition': signatoryPosition,
       'sectionOrder': sectionOrder,
+      'useVisualCanvas': useVisualCanvas,
+      'canvasElements': canvasElements.map((e) => e.toMap()).toList(),
     };
   }
 
@@ -79,6 +100,8 @@ class CertificateStyleConfig {
     String? qrPosition,
     String? signatoryPosition,
     List<String>? sectionOrder,
+    bool? useVisualCanvas,
+    List<CertificateCanvasElement>? canvasElements,
   }) {
     return CertificateStyleConfig(
       fontFamily: fontFamily ?? this.fontFamily,
@@ -91,6 +114,8 @@ class CertificateStyleConfig {
       qrPosition: qrPosition ?? this.qrPosition,
       signatoryPosition: signatoryPosition ?? this.signatoryPosition,
       sectionOrder: sectionOrder ?? this.sectionOrder,
+      useVisualCanvas: useVisualCanvas ?? this.useVisualCanvas,
+      canvasElements: canvasElements ?? this.canvasElements,
     );
   }
 }

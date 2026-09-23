@@ -3,11 +3,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import '../../../../core/constants/colors.dart';
+import '../../models/certificate_canvas_element.dart';
 import '../../models/certificate_style_config.dart';
 import '../../models/certificate_template_model.dart';
 import '../../services/certificate_pdf_generator.dart';
 import '../../services/certificate_service.dart';
 import '../../utils/placeholder_registry.dart';
+import 'certificate_canvas_designer_page.dart';
 
 class CertificateTemplateManagementPage extends StatefulWidget {
   const CertificateTemplateManagementPage({super.key});
@@ -300,6 +302,7 @@ class _CertificateTemplateManagementPageState
             itemBuilder: (context, index) {
               final item = list[index];
               final accent = _getSacramentColor(item.sacramentType);
+              final isCanvaMode = item.styleConfig.useVisualCanvas;
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 14),
@@ -349,6 +352,22 @@ class _CertificateTemplateManagementPageState
                                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                                   ),
                                 ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isCanvaMode ? const Color(0xFF0F172A) : ParishColors.marianBlueSurface,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  isCanvaMode ? 'CANVA CANVAS' : 'SIMPLE MODE',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isCanvaMode ? Colors.cyanAccent : ParishColors.marianBlue,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 4),
@@ -441,7 +460,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
   bool _enableQr = true;
   bool _isDefault = false;
 
-  // Typography & Layout State (Guardrailed for Non-Tech Users)
+  // Typography & Layout State (Simple Mode)
   String _fontFamily = 'serif';
   double _titleFontSize = 16.0;
   String _titleFontWeight = 'bold';
@@ -453,6 +472,10 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
   String _qrPosition = 'bottom-left';
   String _signatoryPosition = 'bottom-right';
   List<String> _sectionOrder = ['header', 'title', 'body', 'footer'];
+
+  // Canva-Style Advanced Mode State
+  bool _useVisualCanvas = false;
+  List<CertificateCanvasElement> _canvasElements = [];
 
   final Map<String, String> _sectionLabels = {
     'header': '1. Ecclesiastical Header (Diocese, Parish & Logos)',
@@ -505,6 +528,9 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
     _qrPosition = style.qrPosition;
     _signatoryPosition = style.signatoryPosition;
     _sectionOrder = List.from(style.sectionOrder);
+
+    _useVisualCanvas = style.useVisualCanvas;
+    _canvasElements = List.from(style.canvasElements);
   }
 
   @override
@@ -523,6 +549,60 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
     return 'This is to Certify that {Full Name} received the Holy Sacrament of $sacrament on {Date Issued}.\n\nIssued upon request for {Purpose}.';
   }
 
+  /// Launches the Canva Visual Designer in a completely separate page to save RAM
+  Future<void> _launchVisualDesigner() async {
+    final currentModel = CertificateTemplateModel(
+      templateId: widget.initialTemplate?.templateId ?? 'TPL_TEMP',
+      sacramentType: _sacramentType,
+      templateName: _nameController.text.trim(),
+      certificateTitle: _titleController.text.trim(),
+      headerText: _headerController.text.trim(),
+      dioceseLogoUrl: _dioceseLogoUrl,
+      parishSealUrl: _parishSealUrl,
+      showDioceseLogo: _showDioceseLogo,
+      showParishSeal: _showParishSeal,
+      bodyWording: _bodyController.text.trim(),
+      defaultPurpose: _purposeController.text.trim(),
+      paperSize: _paperSize,
+      orientation: _orientation,
+      backgroundImageUrl: _backgroundImageUrl,
+      backgroundMode: _backgroundMode,
+      signatoryName: _signatoryNameController.text.trim(),
+      signatoryTitle: _signatoryTitleController.text.trim(),
+      signatureImageUrl: _signatureImageUrl,
+      styleConfig: CertificateStyleConfig(
+        fontFamily: _fontFamily,
+        titleFontSize: _titleFontSize,
+        titleFontWeight: _titleFontWeight,
+        bodyFontSize: _bodyFontSize,
+        bodyFontWeight: _bodyFontWeight,
+        bodyLineSpacing: _bodyLineSpacing,
+        textAlignment: _textAlignment,
+        qrPosition: _qrPosition,
+        signatoryPosition: _signatoryPosition,
+        sectionOrder: _sectionOrder,
+        useVisualCanvas: _useVisualCanvas,
+        canvasElements: _canvasElements,
+      ),
+      enableQrVerification: _enableQr,
+      isDefault: _isDefault,
+    );
+
+    final updatedElements = await Navigator.push<List<CertificateCanvasElement>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CertificateCanvasDesignerPage(template: currentModel),
+      ),
+    );
+
+    if (updatedElements != null) {
+      setState(() {
+        _canvasElements = updatedElements;
+        _useVisualCanvas = true;
+      });
+    }
+  }
+
   void _resetToDefaultStyles() {
     setState(() {
       _fontFamily = 'serif';
@@ -535,9 +615,11 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
       _qrPosition = 'bottom-left';
       _signatoryPosition = 'bottom-right';
       _sectionOrder = ['header', 'title', 'body', 'footer'];
+      _useVisualCanvas = false;
+      _canvasElements = [];
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Restored standard Diocesan typography and layout.')),
+      const SnackBar(content: Text('Restored standard Diocesan Simple Mode settings.')),
     );
   }
 
@@ -625,16 +707,18 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
   Future<void> _saveTemplate() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final invalidPlaceholders = PlaceholderRegistry.findInvalidPlaceholders(
-      _bodyController.text,
-      _sacramentType,
-    );
+    if (!_useVisualCanvas) {
+      final invalidPlaceholders = PlaceholderRegistry.findInvalidPlaceholders(
+        _bodyController.text,
+        _sacramentType,
+      );
 
-    if (invalidPlaceholders.isNotEmpty) {
-      setState(() {
-        _errorMessage = 'Unrecognized placeholders: ${invalidPlaceholders.join(', ')}';
-      });
-      return;
+      if (invalidPlaceholders.isNotEmpty) {
+        setState(() {
+          _errorMessage = 'Unrecognized placeholders: ${invalidPlaceholders.join(', ')}';
+        });
+        return;
+      }
     }
 
     setState(() {
@@ -657,6 +741,8 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
         qrPosition: _qrPosition,
         signatoryPosition: _signatoryPosition,
         sectionOrder: _sectionOrder,
+        useVisualCanvas: _useVisualCanvas,
+        canvasElements: _canvasElements,
       );
 
       final model = CertificateTemplateModel(
@@ -776,9 +862,92 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                   decoration: const InputDecoration(labelText: 'Certificate Title * (e.g., CERTIFICATE OF BAPTISM)', border: OutlineInputBorder()),
                   validator: (v) => v!.trim().isEmpty ? 'Title is required' : null,
                 ),
-                const Divider(height: 28),
+                const SizedBox(height: 16),
 
-                // 2. TYPOGRAPHY & FORMATTING TOOLBAR (Word/Docs Style)
+                // 2. TOGGLE: SIMPLE MODE VS. CANVA VISUAL DESIGNER MODE
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _useVisualCanvas ? const Color(0xFF0F172A) : ParishColors.marianBlueSurface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _useVisualCanvas ? const Color(0xFF0284C7) : ParishColors.marianBlue.withOpacity(0.4),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _useVisualCanvas ? Icons.palette_outlined : Icons.edit_note,
+                        color: _useVisualCanvas ? Colors.cyanAccent : ParishColors.marianBlue,
+                        size: 26,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _useVisualCanvas ? 'Canva-Style Visual Designer Mode (Active)' : 'Simple Mode (Recommended for Beginners)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                                color: _useVisualCanvas ? Colors.white : ParishColors.marianBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _useVisualCanvas
+                                  ? 'Custom drag & drop canvas is active (${_canvasElements.length} elements placed).'
+                                  : 'Standard word-processor flow with safe margins. No coordinates or complex dragging.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: _useVisualCanvas ? Colors.white70 : ParishColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: _useVisualCanvas,
+                        activeColor: Colors.cyanAccent,
+                        onChanged: (val) {
+                          setState(() {
+                            _useVisualCanvas = val;
+                          });
+                          if (val && _canvasElements.isEmpty) {
+                            _launchVisualDesigner();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+
+                if (_useVisualCanvas) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0284C7),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: _launchVisualDesigner,
+                      icon: const Icon(Icons.open_in_new, size: 18),
+                      label: Text(
+                        _canvasElements.isEmpty
+                            ? 'Open Canva Visual Designer (Separate Page to Save RAM)'
+                            : 'Open Canva Designer (${_canvasElements.length} Custom Elements Placed)',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // 3. TYPOGRAPHY & FORMATTING TOOLBAR (Always Available / Simple Mode Baseline)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -830,7 +999,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Sizing & Alignment Row
+                      // Sizing & Alignment Controls
                       Wrap(
                         spacing: 16,
                         runSpacing: 12,
@@ -920,66 +1089,68 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const SizedBox(height: 18),
 
-                // 3. SAFE DRAG-AND-DROP SECTION REORDERING
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: ParishColors.cardWhite,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: ParishColors.borderGrey),
+                // 4. SECTION REORDERING (Active in Simple Mode)
+                if (!_useVisualCanvas) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: ParishColors.cardWhite,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: ParishColors.borderGrey),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.swap_vert, color: ParishColors.marianBlue, size: 20),
+                            SizedBox(width: 8),
+                            Text('Section Sequence (Simple Drag Reorder)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.marianBlue)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Drag handles to adjust section order without risking margin overlap:', style: TextStyle(fontSize: 12, color: textMuted)),
+                        const SizedBox(height: 10),
+                        ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _sectionOrder.length,
+                          onReorder: (oldIndex, newIndex) {
+                            setState(() {
+                              if (oldIndex < newIndex) newIndex -= 1;
+                              final item = _sectionOrder.removeAt(oldIndex);
+                              _sectionOrder.insert(newIndex, item);
+                            });
+                          },
+                          itemBuilder: (context, index) {
+                            final key = _sectionOrder[index];
+                            return Container(
+                              key: ValueKey(key),
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: ParishColors.backgroundLight,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: ParishColors.borderGrey),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.layers, size: 18, color: ParishColors.marianBlue.withOpacity(0.7)),
+                                  const SizedBox(width: 10),
+                                  Expanded(child: Text(_sectionLabels[key] ?? key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+                                  const Icon(Icons.drag_handle, color: Colors.grey),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.swap_vert, color: ParishColors.marianBlue, size: 20),
-                          SizedBox(width: 8),
-                          Text('Drag & Drop Section Order (Vertical Sequence)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.marianBlue)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text('Hold and drag handles on the right to reorder layout sections safely:', style: TextStyle(fontSize: 12, color: textMuted)),
-                      const SizedBox(height: 10),
-                      ReorderableListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _sectionOrder.length,
-                        onReorder: (oldIndex, newIndex) {
-                          setState(() {
-                            if (oldIndex < newIndex) newIndex -= 1;
-                            final item = _sectionOrder.removeAt(oldIndex);
-                            _sectionOrder.insert(newIndex, item);
-                          });
-                        },
-                        itemBuilder: (context, index) {
-                          final key = _sectionOrder[index];
-                          return Container(
-                            key: ValueKey(key),
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: ParishColors.backgroundLight,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: ParishColors.borderGrey),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.layers, size: 18, color: ParishColors.marianBlue.withOpacity(0.7)),
-                                const SizedBox(width: 10),
-                                Expanded(child: Text(_sectionLabels[key] ?? key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
-                                const Icon(Icons.drag_handle, color: Colors.grey),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
+                  const SizedBox(height: 18),
+                ],
 
-                // 4. ANCHOR POSITIONING FOR QR & SIGNATORY
+                // 5. ANCHOR POSITIONING FOR FLOATING ELEMENTS
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -1033,7 +1204,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const Divider(height: 28),
 
-                // 5. Header & Logos
+                // 6. Header & Logos
                 const Text('Header & Ecclesiastical Identification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.marianBlue)),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -1068,7 +1239,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const Divider(height: 28),
 
-                // 6. Border & Background Customization
+                // 7. Border & Background Customization
                 const Text('Certificate Border / Background Design', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.marianBlue)),
                 const SizedBox(height: 8),
                 Row(
@@ -1105,7 +1276,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const Divider(height: 28),
 
-                // 7. Paper & Formatting
+                // 8. Paper & Formatting
                 Row(
                   children: [
                     Expanded(
@@ -1129,7 +1300,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const Divider(height: 28),
 
-                // 8. Dynamic Wording & Placeholders
+                // 9. Narrative Wording & Dynamic Placeholders
                 const Text('Certificate Wording & Dynamic Placeholders', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.marianBlue)),
                 const SizedBox(height: 4),
                 Text('Tap any tag below to insert it at the cursor position:', style: TextStyle(fontSize: 12, color: textMuted)),
@@ -1164,7 +1335,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const Divider(height: 28),
 
-                // 9. Signatory Configuration
+                // 10. Signatory Configuration
                 const Text('Signatory & Authority', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.marianBlue)),
                 const SizedBox(height: 8),
                 Row(
