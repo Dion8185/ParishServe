@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../auth/models/user_model.dart';
-import '../../auth/presentation/admin_users_page.dart';
 import '../../dashboard/presentation/dashboard_view.dart';
 import '../../dashboard/presentation/dialogs/notification_dialog.dart';
 import '../../sacramental_records/presentation/records_view.dart';
@@ -48,52 +47,43 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   }
 
   // ===========================================================================
-  // Role-Based Access Control (RBAC) Governance Engine
+  // Pastoral & Operational Role-Based Access Control (RBAC)
   // ===========================================================================
   bool _isModuleAllowed(int index) {
-    final role = widget.currentUser?.userRole.toLowerCase() ?? 'user';
+    final role = widget.currentUser?.userRole.toLowerCase() ?? '';
 
     switch (index) {
       case 0: // Overview (Dashboard)
         return true;
 
-      case 1: // Sacramental Records Module
-      // Clergy, Secretariat, and Encoders (Canon 535)
+      case 1: // Sacramental Records Module (Canon 535)
+      // Clergy, Secretariat, and Records Encoders
         return role == 'parishpriest' ||
             role == 'secretary' ||
-            role == 'encoder' ||
-            role == 'superadmin';
+            role == 'encoder';
 
       case 2: // Receipts & Cashiering Module
-      // Secretariat, Clergy, PFC Auditors, Parishioners (Personal Receipts)
+      // Secretariat, Clergy, and Parish Finance Council (PFC) Auditors
         return role == 'parishpriest' ||
             role == 'secretary' ||
-            role == 'pfc' ||
-            role == 'user' ||
-            role == 'superadmin';
+            role == 'pfc';
 
-      case 3: // Appointments & Scheduling Module
-      // Secretariat, Clergy, Parishioners (Self-service Bookings)
+      case 3: // Appointments & Liturgical Scheduling Module
+      // Secretariat and Clergy
         return role == 'parishpriest' ||
-            role == 'secretary' ||
-            role == 'user' ||
-            role == 'superadmin';
+            role == 'secretary';
 
-      case 4: // Asset Inventory Module (CustodiaIMS)
-      // Staff, Clergy, Encoders (Field Audits), PFC Auditors (Valuation)
+      case 4: // Temporal Asset Inventory (CustodiaIMS)
+      // Clergy, Secretariat, Encoders (Auditing), and PFC Auditors (Valuation)
         return role == 'parishpriest' ||
             role == 'secretary' ||
             role == 'encoder' ||
-            role == 'pfc' ||
-            role == 'admin' ||
-            role == 'superadmin';
+            role == 'pfc';
 
       case 5: // Smart Archive (ESP32 IoT Telemetry)
-      // Technical Administrators, Secretariat, Clergy
+      // Secretariat and Clergy
         return role == 'parishpriest' ||
-            role == 'secretary' ||
-            role == 'admin' ||
-            role == 'superadmin';
+            role == 'secretary';
 
       case 6: // User Profile & System Preferences
         return true;
@@ -106,17 +96,17 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   String _getRestrictedReason(int index) {
     switch (index) {
       case 1:
-        return 'Access Restricted: Canonical Sacramental Registers (Canon 535) are restricted to Clergy, Secretariat, and Encoders.';
+        return 'Access Restricted: Canonical Sacramental Registers (Canon 535) are strictly restricted to Clergy, Secretariat, and Encoders.';
       case 2:
-        return 'Access Restricted: Financial records and cashiering are restricted to Secretariat, PFC Auditors, and Clergy.';
+        return 'Access Restricted: Financial ledgers and cashiering are restricted to Secretariat, PFC Auditors, and Clergy.';
       case 3:
-        return 'Access Restricted: Pastoral scheduling is reserved for Secretariat, Clergy, and Parishioner bookings.';
+        return 'Access Restricted: Pastoral scheduling and clergy calendars are reserved for Secretariat and Clergy.';
       case 4:
-        return 'Access Restricted: Diocesan property inventory and audits are restricted to authorized church personnel and PFC auditors.';
+        return 'Access Restricted: Diocesan property inventory is restricted to authorized custodial personnel and PFC auditors.';
       case 5:
-        return 'Access Restricted: Archive micro-climate hardware calibration is reserved for Technical Administrators and Clergy.';
+        return 'Access Restricted: Archive micro-climate hardware monitoring is reserved for Secretariat and Clergy.';
       default:
-        return 'Access Restricted: Your account role does not have authorization to view this module.';
+        return 'Access Restricted: Your assigned operational role does not have authorization to view this module.';
     }
   }
 
@@ -133,11 +123,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     );
   }
 
-  /// Unified Top Navigation Bar
   PreferredSizeWidget _buildTopNavigationBar(BuildContext context) {
-    final role = widget.currentUser?.userRole.toLowerCase() ?? 'user';
-    final isAdmin = role == 'admin' || role == 'superadmin';
-
     return PreferredSize(
       preferredSize: const Size.fromHeight(70),
       child: Container(
@@ -148,7 +134,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
+              color: Colors.black.withOpacity(0.03),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -159,7 +145,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: Row(
               children: [
-                // Parish Logo / Emblem
                 Container(
                   width: 48,
                   height: 48,
@@ -176,7 +161,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 ),
                 const SizedBox(width: 12),
 
-                // Parish Title & Location / Staff Subtitle
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -207,22 +191,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     ],
                   ),
                 ),
-
-                // Admin-Specific User Provisioning Quick Link
-                if (isAdmin)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: IconButton(
-                      icon: const Icon(Icons.manage_accounts, color: ParishColors.marianBlue, size: 24),
-                      tooltip: 'Admin: Manage Accounts',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const AdminUsersPage()),
-                        );
-                      },
-                    ),
-                  ),
 
                 // Notification Bell with Badge
                 InkWell(
@@ -275,7 +243,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     );
   }
 
-  /// GCash-style Navigation Bar with Role-Sensitive Item Disabling
   Widget _buildGcashStyleBottomBar() {
     return Container(
       height: 84,
@@ -294,21 +261,19 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         clipBehavior: Clip.none,
         alignment: Alignment.topCenter,
         children: [
-          // 6 Side Items (3 on Left, 3 on Right)
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: _buildNavItem(index: 1, label: 'Records', icon: Icons.menu_book_outlined, activeIcon: Icons.menu_book)),
               Expanded(child: _buildNavItem(index: 2, label: 'Receipts', icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long)),
               Expanded(child: _buildNavItem(index: 3, label: 'Appts', icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month)),
-              const SizedBox(width: 72), // Spacer for elevated circular center button
+              const SizedBox(width: 72), // Elevated center gap
               Expanded(child: _buildNavItem(index: 4, label: 'Assets', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2)),
               Expanded(child: _buildNavItem(index: 5, label: 'IoT', icon: Icons.sensors_outlined, activeIcon: Icons.sensors)),
               Expanded(child: _buildNavItem(index: 6, label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person)),
             ],
           ),
 
-          // Elevated Circular Center Button (Always accessible to all users)
           Positioned(
             top: -22,
             child: GestureDetector(
@@ -325,7 +290,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       border: Border.all(color: ParishColors.cardWhite, width: 4),
                       boxShadow: [
                         BoxShadow(
-                          color: ParishColors.marianBlue.withValues(alpha: 0.35),
+                          color: ParishColors.marianBlue.withOpacity(0.35),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -409,7 +374,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                         : (isAllowed ? ParishColors.textMuted : ParishColors.borderGrey),
                   ),
                 ),
-                // Lock overlay for unauthorized modules
                 if (!isAllowed)
                   const Positioned(
                     top: -2,
@@ -441,7 +405,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     );
   }
 
-  /// Security Fallback View if an unauthorized index is requested
   Widget _buildUnauthorizedView() {
     return Center(
       child: Padding(

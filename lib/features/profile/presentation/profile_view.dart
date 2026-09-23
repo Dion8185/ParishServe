@@ -3,6 +3,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/theme/theme_controller.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/presentation/login_view.dart';
+import '../../auth/services/auth_service.dart';
 
 class ProfileView extends StatefulWidget {
   final UserModel? currentUser;
@@ -244,13 +245,13 @@ class _ProfileViewState extends State<ProfileView> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: ParishColors.mercyRed, foregroundColor: Colors.white),
-            onPressed: () {
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.mercyRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
               Navigator.pop(ctx);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginView()),
-              );
+              await AuthService.signOut();
             },
             child: const Text('Log Out'),
           ),

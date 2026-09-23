@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
-import 'features/auth/presentation/login_view.dart';
+import 'features/auth/presentation/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +29,7 @@ class ParishServeApp extends StatelessWidget {
           theme: ParishTheme.lightTheme,
           darkTheme: ParishTheme.darkTheme,
           themeMode: currentMode,
-          home: const LoginView(),
+          home: const AuthGate(),
         );
       },
     );

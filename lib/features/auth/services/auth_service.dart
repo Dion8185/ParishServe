@@ -1,95 +1,138 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
+import 'otp_rate_limiter.dart';
+
+/// Custom exception thrown when valid credentials are provided
+/// but the account's email has not been verified yet.
+class EmailNotConfirmedException implements Exception {
+  final String email;
+  final String message;
+
+  EmailNotConfirmedException({
+    required this.email,
+    this.message = 'Your email address is not yet verified. Please enter the verification code sent to your email.',
+  });
+
+  @override
+  String toString() => message;
+}
 
 class AuthService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  /// Stores the currently authenticated user in memory
+  /// In-memory cache of the active user profile
   static UserModel? currentUser;
 
-  /// Authenticate staff or parishioners
+  /// Check if an active Supabase auth session exists in storage (Web or Mobile)
+  static bool get hasActiveSession => _client.auth.currentSession != null;
+
+  /// Authenticate staff or parishioners using Supabase Auth
   static Future<UserModel?> login({
     required String identifier, // username or email
     required String password,
   }) async {
     final cleanIdentifier = identifier.trim();
-
-    // 1. DEVELOPMENT BYPASS / LEGACY STAFF CHIPS:
-    // If logging in via quick test accounts or dummy emails matching default passwords,
-    // check public.users directly to preserve staging workflow.
-    if (password == 'ParishServe@123') {
-      final staffResponse = await _client
-          .from('users')
-          .select()
-          .or('username.eq.$cleanIdentifier,email.eq.$cleanIdentifier')
-          .maybeSingle();
-
-      if (staffResponse != null) {
-        final user = UserModel.fromMap(staffResponse);
-        if (!user.accountStatus) {
-          throw 'This account has been deactivated.';
-        }
-        currentUser = user;
-        return user;
-      }
-    }
-
-    // 2. PRODUCTION SUPABASE AUTHENTICATION:
     String emailToUse = cleanIdentifier;
+
+    // 1. Resolve username to email via public.users if no '@' is present
     if (!cleanIdentifier.contains('@')) {
       final userRecord = await _client
           .from('users')
           .select('email')
-          .eq('username', cleanIdentifier)
+          .ilike('username', cleanIdentifier)
           .maybeSingle();
 
-      if (userRecord == null) return null;
+      if (userRecord == null) {
+        throw 'No account found matching username "$cleanIdentifier".';
+      }
       emailToUse = userRecord['email'];
     }
 
+    // 2. Authenticate through Supabase Auth
     try {
       final authResponse = await _client.auth.signInWithPassword(
         email: emailToUse,
         password: password,
       );
 
-      if (authResponse.user == null) return null;
+      if (authResponse.user == null) {
+        throw 'Invalid credentials. Please verify your email and password.';
+      }
+    } on AuthException catch (e) {
+      final msg = e.message.toLowerCase();
+      // Intercept unconfirmed email error (Code 400) from Supabase GoTrue
+      if (msg.contains('email not confirmed') || msg.contains('not confirmed')) {
+        throw EmailNotConfirmedException(email: emailToUse);
+      }
+      rethrow;
+    }
 
-      final profileResponse = await _client
-          .from('users')
-          .select()
-          .eq('email', emailToUse)
-          .maybeSingle();
+    // 3. Hydrate profile from public.users
+    final user = await fetchProfileByEmail(emailToUse);
 
-      if (profileResponse == null) return null;
+    if (user == null) {
+      await _client.auth.signOut();
+      throw 'User profile record not found in parish database.';
+    }
 
-      final user = UserModel.fromMap(profileResponse);
-      if (!user.accountStatus) {
+    // 4. Verify account active status
+    if (!user.accountStatus) {
+      await _client.auth.signOut();
+      currentUser = null;
+      throw 'This account has been deactivated. Please contact the Parish Administrator.';
+    }
+
+    currentUser = user;
+    return user;
+  }
+
+  /// Restores session on app startup (e.g., after F5 on web or app restart on mobile)
+  static Future<UserModel?> restoreSession() async {
+    try {
+      final session = _client.auth.currentSession;
+      if (session == null || session.user.email == null) {
+        currentUser = null;
+        return null;
+      }
+
+      final email = session.user.email!;
+      final user = await fetchProfileByEmail(email);
+
+      if (user == null || !user.accountStatus) {
+        // Account deleted or deactivated while session was idle
         await _client.auth.signOut();
-        throw 'This account has been deactivated. Please contact the Parish Office.';
+        currentUser = null;
+        return null;
       }
 
       currentUser = user;
       return user;
-    } catch (_) {
-      // Fallback direct check against public.users table if Supabase auth fails
-      final directResponse = await _client
-          .from('users')
-          .select()
-          .or('username.eq.$cleanIdentifier,email.eq.$cleanIdentifier')
-          .eq('password', password)
-          .maybeSingle();
-
-      if (directResponse != null) {
-        final user = UserModel.fromMap(directResponse);
-        currentUser = user;
-        return user;
-      }
+    } catch (e) {
+      debugPrint('Error restoring session: $e');
+      currentUser = null;
       return null;
     }
   }
 
-  /// Register a new Parishioner account with Supabase Auth + public.users profile
+  /// Helper: Fetch profile directly from public.users by email
+  static Future<UserModel?> fetchProfileByEmail(String email) async {
+    try {
+      final profile = await _client
+          .from('users')
+          .select()
+          .ilike('email', email.trim())
+          .maybeSingle();
+
+      if (profile == null) return null;
+      return UserModel.fromMap(profile);
+    } catch (e) {
+      debugPrint('Error fetching user profile: $e');
+      return null;
+    }
+  }
+
+  /// Sign up a new parishioner with Supabase Auth + public.users profile
   static Future<Map<String, dynamic>> registerParishioner({
     required String firstName,
     required String lastName,
@@ -115,18 +158,18 @@ class AuthService {
       throw 'Password must be at least 6 characters long.';
     }
 
-    // Check if username already exists in public.users
+    // Check if username is already taken
     final existing = await _client
         .from('users')
         .select('username')
-        .eq('username', cleanUsername)
+        .ilike('username', cleanUsername)
         .maybeSingle();
 
     if (existing != null) {
       throw 'Username "$cleanUsername" is already taken. Please choose another username.';
     }
 
-    // 1. Sign up user in Supabase Auth (triggers verification email)
+    // 1. Sign up user in Supabase Auth (Dispatches OTP or confirmation email)
     final authResponse = await _client.auth.signUp(
       email: cleanEmail,
       password: password,
@@ -140,6 +183,9 @@ class AuthService {
     if (authResponse.user == null) {
       throw 'Could not create authentication account.';
     }
+
+    // Track initial registration as first dispatch in rate limiter
+    OtpRateLimiter.recordResendAttempt(cleanEmail);
 
     final userId = await _generateParishionerId();
 
@@ -171,7 +217,7 @@ class AuthService {
     };
   }
 
-  /// Verify the 6-digit Email OTP token sent by Supabase
+  /// Verify 6-digit OTP sent by email
   static Future<UserModel> verifyEmailOtp({
     required String email,
     required String token,
@@ -186,23 +232,38 @@ class AuthService {
       throw 'Invalid or expired verification code. Please check your email.';
     }
 
-    final profileResponse = await _client
-        .from('users')
-        .select()
-        .eq('email', email.trim())
-        .single();
+    // Clear rate limit history upon successful confirmation
+    OtpRateLimiter.clearHistory(email);
 
-    final user = UserModel.fromMap(profileResponse);
+    final user = await fetchProfileByEmail(email);
+    if (user == null) {
+      throw 'User profile not found in parish database.';
+    }
+
     currentUser = user;
     return user;
   }
 
-  /// Resend verification OTP code
+  /// Resend verification OTP code with 60s cooldown and 3/hr rate limit
   static Future<void> resendVerificationEmail(String email) async {
+    final cleanEmail = email.trim();
+
+    // Enforce 60s cooldown and 3 resubmissions/hr limit
+    OtpRateLimiter.recordResendAttempt(cleanEmail);
+
     await _client.auth.resend(
       type: OtpType.signup,
-      email: email.trim(),
+      email: cleanEmail,
     );
+  }
+
+  /// Terminate session across Web and Mobile
+  static Future<void> signOut() async {
+    try {
+      await _client.auth.signOut();
+    } finally {
+      currentUser = null;
+    }
   }
 
   static Future<String> _generateParishionerId() async {
