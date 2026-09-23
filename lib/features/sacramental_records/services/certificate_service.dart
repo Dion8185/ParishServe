@@ -12,7 +12,64 @@ class CertificateService {
   static const String verificationBaseUrl = 'https://parishserve.sjp2parish.ph/verify';
 
   // ===========================================================================
-  // 1. Template Management CRUD
+  // 1. Global Parish & Diocesan Emblem Settings (Applies to ALL Certificates)
+  // ===========================================================================
+
+  /// Fetches the centralized Diocese Logo and Parish Seal configuration.
+  static Future<Map<String, dynamic>> getGlobalEmblemSettings() async {
+    try {
+      final response = await _client
+          .from('parish_certificate_settings')
+          .select()
+          .eq('id', 'global')
+          .maybeSingle();
+
+      if (response != null) {
+        return response;
+      }
+    } catch (_) {}
+
+    return {
+      'diocese_logo_url': null,
+      'parish_seal_url': null,
+      'show_diocese_logo': true,
+      'show_parish_seal': true,
+    };
+  }
+
+  /// Updates the global emblems and cascades the changes across all certificate templates.
+  static Future<void> updateGlobalEmblems({
+    String? dioceseLogoUrl,
+    String? parishSealUrl,
+    required bool showDioceseLogo,
+    required bool showParishSeal,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+
+    // 1. Update the centralized settings table
+    await _client.from('parish_certificate_settings').upsert({
+      'id': 'global',
+      'diocese_logo_url': dioceseLogoUrl,
+      'parish_seal_url': parishSealUrl,
+      'show_diocese_logo': showDioceseLogo,
+      'show_parish_seal': showParishSeal,
+      'updated_at': now,
+    });
+
+    // 2. Cascade update to all existing certificate templates in the database
+    final Map<String, dynamic> templateUpdate = {
+      'show_diocese_logo': showDioceseLogo,
+      'show_parish_seal': showParishSeal,
+      'updated_at': now,
+    };
+    if (dioceseLogoUrl != null) templateUpdate['diocese_logo_url'] = dioceseLogoUrl;
+    if (parishSealUrl != null) templateUpdate['parish_seal_url'] = parishSealUrl;
+
+    await _client.from('certificate_templates').update(templateUpdate).neq('template_id', '');
+  }
+
+  // ===========================================================================
+  // 2. Template Management CRUD
   // ===========================================================================
 
   /// Fetches active templates for a given sacrament, prioritizing the default template.
@@ -58,7 +115,6 @@ class CertificateService {
       return CertificateTemplateModel.fromMap(response);
     }
 
-    // Fallback to any active template if no explicit default is flagged
     final fallback = await _client
         .from('certificate_templates')
         .select()
@@ -73,15 +129,22 @@ class CertificateService {
     return null;
   }
 
-  /// Saves a new certificate template.
+  /// Saves a new certificate template, inheriting the global emblems if not explicitly set.
   static Future<CertificateTemplateModel> createTemplate(CertificateTemplateModel template) async {
     final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
+    final globalEmblems = await getGlobalEmblemSettings();
+
     final map = template.toMap();
     map['created_by'] = currentUserId;
     map['created_at'] = DateTime.now().toIso8601String();
     map['updated_at'] = DateTime.now().toIso8601String();
 
-    // If marked default, unset existing defaults for this sacrament
+    // Inherit global emblems
+    map['diocese_logo_url'] ??= globalEmblems['diocese_logo_url'];
+    map['parish_seal_url'] ??= globalEmblems['parish_seal_url'];
+    map['show_diocese_logo'] = globalEmblems['show_diocese_logo'] ?? true;
+    map['show_parish_seal'] = globalEmblems['show_parish_seal'] ?? true;
+
     if (template.isDefault) {
       await _unsetDefaultTemplates(template.sacramentType);
     }
@@ -172,7 +235,7 @@ class CertificateService {
   }
 
   // ===========================================================================
-  // 2. Uploadable Certificate Assets (Borders, Backgrounds & Logos)
+  // 3. Uploadable Certificate Assets (Borders, Backgrounds & Logos)
   // ===========================================================================
 
   /// Uploads a decorative border, background image, or seal to the Supabase storage bucket.
@@ -198,7 +261,7 @@ class CertificateService {
   }
 
   // ===========================================================================
-  // 3. Official Issuance Generation & Verification Tokenization
+  // 4. Official Issuance Generation & Verification Tokenization
   // ===========================================================================
 
   /// Issues an official certificate, creating a permanent issuance snapshot,
@@ -230,9 +293,7 @@ class CertificateService {
           fileOptions: const FileOptions(contentType: 'application/pdf', upsert: true),
         );
         pdfPath = pdfFileName;
-      } catch (_) {
-        // PDF binary upload failure does not break metadata registration
-      }
+      } catch (_) {}
     }
 
     final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
@@ -262,14 +323,12 @@ class CertificateService {
       createdAt: now,
     );
 
-    // 1. Insert issuance record
     final response = await _client
         .from('certificate_issuances')
         .insert(issuance.toMap())
         .select()
         .single();
 
-    // 2. Inscribe pastoral audit trail entry
     try {
       await _client.from('pastoral_audit_logs').insert({
         'log_id': 'LOG-${now.millisecondsSinceEpoch}',
@@ -278,9 +337,7 @@ class CertificateService {
         'target_reference_id': recordId,
         'justification': 'Issued $sacramentType Certificate for $recipientName. Purpose: $purpose. Verification ID: $verificationId',
       });
-    } catch (_) {
-      // Continue gracefully if audit log table is unavailable
-    }
+    } catch (_) {}
 
     return CertificateIssuanceModel.fromMap(response);
   }
@@ -324,7 +381,7 @@ class CertificateService {
     } catch (_) {}
   }
 
-  /// Online Verification Lookup (Safe: only returns verification-safe data).
+  /// Online Verification Lookup.
   static Future<CertificateIssuanceModel?> verifyCertificate(String verificationId) async {
     final response = await _client
         .from('certificate_issuances')
@@ -342,12 +399,10 @@ class CertificateService {
   // Security & Token Helpers
   // ===========================================================================
 
-  /// Generates a cryptographically random, non-sequential UUID v4 token.
   static String _generateSecureVerificationId() {
     final random = Random.secure();
     final values = List<int>.generate(16, (i) => random.nextInt(256));
 
-    // Enforce UUID v4 variant
     values[6] = (values[6] & 0x0f) | 0x40;
     values[8] = (values[8] & 0x3f) | 0x80;
 
@@ -359,7 +414,6 @@ class CertificateService {
     return buffer.toString().toUpperCase();
   }
 
-  /// Generates human-readable sequential certificate tracking ID: ISS-YYYY-XXXX.
   static Future<String> _generateIssuanceId() async {
     final year = DateTime.now().year;
     try {

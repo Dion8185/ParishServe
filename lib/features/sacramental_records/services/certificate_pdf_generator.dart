@@ -32,8 +32,37 @@ class CertificatePdfGenerator {
     }
   }
 
-  /// Generates the official print-ready PDF binary data with dynamic typography,
-  /// supporting both Simple Mode and Canva-Style Visual Mode.
+  /// Maps the 8 expanded font families to vector PostScript fonts
+  static pw.Font _resolvePdfFont(String fontFamily, {bool isBold = false, bool isItalic = false}) {
+    switch (fontFamily.toLowerCase()) {
+      case 'sans':
+      case 'trebuchet':
+        if (isBold && isItalic) return pw.Font.helveticaBoldOblique();
+        if (isBold) return pw.Font.helveticaBold();
+        if (isItalic) return pw.Font.helveticaOblique();
+        return pw.Font.helvetica();
+      case 'courier':
+        if (isBold && isItalic) return pw.Font.courierBoldOblique();
+        if (isBold) return pw.Font.courierBold();
+        if (isItalic) return pw.Font.courierOblique();
+        return pw.Font.courier();
+      case 'script':
+      // Cursive calligraphic style
+        if (isBold) return pw.Font.timesBoldItalic();
+        return pw.Font.timesItalic();
+      case 'cinzel':
+      case 'georgia':
+      case 'garamond':
+      case 'serif':
+      default:
+        if (isBold && isItalic) return pw.Font.timesBoldItalic();
+        if (isBold) return pw.Font.timesBold();
+        if (isItalic) return pw.Font.timesItalic();
+        return pw.Font.times();
+    }
+  }
+
+  /// Generates the official print-ready PDF binary data with 1:1 visual canvas parity.
   static Future<Uint8List> generatePdf({
     required CertificateTemplateModel template,
     required String sacramentType,
@@ -45,43 +74,24 @@ class CertificatePdfGenerator {
   }) async {
     final style = template.styleConfig;
 
-    // 1. Resolve Paper Size & Orientation
+    // 1. Resolve Standard Paper Size in PostScript Points
     PdfPageFormat pageFormat;
     if (template.paperSize == 'Letter') {
       pageFormat = PdfPageFormat.letter;
     } else if (template.paperSize == 'Legal') {
       pageFormat = PdfPageFormat.legal;
     } else {
-      pageFormat = PdfPageFormat.a4;
+      pageFormat = PdfPageFormat.a4; // 595.28 x 841.89 pt
     }
 
     if (template.orientation == 'Landscape') {
       pageFormat = pageFormat.landscape;
     }
 
-    // 2. Resolve Curated PostScript Fonts
-    pw.Font baseFont;
-    pw.Font boldFont;
-    pw.Font italicFont;
-
-    switch (style.fontFamily.toLowerCase()) {
-      case 'sans':
-        baseFont = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-        italicFont = pw.Font.helveticaOblique();
-        break;
-      case 'courier':
-        baseFont = pw.Font.courier();
-        boldFont = pw.Font.courierBold();
-        italicFont = pw.Font.courierOblique();
-        break;
-      case 'serif':
-      default:
-        baseFont = pw.Font.times();
-        boldFont = pw.Font.timesBold();
-        italicFont = pw.Font.timesItalic();
-        break;
-    }
+    // 2. Resolve Base Fonts
+    final baseFont = _resolvePdfFont(style.fontFamily);
+    final boldFont = _resolvePdfFont(style.fontFamily, isBold: true);
+    final italicFont = _resolvePdfFont(style.fontFamily, isItalic: true);
 
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
@@ -91,14 +101,10 @@ class CertificatePdfGenerator {
       ),
     );
 
-    // 3. Fetch Assets Asynchronously with Graceful Fallbacks
+    // 3. Fetch Network Assets Asynchronously with Graceful Fallbacks
     final bgImage = await _fetchNetworkImage(template.backgroundImageUrl);
-    final dioceseLogo = template.showDioceseLogo
-        ? await _fetchNetworkImage(template.dioceseLogoUrl)
-        : null;
-    final parishSeal = template.showParishSeal
-        ? await _fetchNetworkImage(template.parishSealUrl)
-        : null;
+    final dioceseLogo = await _fetchNetworkImage(template.dioceseLogoUrl);
+    final parishSeal = await _fetchNetworkImage(template.parishSealUrl);
     final signatureImage = await _fetchNetworkImage(template.signatureImageUrl);
 
     // 4. Render Dynamic Wording via Placeholder Engine
@@ -109,7 +115,7 @@ class CertificatePdfGenerator {
       issueDate: issueDate,
     );
 
-    // 5. Check if Canva-Style Visual Mode is active
+    // 5. Verification of Mode: Canva Visual Mode overwrites Simple Mode completely
     final bool isCanvaMode = style.useVisualCanvas && style.canvasElements.isNotEmpty;
 
     pdf.addPage(
@@ -134,7 +140,7 @@ class CertificatePdfGenerator {
 
               // B. Content Layer
               if (isCanvaMode)
-              // CANVA-STYLE VISUAL MODE: Render each element at its exact (X, Y) coordinate
+              // CANVA-STYLE VISUAL MODE: 1:1 Center-Anchor Proportional Points
                 ...style.canvasElements.map((element) {
                   return _buildCanvaElementPdfWidget(
                     element: element,
@@ -142,8 +148,6 @@ class CertificatePdfGenerator {
                     placeholderValues: placeholderValues,
                     pageWidth: pageFormat.width,
                     pageHeight: pageFormat.height,
-                    baseFont: baseFont,
-                    boldFont: boldFont,
                     dioceseLogo: dioceseLogo,
                     parishSeal: parishSeal,
                     signatureImage: signatureImage,
@@ -152,7 +156,7 @@ class CertificatePdfGenerator {
                   );
                 })
               else
-              // SIMPLE MODE: Render clean, structured sequential flow with guardrails
+              // SIMPLE MODE: Sequential Structured Fallback
                 pw.Padding(
                   padding: const pw.EdgeInsets.symmetric(horizontal: 48, vertical: 40),
                   child: pw.Column(
@@ -192,7 +196,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // Canva-Style Proportional Coordinate Element Renderer
+  // 1:1 Canva-Style Unified Coordinate Element Renderer
   // ===========================================================================
 
   static pw.Widget _buildCanvaElementPdfWidget({
@@ -201,79 +205,162 @@ class CertificatePdfGenerator {
     required Map<String, String> placeholderValues,
     required double pageWidth,
     required double pageHeight,
-    required pw.Font baseFont,
-    required pw.Font boldFont,
     required Uint8List? dioceseLogo,
     required Uint8List? parishSeal,
     required Uint8List? signatureImage,
     required String qrVerificationUrl,
     required String verificationId,
   }) {
+    final bool isItalic = element.fontFamily.toLowerCase() == 'script';
+    final elemBaseFont = _resolvePdfFont(element.fontFamily, isItalic: isItalic);
+    final elemBoldFont = _resolvePdfFont(element.fontFamily, isBold: true, isItalic: isItalic);
+
+    final double elementWidth = (element.width ?? 0.84) * pageWidth;
+    final double pixelCenterX = element.x * pageWidth;
+    final double pixelCenterY = element.y * pageHeight;
+    final double left = pixelCenterX - (elementWidth / 2);
+    final double top = pixelCenterY - 18;
+
+    // 1. Ecclesiastical Header Block
     if (element.elementType == 'header') {
       return pw.Positioned(
-        left: 48,
-        right: 48,
-        top: element.y * pageHeight - 29,
-        child: _buildCanonicalHeader(
-          template: template,
-          dioceseLogoBytes: dioceseLogo,
-          parishSealBytes: parishSeal,
-          baseFont: baseFont,
-          boldFont: boldFont,
-        ),
-      );
-    }
-
-    if (element.elementType == 'title') {
-      final titleText = PlaceholderRegistry.renderTemplate(element.text, placeholderValues);
-      return pw.Positioned(
-        left: 48,
-        right: 48,
-        top: element.y * pageHeight - 16,
-        child: pw.Center(
-          child: _buildCertificateTitle(
-            title: titleText,
-            style: template.styleConfig.copyWith(
-              titleFontSize: element.fontSize,
-              titleFontWeight: element.fontWeight,
-            ),
-            baseFont: baseFont,
-            boldFont: boldFont,
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: _buildCanonicalHeader(
+            template: template,
+            dioceseLogoBytes: dioceseLogo,
+            parishSealBytes: parishSeal,
+            baseFont: elemBaseFont,
+            boldFont: elemBoldFont,
           ),
         ),
       );
     }
 
+    // 2. Certificate Title Banner
+    if (element.elementType == 'title') {
+      final titleText = PlaceholderRegistry.renderTemplate(element.text, placeholderValues);
+      final titleColor = _hexToPdfColor(element.colorHex);
+      final isBold = element.isBold;
+      final titleFont = isBold ? elemBoldFont : elemBaseFont;
+
+      return pw.Positioned(
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: pw.Center(
+            child: pw.Container(
+              width: 340,
+              padding: const pw.EdgeInsets.symmetric(vertical: 5),
+              decoration: const pw.BoxDecoration(
+                border: pw.Border(
+                  bottom: pw.BorderSide(color: goldAccent, width: 2.0),
+                ),
+              ),
+              child: pw.Text(
+                titleText.toUpperCase(),
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  font: titleFont,
+                  fontSize: element.fontSize,
+                  fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                  letterSpacing: 2.0,
+                  color: titleColor,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 3. Independent Parish Seal Element
+    if (element.elementType == 'parish_seal' || element.elementType == 'seal') {
+      final double sealDiameter = element.fontSize * 4.5;
+      final sealColor = _hexToPdfColor(element.colorHex);
+
+      return pw.Positioned(
+        left: pixelCenterX - (sealDiameter / 2),
+        top: pixelCenterY - (sealDiameter / 2),
+        child: pw.SizedBox(
+          width: sealDiameter,
+          height: sealDiameter,
+          child: _buildIndividualSealPdfWidget(
+            isParish: true,
+            diameter: sealDiameter,
+            sealBytes: parishSeal,
+            sealColor: sealColor,
+            boldFont: elemBoldFont,
+          ),
+        ),
+      );
+    }
+
+    // 4. Independent Diocese Seal Element
+    if (element.elementType == 'diocese_seal') {
+      final double sealDiameter = element.fontSize * 4.5;
+      final sealColor = _hexToPdfColor(element.colorHex);
+
+      return pw.Positioned(
+        left: pixelCenterX - (sealDiameter / 2),
+        top: pixelCenterY - (sealDiameter / 2),
+        child: pw.SizedBox(
+          width: sealDiameter,
+          height: sealDiameter,
+          child: _buildIndividualSealPdfWidget(
+            isParish: false,
+            diameter: sealDiameter,
+            sealBytes: dioceseLogo,
+            sealColor: sealColor,
+            boldFont: elemBoldFont,
+          ),
+        ),
+      );
+    }
+
+    // 5. QR Verification Block
     if (element.elementType == 'qr') {
       return pw.Positioned(
-        left: (element.x * pageWidth) - 40,
-        top: (element.y * pageHeight) - 40,
-        child: _buildQrBlock(
-          qrUrl: qrVerificationUrl,
-          verificationId: verificationId,
-          baseFont: baseFont,
-          boldFont: boldFont,
+        left: pixelCenterX - (elementWidth / 2),
+        top: pixelCenterY - 18,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: pw.Center(
+            child: _buildQrBlock(
+              qrUrl: qrVerificationUrl,
+              verificationId: verificationId,
+              baseFont: elemBaseFont,
+              boldFont: elemBoldFont,
+            ),
+          ),
         ),
       );
     }
 
+    // 6. Signatory Block
     if (element.elementType == 'signatory') {
       return pw.Positioned(
-        left: (element.x * pageWidth) - 90,
-        top: (element.y * pageHeight) - 30,
-        child: _buildSignatoryBlock(
-          template: template,
-          signatureBytes: signatureImage,
-          baseFont: baseFont,
-          boldFont: boldFont,
+        left: pixelCenterX - (elementWidth / 2),
+        top: pixelCenterY - 18,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: _buildSignatoryBlock(
+            template: template,
+            signatureBytes: signatureImage,
+            baseFont: elemBaseFont,
+            boldFont: elemBoldFont,
+          ),
         ),
       );
     }
 
-    // Standard Freeform Text or Dynamic Placeholder Element
+    // 7. Freeform Text & Dynamic Placeholders
     final resolvedText = PlaceholderRegistry.renderTemplate(element.text, placeholderValues);
     final isBold = element.isBold;
-    final elemFont = isBold ? boldFont : baseFont;
+    final elemFont = isBold ? elemBoldFont : elemBaseFont;
     final elemColor = _hexToPdfColor(element.colorHex);
 
     pw.TextAlign align;
@@ -290,13 +377,14 @@ class CertificatePdfGenerator {
         break;
     }
 
-    final blockWidth = element.width ?? (pageWidth * 0.8);
+    double letterSpacing = 0.0;
+    if (element.fontFamily.toLowerCase() == 'cinzel') letterSpacing = 2.0;
 
     return pw.Positioned(
-      left: (element.x * pageWidth) - (blockWidth / 2),
-      top: element.y * pageHeight - 12,
+      left: left,
+      top: top,
       child: pw.SizedBox(
-        width: blockWidth,
+        width: elementWidth,
         child: pw.Text(
           resolvedText,
           textAlign: align,
@@ -305,6 +393,7 @@ class CertificatePdfGenerator {
             fontSize: element.fontSize,
             fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
             color: elemColor,
+            letterSpacing: letterSpacing,
             lineSpacing: 3.5,
           ),
         ),
@@ -312,8 +401,73 @@ class CertificatePdfGenerator {
     );
   }
 
+  /// Renders an independent circular Parish or Diocese Seal matching the visual canvas
+  static pw.Widget _buildIndividualSealPdfWidget({
+    required bool isParish,
+    required double diameter,
+    required Uint8List? sealBytes,
+    required PdfColor sealColor,
+    required pw.Font boldFont,
+  }) {
+    final String fallbackLabel = isParish ? 'SJP2' : 'DSP';
+    final String sealTitle = isParish ? 'PARISH SEAL' : 'DIOCESE EMBLEM';
+
+    return pw.Container(
+      width: diameter,
+      height: diameter,
+      decoration: pw.BoxDecoration(
+        shape: pw.BoxShape.circle,
+        color: PdfColors.white,
+        border: pw.Border.all(color: sealColor, width: 2.2),
+      ),
+      child: pw.Padding(
+        padding: const pw.EdgeInsets.all(3.0),
+        child: pw.Container(
+          decoration: pw.BoxDecoration(
+            shape: pw.BoxShape.circle,
+            border: pw.Border.all(color: sealColor, width: 1.0),
+          ),
+          child: sealBytes != null
+              ? pw.ClipOval(
+            child: pw.Image(
+              pw.MemoryImage(sealBytes),
+              fit: pw.BoxFit.contain,
+            ),
+          )
+              : pw.Center(
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text(
+                  fallbackLabel,
+                  style: pw.TextStyle(
+                    font: boldFont,
+                    fontSize: diameter * 0.16,
+                    fontWeight: pw.FontWeight.bold,
+                    color: sealColor,
+                  ),
+                ),
+                pw.SizedBox(height: 1),
+                pw.Text(
+                  sealTitle,
+                  style: pw.TextStyle(
+                    font: boldFont,
+                    fontSize: diameter * 0.08,
+                    fontWeight: pw.FontWeight.bold,
+                    color: sealColor,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ===========================================================================
-  // Simple Mode Sequential Structured Flow
+  // Simple Mode Sequential Structured Flow (When Canva Mode is Untoggled)
   // ===========================================================================
 
   static List<pw.Widget> _buildSimpleModeWidgets({
@@ -396,7 +550,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // Shared Classical Layout Elements
+  // Shared Canonical Header & Layout Elements
   // ===========================================================================
 
   static pw.Widget _buildCanonicalHeader({
@@ -415,13 +569,17 @@ class CertificatePdfGenerator {
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        pw.SizedBox(
-          width: 58,
-          height: 58,
-          child: dioceseLogoBytes != null
-              ? pw.Image(pw.MemoryImage(dioceseLogoBytes), fit: pw.BoxFit.contain)
-              : _buildFallbackCrest(label: 'DSP', boldFont: boldFont),
-        ),
+        if (template.showDioceseLogo)
+          pw.SizedBox(
+            width: 58,
+            height: 58,
+            child: dioceseLogoBytes != null
+                ? pw.Image(pw.MemoryImage(dioceseLogoBytes), fit: pw.BoxFit.contain)
+                : _buildFallbackCrest(label: 'DSP', boldFont: boldFont),
+          )
+        else
+          pw.SizedBox(width: 58),
+
         pw.Expanded(
           child: pw.Column(
             mainAxisSize: pw.MainAxisSize.min,
@@ -460,13 +618,17 @@ class CertificatePdfGenerator {
             ],
           ),
         ),
-        pw.SizedBox(
-          width: 58,
-          height: 58,
-          child: parishSealBytes != null
-              ? pw.Image(pw.MemoryImage(parishSealBytes), fit: pw.BoxFit.contain)
-              : _buildFallbackCrest(label: 'SJP2', boldFont: boldFont),
-        ),
+
+        if (template.showParishSeal)
+          pw.SizedBox(
+            width: 58,
+            height: 58,
+            child: parishSealBytes != null
+                ? pw.Image(pw.MemoryImage(parishSealBytes), fit: pw.BoxFit.contain)
+                : _buildFallbackCrest(label: 'SJP2', boldFont: boldFont),
+          )
+        else
+          pw.SizedBox(width: 58),
       ],
     );
   }
@@ -478,22 +640,23 @@ class CertificatePdfGenerator {
     required pw.Font boldFont,
   }) {
     final isBold = style.titleFontWeight == 'bold';
+    final titleFont = isBold ? boldFont : baseFont;
 
     return pw.Column(
       children: [
         pw.Container(
-          width: 320,
-          padding: const pw.EdgeInsets.symmetric(vertical: 6),
+          width: 340,
+          padding: const pw.EdgeInsets.symmetric(vertical: 5),
           decoration: const pw.BoxDecoration(
             border: pw.Border(
-              bottom: pw.BorderSide(color: goldAccent, width: 2),
+              bottom: pw.BorderSide(color: goldAccent, width: 2.0),
             ),
           ),
           child: pw.Text(
             title.toUpperCase(),
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(
-              font: isBold ? boldFont : baseFont,
+              font: titleFont,
               fontSize: style.titleFontSize,
               fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
               letterSpacing: 2.0,
@@ -513,6 +676,7 @@ class CertificatePdfGenerator {
   }) {
     final paragraphs = renderedText.split('\n\n');
     final isBold = style.bodyFontWeight == 'bold';
+    final bodyFont = isBold ? boldFont : baseFont;
 
     pw.TextAlign textAlign;
     switch (style.textAlignment.toLowerCase()) {
@@ -540,7 +704,7 @@ class CertificatePdfGenerator {
               p.trim(),
               textAlign: textAlign,
               style: pw.TextStyle(
-                font: isBold ? boldFont : baseFont,
+                font: bodyFont,
                 fontSize: style.bodyFontSize,
                 fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
                 lineSpacing: style.bodyLineSpacing,
@@ -707,13 +871,13 @@ class CertificatePdfGenerator {
   static pw.Widget _buildDefaultEcclesiasticalBorder() {
     return pw.Positioned.fill(
       child: pw.Padding(
-        padding: const pw.EdgeInsets.all(16),
+        padding: const pw.EdgeInsets.all(16.0), // Matches exact 16pt canvas margin
         child: pw.Container(
           decoration: pw.BoxDecoration(
             border: pw.Border.all(color: goldAccent, width: 2.5),
           ),
           child: pw.Padding(
-            padding: const pw.EdgeInsets.all(5),
+            padding: const pw.EdgeInsets.all(5.0), // Matches exact 5pt inner canvas offset
             child: pw.Container(
               decoration: pw.BoxDecoration(
                 border: pw.Border.all(color: marianBlue, width: 1.0),
