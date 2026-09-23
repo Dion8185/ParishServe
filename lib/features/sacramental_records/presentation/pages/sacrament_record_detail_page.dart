@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
-import '../dialogs/certificate_preview_dialog.dart';
+import '../dialogs/generate_certificate_dialog.dart';
 import 'baptism_manual_entry_page.dart';
+import 'certificate_template_management_page.dart';
 import 'confirmation_manual_entry_page.dart';
+import 'conversion_manual_entry_page.dart';
+import 'death_manual_entry_page.dart';
 import 'first_communion_manual_entry_page.dart';
 import 'matrimony_manual_entry_page.dart';
-import 'death_manual_entry_page.dart';
-import 'conversion_manual_entry_page.dart';
 
 class SacramentRecordDetailPage extends StatelessWidget {
   final String sacramentName;
@@ -144,7 +145,6 @@ class SacramentRecordDetailPage extends StatelessWidget {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
-    final borderGreyColor = ParishColors.borderGrey;
 
     return Scaffold(
       backgroundColor: ParishColors.backgroundLight,
@@ -169,6 +169,16 @@ class SacramentRecordDetailPage extends StatelessWidget {
           ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(Icons.design_services_outlined, color: themeColor),
+            tooltip: 'Manage Certificate Templates',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
+              );
+            },
+          ),
           IconButton(
             icon: Icon(Icons.edit_outlined, color: themeColor),
             tooltip: 'Edit Record',
@@ -236,7 +246,7 @@ class SacramentRecordDetailPage extends StatelessWidget {
 
                 const SizedBox(height: 16),
 
-                // 3. Primary Action: Print Official Certificate
+                // 3. Primary Action: Launch Official Certificate Workflow Modal
                 SizedBox(
                   width: double.infinity,
                   height: 56,
@@ -247,15 +257,20 @@ class SacramentRecordDetailPage extends StatelessWidget {
                       elevation: 1,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    onPressed: () => showCertificatePreviewModal(
+                    onPressed: () => showGenerateCertificateModal(
                       context,
-                      name: name,
-                      sacrament: sacramentName.toUpperCase(),
+                      sacramentType: sacramentName,
+                      recordId: recordId,
+                      recipientName: name,
+                      rawRecordData: rawRecordData,
                       bookRef: bookRef,
+                      onCertificateIssued: () {
+                        onRecordUpdated?.call();
+                      },
                     ),
                     icon: const Icon(Icons.print, size: 22),
                     label: Text(
-                      'Print Official $sacramentName Certificate',
+                      'Generate Official $sacramentName Certificate',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ),

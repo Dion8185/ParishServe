@@ -48,6 +48,9 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+  pdf: ^3.13.1
+  file_picker: ^13.1.0
+  printing: ^5.15.1
 
 flutter_launcher_icons:
   android: "launcher_icon"
