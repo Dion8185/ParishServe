@@ -67,7 +67,7 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
   String get _effectivePurpose {
     if (_selectedPurposePreset == 'Other / Custom Purpose') {
       final custom = _customPurposeController.text.trim();
-      return custom.isEmpty ? 'General Legal / Personal Records' : custom;
+      return custom.isEmpty ? 'for Record/Reference' : custom;
     }
     return _selectedPurposePreset;
   }
