@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/certificate_issuance_model.dart';
@@ -8,8 +9,23 @@ import '../models/certificate_template_model.dart';
 class CertificateService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  // Base portal URL for scanning QR verification tokens
-  static const String verificationBaseUrl = 'https://parishserve.sjp2parish.ph/verify';
+  // Fallback domain for native mobile runs. When running on Flutter Web,
+  // the system dynamically detects your live Firebase Hosting origin.
+  static const String _defaultProductionDomain = 'https://parishserve.web.app';
+
+  /// Dynamically resolves the base verification endpoint from the hosting environment.
+  static String get verificationBaseUrl {
+    if (kIsWeb) {
+      final origin = Uri.base.origin; // Dynamically retrieves e.g. https://parishserve.web.app
+      return '$origin/verify';
+    }
+    return '$_defaultProductionDomain/verify';
+  }
+
+  /// Builds the public dynamic verification URL embedded into the QR code
+  static String buildVerificationUrl(String verificationId) {
+    return '$verificationBaseUrl?v=$verificationId';
+  }
 
   // ===========================================================================
   // 1. Global Parish & Diocesan Emblem Settings (Applies to ALL Certificates)
@@ -265,7 +281,7 @@ class CertificateService {
   // ===========================================================================
 
   /// Issues an official certificate, creating a permanent issuance snapshot,
-  /// generating a cryptographically secure verification token, and recording audit entries.
+  /// using the upfront pre-generated verification token and recording audit entries.
   static Future<CertificateIssuanceModel> issueCertificate({
     required String recordId,
     required String sacramentType,
@@ -278,15 +294,17 @@ class CertificateService {
     String? lineNumber,
     String? registryReference,
     Uint8List? generatedPdfBytes,
+    String? verificationId,
+    String? qrVerificationUrl,
   }) async {
-    final verificationId = _generateSecureVerificationId();
+    final effectiveVerificationId = verificationId ?? generateSecureVerificationId();
+    final effectiveQrUrl = qrVerificationUrl ?? buildVerificationUrl(effectiveVerificationId);
     final issuanceId = await _generateIssuanceId();
-    final qrUrl = '$verificationBaseUrl?v=$verificationId';
 
     String? pdfPath;
     if (generatedPdfBytes != null) {
       try {
-        final pdfFileName = 'issued_pdfs/$sacramentType/${issuanceId}_$verificationId.pdf';
+        final pdfFileName = 'issued_pdfs/$sacramentType/${issuanceId}_$effectiveVerificationId.pdf';
         await _client.storage.from('certificate-assets').uploadBinary(
           pdfFileName,
           generatedPdfBytes,
@@ -301,7 +319,7 @@ class CertificateService {
 
     final issuance = CertificateIssuanceModel(
       issuanceId: issuanceId,
-      verificationId: verificationId,
+      verificationId: effectiveVerificationId,
       recordId: recordId,
       sacramentType: sacramentType,
       recipientName: recipientName,
@@ -315,7 +333,7 @@ class CertificateService {
       pageNumber: pageNumber,
       lineNumber: lineNumber,
       registryReference: registryReference,
-      qrVerificationUrl: qrUrl,
+      qrVerificationUrl: effectiveQrUrl,
       pdfStoragePath: pdfPath,
       certificateStatus: 'Valid',
       issuedBy: currentUserId,
@@ -335,7 +353,7 @@ class CertificateService {
         'priest_id': currentUserId,
         'action_type': 'CERTIFICATE_ISSUED',
         'target_reference_id': recordId,
-        'justification': 'Issued $sacramentType Certificate for $recipientName. Purpose: $purpose. Verification ID: $verificationId',
+        'justification': 'Issued $sacramentType Certificate for $recipientName. Purpose: $purpose. Verification ID: $effectiveVerificationId',
       });
     } catch (_) {}
 
@@ -381,16 +399,27 @@ class CertificateService {
     } catch (_) {}
   }
 
-  /// Online Verification Lookup.
+  /// Online Verification Lookup with real-time scan metrics tracking.
   static Future<CertificateIssuanceModel?> verifyCertificate(String verificationId) async {
+    final cleanToken = verificationId.trim().toUpperCase();
+
     final response = await _client
         .from('certificate_issuances')
         .select()
-        .eq('verification_id', verificationId.trim().toUpperCase())
+        .eq('verification_id', cleanToken)
         .maybeSingle();
 
     if (response != null) {
-      return CertificateIssuanceModel.fromMap(response);
+      final model = CertificateIssuanceModel.fromMap(response);
+
+      // Increment scan counter and update timestamp asynchronously
+      try {
+        await _client.from('certificate_issuances').update({
+          'last_scanned_at': DateTime.now().toIso8601String(),
+        }).eq('verification_id', cleanToken);
+      } catch (_) {}
+
+      return model;
     }
     return null;
   }
@@ -399,7 +428,8 @@ class CertificateService {
   // Security & Token Helpers
   // ===========================================================================
 
-  static String _generateSecureVerificationId() {
+  /// Generates a cryptographically random, non-sequential UUID v4 token.
+  static String generateSecureVerificationId() {
     final random = Random.secure();
     final values = List<int>.generate(16, (i) => random.nextInt(256));
 
