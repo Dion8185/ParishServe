@@ -26,8 +26,20 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   void _initAuthListener() {
-    // Listen to session changes (login, logout, token refresh)
+    // Listen to session events (login, logout, token refresh, recovery)
     Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      // 1. If password recovery is active, quarantine the session and DO NOT route to dashboard
+      if (AuthService.isPasswordRecoveryInProgress ||
+          data.event == AuthChangeEvent.passwordRecovery) {
+        if (mounted) {
+          setState(() {
+            _currentUser = null;
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
       final session = data.session;
 
       if (session == null) {
@@ -40,7 +52,7 @@ class _AuthGateState extends State<AuthGate> {
         return;
       }
 
-      // If user session changed, re-hydrate profile from public.users
+      // 2. If user session changed during normal authentication, re-hydrate profile from public.users
       final sessionEmail = session.user.email;
       if (_currentUser == null || _currentUser!.email.toLowerCase() != sessionEmail?.toLowerCase()) {
         if (mounted) setState(() => _isLoading = true);
@@ -61,6 +73,12 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _checkInitialSession() async {
+    // If recovery flag is active on boot, keep at LoginView
+    if (AuthService.isPasswordRecoveryInProgress) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) {
       if (mounted) setState(() => _isLoading = false);
@@ -84,8 +102,11 @@ class _AuthGateState extends State<AuthGate> {
 
     final session = Supabase.instance.client.auth.currentSession;
 
-    // Unauthenticated or deactivated
-    if (session == null || _currentUser == null || !_currentUser!.accountStatus) {
+    // Unauthenticated, deactivated, or in the middle of password recovery
+    if (session == null ||
+        _currentUser == null ||
+        !_currentUser!.accountStatus ||
+        AuthService.isPasswordRecoveryInProgress) {
       return const LoginView();
     }
 

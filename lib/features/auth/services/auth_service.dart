@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import 'otp_rate_limiter.dart';
 
-/// Custom exception thrown when valid credentials are provided
+/// Exception thrown when valid credentials are provided
 /// but the account's email has not been verified yet.
 class EmailNotConfirmedException implements Exception {
   final String email;
@@ -18,36 +18,59 @@ class EmailNotConfirmedException implements Exception {
   String toString() => message;
 }
 
+/// Exception thrown when a user attempts to log in but has an active
+/// unexpired password recovery OTP code in progress.
+class ActivePasswordRecoveryException implements Exception {
+  final String email;
+  final String message;
+
+  ActivePasswordRecoveryException({
+    required this.email,
+    this.message = 'An active password recovery code was recently requested for this account.',
+  });
+
+  @override
+  String toString() => message;
+}
+
 class AuthService {
   static final SupabaseClient _client = Supabase.instance.client;
 
   /// In-memory cache of the active user profile
   static UserModel? currentUser;
 
+  /// Quarantine flag: True while the user is actively resetting their password.
+  /// Prevents AuthGate from auto-redirecting to the dashboard when verifyOTP succeeds.
+  static bool isPasswordRecoveryInProgress = false;
+
   /// Check if an active Supabase auth session exists in storage (Web or Mobile)
-  static bool get hasActiveSession => _client.auth.currentSession != null;
+  static bool get hasActiveSession =>
+      _client.auth.currentSession != null && !isPasswordRecoveryInProgress;
+
+  /// Resolves a username or email input into the canonical registered email
+  static Future<String> resolveIdentifierToEmail(String identifier) async {
+    final clean = identifier.trim();
+    if (clean.contains('@')) return clean.toLowerCase();
+
+    final userRecord = await _client
+        .from('users')
+        .select('email')
+        .ilike('username', clean)
+        .maybeSingle();
+
+    if (userRecord == null) {
+      throw 'No registered account found matching username "$clean".';
+    }
+
+    return userRecord['email'].toString().trim().toLowerCase();
+  }
 
   /// Authenticate staff or parishioners using Supabase Auth
   static Future<UserModel?> login({
     required String identifier, // username or email
     required String password,
   }) async {
-    final cleanIdentifier = identifier.trim();
-    String emailToUse = cleanIdentifier;
-
-    // 1. Resolve username to email via public.users if no '@' is present
-    if (!cleanIdentifier.contains('@')) {
-      final userRecord = await _client
-          .from('users')
-          .select('email')
-          .ilike('username', cleanIdentifier)
-          .maybeSingle();
-
-      if (userRecord == null) {
-        throw 'No account found matching username "$cleanIdentifier".';
-      }
-      emailToUse = userRecord['email'];
-    }
+    final emailToUse = await resolveIdentifierToEmail(identifier);
 
     // 2. Authenticate through Supabase Auth
     try {
@@ -61,10 +84,18 @@ class AuthService {
       }
     } on AuthException catch (e) {
       final msg = e.message.toLowerCase();
+
       // Intercept unconfirmed email error (Code 400) from Supabase GoTrue
       if (msg.contains('email not confirmed') || msg.contains('not confirmed')) {
         throw EmailNotConfirmedException(email: emailToUse);
       }
+
+      // If login failed and this user has an active password recovery in flight,
+      // redirect them straight to the recovery code screen
+      if (OtpRateLimiter.hasActiveRecovery(emailToUse)) {
+        throw ActivePasswordRecoveryException(email: emailToUse);
+      }
+
       rethrow;
     }
 
@@ -89,6 +120,12 @@ class AuthService {
 
   /// Restores session on app startup (e.g., after F5 on web or app restart on mobile)
   static Future<UserModel?> restoreSession() async {
+    // If user is currently recovering their password, DO NOT hydrate profile or enter dashboard
+    if (isPasswordRecoveryInProgress) {
+      currentUser = null;
+      return null;
+    }
+
     try {
       final session = _client.auth.currentSession;
       if (session == null || session.user.email == null) {
@@ -100,7 +137,6 @@ class AuthService {
       final user = await fetchProfileByEmail(email);
 
       if (user == null || !user.accountStatus) {
-        // Account deleted or deactivated while session was idle
         await _client.auth.signOut();
         currentUser = null;
         return null;
@@ -158,7 +194,6 @@ class AuthService {
       throw 'Password must be at least 6 characters long.';
     }
 
-    // Check if username is already taken
     final existing = await _client
         .from('users')
         .select('username')
@@ -169,7 +204,6 @@ class AuthService {
       throw 'Username "$cleanUsername" is already taken. Please choose another username.';
     }
 
-    // 1. Sign up user in Supabase Auth (Dispatches OTP or confirmation email)
     final authResponse = await _client.auth.signUp(
       email: cleanEmail,
       password: password,
@@ -184,12 +218,11 @@ class AuthService {
       throw 'Could not create authentication account.';
     }
 
-    // Track initial registration as first dispatch in rate limiter
+    OtpRateLimiter.recordSignupRequest(cleanEmail);
     OtpRateLimiter.recordResendAttempt(cleanEmail);
 
     final userId = await _generateParishionerId();
 
-    // 2. Insert complementary profile row into public.users
     final payload = {
       'user_id': userId,
       'username': cleanUsername,
@@ -217,7 +250,7 @@ class AuthService {
     };
   }
 
-  /// Verify 6-digit OTP sent by email
+  /// Verify 6-digit signup OTP sent by email
   static Future<UserModel> verifyEmailOtp({
     required String email,
     required String token,
@@ -232,7 +265,6 @@ class AuthService {
       throw 'Invalid or expired verification code. Please check your email.';
     }
 
-    // Clear rate limit history upon successful confirmation
     OtpRateLimiter.clearHistory(email);
 
     final user = await fetchProfileByEmail(email);
@@ -248,7 +280,6 @@ class AuthService {
   static Future<void> resendVerificationEmail(String email) async {
     final cleanEmail = email.trim();
 
-    // Enforce 60s cooldown and 3 resubmissions/hr limit
     OtpRateLimiter.recordResendAttempt(cleanEmail);
 
     await _client.auth.resend(
@@ -257,11 +288,107 @@ class AuthService {
     );
   }
 
+  // ===========================================================================
+  // PASSWORD RECOVERY / FORGOT PASSWORD METHODS (DECOUPLED 3-STEP FLOW)
+  // ===========================================================================
+
+  /// Step 1: Sends a password recovery OTP code with cooldown and hourly rate limit tracking
+  static Future<String> sendPasswordResetEmail(String identifier) async {
+    final emailToUse = await resolveIdentifierToEmail(identifier);
+
+    // Verify account exists in public.users
+    final user = await fetchProfileByEmail(emailToUse);
+    if (user == null) {
+      throw 'No registered account found with email "$emailToUse".';
+    }
+    if (!user.accountStatus) {
+      throw 'This account has been deactivated. Please contact the Parish Administrator.';
+    }
+
+    // Enforce 60s cooldown and 3/hour limit before dispatching
+    OtpRateLimiter.recordResendAttempt(emailToUse);
+
+    // Trigger Supabase GoTrue password reset
+    await _client.auth.resetPasswordForEmail(emailToUse);
+
+    // Record recovery state as active
+    OtpRateLimiter.recordRecoveryRequest(emailToUse);
+
+    return emailToUse;
+  }
+
+  /// Step 2: Verifies the 6-digit recovery OTP and unlocks recovery session in quarantine
+  static Future<void> verifyRecoveryOtp({
+    required String email,
+    required String token,
+  }) async {
+    // Set quarantine flag BEFORE verifying OTP so AuthGate does not navigate to the dashboard
+    isPasswordRecoveryInProgress = true;
+
+    try {
+      final response = await _client.auth.verifyOTP(
+        email: email.trim(),
+        token: token.trim(),
+        type: OtpType.recovery,
+      );
+
+      if (response.user == null) {
+        throw 'Invalid or expired recovery code. Please check your email or request a new code.';
+      }
+    } catch (_) {
+      // If verification failed, reset quarantine flag
+      isPasswordRecoveryInProgress = false;
+      rethrow;
+    }
+  }
+
+  /// Step 3: Updates the password across auth.users & public.users, then terminates recovery session
+  static Future<void> completePasswordReset({
+    required String email,
+    required String newPassword,
+  }) async {
+    final cleanEmail = email.trim();
+
+    try {
+      // 1. Update password in Supabase Auth (using the quarantined recovery session)
+      await _client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
+
+      // 2. Keep public.users password column synchronized
+      await _client
+          .from('users')
+          .update({'password': newPassword})
+          .ilike('email', cleanEmail);
+
+      // 3. Clear active recovery state from tracker
+      OtpRateLimiter.clearRecovery(cleanEmail);
+    } finally {
+      // 4. Terminate recovery session and reset quarantine flag
+      // so user must sign in cleanly through the login form with their new password
+      await _client.auth.signOut();
+      isPasswordRecoveryInProgress = false;
+      currentUser = null;
+    }
+  }
+
+  /// Cancels an in-progress recovery and cleans up the temporary session
+  static Future<void> cancelPasswordRecovery() async {
+    if (isPasswordRecoveryInProgress) {
+      isPasswordRecoveryInProgress = false;
+      currentUser = null;
+      try {
+        await _client.auth.signOut();
+      } catch (_) {}
+    }
+  }
+
   /// Terminate session across Web and Mobile
   static Future<void> signOut() async {
     try {
       await _client.auth.signOut();
     } finally {
+      isPasswordRecoveryInProgress = false;
       currentUser = null;
     }
   }

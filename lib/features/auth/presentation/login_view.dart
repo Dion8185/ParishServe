@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../services/auth_service.dart';
+import 'dialogs/forgot_password_dialog.dart';
 import 'dialogs/login_help_dialog.dart';
 import 'otp_verification_view.dart';
 import 'parishioner_register_view.dart';
@@ -199,7 +200,29 @@ class _LoginViewState extends State<LoginView> {
                         ),
                         const SizedBox(height: 16),
 
-                        const Text('Password', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        // Password Label Row with "Forgot Password?" Button
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Password', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            TextButton(
+                              onPressed: () => showForgotPasswordDialog(context),
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                'Forgot Password?',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: ParishColors.marianBlue,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 6),
                         TextField(
                           controller: _passwordController,
