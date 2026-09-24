@@ -32,37 +32,56 @@ class CertificatePdfGenerator {
     }
   }
 
-  /// Maps the 8 expanded font families to vector PostScript fonts
-  static pw.Font _resolvePdfFont(String fontFamily, {bool isBold = false, bool isItalic = false}) {
-    switch (fontFamily.toLowerCase()) {
-      case 'sans':
-      case 'trebuchet':
-        if (isBold && isItalic) return pw.Font.helveticaBoldOblique();
-        if (isBold) return pw.Font.helveticaBold();
-        if (isItalic) return pw.Font.helveticaOblique();
-        return pw.Font.helvetica();
-      case 'courier':
-        if (isBold && isItalic) return pw.Font.courierBoldOblique();
-        if (isBold) return pw.Font.courierBold();
-        if (isItalic) return pw.Font.courierOblique();
-        return pw.Font.courier();
-      case 'script':
-      // Cursive calligraphic style
-        if (isBold) return pw.Font.timesBoldItalic();
-        return pw.Font.timesItalic();
-      case 'cinzel':
-      case 'georgia':
-      case 'garamond':
-      case 'serif':
-      default:
-        if (isBold && isItalic) return pw.Font.timesBoldItalic();
-        if (isBold) return pw.Font.timesBold();
-        if (isItalic) return pw.Font.timesItalic();
-        return pw.Font.times();
+  /// Loads TrueType fonts with full Unicode support (ñ, Ñ, ₱, —, etc.) via PdfGoogleFonts.
+  /// Falls back gracefully to standard fonts if offline.
+  static Future<pw.Font> _resolveUnicodePdfFont(
+      String fontFamily, {
+        bool isBold = false,
+        bool isItalic = false,
+      }) async {
+    try {
+      switch (fontFamily.toLowerCase()) {
+        case 'sans':
+        case 'trebuchet':
+          if (isBold && isItalic) return await PdfGoogleFonts.robotoBoldItalic();
+          if (isBold) return await PdfGoogleFonts.robotoBold();
+          if (isItalic) return await PdfGoogleFonts.robotoItalic();
+          return await PdfGoogleFonts.robotoRegular();
+
+        case 'courier':
+          if (isBold) return await PdfGoogleFonts.courierPrimeBold();
+          if (isItalic) return await PdfGoogleFonts.courierPrimeItalic();
+          return await PdfGoogleFonts.courierPrimeRegular();
+
+        case 'cinzel':
+          if (isBold) return await PdfGoogleFonts.cinzelBold();
+          return await PdfGoogleFonts.cinzelRegular();
+
+        case 'script':
+          return await PdfGoogleFonts.parisienneRegular();
+
+        case 'georgia':
+        case 'garamond':
+        case 'serif':
+        default:
+          if (isBold && isItalic) return await PdfGoogleFonts.merriweatherBoldItalic();
+          if (isBold) return await PdfGoogleFonts.merriweatherBold();
+          if (isItalic) return await PdfGoogleFonts.merriweatherItalic();
+          return await PdfGoogleFonts.merriweatherRegular();
+      }
+    } catch (_) {
+      // Offline fallback: Use standard PostScript fonts
+      if (fontFamily.toLowerCase() == 'sans' || fontFamily.toLowerCase() == 'trebuchet') {
+        return isBold ? pw.Font.helveticaBold() : (isItalic ? pw.Font.helveticaOblique() : pw.Font.helvetica());
+      } else if (fontFamily.toLowerCase() == 'courier') {
+        return isBold ? pw.Font.courierBold() : (isItalic ? pw.Font.courierOblique() : pw.Font.courier());
+      } else {
+        return isBold ? pw.Font.timesBold() : (isItalic ? pw.Font.timesItalic() : pw.Font.times());
+      }
     }
   }
 
-  /// Generates the official print-ready PDF binary data with 1:1 visual canvas parity.
+  /// Generates the official print-ready PDF binary data with full Unicode support.
   static Future<Uint8List> generatePdf({
     required CertificateTemplateModel template,
     required String sacramentType,
@@ -74,7 +93,7 @@ class CertificatePdfGenerator {
   }) async {
     final style = template.styleConfig;
 
-    // 1. Resolve Standard Paper Size in PostScript Points
+    // 1. Resolve Paper Size & Orientation in PostScript Points
     PdfPageFormat pageFormat;
     if (template.paperSize == 'Letter') {
       pageFormat = PdfPageFormat.letter;
@@ -88,10 +107,10 @@ class CertificatePdfGenerator {
       pageFormat = pageFormat.landscape;
     }
 
-    // 2. Resolve Base Fonts
-    final baseFont = _resolvePdfFont(style.fontFamily);
-    final boldFont = _resolvePdfFont(style.fontFamily, isBold: true);
-    final italicFont = _resolvePdfFont(style.fontFamily, isItalic: true);
+    // 2. Resolve Unicode TrueType Base Fonts Asynchronously
+    final baseFont = await _resolveUnicodePdfFont(style.fontFamily);
+    final boldFont = await _resolveUnicodePdfFont(style.fontFamily, isBold: true);
+    final italicFont = await _resolveUnicodePdfFont(style.fontFamily, isItalic: true);
 
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
@@ -101,13 +120,28 @@ class CertificatePdfGenerator {
       ),
     );
 
-    // 3. Fetch Network Assets Asynchronously with Graceful Fallbacks
+    // 3. Preload Canvas Fonts for Canva Visual Mode Elements
+    final Map<String, pw.Font> fontCache = {};
+    if (style.useVisualCanvas && style.canvasElements.isNotEmpty) {
+      for (final elem in style.canvasElements) {
+        final keyRegular = '${elem.fontFamily}_normal';
+        final keyBold = '${elem.fontFamily}_bold';
+        if (!fontCache.containsKey(keyRegular)) {
+          fontCache[keyRegular] = await _resolveUnicodePdfFont(elem.fontFamily);
+        }
+        if (!fontCache.containsKey(keyBold)) {
+          fontCache[keyBold] = await _resolveUnicodePdfFont(elem.fontFamily, isBold: true);
+        }
+      }
+    }
+
+    // 4. Fetch Network Assets Asynchronously with Graceful Fallbacks
     final bgImage = await _fetchNetworkImage(template.backgroundImageUrl);
     final dioceseLogo = await _fetchNetworkImage(template.dioceseLogoUrl);
     final parishSeal = await _fetchNetworkImage(template.parishSealUrl);
     final signatureImage = await _fetchNetworkImage(template.signatureImageUrl);
 
-    // 4. Render Dynamic Wording via Placeholder Engine
+    // 5. Render Dynamic Wording via Placeholder Engine
     final placeholderValues = PlaceholderRegistry.extractPlaceholderValues(
       sacramentType: sacramentType,
       recordData: recordData,
@@ -115,7 +149,6 @@ class CertificatePdfGenerator {
       issueDate: issueDate,
     );
 
-    // 5. Verification of Mode: Canva Visual Mode overwrites Simple Mode completely
     final bool isCanvaMode = style.useVisualCanvas && style.canvasElements.isNotEmpty;
 
     pdf.addPage(
@@ -140,7 +173,7 @@ class CertificatePdfGenerator {
 
               // B. Content Layer
               if (isCanvaMode)
-              // CANVA-STYLE VISUAL MODE: 1:1 Center-Anchor Proportional Points
+              // CANVA-STYLE VISUAL MODE: 1:1 Matching Point Coordinates
                 ...style.canvasElements.map((element) {
                   return _buildCanvaElementPdfWidget(
                     element: element,
@@ -153,6 +186,9 @@ class CertificatePdfGenerator {
                     signatureImage: signatureImage,
                     qrVerificationUrl: qrVerificationUrl,
                     verificationId: verificationId,
+                    fontCache: fontCache,
+                    fallbackBaseFont: baseFont,
+                    fallbackBoldFont: boldFont,
                   );
                 })
               else
@@ -210,10 +246,12 @@ class CertificatePdfGenerator {
     required Uint8List? signatureImage,
     required String qrVerificationUrl,
     required String verificationId,
+    required Map<String, pw.Font> fontCache,
+    required pw.Font fallbackBaseFont,
+    required pw.Font fallbackBoldFont,
   }) {
-    final bool isItalic = element.fontFamily.toLowerCase() == 'script';
-    final elemBaseFont = _resolvePdfFont(element.fontFamily, isItalic: isItalic);
-    final elemBoldFont = _resolvePdfFont(element.fontFamily, isBold: true, isItalic: isItalic);
+    final elemBaseFont = fontCache['${element.fontFamily}_normal'] ?? fallbackBaseFont;
+    final elemBoldFont = fontCache['${element.fontFamily}_bold'] ?? fallbackBoldFont;
 
     final double elementWidth = (element.width ?? 0.84) * pageWidth;
     final double pixelCenterX = element.x * pageWidth;

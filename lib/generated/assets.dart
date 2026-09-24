@@ -39,6 +39,8 @@ class $AssetsPresentationGen {
 class $AssetsDialogsGen {
   const $AssetsDialogsGen();
 
+  final String manageParticulars =
+      'lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart';
   final String newTransactionDialog =
       'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
   final String receiptDetailDialog =
