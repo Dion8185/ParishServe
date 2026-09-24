@@ -2,11 +2,18 @@ class OtpRateLimiter {
   // In-memory record of resend timestamps keyed by email
   static final Map<String, List<DateTime>> _resendHistory = {};
 
+  // Tracks active password recovery requests: email -> timestamp
+  static final Map<String, DateTime> _activeRecoveryRequests = {};
+
+  // Tracks active signup verification requests: email -> timestamp
+  static final Map<String, DateTime> _activeSignupRequests = {};
+
   static const int maxResendsPerHour = 3;
   static const Duration cooldownDuration = Duration(seconds: 60);
   static const Duration windowDuration = Duration(hours: 1);
+  static const Duration otpValidityDuration = Duration(hours: 1);
 
-  /// Cleans up attempts older than 1 hour
+  /// Cleans up resend attempts older than 1 hour
   static List<DateTime> _getRecentAttempts(String email) {
     final now = DateTime.now();
     final cleanEmail = email.trim().toLowerCase();
@@ -15,6 +22,18 @@ class OtpRateLimiter {
     final recent = history.where((t) => now.difference(t) < windowDuration).toList();
     _resendHistory[cleanEmail] = recent;
     return recent;
+  }
+
+  /// Returns remaining retry quota for the current 1-hour window (e.g., 2 of 3)
+  static int getRemainingAttempts(String email) {
+    final recent = _getRecentAttempts(email);
+    final remaining = maxResendsPerHour - recent.length;
+    return remaining > 0 ? remaining : 0;
+  }
+
+  /// Returns total attempts used within the current 1-hour window
+  static int getAttemptsUsed(String email) {
+    return _getRecentAttempts(email).length;
   }
 
   /// Checks if user is currently within the 60-second cooldown
@@ -68,8 +87,60 @@ class OtpRateLimiter {
     history.add(DateTime.now());
   }
 
+  // ===========================================================================
+  // ACTIVE OTP TRACKING (PASSWORD RECOVERY & SIGNUP)
+  // ===========================================================================
+
+  /// Records that a password recovery OTP was requested for this email
+  static void recordRecoveryRequest(String email) {
+    final cleanEmail = email.trim().toLowerCase();
+    _activeRecoveryRequests[cleanEmail] = DateTime.now();
+  }
+
+  /// Checks if there is an unexpired recovery OTP active for this email (within 1 hour)
+  static bool hasActiveRecovery(String email) {
+    final cleanEmail = email.trim().toLowerCase();
+    final timestamp = _activeRecoveryRequests[cleanEmail];
+    if (timestamp == null) return false;
+
+    final isStillValid = DateTime.now().difference(timestamp) < otpValidityDuration;
+    if (!isStillValid) {
+      _activeRecoveryRequests.remove(cleanEmail);
+      return false;
+    }
+    return true;
+  }
+
+  /// Clears recovery state when password is reset successfully
+  static void clearRecovery(String email) {
+    _activeRecoveryRequests.remove(email.trim().toLowerCase());
+  }
+
+  /// Records that a signup confirmation OTP was requested for this email
+  static void recordSignupRequest(String email) {
+    final cleanEmail = email.trim().toLowerCase();
+    _activeSignupRequests[cleanEmail] = DateTime.now();
+  }
+
+  /// Checks if there is an unexpired signup OTP active for this email
+  static bool hasActiveSignup(String email) {
+    final cleanEmail = email.trim().toLowerCase();
+    final timestamp = _activeSignupRequests[cleanEmail];
+    if (timestamp == null) return false;
+
+    final isStillValid = DateTime.now().difference(timestamp) < otpValidityDuration;
+    if (!isStillValid) {
+      _activeSignupRequests.remove(cleanEmail);
+      return false;
+    }
+    return true;
+  }
+
   /// Clears rate limit data when account is successfully verified
   static void clearHistory(String email) {
-    _resendHistory.remove(email.trim().toLowerCase());
+    final clean = email.trim().toLowerCase();
+    _resendHistory.remove(clean);
+    _activeSignupRequests.remove(clean);
+    _activeRecoveryRequests.remove(clean);
   }
 }
