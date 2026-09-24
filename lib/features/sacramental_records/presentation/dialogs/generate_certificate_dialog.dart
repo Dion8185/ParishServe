@@ -140,7 +140,7 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
     if (_selectedTemplate == null) return;
 
     final previewVerificationId = 'PREVIEW-${DateTime.now().millisecondsSinceEpoch % 10000}';
-    final previewQrUrl = '${CertificateService.verificationBaseUrl}?v=$previewVerificationId';
+    final previewQrUrl = CertificateService.buildVerificationUrl(previewVerificationId);
 
     showDialog(
       context: context,
@@ -180,7 +180,7 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
     );
   }
 
-  /// Executes final certificate compilation, database record issuance, and printing
+  /// Single-pass generation: creates permanent token upfront, compiles PDF, records issuance, and prints
   Future<void> _issueAndPrintCertificate() async {
     if (_selectedTemplate == null) return;
 
@@ -191,19 +191,22 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
 
     try {
       final renderedWording = _buildRenderedPreviewText();
-      final tempVerificationId = 'VERIFY-TOKEN-PENDING';
 
-      // 1. Generate initial PDF to register with physical token
+      // 1. Generate the permanent cryptographic token upfront
+      final verificationId = CertificateService.generateSecureVerificationId();
+      final qrVerificationUrl = CertificateService.buildVerificationUrl(verificationId);
+
+      // 2. Compile the official print-ready PDF containing the live dynamic verification QR code
       final pdfBytes = await CertificatePdfGenerator.generatePdf(
         template: _selectedTemplate!,
         sacramentType: widget.sacramentType,
         recordData: widget.rawRecordData,
         purpose: _effectivePurpose,
-        verificationId: tempVerificationId,
-        qrVerificationUrl: '${CertificateService.verificationBaseUrl}?v=$tempVerificationId',
+        verificationId: verificationId,
+        qrVerificationUrl: qrVerificationUrl,
       );
 
-      // 2. Issue persistent certificate record in public.certificate_issuances
+      // 3. Save the permanent issuance record in public.certificate_issuances with matching token
       final issuance = await CertificateService.issueCertificate(
         recordId: widget.recordId,
         sacramentType: widget.sacramentType,
@@ -216,35 +219,26 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
         lineNumber: widget.rawRecordData['line_number']?.toString(),
         registryReference: widget.bookRef,
         generatedPdfBytes: pdfBytes,
-      );
-
-      // 3. Compile the finalized PDF containing the permanent Verification ID & QR URL
-      final finalizedPdfBytes = await CertificatePdfGenerator.generatePdf(
-        template: _selectedTemplate!,
-        sacramentType: widget.sacramentType,
-        recordData: widget.rawRecordData,
-        purpose: _effectivePurpose,
-        verificationId: issuance.verificationId,
-        qrVerificationUrl: issuance.qrVerificationUrl,
+        verificationId: verificationId,
+        qrVerificationUrl: qrVerificationUrl,
       );
 
       if (!mounted) return;
 
-      // 4. Close dialog and launch system print dialog
+      // 4. Close dialog and launch print engine
       Navigator.pop(context);
-
       widget.onCertificateIssued?.call();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Certificate ${issuance.issuanceId} issued successfully! Launching print engine...'),
+          content: Text('Certificate ${issuance.issuanceId} issued! Launching print engine...'),
           backgroundColor: ParishColors.oliveGreen,
           duration: const Duration(seconds: 4),
         ),
       );
 
       await CertificatePdfGenerator.printCertificate(
-        pdfBytes: finalizedPdfBytes,
+        pdfBytes: pdfBytes,
         documentTitle: '${widget.sacramentType}_Certificate_${widget.recipientName.replaceAll(' ', '_')}',
       );
     } catch (e) {
@@ -336,7 +330,7 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                 ),
               ],
 
-              // Recipient summary pill
+              // Recipient summary banner
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(

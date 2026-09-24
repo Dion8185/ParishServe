@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/certificate_issuance_model.dart';
@@ -22,17 +23,42 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
   @override
   void initState() {
     super.initState();
-    if (widget.initialVerificationId != null &&
-        widget.initialVerificationId!.trim().isNotEmpty) {
-      _tokenController.text = widget.initialVerificationId!.trim();
-      _performVerification(widget.initialVerificationId!.trim());
-    }
+    _resolveAndVerifyToken();
   }
 
   @override
   void dispose() {
     _tokenController.dispose();
     super.dispose();
+  }
+
+  /// Automatically extracts the token from constructor arguments or browser URL
+  void _resolveAndVerifyToken() {
+    String? token = widget.initialVerificationId;
+
+    // If no token was passed via constructor, extract directly from web address bar
+    if ((token == null || token.trim().isEmpty) && kIsWeb) {
+      final uri = Uri.base;
+
+      // 1. Check standard query parameter: https://app.web.app/verify?v=TOKEN
+      if (uri.queryParameters.containsKey('v')) {
+        token = uri.queryParameters['v'];
+      }
+      // 2. Check hash routing format: https://app.web.app/#/verify?v=TOKEN
+      else if (uri.hasFragment) {
+        try {
+          final fragmentUri = Uri.parse(uri.fragment);
+          if (fragmentUri.queryParameters.containsKey('v')) {
+            token = fragmentUri.queryParameters['v'];
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (token != null && token.trim().isNotEmpty) {
+      _tokenController.text = token.trim();
+      _performVerification(token.trim());
+    }
   }
 
   Future<void> _performVerification(String tokenId) async {
@@ -230,7 +256,6 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Banner
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
@@ -260,7 +285,6 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
               ],
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.all(22),
             child: Column(
