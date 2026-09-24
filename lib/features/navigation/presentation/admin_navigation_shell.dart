@@ -3,6 +3,7 @@ import '../../../../core/constants/colors.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/presentation/admin_users_page.dart';
 import '../../auth/services/auth_service.dart';
+import '../../dashboard/presentation/admin_dashboard_view.dart';
 import '../../profile/presentation/profile_view.dart';
 
 class AdminNavigationShell extends StatefulWidget {
@@ -22,6 +23,10 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
   void initState() {
     super.initState();
     _views = [
+      AdminDashboardView(
+        currentUser: widget.currentUser,
+        onNavigateTab: (targetIndex) => setState(() => _currentIndex = targetIndex),
+      ),
       const AdminUsersPage(),
       _buildSystemHealthView(),
       ProfileView(currentUser: widget.currentUser),
@@ -68,7 +73,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
                 Expanded(
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1200),
+                      constraints: const BoxConstraints(maxWidth: 1400),
                       child: ClipRRect(
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(30),
@@ -97,6 +102,9 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Desktop Sidebar Navigation
+  // ---------------------------------------------------------------------------
   Widget _buildDesktopSidebar() {
     final isSuperAdmin = widget.currentUser.userRole.toLowerCase() == 'superadmin';
 
@@ -146,11 +154,13 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               children: [
-                _buildSidebarItem(index: 0, label: 'User Governance', icon: Icons.manage_accounts_outlined, activeIcon: Icons.manage_accounts),
+                _buildSidebarItem(index: 0, label: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
                 const SizedBox(height: 8),
-                _buildSidebarItem(index: 1, label: 'System Health & Config', icon: Icons.settings_suggest_outlined, activeIcon: Icons.settings_suggest),
+                _buildSidebarItem(index: 1, label: 'User Governance', icon: Icons.manage_accounts_outlined, activeIcon: Icons.manage_accounts),
                 const SizedBox(height: 8),
-                _buildSidebarItem(index: 2, label: 'Admin Profile', icon: Icons.person_outline, activeIcon: Icons.person),
+                _buildSidebarItem(index: 2, label: 'System Health & Config', icon: Icons.settings_suggest_outlined, activeIcon: Icons.settings_suggest),
+                const SizedBox(height: 8),
+                _buildSidebarItem(index: 3, label: 'Admin Profile', icon: Icons.person_outline, activeIcon: Icons.person),
               ],
             ),
           ),
@@ -250,6 +260,9 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Mobile App Bar & Navigation Bar
+  // ---------------------------------------------------------------------------
   PreferredSizeWidget _buildMobileTopBar() {
     return PreferredSize(
       preferredSize: const Size.fromHeight(70),
@@ -325,6 +338,11 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
           height: 65,
           destinations: const [
             NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard, color: ParishColors.marianBlue),
+              label: 'Dashboard',
+            ),
+            NavigationDestination(
               icon: Icon(Icons.manage_accounts_outlined),
               selectedIcon: Icon(Icons.manage_accounts, color: ParishColors.marianBlue),
               label: 'Users',
@@ -345,6 +363,9 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Infrastructure Diagnostics & Diocesan Tenant Scaling
+  // ---------------------------------------------------------------------------
   Widget _buildSystemHealthView() {
     final isSuperAdmin = widget.currentUser.userRole.toLowerCase() == 'superadmin';
 
@@ -428,7 +449,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
 
           const SizedBox(height: 24),
 
-          // Superadmin Multi-Parish Tenant Preview
+          // Superadmin Multi-Parish Tenant Scaling Preview
           Text('Diocesan Multi-Parish Scaling', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 4),
           Text('Tenant management for future multi-parish deployments', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),

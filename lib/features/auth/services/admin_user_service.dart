@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import 'auth_service.dart';
@@ -19,7 +18,7 @@ class AdminUserService {
 
     final callerRole = AuthService.currentUser?.userRole.toLowerCase() ?? '';
 
-    // Normal admin can see operational staff and parishioners, but not other admins/superadmins
+    // Normal admin can manage operational staff and parishioners, but not other admins/superadmins
     if (callerRole == 'admin') {
       return allUsers.where((u) {
         final r = u.userRole.toLowerCase();
@@ -31,7 +30,7 @@ class AdminUserService {
     return allUsers;
   }
 
-  /// Create a new user account with Supabase Auth registration
+  /// Create a new user account atomically across auth.users and public.users via RPC
   static Future<UserModel> createUser({
     required String username,
     required String email,
@@ -51,60 +50,23 @@ class AdminUserService {
     final cleanEmail = email.trim();
     final cleanUsername = username.trim();
 
-    // Check uniqueness in public.users
-    final existingUser = await _client
-        .from('users')
-        .select('username')
-        .or('username.eq.$cleanUsername,email.eq.$cleanEmail')
-        .maybeSingle();
+    // Call the PostgreSQL function which atomically provisions auth.users,
+    // auto-confirms the email, hashes the password, and inserts into public.users.
+    final response = await _client.rpc('admin_create_user', params: {
+      'p_email': cleanEmail,
+      'p_password': password,
+      'p_username': cleanUsername,
+      'p_first_name': firstName.trim(),
+      'p_last_name': lastName.trim(),
+      'p_user_role': userRole,
+    });
 
-    if (existingUser != null) {
-      throw 'An account with that username or email already exists.';
+    if (response == null) {
+      throw 'Failed to provision user. Empty response received from server.';
     }
 
-    // Provision in Supabase Auth using an isolated client instance
-    // (This prevents the active Admin's current session from being overwritten)
-    try {
-      final tempClient = SupabaseClient(
-        'https://wdosrvmkgdrkcotlkzgi.supabase.co',
-        'sb_publishable_wzE6ee-MEqpM8Qz7H8awDQ_4q1i2oJq',
-        authOptions: const AuthClientOptions(autoRefreshToken: false),
-      );
-
-      await tempClient.auth.signUp(
-        email: cleanEmail,
-        password: password,
-        data: {
-          'username': cleanUsername,
-          'first_name': firstName.trim(),
-          'last_name': lastName.trim(),
-        },
-      );
-    } catch (e) {
-      debugPrint('Notice: Supabase Auth provision response: $e');
-    }
-
-    final userId = await _generateUserId();
-
-    final userMap = {
-      'user_id': userId,
-      'username': cleanUsername,
-      'email': cleanEmail,
-      'password': password,
-      'first_name': firstName.trim(),
-      'last_name': lastName.trim(),
-      'user_role': userRole,
-      'account_status': true,
-      'created_at': DateTime.now().toIso8601String(),
-    };
-
-    final response = await _client
-        .from('users')
-        .insert(userMap)
-        .select()
-        .single();
-
-    return UserModel.fromMap(response);
+    final userMap = Map<String, dynamic>.from(response as Map);
+    return UserModel.fromMap(userMap);
   }
 
   /// Update an existing user account
@@ -148,7 +110,8 @@ class AdminUserService {
     }).eq('user_id', targetUserId);
   }
 
-  static Future<String> _generateUserId() async {
+  /// Fallback generator for sequential User IDs (used when needed outside RPC)
+  static Future<String> generateUserId() async {
     final now = DateTime.now();
     final yearSuffix = (now.year % 100).toString().padLeft(2, '0');
 
