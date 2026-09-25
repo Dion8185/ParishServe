@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../models/receipt_template_model.dart';
 import '../../services/receipt_pdf_generator.dart';
+import '../../services/receipt_template_service.dart';
+import '../pages/receipt_template_management_page.dart';
 
 void showReceiptDetailModal(
     BuildContext context, {
@@ -53,12 +56,103 @@ class _ReceiptDetailDialog extends StatefulWidget {
   State<_ReceiptDetailDialog> createState() => _ReceiptDetailDialogState();
 }
 
+class _ItemizedLine {
+  final String title;
+  final String rateInfo;
+  final String itemAmount;
+
+  const _ItemizedLine({
+    required this.title,
+    required this.rateInfo,
+    required this.itemAmount,
+  });
+}
+
 class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
   bool _isPrinting = false;
+  List<ReceiptTemplateModel> _templates = [];
+  ReceiptTemplateModel? _selectedTemplate;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTemplates();
+  }
+
+  Future<void> _loadTemplates() async {
+    try {
+      final list = await ReceiptTemplateService.getAllTemplates();
+      if (!mounted) return;
+      setState(() {
+        _templates = list;
+        if (list.isNotEmpty) {
+          _selectedTemplate = list.firstWhere((t) => t.isDefault, orElse: () => list.first);
+        }
+      });
+    } catch (_) {}
+  }
 
   double get _numericAmount {
-    final clean = widget.amount.replaceAll('₱', '').replaceAll(',', '').trim();
+    final clean = widget.amount.replaceAll(RegExp(r'[^0-9.]'), '');
     return double.tryParse(clean) ?? 0.0;
+  }
+
+  String get _displayPaymentMode {
+    final lower = widget.paymentMode.toLowerCase();
+    if (lower == 'cash' || lower.contains('cash')) return 'Cash';
+    if (lower == 'gcash' || lower.contains('gcash')) return 'GCash';
+    if (lower == 'gratis' || lower.contains('gratis')) return 'Gratis';
+
+    final details = widget.transactionDetails?.toLowerCase() ?? '';
+    if (details.contains('tender mode: gcash') || details.contains('gcash ref')) return 'GCash';
+    if (details.contains('tender mode: gratis')) return 'Gratis';
+    return 'Cash';
+  }
+
+  /// Parses the stored transaction_details text into itemized rows with individual amounts
+  (List<_ItemizedLine>, String?) _parseLineItems() {
+    final text = widget.transactionDetails;
+    if (text == null || text.trim().isEmpty) {
+      return (
+      [_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'P ${_numericAmount.toStringAsFixed(2)}')],
+      null
+      );
+    }
+
+    final rawLines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    final List<_ItemizedLine> items = [];
+    final List<String> notes = [];
+
+    for (final raw in rawLines) {
+      final clean = raw.replaceAll('•', '').replaceAll('-', '').trim();
+
+      // Check if it's an item line containing pricing information (e.g. '@ 150.00 = 150.00')
+      if (clean.contains('@') && clean.contains('=')) {
+        final parts = clean.split('=');
+        final leftSide = parts[0].trim();
+        final rightAmount = parts.length > 1 ? parts[1].trim() : '';
+
+        // Extract title and rate
+        final atParts = leftSide.split('@');
+        final title = atParts[0].trim();
+        final rate = atParts.length > 1 ? '@ ${atParts[1].trim()}' : '';
+
+        final formattedAmt = rightAmount.startsWith('P') ? rightAmount : 'P $rightAmount';
+        items.add(_ItemizedLine(title: title, rateInfo: rate, itemAmount: formattedAmt));
+      } else if (clean.startsWith('Remarks:') || clean.startsWith('GCash Ref:') || clean.startsWith('Tender:')) {
+        notes.add(clean);
+      } else if (!clean.toLowerCase().contains('cash tendered')) {
+        // General text item
+        items.add(_ItemizedLine(title: clean, rateInfo: '', itemAmount: ''));
+      }
+    }
+
+    if (items.isEmpty) {
+      items.add(_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'P ${_numericAmount.toStringAsFixed(2)}'));
+    }
+
+    final combinedNotes = notes.isNotEmpty ? notes.join(' | ') : null;
+    return (items, combinedNotes);
   }
 
   Future<void> _handlePrint() async {
@@ -71,8 +165,9 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
         relatedService: widget.purpose,
         transactionDetails: widget.transactionDetails ?? widget.purpose,
         amount: _numericAmount,
-        paymentMode: widget.paymentMode,
+        paymentMode: _displayPaymentMode,
         dateString: widget.date,
+        template: _selectedTemplate,
       );
     } catch (e) {
       if (!mounted) return;
@@ -88,6 +183,9 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
   Widget build(BuildContext context) {
     final textColorMuted = ParishColors.textMuted;
     final textDark = ParishColors.textDark;
+    final parsed = _parseLineItems();
+    final itemizedList = parsed.$1;
+    final notes = parsed.$2;
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -145,13 +243,14 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Payment Mode:', style: TextStyle(fontSize: 12.5, color: textColorMuted)),
-                Text(widget.paymentMode.toUpperCase(), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
+                Text(_displayPaymentMode.toUpperCase(), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
               ],
             ),
             const Divider(height: 20),
 
-            Text('PURPOSE / PARTICULARS:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColorMuted)),
-            const SizedBox(height: 4),
+            // Itemized Particulars Box with individual amounts per item
+            Text('ITEMIZED PARTICULARS & OFFERINGS:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColorMuted)),
+            const SizedBox(height: 6),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
@@ -160,14 +259,60 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: ParishColors.borderGrey),
               ),
-              child: Text(
-                (widget.transactionDetails != null && widget.transactionDetails!.isNotEmpty)
-                    ? widget.transactionDetails!
-                    : widget.purpose,
-                style: TextStyle(fontSize: 12.5, color: textDark, height: 1.4),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('ITEM DESCRIPTION', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColorMuted)),
+                      Text('AMOUNT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColorMuted)),
+                    ],
+                  ),
+                  const Divider(height: 14),
+                  ...itemizedList.map((item) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.title,
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: textDark),
+                                ),
+                                if (item.rateInfo.isNotEmpty)
+                                  Text(
+                                    item.rateInfo,
+                                    style: TextStyle(fontSize: 11, color: textColorMuted),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            item.itemAmount,
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  if (notes != null) ...[
+                    const Divider(height: 14),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        notes,
+                        style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: textColorMuted),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
             Container(
               padding: const EdgeInsets.all(14),
@@ -181,12 +326,52 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                 children: [
                   const Text('Total Amount Paid:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                   Text(
-                    widget.amount,
+                    'P ${_numericAmount.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 14),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Print Template:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
+                TextButton(
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
+                    ).then((_) => _loadTemplates());
+                  },
+                  child: const Text('Manage Templates', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            if (_templates.isNotEmpty)
+              DropdownButtonFormField<ReceiptTemplateModel>(
+                value: _selectedTemplate,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  border: OutlineInputBorder(),
+                ),
+                items: _templates.map((tpl) {
+                  return DropdownMenuItem(
+                    value: tpl,
+                    child: Text(
+                      '${tpl.templateName} (${tpl.paperSize})',
+                      style: const TextStyle(fontSize: 12.5),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _selectedTemplate = val);
+                },
+              ),
           ],
         ),
       ),
@@ -205,7 +390,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
           icon: _isPrinting
               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
               : const Icon(Icons.print, size: 18),
-          label: Text(_isPrinting ? 'Printing...' : 'Print / Reprint Receipt'),
+          label: Text(_isPrinting ? 'Printing...' : 'Print Official Receipt'),
         ),
       ],
     );

@@ -168,7 +168,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
               autofocus: true,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               decoration: const InputDecoration(
-                prefixText: '₱ ',
+                prefixText: 'P ',
                 labelText: 'Amount (PHP)',
                 border: OutlineInputBorder(),
               ),
@@ -231,20 +231,26 @@ class _PosCashierPageState extends State<PosCashierPage> {
       builder: (ctx) => _CheckoutModal(
         cartItems: _cart,
         totalAmount: _subtotal,
-        onPaid: (Map<String, dynamic> result) {
+        onPaid: (Map<String, dynamic> result, String chosenTenderMode) {
           _clearCart();
           widget.onTransactionCompleted?.call();
-          _showReceiptSuccessDialog(result);
+          _showReceiptSuccessDialog(result, chosenTenderMode);
         },
       ),
     );
   }
 
-  void _showReceiptSuccessDialog(Map<String, dynamic> record) {
+  void _showReceiptSuccessDialog(Map<String, dynamic> record, String chosenTenderMode) {
     final receiptNo = record['receipt_number'] ?? 'REC-XXXX';
     final payer = record['payor_name'] ?? 'Walk-In Parishioner';
     final service = record['related_service'] ?? 'Parish Offering';
-    final amount = '₱ ${(record['transaction_amount'] as num?)?.toStringAsFixed(2) ?? "0.00"}';
+
+    final rawAmount = record['transaction_amount'];
+    final double amountVal = (rawAmount is num)
+        ? rawAmount.toDouble()
+        : (double.tryParse(rawAmount?.toString() ?? '0') ?? _subtotal);
+
+    final amount = 'P ${amountVal.toStringAsFixed(2)}';
     final date = record['transaction_date']?.toString().substring(0, 10) ?? 'Today';
 
     showReceiptDetailModal(
@@ -256,7 +262,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
       date: date,
       payorContact: record['payor_contact'],
       transactionDetails: record['transaction_details'],
-      paymentMode: record['transaction_type'] ?? 'Cash',
+      paymentMode: chosenTenderMode,
     );
   }
 
@@ -422,7 +428,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
           ),
           const SizedBox(height: 14),
 
-          // Category Filter Chips
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -548,7 +553,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    item.allowsCustomPrice ? 'Custom / Tithe' : '₱ ${item.defaultPrice.toStringAsFixed(0)}',
+                    item.allowsCustomPrice ? 'Custom / Tithe' : 'P ${item.defaultPrice.toStringAsFixed(0)}',
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
@@ -684,7 +689,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                           ),
                           Text(
-                            '₱ ${cartItem.customPrice.toStringAsFixed(2)} each',
+                            'P ${cartItem.customPrice.toStringAsFixed(2)} each',
                             style: TextStyle(fontSize: 11, color: textMuted),
                           ),
                         ],
@@ -713,7 +718,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '₱ ${cartItem.total.toStringAsFixed(2)}',
+                      'P ${cartItem.total.toStringAsFixed(2)}',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                     ),
                   ],
@@ -731,7 +736,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Subtotal:', style: TextStyle(fontSize: 13, color: textMuted)),
-                  Text('₱ ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
+                  Text('P ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
                 ],
               ),
               const SizedBox(height: 6),
@@ -740,7 +745,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 children: [
                   Text('Total Amount Due:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
                   Text(
-                    '₱ ${_subtotal.toStringAsFixed(2)}',
+                    'P ${_subtotal.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                   ),
                 ],
@@ -785,7 +790,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
             children: [
               Text('$_totalItemCount items in slip', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
               Text(
-                '₱ ${_subtotal.toStringAsFixed(2)}',
+                'P ${_subtotal.toStringAsFixed(2)}',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
               ),
             ],
@@ -811,7 +816,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
 class _CheckoutModal extends StatefulWidget {
   final List<PosCartItem> cartItems;
   final double totalAmount;
-  final Function(Map<String, dynamic> transactionRecord) onPaid;
+  final Function(Map<String, dynamic> transactionRecord, String paymentMode) onPaid;
 
   const _CheckoutModal({
     required this.cartItems,
@@ -838,6 +843,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
   @override
   void initState() {
     super.initState();
+    // Default cash tendered to total amount
     _tenderedController.text = widget.totalAmount.toStringAsFixed(2);
     _tenderedController.addListener(() => setState(() {}));
   }
@@ -871,7 +877,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_paymentMode == 'Cash' && _tenderedAmount < widget.totalAmount) {
-      setState(() => _errorMessage = 'Tendered cash is less than the total amount due.');
+      setState(() => _errorMessage = 'Tendered cash is less than total amount due.');
       return;
     }
 
@@ -889,18 +895,20 @@ class _CheckoutModalState extends State<_CheckoutModal> {
         summaryServices = '${summaryServices.substring(0, 87)}...';
       }
 
+      // Line items stored cleanly
       final lineDetails = widget.cartItems
-          .map((c) => '• ${c.item.title} x${c.quantity} @ ₱${c.customPrice.toStringAsFixed(2)} = ₱${c.total.toStringAsFixed(2)}')
+          .map((c) => '- ${c.item.title} x${c.quantity} @ P ${c.customPrice.toStringAsFixed(2)} = P ${c.total.toStringAsFixed(2)}')
           .join('\n');
 
+      // Notes saved into transaction details for audit trail
       final remarksText = [
-        if (_paymentMode == 'Cash') 'Cash Tendered: ₱${_tenderedAmount.toStringAsFixed(2)} (Change: ₱${_changeAmount.toStringAsFixed(2)})',
+        if (_paymentMode == 'Cash') 'Cash Tendered: P ${_tenderedAmount.toStringAsFixed(2)} (Change: P ${_changeAmount.toStringAsFixed(2)})',
         if (_paymentMode == 'GCash') 'GCash Ref: ${_gcashRefController.text.trim()}',
         if (_paymentMode == 'Gratis') 'Canonical Gratis / Exemption granted by Secretariat.',
         if (_remarksController.text.trim().isNotEmpty) 'Remarks: ${_remarksController.text.trim()}',
       ].join(' | ');
 
-      final fullDetails = '$lineDetails\n$remarksText';
+      final fullDetails = remarksText.isNotEmpty ? '$lineDetails\n$remarksText' : lineDetails;
       final resolvedType = _resolveTransactionTypeCategory();
 
       final record = await SecretaryService.createTransaction(
@@ -914,7 +922,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
 
       if (!mounted) return;
       Navigator.pop(context);
-      widget.onPaid(record);
+      widget.onPaid(record, _paymentMode);
     } catch (e) {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -1008,7 +1016,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('Total Amount Payable:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark)),
-                            Text('₱ ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+                            Text('P ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
                           ],
                         ),
                       ),
@@ -1063,6 +1071,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                       ),
                       const SizedBox(height: 14),
 
+                      // CASH TENDERED & CHANGE COMPUTATION PRESERVED IN MODAL CARD
                       if (_paymentMode == 'Cash') ...[
                         Row(
                           children: [
@@ -1070,7 +1079,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Cash Tendered (P) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   TextFormField(
                                     controller: _tenderedController,
@@ -1086,7 +1095,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Change Due (P)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   Container(
                                     height: 48,
@@ -1098,7 +1107,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                                       border: Border.all(color: borderGrey),
                                     ),
                                     child: Text(
-                                      '₱ ${_changeAmount.toStringAsFixed(2)}',
+                                      'P ${_changeAmount.toStringAsFixed(2)}',
                                       style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.bold,

@@ -32,7 +32,7 @@ class _CertificateCanvasDesignerPageState
     {'id': 'trebuchet', 'name': 'Trebuchet / Display Sans'},
   ];
 
-  // Preset Color Swatches for Canva Toolbar
+  // Preset Color Swatches for Visual Toolbar
   static const List<Map<String, dynamic>> _colorSwatches = [
     {'name': 'Dark Slate', 'hex': '#1E293B', 'color': Color(0xFF1E293B)},
     {'name': 'Marian Navy', 'hex': '#164E87', 'color': Color(0xFF164E87)},
@@ -406,7 +406,7 @@ class _CertificateCanvasDesignerPageState
                         color: ParishColors.marianBlueSurface,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text('1:1 CANVA STUDIO', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                      child: const Text('1:1 Visual Canvas', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(

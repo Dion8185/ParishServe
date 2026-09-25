@@ -15,8 +15,8 @@ class CertificateStyleConfig {
   final String signatoryPosition; // 'bottom-right', 'bottom-center', 'bottom-left'
   final List<String> sectionOrder; // e.g. ['header', 'title', 'body', 'footer']
 
-  // Canva-Style Advanced Mode Toggle & Elements
-  final bool useVisualCanvas; // Toggle between Simple Mode and Canva Drag & Drop
+  //  Advanced Mode Toggle & Elements
+  final bool useVisualCanvas; // Toggle between Simple Mode and Visual Drag & Drop
   final List<CertificateCanvasElement> canvasElements;
 
   const CertificateStyleConfig({

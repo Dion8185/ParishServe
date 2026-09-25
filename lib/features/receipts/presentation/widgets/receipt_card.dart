@@ -9,6 +9,9 @@ class ReceiptCard extends StatelessWidget {
   final String amount;
   final String date;
   final String status;
+  final String? payorContact;
+  final String? transactionDetails;
+  final String paymentMode;
 
   const ReceiptCard({
     super.key,
@@ -18,6 +21,9 @@ class ReceiptCard extends StatelessWidget {
     required this.amount,
     required this.date,
     required this.status,
+    this.payorContact,
+    this.transactionDetails,
+    this.paymentMode = 'Cash',
   });
 
   @override
@@ -30,6 +36,9 @@ class ReceiptCard extends StatelessWidget {
         purpose: purpose,
         amount: amount,
         date: date,
+        payorContact: payorContact,
+        transactionDetails: transactionDetails,
+        paymentMode: paymentMode,
       ),
       borderRadius: BorderRadius.circular(14),
       child: Container(

@@ -781,7 +781,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
   String _signatoryPosition = 'bottom-right';
   List<String> _sectionOrder = ['header', 'title', 'body', 'footer'];
 
-  // Canva-Style Advanced Mode State
+  //  Advanced Mode State
   bool _useVisualCanvas = false;
   List<CertificateCanvasElement> _canvasElements = [];
 
@@ -1166,7 +1166,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const SizedBox(height: 16),
 
-                // 2. TOGGLE: SIMPLE MODE VS. CANVA VISUAL DESIGNER MODE
+                // 2. TOGGLE: SIMPLE MODE VS. VISUAL DESIGNER MODE
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -1226,7 +1226,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                 ),
                 const SizedBox(height: 16),
 
-                // 3. CANVA MODE ACTIVE: OVERWRITE SIMPLE MODE WITH STUDIO BANNER
+                // 3. Visual MODE ACTIVE: OVERWRITE SIMPLE MODE WITH STUDIO BANNER
                 if (_useVisualCanvas) ...[
                   Container(
                     width: double.infinity,
@@ -1268,8 +1268,8 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                             icon: const Icon(Icons.open_in_new, size: 18),
                             label: Text(
                               _canvasElements.isEmpty
-                                  ? 'Open Canva Designer (Separate Page to Save RAM)'
-                                  : 'Open Canva Designer (${_canvasElements.length} Elements Configured)',
+                                  ? 'Open Visual Designer (Separate Page to Save RAM)'
+                                  : 'Open Visual Designer (${_canvasElements.length} Elements Configured)',
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                             ),
                           ),

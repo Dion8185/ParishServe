@@ -120,7 +120,7 @@ class CertificatePdfGenerator {
       ),
     );
 
-    // 3. Preload Canvas Fonts for Canva Visual Mode Elements
+    // 3. Preload Canvas Fonts for Visual Mode Elements
     final Map<String, pw.Font> fontCache = {};
     if (style.useVisualCanvas && style.canvasElements.isNotEmpty) {
       for (final elem in style.canvasElements) {
@@ -173,7 +173,7 @@ class CertificatePdfGenerator {
 
               // B. Content Layer
               if (isCanvaMode)
-              // CANVA-STYLE VISUAL MODE: 1:1 Matching Point Coordinates
+              //  VISUAL MODE: 1:1 Matching Point Coordinates
                 ...style.canvasElements.map((element) {
                   return _buildCanvaElementPdfWidget(
                     element: element,
@@ -232,7 +232,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // 1:1 Canva-Style Unified Coordinate Element Renderer
+  // 1:1  Unified Coordinate Element Renderer
   // ===========================================================================
 
   static pw.Widget _buildCanvaElementPdfWidget({
@@ -505,7 +505,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // Simple Mode Sequential Structured Flow (When Canva Mode is Untoggled)
+  // Simple Mode Sequential Structured Flow (When Visual Mode is Untoggled)
   // ===========================================================================
 
   static List<pw.Widget> _buildSimpleModeWidgets({

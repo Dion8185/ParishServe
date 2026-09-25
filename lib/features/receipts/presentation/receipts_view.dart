@@ -5,6 +5,7 @@ import 'dialogs/manage_particulars_dialog.dart';
 import 'dialogs/new_transaction_dialog.dart';
 import 'dialogs/receipt_detail_dialog.dart';
 import 'pages/pos_cashier_page.dart';
+import 'pages/receipt_template_management_page.dart';
 import 'widgets/receipt_card.dart';
 
 class ReceiptManagementView extends StatefulWidget {
@@ -100,6 +101,15 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     );
   }
 
+  void _openTemplateManager() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ReceiptTemplateManagementPage(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
@@ -128,7 +138,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textDark),
                     ),
                     Text(
-                      'Issue ecclesiastical receipts, process walk-in collections, and manage ledgers',
+                      'Issue ecclesiastical receipts, process walk-in collections, and customize templates',
                       style: TextStyle(color: textMuted, fontSize: 13),
                     ),
                   ],
@@ -136,6 +146,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    IconButton(
+                      icon: const Icon(Icons.style_outlined, color: ParishColors.marianBlue),
+                      onPressed: _openTemplateManager,
+                      tooltip: 'Receipt Templates & Canvas Designer',
+                    ),
                     IconButton(
                       icon: const Icon(Icons.tune, color: ParishColors.marianBlue),
                       onPressed: _openManageParticulars,
@@ -152,7 +167,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
             ),
             const SizedBox(height: 18),
 
-            // Top Action Cards: POS Cashier, Single Record Entry, and Manage Particulars
+            // Top Action Cards: POS Cashier, Single Entry, and Template Studio
             LayoutBuilder(
               builder: (context, constraints) {
                 final isWide = constraints.maxWidth > 700;
@@ -209,10 +224,10 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                             foregroundColor: ParishColors.goldAccent,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: _openManageParticulars,
-                          icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                          onPressed: _openTemplateManager,
+                          icon: const Icon(Icons.design_services_outlined, size: 18),
                           label: const Text(
-                            'Manage Particulars',
+                            'Receipt Templates',
                             style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
                           ),
                         ),
@@ -267,9 +282,9 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                                 foregroundColor: ParishColors.goldAccent,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
-                              onPressed: _openManageParticulars,
-                              icon: const Icon(Icons.inventory_2_outlined, size: 16),
-                              label: const Text('Particulars CRUD', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                              onPressed: _openTemplateManager,
+                              icon: const Icon(Icons.design_services_outlined, size: 16),
+                              label: const Text('Templates', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ),
@@ -331,7 +346,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
             ),
             const SizedBox(height: 20),
 
-            // Search Filter Box
+            // Search Bar
             Container(
               height: 48,
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -370,7 +385,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
             ),
             const SizedBox(height: 20),
 
-            // Receipts Header
+            // Receipts Listing
             Text(
               'Ecclesiastical Receipts (${_filteredTransactions.length})',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
@@ -410,7 +425,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                   final payor = t['payor_name'] ?? 'Parishioner';
                   final service = t['related_service'] ?? t['transaction_type'] ?? 'Parish Service';
                   final amountVal = double.tryParse(t['transaction_amount']?.toString() ?? '0') ?? 0.0;
-                  final amount = '₱ ${amountVal.toStringAsFixed(2)}';
+                  final amount = 'P ${amountVal.toStringAsFixed(2)}';
                   final dateRaw = (t['transaction_date'] ?? t['created_at'] ?? '').toString();
                   final date = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
                   final status = (t['transaction_status'] ?? 'paid').toString().toUpperCase();
@@ -422,6 +437,9 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                     amount: amount,
                     date: date,
                     status: status,
+                    payorContact: t['payor_contact']?.toString(),
+                    transactionDetails: t['transaction_details']?.toString(),
+                    paymentMode: (t['transaction_type'] ?? 'cash').toString(),
                   );
                 }),
           ],

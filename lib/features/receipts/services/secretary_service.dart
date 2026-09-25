@@ -150,7 +150,7 @@ class SecretaryService {
           .order('receipt_number', ascending: false)
           .limit(20);
 
-      int highest = 890;
+      int highest = 0;
       for (final item in res) {
         final rNo = item['receipt_number']?.toString() ?? '';
         final parts = rNo.split('-');

@@ -1,15 +1,16 @@
 class CertificateCanvasElement {
   final String id;
-  final String elementType; // 'text', 'placeholder', 'title', 'header', 'qr', 'signatory'
-  final String text; // Static wording or placeholder tag like '{Full Name}'
+  final String elementType; // 'text', 'textbox', 'placeholder', 'title', 'header', 'qr', 'signatory', 'parish_seal', 'diocese_seal'
+  final String text; // Static wording or placeholder tag like '{Full Name}', '{Amount in Words}'
   final double x; // Normalized horizontal coordinate (0.0 to 1.0)
   final double y; // Normalized vertical coordinate (0.0 to 1.0)
-  final double? width; // Optional bounding width
+  final double? width; // Normalized bounding width (0.0 to 1.0)
+  final double? height; // Normalized bounding height (0.0 to 1.0) for resizable boxes
   final double fontSize;
   final String fontWeight; // 'bold', 'normal'
-  final String fontFamily; // 'serif', 'sans', 'courier'
+  final String fontFamily; // 'serif', 'sans', 'courier', 'cinzel', etc.
   final String colorHex; // e.g. '#164E87', '#D49B18', '#1E293B'
-  final String textAlign; // 'center', 'left', 'right'
+  final String textAlign; // 'center', 'left', 'right', 'justify'
 
   const CertificateCanvasElement({
     required this.id,
@@ -18,6 +19,7 @@ class CertificateCanvasElement {
     required this.x,
     required this.y,
     this.width,
+    this.height,
     this.fontSize = 12.0,
     this.fontWeight = 'normal',
     this.fontFamily = 'serif',
@@ -34,6 +36,7 @@ class CertificateCanvasElement {
     double? x,
     double? y,
     double? width,
+    double? height,
     double? fontSize,
     String? fontWeight,
     String? fontFamily,
@@ -47,6 +50,7 @@ class CertificateCanvasElement {
       x: x ?? this.x,
       y: y ?? this.y,
       width: width ?? this.width,
+      height: height ?? this.height,
       fontSize: fontSize ?? this.fontSize,
       fontWeight: fontWeight ?? this.fontWeight,
       fontFamily: fontFamily ?? this.fontFamily,
@@ -63,6 +67,7 @@ class CertificateCanvasElement {
       x: (map['x'] as num?)?.toDouble() ?? 0.5,
       y: (map['y'] as num?)?.toDouble() ?? 0.5,
       width: (map['width'] as num?)?.toDouble(),
+      height: (map['height'] as num?)?.toDouble(),
       fontSize: (map['fontSize'] as num?)?.toDouble() ?? 12.0,
       fontWeight: map['fontWeight']?.toString() ?? 'normal',
       fontFamily: map['fontFamily']?.toString() ?? 'serif',
@@ -79,6 +84,7 @@ class CertificateCanvasElement {
       'x': x,
       'y': y,
       'width': width,
+      'height': height,
       'fontSize': fontSize,
       'fontWeight': fontWeight,
       'fontFamily': fontFamily,
