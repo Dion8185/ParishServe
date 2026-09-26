@@ -18,7 +18,146 @@ class CertificatePdfGenerator {
   static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
-  /// Converts a hex color string (e.g. #164E87) to PdfColor
+  // In-memory cache for loaded Unicode TrueType fonts
+  static final Map<String, pw.Font> _fontCache = {};
+
+  // ===========================================================================
+  // Unicode TrueType Font Resolver (Resolves "no Unicode support" warnings)
+  // ===========================================================================
+  static Future<pw.Font> _resolveUnicodePdfFont(
+      String fontFamily, {
+        bool isBold = false,
+        bool isItalic = false,
+      }) async {
+    final cacheKey =
+        '${fontFamily.toLowerCase()}_${isBold ? "b" : "r"}_${isItalic ? "i" : "n"}';
+
+    if (_fontCache.containsKey(cacheKey)) {
+      return _fontCache[cacheKey]!;
+    }
+
+    pw.Font? loadedFont;
+
+    try {
+      switch (fontFamily.toLowerCase()) {
+        case 'sans':
+        case 'trebuchet':
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.arimoBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.arimoBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.arimoItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.arimoRegular();
+          }
+          break;
+        case 'courier':
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.cousineBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.cousineBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.cousineItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.cousineRegular();
+          }
+          break;
+        case 'cinzel':
+          if (isBold) {
+            loadedFont = await PdfGoogleFonts.cinzelBold();
+          } else {
+            loadedFont = await PdfGoogleFonts.cinzelRegular();
+          }
+          break;
+        case 'garamond':
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.eBGaramondBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.eBGaramondBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.eBGaramondItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.eBGaramondRegular();
+          }
+          break;
+        case 'script':
+          if (isBold) {
+            loadedFont = await PdfGoogleFonts.caveatBold();
+          } else {
+            loadedFont = await PdfGoogleFonts.caveatRegular();
+          }
+          break;
+        case 'georgia':
+        case 'serif':
+        default:
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.tinosBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.tinosBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.tinosItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.tinosRegular();
+          }
+          break;
+      }
+    } catch (_) {
+      // Offline fallback to standard Type 1 fonts
+      loadedFont = _fallbackType1Font(fontFamily, isBold: isBold, isItalic: isItalic);
+    }
+
+    // Ensure non-null return value for sound null-safety
+    loadedFont ??= _fallbackType1Font(fontFamily, isBold: isBold, isItalic: isItalic);
+    _fontCache[cacheKey] = loadedFont;
+    return loadedFont;
+  }
+
+  static pw.Font _fallbackType1Font(String fontFamily, {bool isBold = false, bool isItalic = false}) {
+    switch (fontFamily.toLowerCase()) {
+      case 'sans':
+      case 'trebuchet':
+        if (isBold && isItalic) return pw.Font.helveticaBoldOblique();
+        if (isBold) return pw.Font.helveticaBold();
+        if (isItalic) return pw.Font.helveticaOblique();
+        return pw.Font.helvetica();
+      case 'courier':
+        if (isBold && isItalic) return pw.Font.courierBoldOblique();
+        if (isBold) return pw.Font.courierBold();
+        if (isItalic) return pw.Font.courierOblique();
+        return pw.Font.courier();
+      case 'script':
+        if (isBold) return pw.Font.timesBoldItalic();
+        return pw.Font.timesItalic();
+      case 'cinzel':
+      case 'georgia':
+      case 'garamond':
+      case 'serif':
+      default:
+        if (isBold && isItalic) return pw.Font.timesBoldItalic();
+        if (isBold) return pw.Font.timesBold();
+        if (isItalic) return pw.Font.timesItalic();
+        return pw.Font.times();
+    }
+  }
+
+  // ===========================================================================
+  // Unicode / Glyph Sanitizer
+  // ===========================================================================
+  static String sanitizePdfText(String text) {
+    return text
+        .replaceAll('•', '-')
+        .replaceAll('\u2022', '-')
+        .replaceAll('₱', 'P ')
+        .replaceAll('\u20B1', 'P ')
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll('“', '"')
+        .replaceAll('”', '"')
+        .replaceAll('‘', "'")
+        .replaceAll('’', "'");
+  }
+
   static PdfColor _hexToPdfColor(String hex) {
     try {
       final clean = hex.replaceFirst('#', '');
@@ -32,56 +171,7 @@ class CertificatePdfGenerator {
     }
   }
 
-  /// Loads TrueType fonts with full Unicode support (ñ, Ñ, ₱, —, etc.) via PdfGoogleFonts.
-  /// Falls back gracefully to standard fonts if offline.
-  static Future<pw.Font> _resolveUnicodePdfFont(
-      String fontFamily, {
-        bool isBold = false,
-        bool isItalic = false,
-      }) async {
-    try {
-      switch (fontFamily.toLowerCase()) {
-        case 'sans':
-        case 'trebuchet':
-          if (isBold && isItalic) return await PdfGoogleFonts.robotoBoldItalic();
-          if (isBold) return await PdfGoogleFonts.robotoBold();
-          if (isItalic) return await PdfGoogleFonts.robotoItalic();
-          return await PdfGoogleFonts.robotoRegular();
-
-        case 'courier':
-          if (isBold) return await PdfGoogleFonts.courierPrimeBold();
-          if (isItalic) return await PdfGoogleFonts.courierPrimeItalic();
-          return await PdfGoogleFonts.courierPrimeRegular();
-
-        case 'cinzel':
-          if (isBold) return await PdfGoogleFonts.cinzelBold();
-          return await PdfGoogleFonts.cinzelRegular();
-
-        case 'script':
-          return await PdfGoogleFonts.parisienneRegular();
-
-        case 'georgia':
-        case 'garamond':
-        case 'serif':
-        default:
-          if (isBold && isItalic) return await PdfGoogleFonts.merriweatherBoldItalic();
-          if (isBold) return await PdfGoogleFonts.merriweatherBold();
-          if (isItalic) return await PdfGoogleFonts.merriweatherItalic();
-          return await PdfGoogleFonts.merriweatherRegular();
-      }
-    } catch (_) {
-      // Offline fallback: Use standard PostScript fonts
-      if (fontFamily.toLowerCase() == 'sans' || fontFamily.toLowerCase() == 'trebuchet') {
-        return isBold ? pw.Font.helveticaBold() : (isItalic ? pw.Font.helveticaOblique() : pw.Font.helvetica());
-      } else if (fontFamily.toLowerCase() == 'courier') {
-        return isBold ? pw.Font.courierBold() : (isItalic ? pw.Font.courierOblique() : pw.Font.courier());
-      } else {
-        return isBold ? pw.Font.timesBold() : (isItalic ? pw.Font.timesItalic() : pw.Font.times());
-      }
-    }
-  }
-
-  /// Generates the official print-ready PDF binary data with full Unicode support.
+  /// Generates the official print-ready PDF binary data with 1:1 visual canvas parity
   static Future<Uint8List> generatePdf({
     required CertificateTemplateModel template,
     required String sacramentType,
@@ -93,12 +183,12 @@ class CertificatePdfGenerator {
   }) async {
     final style = template.styleConfig;
 
-    // 1. Resolve Paper Size & Orientation in PostScript Points
+    // 1. Resolve Standard Paper Size in PostScript Points
     PdfPageFormat pageFormat;
     if (template.paperSize == 'Letter') {
       pageFormat = PdfPageFormat.letter;
     } else if (template.paperSize == 'Legal') {
-      pageFormat = PdfPageFormat.legal;
+      pageFormat = const PdfPageFormat(612.0, 936.0); // 8.5 x 13 in Philippine Folio Legal
     } else {
       pageFormat = PdfPageFormat.a4; // 595.28 x 841.89 pt
     }
@@ -107,7 +197,7 @@ class CertificatePdfGenerator {
       pageFormat = pageFormat.landscape;
     }
 
-    // 2. Resolve Unicode TrueType Base Fonts Asynchronously
+    // 2. Resolve TrueType Unicode Base Fonts
     final baseFont = await _resolveUnicodePdfFont(style.fontFamily);
     final boldFont = await _resolveUnicodePdfFont(style.fontFamily, isBold: true);
     final italicFont = await _resolveUnicodePdfFont(style.fontFamily, isItalic: true);
@@ -120,28 +210,13 @@ class CertificatePdfGenerator {
       ),
     );
 
-    // 3. Preload Canvas Fonts for Visual Mode Elements
-    final Map<String, pw.Font> fontCache = {};
-    if (style.useVisualCanvas && style.canvasElements.isNotEmpty) {
-      for (final elem in style.canvasElements) {
-        final keyRegular = '${elem.fontFamily}_normal';
-        final keyBold = '${elem.fontFamily}_bold';
-        if (!fontCache.containsKey(keyRegular)) {
-          fontCache[keyRegular] = await _resolveUnicodePdfFont(elem.fontFamily);
-        }
-        if (!fontCache.containsKey(keyBold)) {
-          fontCache[keyBold] = await _resolveUnicodePdfFont(elem.fontFamily, isBold: true);
-        }
-      }
-    }
-
-    // 4. Fetch Network Assets Asynchronously with Graceful Fallbacks
+    // 3. Fetch Network Assets Asynchronously
     final bgImage = await _fetchNetworkImage(template.backgroundImageUrl);
     final dioceseLogo = await _fetchNetworkImage(template.dioceseLogoUrl);
     final parishSeal = await _fetchNetworkImage(template.parishSealUrl);
     final signatureImage = await _fetchNetworkImage(template.signatureImageUrl);
 
-    // 5. Render Dynamic Wording via Placeholder Engine
+    // 4. Render Dynamic Wording via Placeholder Engine
     final placeholderValues = PlaceholderRegistry.extractPlaceholderValues(
       sacramentType: sacramentType,
       recordData: recordData,
@@ -150,6 +225,17 @@ class CertificatePdfGenerator {
     );
 
     final bool isCanvaMode = style.useVisualCanvas && style.canvasElements.isNotEmpty;
+
+    // Pre-resolve TrueType fonts for canvas elements
+    final Map<String, pw.Font> elementFonts = {};
+    if (isCanvaMode) {
+      for (final el in style.canvasElements) {
+        final key = '${el.fontFamily}_${el.isBold}';
+        if (!elementFonts.containsKey(key)) {
+          elementFonts[key] = await _resolveUnicodePdfFont(el.fontFamily, isBold: el.isBold);
+        }
+      }
+    }
 
     pdf.addPage(
       pw.Page(
@@ -168,13 +254,16 @@ class CertificatePdfGenerator {
                         : pw.BoxFit.fill,
                   ),
                 )
-              else
+              else if (template.backgroundMode != 'None')
                 _buildDefaultEcclesiasticalBorder(),
 
               // B. Content Layer
               if (isCanvaMode)
-              //  VISUAL MODE: 1:1 Matching Point Coordinates
+              // CANVA VISUAL MODE (Ungrouped elements, pure unbordered seals, resizable text boxes)
                 ...style.canvasElements.map((element) {
+                  final key = '${element.fontFamily}_${element.isBold}';
+                  final elemFont = elementFonts[key] ?? (element.isBold ? boldFont : baseFont);
+
                   return _buildCanvaElementPdfWidget(
                     element: element,
                     template: template,
@@ -186,13 +275,12 @@ class CertificatePdfGenerator {
                     signatureImage: signatureImage,
                     qrVerificationUrl: qrVerificationUrl,
                     verificationId: verificationId,
-                    fontCache: fontCache,
-                    fallbackBaseFont: baseFont,
-                    fallbackBoldFont: boldFont,
+                    elemFont: elemFont,
+                    boldFont: boldFont,
                   );
                 })
               else
-              // SIMPLE MODE: Sequential Structured Fallback
+              // SIMPLE STRUCTURED MODE
                 pw.Padding(
                   padding: const pw.EdgeInsets.symmetric(horizontal: 48, vertical: 40),
                   child: pw.Column(
@@ -220,7 +308,7 @@ class CertificatePdfGenerator {
     return pdf.save();
   }
 
-  /// Sends the compiled certificate directly to the printer or OS print dialog.
+  /// Sends the compiled certificate directly to the printer or OS print dialog
   static Future<void> printCertificate({
     required Uint8List pdfBytes,
     required String documentTitle,
@@ -232,7 +320,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // 1:1  Unified Coordinate Element Renderer
+  // 1:1 Canva-Style Unified Coordinate Element Renderer
   // ===========================================================================
 
   static pw.Widget _buildCanvaElementPdfWidget({
@@ -246,20 +334,19 @@ class CertificatePdfGenerator {
     required Uint8List? signatureImage,
     required String qrVerificationUrl,
     required String verificationId,
-    required Map<String, pw.Font> fontCache,
-    required pw.Font fallbackBaseFont,
-    required pw.Font fallbackBoldFont,
+    required pw.Font elemFont,
+    required pw.Font boldFont,
   }) {
-    final elemBaseFont = fontCache['${element.fontFamily}_normal'] ?? fallbackBaseFont;
-    final elemBoldFont = fontCache['${element.fontFamily}_bold'] ?? fallbackBoldFont;
-
     final double elementWidth = (element.width ?? 0.84) * pageWidth;
+    final double? elementHeight = element.height != null ? element.height! * pageHeight : null;
     final double pixelCenterX = element.x * pageWidth;
     final double pixelCenterY = element.y * pageHeight;
     final double left = pixelCenterX - (elementWidth / 2);
-    final double top = pixelCenterY - 18;
+    final double top = elementHeight != null
+        ? pixelCenterY - (elementHeight / 2)
+        : pixelCenterY - 18;
 
-    // 1. Ecclesiastical Header Block
+    // 1. Ecclesiastical Header Block (Legacy composite fallback)
     if (element.elementType == 'header') {
       return pw.Positioned(
         left: left,
@@ -270,8 +357,8 @@ class CertificatePdfGenerator {
             template: template,
             dioceseLogoBytes: dioceseLogo,
             parishSealBytes: parishSeal,
-            baseFont: elemBaseFont,
-            boldFont: elemBoldFont,
+            baseFont: elemFont,
+            boldFont: boldFont,
           ),
         ),
       );
@@ -279,10 +366,12 @@ class CertificatePdfGenerator {
 
     // 2. Certificate Title Banner
     if (element.elementType == 'title') {
-      final titleText = PlaceholderRegistry.renderTemplate(element.text, placeholderValues);
+      final titleText = sanitizePdfText(
+        PlaceholderRegistry.renderTemplate(element.text, placeholderValues),
+      );
       final titleColor = _hexToPdfColor(element.colorHex);
       final isBold = element.isBold;
-      final titleFont = isBold ? elemBoldFont : elemBaseFont;
+      final titleFont = isBold ? boldFont : elemFont;
 
       return pw.Positioned(
         left: left,
@@ -315,10 +404,9 @@ class CertificatePdfGenerator {
       );
     }
 
-    // 3. Independent Parish Seal Element
+    // 3. Independent Parish Seal Element (Pure unbordered graphic)
     if (element.elementType == 'parish_seal' || element.elementType == 'seal') {
-      final double sealDiameter = element.fontSize * 4.5;
-      final sealColor = _hexToPdfColor(element.colorHex);
+      final double sealDiameter = element.fontSize * 4.0;
 
       return pw.Positioned(
         left: pixelCenterX - (sealDiameter / 2),
@@ -330,17 +418,16 @@ class CertificatePdfGenerator {
             isParish: true,
             diameter: sealDiameter,
             sealBytes: parishSeal,
-            sealColor: sealColor,
-            boldFont: elemBoldFont,
+            sealColor: _hexToPdfColor(element.colorHex),
+            boldFont: boldFont,
           ),
         ),
       );
     }
 
-    // 4. Independent Diocese Seal Element
+    // 4. Independent Diocese Seal Element (Pure unbordered graphic)
     if (element.elementType == 'diocese_seal') {
-      final double sealDiameter = element.fontSize * 4.5;
-      final sealColor = _hexToPdfColor(element.colorHex);
+      final double sealDiameter = element.fontSize * 4.0;
 
       return pw.Positioned(
         left: pixelCenterX - (sealDiameter / 2),
@@ -352,14 +439,41 @@ class CertificatePdfGenerator {
             isParish: false,
             diameter: sealDiameter,
             sealBytes: dioceseLogo,
-            sealColor: sealColor,
-            boldFont: elemBoldFont,
+            sealColor: _hexToPdfColor(element.colorHex),
+            boldFont: boldFont,
           ),
         ),
       );
     }
 
-    // 5. QR Verification Block
+    // 5. UNGROUPED SIGNATURE LINE
+    if (element.elementType == 'signature_line' || element.elementType == 'signature') {
+      return pw.Positioned(
+        left: left,
+        top: pixelCenterY - 10,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: pw.Column(
+            children: [
+              if (signatureImage != null)
+                pw.Container(
+                  height: 32,
+                  child: pw.Image(pw.MemoryImage(signatureImage), fit: pw.BoxFit.contain),
+                )
+              else
+                pw.SizedBox(height: 24),
+              pw.Container(
+                width: elementWidth,
+                height: 1.0,
+                color: _hexToPdfColor(element.colorHex),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 6. QR Verification Block
     if (element.elementType == 'qr') {
       return pw.Positioned(
         left: pixelCenterX - (elementWidth / 2),
@@ -370,15 +484,15 @@ class CertificatePdfGenerator {
             child: _buildQrBlock(
               qrUrl: qrVerificationUrl,
               verificationId: verificationId,
-              baseFont: elemBaseFont,
-              boldFont: elemBoldFont,
+              baseFont: elemFont,
+              boldFont: boldFont,
             ),
           ),
         ),
       );
     }
 
-    // 6. Signatory Block
+    // 7. Signatory Block (Legacy composite fallback)
     if (element.elementType == 'signatory') {
       return pw.Positioned(
         left: pixelCenterX - (elementWidth / 2),
@@ -388,17 +502,18 @@ class CertificatePdfGenerator {
           child: _buildSignatoryBlock(
             template: template,
             signatureBytes: signatureImage,
-            baseFont: elemBaseFont,
-            boldFont: elemBoldFont,
+            baseFont: elemFont,
+            boldFont: boldFont,
           ),
         ),
       );
     }
 
-    // 7. Freeform Text & Dynamic Placeholders
-    final resolvedText = PlaceholderRegistry.renderTemplate(element.text, placeholderValues);
+    // 8. Text Boxes, Ungrouped Header Lines, Signatory Name/Title with Auto-Wrap
+    final resolvedText = sanitizePdfText(
+      PlaceholderRegistry.renderTemplate(element.text, placeholderValues),
+    );
     final isBold = element.isBold;
-    final elemFont = isBold ? elemBoldFont : elemBaseFont;
     final elemColor = _hexToPdfColor(element.colorHex);
 
     pw.TextAlign align;
@@ -423,6 +538,7 @@ class CertificatePdfGenerator {
       top: top,
       child: pw.SizedBox(
         width: elementWidth,
+        height: elementHeight,
         child: pw.Text(
           resolvedText,
           textAlign: align,
@@ -439,7 +555,7 @@ class CertificatePdfGenerator {
     );
   }
 
-  /// Renders an independent circular Parish or Diocese Seal matching the visual canvas
+  /// Renders clean unbordered seal image matching the visual canvas
   static pw.Widget _buildIndividualSealPdfWidget({
     required bool isParish,
     required double diameter,
@@ -448,56 +564,33 @@ class CertificatePdfGenerator {
     required pw.Font boldFont,
   }) {
     final String fallbackLabel = isParish ? 'SJP2' : 'DSP';
-    final String sealTitle = isParish ? 'PARISH SEAL' : 'DIOCESE EMBLEM';
+
+    if (sealBytes != null) {
+      return pw.Center(
+        child: pw.Image(
+          pw.MemoryImage(sealBytes),
+          width: diameter,
+          height: diameter,
+          fit: pw.BoxFit.contain,
+        ),
+      );
+    }
 
     return pw.Container(
       width: diameter,
       height: diameter,
       decoration: pw.BoxDecoration(
-        shape: pw.BoxShape.circle,
-        color: PdfColors.white,
-        border: pw.Border.all(color: sealColor, width: 2.2),
+        color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.circular(6),
       ),
-      child: pw.Padding(
-        padding: const pw.EdgeInsets.all(3.0),
-        child: pw.Container(
-          decoration: pw.BoxDecoration(
-            shape: pw.BoxShape.circle,
-            border: pw.Border.all(color: sealColor, width: 1.0),
-          ),
-          child: sealBytes != null
-              ? pw.ClipOval(
-            child: pw.Image(
-              pw.MemoryImage(sealBytes),
-              fit: pw.BoxFit.contain,
-            ),
-          )
-              : pw.Center(
-            child: pw.Column(
-              mainAxisAlignment: pw.MainAxisAlignment.center,
-              children: [
-                pw.Text(
-                  fallbackLabel,
-                  style: pw.TextStyle(
-                    font: boldFont,
-                    fontSize: diameter * 0.16,
-                    fontWeight: pw.FontWeight.bold,
-                    color: sealColor,
-                  ),
-                ),
-                pw.SizedBox(height: 1),
-                pw.Text(
-                  sealTitle,
-                  style: pw.TextStyle(
-                    font: boldFont,
-                    fontSize: diameter * 0.08,
-                    fontWeight: pw.FontWeight.bold,
-                    color: sealColor,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ],
-            ),
+      child: pw.Center(
+        child: pw.Text(
+          fallbackLabel,
+          style: pw.TextStyle(
+            font: boldFont,
+            fontSize: diameter * 0.22,
+            fontWeight: pw.FontWeight.bold,
+            color: sealColor,
           ),
         ),
       ),
@@ -505,7 +598,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // Simple Mode Sequential Structured Flow (When Visual Mode is Untoggled)
+  // Simple Mode Sequential Structured Flow
   // ===========================================================================
 
   static List<pw.Widget> _buildSimpleModeWidgets({
@@ -520,9 +613,11 @@ class CertificatePdfGenerator {
     required String qrVerificationUrl,
     required String verificationId,
   }) {
-    final renderedBody = PlaceholderRegistry.renderTemplate(
-      template.bodyWording,
-      placeholderValues,
+    final renderedBody = sanitizePdfText(
+      PlaceholderRegistry.renderTemplate(
+        template.bodyWording,
+        placeholderValues,
+      ),
     );
 
     pw.Widget headerWidget = _buildCanonicalHeader(
@@ -679,6 +774,7 @@ class CertificatePdfGenerator {
   }) {
     final isBold = style.titleFontWeight == 'bold';
     final titleFont = isBold ? boldFont : baseFont;
+    final cleanTitle = sanitizePdfText(title);
 
     return pw.Column(
       children: [
@@ -691,7 +787,7 @@ class CertificatePdfGenerator {
             ),
           ),
           child: pw.Text(
-            title.toUpperCase(),
+            cleanTitle.toUpperCase(),
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(
               font: titleFont,
@@ -909,13 +1005,13 @@ class CertificatePdfGenerator {
   static pw.Widget _buildDefaultEcclesiasticalBorder() {
     return pw.Positioned.fill(
       child: pw.Padding(
-        padding: const pw.EdgeInsets.all(16.0), // Matches exact 16pt canvas margin
+        padding: const pw.EdgeInsets.all(16.0),
         child: pw.Container(
           decoration: pw.BoxDecoration(
             border: pw.Border.all(color: goldAccent, width: 2.5),
           ),
           child: pw.Padding(
-            padding: const pw.EdgeInsets.all(5.0), // Matches exact 5pt inner canvas offset
+            padding: const pw.EdgeInsets.all(5.0),
             child: pw.Container(
               decoration: pw.BoxDecoration(
                 border: pw.Border.all(color: marianBlue, width: 1.0),
@@ -933,9 +1029,8 @@ class CertificatePdfGenerator {
   }) {
     return pw.Container(
       decoration: pw.BoxDecoration(
-        shape: pw.BoxShape.circle,
-        border: pw.Border.all(color: goldAccent, width: 1.5),
         color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.circular(6),
       ),
       child: pw.Center(
         child: pw.Text(

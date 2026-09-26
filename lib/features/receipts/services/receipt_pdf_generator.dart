@@ -17,10 +17,132 @@ class ReceiptPdfGenerator {
   static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
+  // In-memory cache for loaded Unicode TrueType fonts
+  static final Map<String, pw.Font> _fontCache = {};
+
   // ===========================================================================
-  // Unicode / Tofu Character Sanitizer
+  // Unicode TrueType Font Resolver (Resolves "no Unicode support" warnings)
   // ===========================================================================
-  /// Replaces non-ASCII symbols with clean ASCII characters
+  static Future<pw.Font> _resolveUnicodePdfFont(
+      String fontFamily, {
+        bool isBold = false,
+        bool isItalic = false,
+      }) async {
+    final cacheKey =
+        '${fontFamily.toLowerCase()}_${isBold ? "b" : "r"}_${isItalic ? "i" : "n"}';
+
+    if (_fontCache.containsKey(cacheKey)) {
+      return _fontCache[cacheKey]!;
+    }
+
+    pw.Font? loadedFont;
+
+    try {
+      switch (fontFamily.toLowerCase()) {
+        case 'sans':
+        case 'trebuchet':
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.arimoBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.arimoBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.arimoItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.arimoRegular();
+          }
+          break;
+        case 'courier':
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.cousineBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.cousineBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.cousineItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.cousineRegular();
+          }
+          break;
+        case 'cinzel':
+          if (isBold) {
+            loadedFont = await PdfGoogleFonts.cinzelBold();
+          } else {
+            loadedFont = await PdfGoogleFonts.cinzelRegular();
+          }
+          break;
+        case 'garamond':
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.eBGaramondBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.eBGaramondBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.eBGaramondItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.eBGaramondRegular();
+          }
+          break;
+        case 'script':
+          if (isBold) {
+            loadedFont = await PdfGoogleFonts.caveatBold();
+          } else {
+            loadedFont = await PdfGoogleFonts.caveatRegular();
+          }
+          break;
+        case 'georgia':
+        case 'serif':
+        default:
+          if (isBold && isItalic) {
+            loadedFont = await PdfGoogleFonts.tinosBoldItalic();
+          } else if (isBold) {
+            loadedFont = await PdfGoogleFonts.tinosBold();
+          } else if (isItalic) {
+            loadedFont = await PdfGoogleFonts.tinosItalic();
+          } else {
+            loadedFont = await PdfGoogleFonts.tinosRegular();
+          }
+          break;
+      }
+    } catch (_) {
+      // Offline fallback
+      loadedFont = _fallbackType1Font(fontFamily, isBold: isBold, isItalic: isItalic);
+    }
+
+    // Ensure non-null return value for sound null-safety
+    loadedFont ??= _fallbackType1Font(fontFamily, isBold: isBold, isItalic: isItalic);
+    _fontCache[cacheKey] = loadedFont;
+    return loadedFont;
+  }
+
+  static pw.Font _fallbackType1Font(String fontFamily, {bool isBold = false, bool isItalic = false}) {
+    switch (fontFamily.toLowerCase()) {
+      case 'sans':
+      case 'trebuchet':
+        if (isBold && isItalic) return pw.Font.helveticaBoldOblique();
+        if (isBold) return pw.Font.helveticaBold();
+        if (isItalic) return pw.Font.helveticaOblique();
+        return pw.Font.helvetica();
+      case 'courier':
+        if (isBold && isItalic) return pw.Font.courierBoldOblique();
+        if (isBold) return pw.Font.courierBold();
+        if (isItalic) return pw.Font.courierOblique();
+        return pw.Font.courier();
+      case 'script':
+        if (isBold) return pw.Font.timesBoldItalic();
+        return pw.Font.timesItalic();
+      case 'cinzel':
+      case 'georgia':
+      case 'garamond':
+      case 'serif':
+      default:
+        if (isBold && isItalic) return pw.Font.timesBoldItalic();
+        if (isBold) return pw.Font.timesBold();
+        if (isItalic) return pw.Font.timesItalic();
+        return pw.Font.times();
+    }
+  }
+
+  // ===========================================================================
+  // Unicode Sanitizer
+  // ===========================================================================
   static String sanitizePdfText(String text) {
     return text
         .replaceAll('•', '-')
@@ -107,34 +229,6 @@ class ReceiptPdfGenerator {
     }
   }
 
-  static pw.Font _resolvePdfFont(String fontFamily, {bool isBold = false, bool isItalic = false}) {
-    switch (fontFamily.toLowerCase()) {
-      case 'sans':
-      case 'trebuchet':
-        if (isBold && isItalic) return pw.Font.helveticaBoldOblique();
-        if (isBold) return pw.Font.helveticaBold();
-        if (isItalic) return pw.Font.helveticaOblique();
-        return pw.Font.helvetica();
-      case 'courier':
-        if (isBold && isItalic) return pw.Font.courierBoldOblique();
-        if (isBold) return pw.Font.courierBold();
-        if (isItalic) return pw.Font.courierOblique();
-        return pw.Font.courier();
-      case 'script':
-        if (isBold) return pw.Font.timesBoldItalic();
-        return pw.Font.timesItalic();
-      case 'cinzel':
-      case 'georgia':
-      case 'garamond':
-      case 'serif':
-      default:
-        if (isBold && isItalic) return pw.Font.timesBoldItalic();
-        if (isBold) return pw.Font.timesBold();
-        if (isItalic) return pw.Font.timesItalic();
-        return pw.Font.times();
-    }
-  }
-
   /// Compiles the official print-ready PDF binary for an ecclesiastical receipt
   static Future<Uint8List> generateReceiptPdf({
     required String receiptNumber,
@@ -167,9 +261,10 @@ class ReceiptPdfGenerator {
       );
     }
 
-    final baseFont = _resolvePdfFont(style.fontFamily);
-    final boldFont = _resolvePdfFont(style.fontFamily, isBold: true);
-    final italicFont = _resolvePdfFont(style.fontFamily, isItalic: true);
+    // Resolve Unicode TrueType fonts
+    final baseFont = await _resolveUnicodePdfFont(style.fontFamily);
+    final boldFont = await _resolveUnicodePdfFont(style.fontFamily, isBold: true);
+    final italicFont = await _resolveUnicodePdfFont(style.fontFamily, isItalic: true);
 
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
@@ -191,11 +286,11 @@ class ReceiptPdfGenerator {
 
     final amountInWordsText = convertAmountToWords(amount);
 
-    // Sanitize particulars text and strip out Cash Tendered / Change computation so it NEVER prints on the receipt
     final rawCleanDetails = sanitizePdfText(
       transactionDetails.isNotEmpty ? transactionDetails : relatedService,
     );
 
+    // Strip Cash Tendered from printed receipt
     final cleanDetails = rawCleanDetails
         .split('\n')
         .where((line) {
@@ -223,12 +318,25 @@ class ReceiptPdfGenerator {
       '{Particulars}': cleanDetails,
       '{Details}': cleanDetails,
       '{Cashier}': cashierName,
+      '{Signatory Name}': cashierName,
       '{Cashier Title}': activeTemplate.cashierTitle,
+      '{Signatory Title}': activeTemplate.cashierTitle,
       '{Parish Priest}': activeTemplate.parishPriestName,
     };
 
     final qrUrl = 'https://parishserve.web.app/verify-receipt?rec=$receiptNumber';
     final bool isCanvaMode = style.useVisualCanvas && style.canvasElements.isNotEmpty && !isThermalRoll;
+
+    // Pre-resolve TrueType fonts for canvas elements
+    final Map<String, pw.Font> elementFonts = {};
+    if (isCanvaMode) {
+      for (final el in style.canvasElements) {
+        final key = '${el.fontFamily}_${el.isBold}';
+        if (!elementFonts.containsKey(key)) {
+          elementFonts[key] = await _resolveUnicodePdfFont(el.fontFamily, isBold: el.isBold);
+        }
+      }
+    }
 
     pdf.addPage(
       pw.Page(
@@ -247,6 +355,8 @@ class ReceiptPdfGenerator {
               paymentMode: paymentMode,
               issuedDate: issuedDate,
               cashierName: cashierName,
+              baseFont: baseFont,
+              boldFont: boldFont,
             );
           }
 
@@ -265,7 +375,11 @@ class ReceiptPdfGenerator {
                 _buildDefaultReceiptVectorBorder(activeTemplate.paperSize),
 
               if (isCanvaMode)
+              // 1:1 CANVA VISUAL CANVAS MODE (Ungrouped signatory, clean unbordered seals)
                 ...style.canvasElements.map((element) {
+                  final key = '${element.fontFamily}_${element.isBold}';
+                  final elemFont = elementFonts[key] ?? (element.isBold ? boldFont : baseFont);
+
                   return _buildCanvaReceiptPdfElement(
                     element: element,
                     template: activeTemplate,
@@ -276,6 +390,8 @@ class ReceiptPdfGenerator {
                     parishSeal: parishSeal,
                     signatureImage: signatureImage,
                     qrUrl: qrUrl,
+                    elemFont: elemFont,
+                    boldFont: boldFont,
                   );
                 })
               else
@@ -343,10 +459,6 @@ class ReceiptPdfGenerator {
     );
   }
 
-  // ===========================================================================
-  // 1. Structured Canonical Receipt Layout
-  // ===========================================================================
-
   static pw.EdgeInsets _resolveStructuredPadding(String paperSize, String orientation) {
     if (paperSize.toLowerCase().contains('ecclesiastical')) {
       return const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16);
@@ -379,7 +491,6 @@ class ReceiptPdfGenerator {
     final bool isPlain = template.backgroundMode == 'None';
     final lines = template.headerLines;
 
-    // Parse itemized lines from clean details (cash tendered is already excluded)
     final detailLines = cleanDetails
         .split('\n')
         .map((l) => l.trim())
@@ -389,7 +500,7 @@ class ReceiptPdfGenerator {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        // A. Header Row (Diocese Logo, Parish Details, Parish Seal)
+        // A. Header Row (Pure unbordered logos)
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -511,7 +622,7 @@ class ReceiptPdfGenerator {
         ),
         pw.SizedBox(height: isEcclesiastical ? 6 : 10),
 
-        // D. Itemized Particulars Box (Excludes cash tendered / change)
+        // D. Itemized Particulars Box
         pw.Expanded(
           child: pw.Container(
             width: double.infinity,
@@ -539,7 +650,6 @@ class ReceiptPdfGenerator {
                 pw.Divider(thickness: 0.5, color: borderGrey),
                 pw.SizedBox(height: 2),
 
-                // Render item rows cleanly
                 ...detailLines.map((line) {
                   if (line.contains('@') && line.contains('=')) {
                     final parts = line.split('=');
@@ -652,7 +762,7 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // 2. Canva-Style Visual Mode Element Renderer (With Character Sanitization)
+  // 2. Canva-Style Visual Mode Element Renderer (Ungrouped Signatory & Seals)
   // ===========================================================================
 
   static pw.Widget _buildCanvaReceiptPdfElement({
@@ -665,11 +775,9 @@ class ReceiptPdfGenerator {
     required Uint8List? parishSeal,
     required Uint8List? signatureImage,
     required String qrUrl,
+    required pw.Font elemFont,
+    required pw.Font boldFont,
   }) {
-    final bool isItalic = element.fontFamily.toLowerCase() == 'script';
-    final elemBaseFont = _resolvePdfFont(element.fontFamily, isItalic: isItalic);
-    final elemBoldFont = _resolvePdfFont(element.fontFamily, isBold: true, isItalic: isItalic);
-
     final double elementWidth = (element.width ?? 0.84) * pageWidth;
     final double? elementHeight = element.height != null ? element.height! * pageHeight : null;
     final double pixelCenterX = element.x * pageWidth;
@@ -679,52 +787,66 @@ class ReceiptPdfGenerator {
         ? pixelCenterY - (elementHeight / 2)
         : pixelCenterY - 14;
 
+    // A. UNGROUPED DIOCESE EMBLEM (No gold circle)
     if (element.elementType == 'diocese_seal') {
       final double diameter = element.fontSize * 4.0;
       return pw.Positioned(
         left: pixelCenterX - (diameter / 2),
         top: pixelCenterY - (diameter / 2),
-        child: pw.Container(
+        child: pw.SizedBox(
           width: diameter,
           height: diameter,
-          decoration: pw.BoxDecoration(shape: pw.BoxShape.circle, border: pw.Border.all(color: marianBlue, width: 1.5)),
           child: dioceseLogo != null
-              ? pw.ClipOval(child: pw.Image(pw.MemoryImage(dioceseLogo), fit: pw.BoxFit.contain))
-              : pw.Center(child: pw.Text('DSP', style: pw.TextStyle(font: elemBoldFont, fontSize: diameter * 0.22, color: marianBlue))),
+              ? pw.Image(pw.MemoryImage(dioceseLogo), fit: pw.BoxFit.contain)
+              : _buildFallbackEmblem('DSP', boldFont),
         ),
       );
     }
 
+    // B. UNGROUPED PARISH SEAL (No gold circle)
     if (element.elementType == 'parish_seal') {
       final double diameter = element.fontSize * 4.0;
       return pw.Positioned(
         left: pixelCenterX - (diameter / 2),
         top: pixelCenterY - (diameter / 2),
-        child: pw.Container(
+        child: pw.SizedBox(
           width: diameter,
           height: diameter,
-          decoration: pw.BoxDecoration(shape: pw.BoxShape.circle, border: pw.Border.all(color: goldAccent, width: 1.5)),
           child: parishSeal != null
-              ? pw.ClipOval(child: pw.Image(pw.MemoryImage(parishSeal), fit: pw.BoxFit.contain))
-              : pw.Center(child: pw.Text('SJP2', style: pw.TextStyle(font: elemBoldFont, fontSize: diameter * 0.22, color: marianBlue))),
+              ? pw.Image(pw.MemoryImage(parishSeal), fit: pw.BoxFit.contain)
+              : _buildFallbackEmblem('SJP2', boldFont),
         ),
       );
     }
 
-    if (element.elementType == 'qr') {
+    // C. UNGROUPED SIGNATURE LINE / GRAPHIC
+    if (element.elementType == 'signature_line' || element.elementType == 'signature') {
       return pw.Positioned(
-        left: pixelCenterX - 24,
-        top: pixelCenterY - 24,
-        child: pw.Container(
-          width: 48,
-          height: 48,
-          padding: const pw.EdgeInsets.all(2),
-          decoration: pw.BoxDecoration(border: pw.Border.all(color: borderGrey, width: 0.6)),
-          child: pw.BarcodeWidget(barcode: pw.Barcode.qrCode(), data: qrUrl),
+        left: left,
+        top: pixelCenterY - 10,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: pw.Column(
+            children: [
+              if (signatureImage != null)
+                pw.Container(
+                  height: 24,
+                  child: pw.Image(pw.MemoryImage(signatureImage), fit: pw.BoxFit.contain),
+                )
+              else
+                pw.SizedBox(height: 18),
+              pw.Container(
+                width: elementWidth,
+                height: 1.0,
+                color: _hexToPdfColor(element.colorHex),
+              ),
+            ],
+          ),
         ),
       );
     }
 
+    // D. LEGACY SIGNATORY BLOCK
     if (element.elementType == 'signatory') {
       final resolvedText = sanitizePdfText(_replacePlaceholders(element.text, placeholderValues));
       return pw.Positioned(
@@ -750,7 +872,7 @@ class ReceiptPdfGenerator {
                   resolvedText,
                   textAlign: pw.TextAlign.center,
                   style: pw.TextStyle(
-                    font: element.isBold ? elemBoldFont : elemBaseFont,
+                    font: elemFont,
                     fontSize: element.fontSize,
                     color: _hexToPdfColor(element.colorHex),
                     lineSpacing: 1.4,
@@ -763,6 +885,22 @@ class ReceiptPdfGenerator {
       );
     }
 
+    // E. QR CODE
+    if (element.elementType == 'qr') {
+      return pw.Positioned(
+        left: pixelCenterX - 24,
+        top: pixelCenterY - 24,
+        child: pw.Container(
+          width: 48,
+          height: 48,
+          padding: const pw.EdgeInsets.all(2),
+          decoration: pw.BoxDecoration(border: pw.Border.all(color: borderGrey, width: 0.6)),
+          child: pw.BarcodeWidget(barcode: pw.Barcode.qrCode(), data: qrUrl),
+        ),
+      );
+    }
+
+    // F. TEXT BOXES & UNGROUPED LABELS
     final resolvedText = sanitizePdfText(_replacePlaceholders(element.text, placeholderValues));
     return pw.Positioned(
       left: left,
@@ -774,7 +912,7 @@ class ReceiptPdfGenerator {
           resolvedText,
           textAlign: _resolveTextAlign(element.textAlign),
           style: pw.TextStyle(
-            font: element.isBold ? elemBoldFont : elemBaseFont,
+            font: elemFont,
             fontSize: element.fontSize,
             color: _hexToPdfColor(element.colorHex),
             lineSpacing: 1.6,
@@ -785,7 +923,7 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // 3. 80mm Thermal Slip Renderer (Excludes cash tendered)
+  // 3. 80mm Thermal Slip Renderer
   // ===========================================================================
 
   static pw.Widget _buildThermalRollContent({
@@ -799,35 +937,37 @@ class ReceiptPdfGenerator {
     required String paymentMode,
     required String issuedDate,
     required String cashierName,
+    required pw.Font baseFont,
+    required pw.Font boldFont,
   }) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        pw.Text('DIOCESE OF SAN PABLO', style: const pw.TextStyle(fontSize: 8, color: textMuted)),
-        pw.Text('ST. JOHN PAUL II PARISH', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: textDark)),
-        pw.Text('Brgy. Labuin, Santa Cruz, Laguna', style: const pw.TextStyle(fontSize: 8, color: textMuted)),
+        pw.Text('DIOCESE OF SAN PABLO', style: pw.TextStyle(font: baseFont, fontSize: 8, color: textMuted)),
+        pw.Text('ST. JOHN PAUL II PARISH', style: pw.TextStyle(font: boldFont, fontSize: 11, color: textDark)),
+        pw.Text('Brgy. Labuin, Santa Cruz, Laguna', style: pw.TextStyle(font: baseFont, fontSize: 8, color: textMuted)),
         pw.SizedBox(height: 6),
-        pw.Text('OFFICIAL RECEIPT', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+        pw.Text('OFFICIAL RECEIPT', style: pw.TextStyle(font: boldFont, fontSize: 9)),
         pw.Divider(thickness: 0.5, color: borderGrey),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Receipt No:', style: const pw.TextStyle(fontSize: 8)),
-            pw.Text(receiptNumber, style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Receipt No:', style: pw.TextStyle(font: baseFont, fontSize: 8)),
+            pw.Text(receiptNumber, style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
           ],
         ),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Date:', style: const pw.TextStyle(fontSize: 8)),
-            pw.Text(issuedDate, style: const pw.TextStyle(fontSize: 8)),
+            pw.Text('Date:', style: pw.TextStyle(font: baseFont, fontSize: 8)),
+            pw.Text(issuedDate, style: pw.TextStyle(font: baseFont, fontSize: 8)),
           ],
         ),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Payor:', style: const pw.TextStyle(fontSize: 8)),
-            pw.Text(payorName, style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Payor:', style: pw.TextStyle(font: baseFont, fontSize: 8)),
+            pw.Text(payorName, style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
           ],
         ),
         pw.Divider(thickness: 0.5, color: borderGrey),
@@ -835,7 +975,7 @@ class ReceiptPdfGenerator {
           alignment: pw.Alignment.centerLeft,
           child: pw.Text(
             cleanDetails,
-            style: const pw.TextStyle(fontSize: 8, lineSpacing: 1.5),
+            style: pw.TextStyle(font: baseFont, fontSize: 8, lineSpacing: 1.5),
           ),
         ),
         pw.SizedBox(height: 4),
@@ -843,15 +983,15 @@ class ReceiptPdfGenerator {
           alignment: pw.Alignment.centerLeft,
           child: pw.Text(
             'Words: $amountInWordsText',
-            style: const pw.TextStyle(fontSize: 7.5, fontStyle: pw.FontStyle.italic),
+            style: pw.TextStyle(font: baseFont, fontSize: 7.5),
           ),
         ),
         pw.Divider(thickness: 0.5, color: borderGrey),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Mode: ${paymentMode.toUpperCase()}', style: const pw.TextStyle(fontSize: 8.5)),
-            pw.Text('TOTAL: P ${amount.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: textDark)),
+            pw.Text('Mode: ${paymentMode.toUpperCase()}', style: pw.TextStyle(font: baseFont, fontSize: 8.5)),
+            pw.Text('TOTAL: P ${amount.toStringAsFixed(2)}', style: pw.TextStyle(font: boldFont, fontSize: 10, color: textDark)),
           ],
         ),
         pw.Divider(thickness: 0.5, color: borderGrey),
@@ -890,9 +1030,8 @@ class ReceiptPdfGenerator {
   static pw.Widget _buildFallbackEmblem(String label, pw.Font boldFont) {
     return pw.Container(
       decoration: pw.BoxDecoration(
-        shape: pw.BoxShape.circle,
-        border: pw.Border.all(color: borderGrey, width: 0.8),
         color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.circular(4),
       ),
       child: pw.Center(
         child: pw.Text(label, style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: textDark)),
