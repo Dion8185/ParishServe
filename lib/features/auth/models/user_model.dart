@@ -6,6 +6,7 @@ class UserModel {
   final String lastName;
   final String userRole;
   final bool accountStatus;
+  final bool darkModeEnabled;
 
   UserModel({
     required this.userId,
@@ -15,6 +16,7 @@ class UserModel {
     required this.lastName,
     required this.userRole,
     required this.accountStatus,
+    this.darkModeEnabled = false,
   });
 
   String get fullName => '$firstName $lastName';
@@ -49,6 +51,20 @@ class UserModel {
       lastName: map['last_name'] ?? '',
       userRole: map['user_role'] ?? 'secretary',
       accountStatus: map['account_status'] ?? true,
+      darkModeEnabled: map['dark_mode_enabled'] ?? false,
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'user_id': userId,
+      'username': username,
+      'email': email,
+      'first_name': firstName,
+      'last_name': lastName,
+      'user_role': userRole,
+      'account_status': accountStatus,
+      'dark_mode_enabled': darkModeEnabled,
+    };
   }
 }

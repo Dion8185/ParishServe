@@ -17,7 +17,7 @@ class SecretaryService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Register a new transaction with automatic enum resolution and varchar(100) bound guard
+  /// Register a new transaction with automatic enum resolution, custom date support, and varchar(100) bound guard
   static Future<Map<String, dynamic>> createTransaction({
     required String payorName,
     String? payorContact,
@@ -27,10 +27,12 @@ class SecretaryService {
     String? transactionType,
     String? relatedAppointmentId,
     String? relatedRequestId,
+    DateTime? transactionDate,
   }) async {
     final receiptNo = await _generateReceiptNumber();
     final transactionId = 'TXN-${DateTime.now().millisecondsSinceEpoch}';
     final userId = AuthService.currentUser?.userId ?? 'S26-0003';
+    final effectiveDate = (transactionDate ?? DateTime.now()).toIso8601String();
 
     // Strictly enforce varchar(100) limit on related_service to prevent Postgres 22001 exception
     final cleanService = relatedService.trim();
@@ -100,7 +102,7 @@ class SecretaryService {
         'payor_contact': (payorContact != null && payorContact.trim().isNotEmpty)
             ? payorContact.trim()
             : null,
-        'transaction_date': DateTime.now().toIso8601String(),
+        'transaction_date': effectiveDate,
         'transaction_type': candidate,
         'related_service': safeService,
         'transaction_details': transactionDetails.trim(),

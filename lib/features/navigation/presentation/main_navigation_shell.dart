@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/theme/theme_controller.dart';
 import '../../auth/models/user_model.dart';
+import '../../auth/services/auth_service.dart';
 import '../../dashboard/presentation/dashboard_view.dart';
 import '../../dashboard/presentation/dialogs/notification_dialog.dart';
 import '../../sacramental_records/presentation/records_view.dart';
@@ -110,19 +112,326 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: _buildTopNavigationBar(context),
-      body: SafeArea(
-        child: _isModuleAllowed(_currentIndex)
-            ? _views[_currentIndex]
-            : _buildUnauthorizedView(),
+  void _confirmLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        title: const Text('Confirm Log Out', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to end your current session?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.mercyRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await AuthService.signOut();
+            },
+            child: const Text('Log Out'),
+          ),
+        ],
       ),
-      bottomNavigationBar: _buildGcashStyleBottomBar(),
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeController.themeModeNotifier,
+      builder: (context, currentMode, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isDesktop = constraints.maxWidth >= 900;
+
+            if (isDesktop) {
+              // ==========================================
+              // DESKTOP LAYOUT (Responsive Sidebar)
+              // ==========================================
+              return Scaffold(
+                backgroundColor: ParishColors.backgroundLight,
+                body: Row(
+                  children: [
+                    _buildDesktopSidebar(),
+                    Expanded(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1400),
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(30),
+                              bottomLeft: Radius.circular(30),
+                            ),
+                            child: Container(
+                              color: ParishColors.backgroundLight,
+                              child: _isModuleAllowed(_currentIndex)
+                                  ? _views[_currentIndex]
+                                  : _buildUnauthorizedView(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            // ==========================================
+            // MOBILE / TABLET LAYOUT (Top Bar & GCash Bottom Bar)
+            // ==========================================
+            return Scaffold(
+              backgroundColor: ParishColors.backgroundLight,
+              appBar: _buildTopNavigationBar(context),
+              body: SafeArea(
+                child: _isModuleAllowed(_currentIndex)
+                    ? _views[_currentIndex]
+                    : _buildUnauthorizedView(),
+              ),
+              bottomNavigationBar: _buildGcashStyleBottomBar(),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // DESKTOP SIDEBAR
+  // ---------------------------------------------------------------------------
+  Widget _buildDesktopSidebar() {
+    final displayName = widget.currentUser?.firstName ?? 'Staff';
+    final userRole = widget.currentUser?.roleDisplay ?? 'Parish Staff';
+
+    return Container(
+      width: 280,
+      color: ParishColors.cardWhite,
+      child: Column(
+        children: [
+          const SizedBox(height: 36),
+          // Parish Logo & Title
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: ParishColors.marianBlueSurface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: ParishColors.goldAccent, width: 2.5),
+            ),
+            child: const Icon(Icons.church, size: 34, color: ParishColors.marianBlue),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'St. John Paul II Parish',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.marianBlueAdaptive,
+            ),
+          ),
+          Text(
+            'Ecclesiastical Operations Console',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: ParishColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          // Sidebar Navigation Links
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _buildSidebarItem(index: 0, label: 'Overview', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
+                const SizedBox(height: 4),
+                _buildSidebarItem(index: 1, label: 'Sacramental Records', icon: Icons.menu_book_outlined, activeIcon: Icons.menu_book),
+                const SizedBox(height: 4),
+                _buildSidebarItem(index: 2, label: 'Receipts & POS', icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long),
+                const SizedBox(height: 4),
+                _buildSidebarItem(index: 3, label: 'Appointments & Masses', icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month),
+                const SizedBox(height: 4),
+                _buildSidebarItem(index: 4, label: 'Diocesan Assets', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2),
+                const SizedBox(height: 4),
+                _buildSidebarItem(index: 5, label: 'Smart Archive IoT', icon: Icons.sensors_outlined, activeIcon: Icons.sensors),
+                const SizedBox(height: 4),
+                _buildSidebarItem(index: 6, label: 'Staff Profile & Theme', icon: Icons.person_outline, activeIcon: Icons.person),
+              ],
+            ),
+          ),
+
+          // Notification Alert Shortcut
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: InkWell(
+              onTap: () => showNotificationModal(context),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ParishColors.borderGrey),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.notifications_active_outlined, size: 18, color: ParishColors.mercyRed),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '3 Active Parish Alerts',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: const BoxDecoration(color: ParishColors.mercyRed, shape: BoxShape.circle),
+                      child: const Text('3', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // User Identity Card & Logout
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: ParishColors.borderGrey, width: 1)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: ParishColors.marianBlueSurface,
+                      child: Text(
+                        displayName.isNotEmpty ? displayName[0].toUpperCase() : 'S',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.currentUser?.fullName ?? 'Parish Staff',
+                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            userRole,
+                            style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 38,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ParishColors.mercyRed,
+                      side: const BorderSide(color: ParishColors.mercyRed),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => _confirmLogout(context),
+                    icon: const Icon(Icons.logout, size: 16),
+                    label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidebarItem({
+    required int index,
+    required String label,
+    required IconData icon,
+    required IconData activeIcon,
+  }) {
+    final bool isAllowed = _isModuleAllowed(index);
+    final bool isSelected = _currentIndex == index && isAllowed;
+
+    return InkWell(
+      onTap: () {
+        if (!isAllowed) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.lock, color: Colors.white, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(_getRestrictedReason(index), style: const TextStyle(fontSize: 12))),
+                ],
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+        setState(() => _currentIndex = index);
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: isSelected ? ParishColors.marianBlue : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Opacity(
+              opacity: isAllowed ? 1.0 : 0.35,
+              child: Icon(
+                isSelected ? activeIcon : icon,
+                color: isSelected ? Colors.white : ParishColors.textMuted,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  color: isSelected
+                      ? Colors.white
+                      : (isAllowed ? ParishColors.textDark : ParishColors.textMuted.withOpacity(0.5)),
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (!isAllowed)
+              const Icon(Icons.lock, size: 13, color: Color(0xFF94A3B8)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MOBILE TOP APP BAR
+  // ---------------------------------------------------------------------------
   PreferredSizeWidget _buildTopNavigationBar(BuildContext context) {
     return PreferredSize(
       preferredSize: const Size.fromHeight(70),
@@ -166,12 +475,12 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'St. John Paul II Parish',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: ParishColors.marianBlue,
+                          color: ParishColors.marianBlueAdaptive,
                           letterSpacing: -0.2,
                         ),
                       ),
@@ -207,10 +516,10 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.notifications_outlined,
                           size: 26,
-                          color: ParishColors.marianBlue,
+                          color: ParishColors.marianBlueAdaptive,
                         ),
                         Positioned(
                           top: 6,
@@ -243,6 +552,9 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // MOBILE GCASH-STYLE BOTTOM BAR
+  // ---------------------------------------------------------------------------
   Widget _buildGcashStyleBottomBar() {
     return Container(
       height: 84,
@@ -308,7 +620,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: _currentIndex == 0 ? ParishColors.marianBlue : ParishColors.textMuted,
+                      color: _currentIndex == 0 ? ParishColors.marianBlueAdaptive : ParishColors.textMuted,
                     ),
                   ),
                 ],
@@ -370,7 +682,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     isSelected ? activeIcon : icon,
                     size: 24,
                     color: isSelected
-                        ? ParishColors.marianBlue
+                        ? ParishColors.marianBlueAdaptive
                         : (isAllowed ? ParishColors.textMuted : ParishColors.borderGrey),
                   ),
                 ),
@@ -395,7 +707,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                 color: isSelected
-                    ? ParishColors.marianBlue
+                    ? ParishColors.marianBlueAdaptive
                     : (isAllowed ? ParishColors.textMuted : const Color(0xFF94A3B8)),
               ),
             ),

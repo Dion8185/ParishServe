@@ -12,7 +12,27 @@ class ParishColors {
   static const Color oliveGreen = Color(0xFF2D6A4F);
 
   // ===========================================================================
-  // Theme-Adaptive Dynamic Colors
+  // Theme-Adaptive Brand Accents (WCAG AAA High-Contrast)
+  // ===========================================================================
+  /// Deep Marian Navy in light mode, high-contrast Marian Sky Blue in dark mode
+  static Color get marianBlueAdaptive => AppThemeController.isDarkMode
+      ? const Color(0xFF60A5FA) // Bright Marian Cerulean for dark backgrounds
+      : const Color(0xFF164E87); // Deep Marian Navy for light backgrounds
+
+  static Color get goldAccentAdaptive => AppThemeController.isDarkMode
+      ? const Color(0xFFFBBF24) // Brighter Papal Amber
+      : const Color(0xFFD49B18);
+
+  static Color get mercyRedAdaptive => AppThemeController.isDarkMode
+      ? const Color(0xFFF87171) // Readable soft crimson
+      : const Color(0xFFB91C1C);
+
+  static Color get oliveGreenAdaptive => AppThemeController.isDarkMode
+      ? const Color(0xFF34D399) // Vivid liturgical emerald
+      : const Color(0xFF2D6A4F);
+
+  // ===========================================================================
+  // Theme-Adaptive Canvas & Typography Colors
   // ===========================================================================
   static Color get backgroundLight => AppThemeController.isDarkMode
       ? const Color(0xFF0F172A) // Deep nocturnal Marian slate
@@ -49,4 +69,31 @@ class ParishColors {
   static Color get oliveGreenSurface => AppThemeController.isDarkMode
       ? const Color(0xFF064E3B)
       : const Color(0xFFEDF7F2);
+
+  // ===========================================================================
+  // Theme-Adaptive Sacrament Banners & Surfaces (Fixes Glaring Pastels in Dark Mode)
+  // ===========================================================================
+  static Color get baptismSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF172554) // Deep ocean slate
+      : const Color(0xFFEDF4FB); // Light water blue
+
+  static Color get confirmationSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF450A0A) // Deep Pentecost crimson
+      : const Color(0xFFFDF2F2); // Light pastel rose
+
+  static Color get communionSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF3E2D0C) // Deep chalice gold
+      : const Color(0xFFFFF7E6); // Light Eucharistic cream
+
+  static Color get matrimonySurface => AppThemeController.isDarkMode
+      ? const Color(0xFF4C0519) // Deep wine burgundy
+      : const Color(0xFFFCE7F3); // Light nuptial pink
+
+  static Color get deathSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF3B0764) // Deep solemn violet
+      : const Color(0xFFF3E8FF); // Light lavender
+
+  static Color get conversionSurface => AppThemeController.isDarkMode
+      ? const Color(0xFF064E3B) // Deep forest green
+      : const Color(0xFFEDF7F2); // Light olive
 }

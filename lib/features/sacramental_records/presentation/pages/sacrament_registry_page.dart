@@ -15,6 +15,7 @@ import '../../services/conversion_service.dart';
 import '../dialogs/manual_entry_dialog.dart';
 import '../dialogs/ocr_scan_dialog.dart';
 import 'baptism_manual_entry_page.dart';
+import 'certificate_template_management_page.dart';
 import 'confirmation_manual_entry_page.dart';
 import 'first_communion_manual_entry_page.dart';
 import 'matrimony_manual_entry_page.dart';
@@ -209,6 +210,13 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     }
   }
 
+  void _openCertificateTemplates() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
+    );
+  }
+
   void _navigateToDetail(BuildContext context, {
     required String recordId,
     required String name,
@@ -291,330 +299,467 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     final int totalPages = (totalCount / _rowsPerPage).ceil() > 0 ? (totalCount / _rowsPerPage).ceil() : 1;
     if (_currentPage >= totalPages) _currentPage = totalPages > 0 ? totalPages - 1 : 0;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: cardWhiteColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: widget.themeColor, size: 26),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${widget.sacramentName} Registry',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool isDesktop = constraints.maxWidth >= 900;
+
+        return Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhiteColor,
+            elevation: 0,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back, color: widget.themeColor, size: 26),
+              onPressed: () => Navigator.pop(context),
             ),
-            Text(
-              widget.ledgerSubtitle,
-              style: TextStyle(fontSize: 12, color: textMutedColor),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${widget.sacramentName} Registry',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+                ),
+                Text(
+                  widget.ledgerSubtitle,
+                  style: TextStyle(fontSize: 12, color: textMutedColor),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          if (isBaptism || isConfirmation || isCommunion || isMatrimony || isDeath || isConversion)
-            IconButton(
-              icon: Icon(Icons.refresh, color: widget.themeColor),
-              onPressed: _loadRecords,
-              tooltip: 'Refresh Database Records',
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Ledger Status Banner
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: widget.surfaceColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: widget.themeColor.withOpacity(0.4), width: 1.5),
+            actions: [
+              IconButton(
+                icon: Icon(Icons.design_services_outlined, color: widget.themeColor),
+                tooltip: 'Certificate Templates Studio',
+                onPressed: _openCertificateTemplates,
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: widget.themeColor,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(widget.icon, color: Colors.white, size: 26),
+              if (isBaptism || isConfirmation || isCommunion || isMatrimony || isDeath || isConversion)
+                IconButton(
+                  icon: Icon(Icons.refresh, color: widget.themeColor),
+                  onPressed: _loadRecords,
+                  tooltip: 'Refresh Database Records',
+                ),
+            ],
+          ),
+          body: SingleChildScrollView(
+            padding: EdgeInsets.all(isDesktop ? 26 : 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Ledger Status Banner
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: widget.surfaceColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: widget.themeColor.withOpacity(0.4), width: 1.5),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${widget.sacramentName} Canonical Books',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: widget.themeColor,
+                          shape: BoxShape.circle,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Live Database Records: $totalCount registered',
-                          style: TextStyle(fontSize: 12, color: textMutedColor),
+                        child: Icon(widget.icon, color: Colors.white, size: 26),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${widget.sacramentName} Canonical Books',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Live Database Records: $totalCount registered',
+                              style: TextStyle(fontSize: 12, color: textMutedColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Action Buttons Toolbar (AI OCR, Manual Entry, and Certificate Templates)
+                isDesktop
+                    ? Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: widget.themeColor,
+                            foregroundColor: Colors.white,
+                            elevation: 1,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: () => showOcrScanModal(context),
+                          icon: const Icon(Icons.document_scanner, size: 20),
+                          label: const Text('AI OCR Scan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 4,
+                      child: SizedBox(
+                        height: 52,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: widget.themeColor, width: 1.5),
+                            foregroundColor: widget.themeColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: _openManualEntry,
+                          icon: const Icon(Icons.add, size: 20),
+                          label: const Text('Manual Entry', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 3,
+                      child: SizedBox(
+                        height: 52,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
+                            foregroundColor: ParishColors.goldAccent,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: _openCertificateTemplates,
+                          icon: const Icon(Icons.design_services_outlined, size: 18),
+                          label: const Text('Templates Studio', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+                    : Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: widget.themeColor,
+                                foregroundColor: Colors.white,
+                                elevation: 1,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: () => showOcrScanModal(context),
+                              icon: const Icon(Icons.document_scanner, size: 20),
+                              label: const Text('AI OCR Scan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: widget.themeColor, width: 1.5),
+                                foregroundColor: widget.themeColor,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: _openManualEntry,
+                              icon: const Icon(Icons.add, size: 20),
+                              label: const Text('Manual Entry', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // Action Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: widget.themeColor,
-                        foregroundColor: Colors.white,
-                        elevation: 1,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      onPressed: () => showOcrScanModal(context),
-                      icon: const Icon(Icons.document_scanner, size: 22),
-                      label: const Text('AI OCR Scan', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 56,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: widget.themeColor, width: 1.8),
-                        foregroundColor: widget.themeColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      onPressed: _openManualEntry,
-                      icon: const Icon(Icons.add, size: 22),
-                      label: const Text('Manual Entry', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Search Bar & View/Pagination Controls Bar
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cardWhiteColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: borderGreyColor),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.search, size: 24, color: widget.themeColor),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (val) => setState(() {
-                            _searchQuery = val;
-                            _currentPage = 0;
-                          }),
-                          style: TextStyle(fontSize: 14, color: textDarkColor),
-                          decoration: InputDecoration(
-                            hintText: 'Search ${widget.sacramentName} records...',
-                            hintStyle: TextStyle(fontSize: 14, color: textMutedColor),
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
+                          foregroundColor: ParishColors.goldAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                      ),
-                      if (_searchQuery.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {
-                              _searchQuery = '';
-                              _currentPage = 0;
-                            });
-                          },
-                        ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // View Mode Toggle (Cards vs Table)
-                      ToggleButtons(
-                        isSelected: [_viewMode == RegistryViewMode.cards, _viewMode == RegistryViewMode.table],
-                        onPressed: (index) {
-                          setState(() {
-                            _viewMode = index == 0 ? RegistryViewMode.cards : RegistryViewMode.table;
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        selectedColor: Colors.white,
-                        fillColor: widget.themeColor,
-                        color: textMutedColor,
-                        constraints: const BoxConstraints(minHeight: 36, minWidth: 44),
-                        children: const [
-                          Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 18)),
-                          Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 18)),
-                        ],
-                      ),
-                      // Rows Per Page Selector
-                      Row(
-                        children: [
-                          Text('Rows:', style: TextStyle(fontSize: 12, color: textMutedColor)),
-                          const SizedBox(width: 8),
-                          DropdownButton<int>(
-                            value: _rowsPerPage,
-                            isDense: true,
-                            items: [10, 25, 50].map((val) {
-                              return DropdownMenuItem<int>(
-                                value: val,
-                                child: Text('$val', style: TextStyle(fontSize: 13, color: textDarkColor)),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _rowsPerPage = val;
-                                  _currentPage = 0;
-                                });
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Header info & total count
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${widget.sacramentName} Records ($totalCount)',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: widget.surfaceColor,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Page ${_currentPage + 1} of $totalPages',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Main Records Display Area (Cards vs Table)
-            if (_isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else if (_fetchError != null)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: ParishColors.mercyRedSurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: ParishColors.mercyRed),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: ParishColors.mercyRed),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Database error: $_fetchError',
-                        style: const TextStyle(fontSize: 13, color: ParishColors.mercyRed),
+                        onPressed: _openCertificateTemplates,
+                        icon: const Icon(Icons.design_services_outlined, size: 18),
+                        label: const Text('Certificate Templates Studio', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],
                 ),
-              )
-            else if (totalCount == 0)
-                _buildEmptyState(
-                  title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered ${widget.sacramentName.toLowerCase()} records yet.',
-                  subtitle: 'Tap "Manual Entry" above to add a new record.',
-                )
-              else if (_viewMode == RegistryViewMode.cards)
-                  ..._buildCardsList(paginatedBaptism, paginatedConfirmation, paginatedCommunion, paginatedMatrimony, paginatedDeath, paginatedConversion, isBaptism, isConfirmation, isCommunion, isMatrimony, isDeath, isConversion)
-                else
-                  _buildTableView(paginatedBaptism, paginatedConfirmation, paginatedCommunion, paginatedMatrimony, paginatedDeath, paginatedConversion, isBaptism, isConfirmation, isCommunion, isMatrimony, isDeath, isConversion),
+                const SizedBox(height: 20),
 
-            const SizedBox(height: 16),
-
-            // Pagination Controls Footer
-            if (totalCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: cardWhiteColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: borderGreyColor),
+                // Search Bar & View/Pagination Controls Bar
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: cardWhiteColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderGreyColor),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.search, size: 24, color: widget.themeColor),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: (val) => setState(() {
+                                _searchQuery = val;
+                                _currentPage = 0;
+                              }),
+                              style: TextStyle(fontSize: 14, color: textDarkColor),
+                              decoration: InputDecoration(
+                                hintText: 'Search ${widget.sacramentName} records...',
+                                hintStyle: TextStyle(fontSize: 14, color: textMutedColor),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                  _currentPage = 0;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                      const Divider(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // View Mode Toggle (Cards vs Table)
+                          ToggleButtons(
+                            isSelected: [_viewMode == RegistryViewMode.cards, _viewMode == RegistryViewMode.table],
+                            onPressed: (index) {
+                              setState(() {
+                                _viewMode = index == 0 ? RegistryViewMode.cards : RegistryViewMode.table;
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            selectedColor: Colors.white,
+                            fillColor: widget.themeColor,
+                            color: textMutedColor,
+                            constraints: const BoxConstraints(minHeight: 36, minWidth: 44),
+                            children: const [
+                              Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 18)),
+                              Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 18)),
+                            ],
+                          ),
+                          // Rows Per Page Selector
+                          Row(
+                            children: [
+                              Text('Rows:', style: TextStyle(fontSize: 12, color: textMutedColor)),
+                              const SizedBox(width: 8),
+                              DropdownButton<int>(
+                                value: _rowsPerPage,
+                                isDense: true,
+                                items: [10, 25, 50].map((val) {
+                                  return DropdownMenuItem<int>(
+                                    value: val,
+                                    child: Text('$val', style: TextStyle(fontSize: 13, color: textDarkColor)),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() {
+                                      _rowsPerPage = val;
+                                      _currentPage = 0;
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
+                const SizedBox(height: 20),
+
+                // Header info & total count
+                Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Showing ${_currentPage * _rowsPerPage + 1}–${((_currentPage + 1) * _rowsPerPage) > totalCount ? totalCount : ((_currentPage + 1) * _rowsPerPage)} of $totalCount',
-                      style: TextStyle(fontSize: 12, color: textMutedColor),
+                      '${widget.sacramentName} Records ($totalCount)',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
                     ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.first_page, size: 20),
-                          onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 20),
-                          onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
-                        ),
-                        Text(
-                          '${_currentPage + 1} / $totalPages',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, size: 20),
-                          onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.last_page, size: 20),
-                          onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage = totalPages - 1) : null,
-                        ),
-                      ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: widget.surfaceColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Page ${_currentPage + 1} of $totalPages',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
+                      ),
                     ),
                   ],
                 ),
-              ),
-          ],
-        ),
-      ),
+                const SizedBox(height: 12),
+
+                // Main Records Display Area (Cards vs Table)
+                if (_isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (_fetchError != null)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: ParishColors.mercyRedSurface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: ParishColors.mercyRed),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: ParishColors.mercyRed),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Database error: $_fetchError',
+                            style: const TextStyle(fontSize: 13, color: ParishColors.mercyRed),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (totalCount == 0)
+                    _buildEmptyState(
+                      title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered ${widget.sacramentName.toLowerCase()} records yet.',
+                      subtitle: 'Tap "Manual Entry" above to add a new record.',
+                    )
+                  else if (_viewMode == RegistryViewMode.cards)
+                      isDesktop
+                          ? GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 14,
+                        mainAxisSpacing: 14,
+                        childAspectRatio: 2.1,
+                        children: _buildCardsList(
+                          paginatedBaptism,
+                          paginatedConfirmation,
+                          paginatedCommunion,
+                          paginatedMatrimony,
+                          paginatedDeath,
+                          paginatedConversion,
+                          isBaptism,
+                          isConfirmation,
+                          isCommunion,
+                          isMatrimony,
+                          isDeath,
+                          isConversion,
+                        ),
+                      )
+                          : Column(
+                        children: _buildCardsList(
+                          paginatedBaptism,
+                          paginatedConfirmation,
+                          paginatedCommunion,
+                          paginatedMatrimony,
+                          paginatedDeath,
+                          paginatedConversion,
+                          isBaptism,
+                          isConfirmation,
+                          isCommunion,
+                          isMatrimony,
+                          isDeath,
+                          isConversion,
+                        ),
+                      )
+                    else
+                      _buildTableView(
+                        paginatedBaptism,
+                        paginatedConfirmation,
+                        paginatedCommunion,
+                        paginatedMatrimony,
+                        paginatedDeath,
+                        paginatedConversion,
+                        isBaptism,
+                        isConfirmation,
+                        isCommunion,
+                        isMatrimony,
+                        isDeath,
+                        isConversion,
+                      ),
+
+                const SizedBox(height: 16),
+
+                // Pagination Controls Footer
+                if (totalCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: cardWhiteColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: borderGreyColor),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Showing ${_currentPage * _rowsPerPage + 1}–${((_currentPage + 1) * _rowsPerPage) > totalCount ? totalCount : ((_currentPage + 1) * _rowsPerPage)} of $totalCount',
+                          style: TextStyle(fontSize: 12, color: textMutedColor),
+                        ),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.first_page, size: 20),
+                              onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_left, size: 20),
+                              onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                            ),
+                            Text(
+                              '${_currentPage + 1} / $totalPages',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_right, size: 20),
+                              onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.last_page, size: 20),
+                              onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage = totalPages - 1) : null,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1031,7 +1176,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     );
   }
 
-  /// Concise Card View displaying strictly Name, Parents, DOB, and Sacrament Date
   Widget _buildConciseSacramentCard({
     required BuildContext context,
     required String name,
@@ -1073,6 +1217,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1098,41 +1243,50 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             // 1. Person's full name
             Text(
               name,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDarkColor),
+              style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: textDarkColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             // 2. Parents' names
             Text(
               parents,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: textDarkColor),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: textDarkColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
             // 3. Date of birth
             Text(
               dob,
-              style: TextStyle(fontSize: 12.5, color: textMutedColor),
+              style: TextStyle(fontSize: 12, color: textMutedColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
             // 4. Date of the administered sacrament
             Text(
               sacramentDate,
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: widget.themeColor),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: widget.themeColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              height: 44,
+              height: 38,
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   backgroundColor: widget.surfaceColor,
                   foregroundColor: textDarkColor,
                   elevation: 0,
                   side: BorderSide(color: widget.themeColor, width: 1.2),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
                 ),
                 onPressed: () => _navigateToDetail(
                   context,
@@ -1145,10 +1299,10 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                   marginalNotation: marginalNotation,
                   rawRecordData: rawRecordData,
                 ),
-                icon: Icon(Icons.visibility, size: 18, color: widget.themeColor),
+                icon: Icon(Icons.visibility, size: 16, color: widget.themeColor),
                 label: Text(
                   'View & Manage Record Details',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDarkColor),
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: textDarkColor),
                 ),
               ),
             ),

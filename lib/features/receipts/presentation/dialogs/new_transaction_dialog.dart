@@ -81,6 +81,9 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
   final _payorContactController = TextEditingController();
   final _amountController = TextEditingController();
   final _detailsController = TextEditingController();
+  final _gcashRefController = TextEditingController();
+
+  DateTime _transactionDate = DateTime.now();
 
   List<PosItemModel> _availableParticulars = [];
   PosItemModel? _selectedParticular;
@@ -130,12 +133,27 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
     );
   }
 
+  Future<void> _pickTransactionDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _transactionDate,
+      firstDate: DateTime(2020),
+      lastDate: now.add(const Duration(days: 365)),
+    );
+
+    if (picked != null) {
+      setState(() => _transactionDate = picked);
+    }
+  }
+
   @override
   void dispose() {
     _payorNameController.dispose();
     _payorContactController.dispose();
     _amountController.dispose();
     _detailsController.dispose();
+    _gcashRefController.dispose();
     super.dispose();
   }
 
@@ -159,13 +177,26 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
       return;
     }
 
+    if (_paymentMode == 'GCash' && _gcashRefController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please provide the GCash Reference Number.');
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
       final serviceTitle = _selectedParticular?.title ?? 'Parish Offering';
-      final details = _detailsController.text.trim().isNotEmpty
-          ? '${_detailsController.text.trim()} (Tender Mode: $_paymentMode)'
-          : '$serviceTitle (Tender Mode: $_paymentMode)';
+      final notes = <String>[];
+
+      notes.add('Tender: $_paymentMode');
+      if (_paymentMode == 'GCash') {
+        notes.add('GCash Ref: ${_gcashRefController.text.trim()}');
+      }
+      if (_detailsController.text.trim().isNotEmpty) {
+        notes.add(_detailsController.text.trim());
+      }
+
+      final details = '• $serviceTitle @ ₱${parsedAmount.toStringAsFixed(2)} = ₱${parsedAmount.toStringAsFixed(2)}\nRemarks: ${notes.join(" | ")}';
 
       final record = await SecretaryService.createTransaction(
         payorName: _payorNameController.text.trim(),
@@ -174,6 +205,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
         transactionDetails: details,
         transactionAmount: _paymentMode == 'Gratis' ? 0.00 : parsedAmount,
         transactionType: _resolveTransactionTypeCategory(),
+        transactionDate: _transactionDate,
       );
 
       if (!mounted) return;
@@ -186,7 +218,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
         payer: record['payor_name'] ?? _payorNameController.text.trim(),
         purpose: record['related_service'] ?? serviceTitle,
         amount: '₱ ${(record['transaction_amount'] as num?)?.toStringAsFixed(2) ?? parsedAmount.toStringAsFixed(2)}',
-        date: record['transaction_date']?.toString().substring(0, 10) ?? 'Today',
+        date: _transactionDate.toIso8601String().substring(0, 10),
         payorContact: record['payor_contact'],
         transactionDetails: record['transaction_details'],
         paymentMode: _paymentMode,
@@ -204,6 +236,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
+    final borderGrey = ParishColors.borderGrey;
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -253,6 +286,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
                   ),
                 ],
 
+                // Payor Name
                 Text('Payor / Parishioner Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                 const SizedBox(height: 6),
                 TextFormField(
@@ -264,17 +298,64 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                Text('Contact Number (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _payorContactController,
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    _PhilippinePhoneInputFormatter(),
+                // Contact & Date Row
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Contact Number (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _payorContactController,
+                            keyboardType: TextInputType.phone,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              _PhilippinePhoneInputFormatter(),
+                            ],
+                            style: TextStyle(fontSize: 14, color: textDark),
+                            decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Receipt Date *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                          const SizedBox(height: 6),
+                          InkWell(
+                            onTap: _pickTransactionDate,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              height: 48,
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              decoration: BoxDecoration(
+                                color: ParishColors.backgroundLight,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: borderGrey),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _transactionDate.toIso8601String().substring(0, 10),
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                  ),
+                                  const Icon(Icons.calendar_today, size: 16, color: ParishColors.marianBlue),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
-                  style: TextStyle(fontSize: 14, color: textDark),
-                  decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
                 ),
                 const SizedBox(height: 12),
 
@@ -322,6 +403,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
                   ),
                 const SizedBox(height: 12),
 
+                // Amount & Tender Mode
                 Row(
                   children: [
                     Expanded(
@@ -366,6 +448,22 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
                 ),
                 const SizedBox(height: 12),
 
+                // Conditional GCash Reference Field
+                if (_paymentMode == 'GCash') ...[
+                  Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _gcashRefController,
+                    style: TextStyle(fontSize: 13.5, color: textDark),
+                    validator: (v) => _paymentMode == 'GCash' && (v?.trim().isEmpty ?? true) ? 'Required for GCash transactions' : null,
+                    decoration: _inputDecoration(
+                      hint: 'e.g. 1002 9847 1120',
+                      prefixIcon: const Icon(Icons.qr_code_2, size: 18, color: Color(0xFF005CEE)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
                 Text('Particulars / Notes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                 const SizedBox(height: 6),
                 TextFormField(
@@ -401,9 +499,10 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
     );
   }
 
-  InputDecoration _inputDecoration({String? hint}) {
+  InputDecoration _inputDecoration({String? hint, Widget? prefixIcon}) {
     return InputDecoration(
       hintText: hint,
+      prefixIcon: prefixIcon,
       filled: true,
       fillColor: ParishColors.backgroundLight,
       isDense: true,

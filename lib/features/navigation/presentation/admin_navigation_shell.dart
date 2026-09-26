@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/theme/theme_controller.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/presentation/admin_users_page.dart';
 import '../../auth/services/auth_service.dart';
@@ -38,6 +39,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
         title: const Text('Confirm Log Out', style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('Are you sure you want to end your administrative session?'),
         actions: [
@@ -60,43 +62,48 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool isDesktop = constraints.maxWidth >= 900;
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeController.themeModeNotifier,
+      builder: (context, currentMode, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isDesktop = constraints.maxWidth >= 900;
 
-        if (isDesktop) {
-          return Scaffold(
-            backgroundColor: ParishColors.backgroundLight,
-            body: Row(
-              children: [
-                _buildDesktopSidebar(),
-                Expanded(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1400),
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(30),
-                          bottomLeft: Radius.circular(30),
-                        ),
-                        child: Container(
-                          color: ParishColors.backgroundLight,
-                          child: _views[_currentIndex],
+            if (isDesktop) {
+              return Scaffold(
+                backgroundColor: ParishColors.backgroundLight,
+                body: Row(
+                  children: [
+                    _buildDesktopSidebar(),
+                    Expanded(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1400),
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(30),
+                              bottomLeft: Radius.circular(30),
+                            ),
+                            child: Container(
+                              color: ParishColors.backgroundLight,
+                              child: _views[_currentIndex],
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        }
+              );
+            }
 
-        return Scaffold(
-          backgroundColor: ParishColors.backgroundLight,
-          appBar: _buildMobileTopBar(),
-          body: SafeArea(child: _views[_currentIndex]),
-          bottomNavigationBar: _buildMobileBottomBar(),
+            return Scaffold(
+              backgroundColor: ParishColors.backgroundLight,
+              appBar: _buildMobileTopBar(),
+              body: SafeArea(child: _views[_currentIndex]),
+              bottomNavigationBar: _buildMobileBottomBar(),
+            );
+          },
         );
       },
     );
@@ -125,9 +132,9 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
             child: const Icon(Icons.admin_panel_settings, size: 36, color: ParishColors.marianBlue),
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'ParishServe',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
           ),
           Container(
             margin: const EdgeInsets.only(top: 4),
@@ -144,7 +151,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
-                color: isSuperAdmin ? ParishColors.goldAccent : ParishColors.marianBlue,
+                color: isSuperAdmin ? ParishColors.goldAccent : ParishColors.marianBlueAdaptive,
               ),
             ),
           ),
@@ -178,7 +185,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
                       backgroundColor: ParishColors.marianBlueSurface,
                       child: Text(
                         widget.currentUser.firstName.isNotEmpty ? widget.currentUser.firstName[0].toUpperCase() : 'A',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                        style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -295,9 +302,9 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'ParishServe Admin',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
                       ),
                       Text(
                         '${widget.currentUser.firstName} • ${widget.currentUser.roleDisplay}',
@@ -336,25 +343,25 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
           indicatorColor: ParishColors.marianBlueSurface,
           elevation: 0,
           height: 65,
-          destinations: const [
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard, color: ParishColors.marianBlue),
+              icon: const Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard, color: ParishColors.marianBlueAdaptive),
               label: 'Dashboard',
             ),
             NavigationDestination(
-              icon: Icon(Icons.manage_accounts_outlined),
-              selectedIcon: Icon(Icons.manage_accounts, color: ParishColors.marianBlue),
+              icon: const Icon(Icons.manage_accounts_outlined),
+              selectedIcon: Icon(Icons.manage_accounts, color: ParishColors.marianBlueAdaptive),
               label: 'Users',
             ),
             NavigationDestination(
-              icon: Icon(Icons.settings_suggest_outlined),
-              selectedIcon: Icon(Icons.settings_suggest, color: ParishColors.marianBlue),
+              icon: const Icon(Icons.settings_suggest_outlined),
+              selectedIcon: Icon(Icons.settings_suggest, color: ParishColors.marianBlueAdaptive),
               label: 'System',
             ),
             NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person, color: ParishColors.marianBlue),
+              icon: const Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person, color: ParishColors.marianBlueAdaptive),
               label: 'Profile',
             ),
           ],
@@ -396,7 +403,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.shield, color: ParishColors.marianBlue, size: 24),
+                Icon(Icons.shield, color: ParishColors.marianBlueAdaptive, size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -478,7 +485,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text('St. John Paul II Parish (Labuin, Sta. Cruz, Laguna)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                Text('St. John Paul II Parish (Labuin, Sta. Cruz, Laguna)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive)),
                 Text('Diocese of San Pablo • Vicarial District IV', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
                 const Divider(height: 24),
                 if (isSuperAdmin)
@@ -534,7 +541,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
               color: ParishColors.backgroundLight,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: ParishColors.marianBlue, size: 22),
+            child: Icon(icon, color: ParishColors.marianBlueAdaptive, size: 22),
           ),
           const SizedBox(width: 14),
           Expanded(

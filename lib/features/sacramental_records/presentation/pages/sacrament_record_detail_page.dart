@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
+import '../../models/certificate_issuance_model.dart';
+import '../../services/certificate_service.dart';
 import '../dialogs/generate_certificate_dialog.dart';
 import 'baptism_manual_entry_page.dart';
 import 'certificate_template_management_page.dart';
@@ -9,7 +12,7 @@ import 'death_manual_entry_page.dart';
 import 'first_communion_manual_entry_page.dart';
 import 'matrimony_manual_entry_page.dart';
 
-class SacramentRecordDetailPage extends StatelessWidget {
+class SacramentRecordDetailPage extends StatefulWidget {
   final String sacramentName;
   final String recordId;
   final String name;
@@ -39,55 +42,83 @@ class SacramentRecordDetailPage extends StatelessWidget {
     this.onRecordUpdated,
   });
 
+  @override
+  State<SacramentRecordDetailPage> createState() => _SacramentRecordDetailPageState();
+}
+
+class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
+  List<CertificateIssuanceModel> _pastIssuances = [];
+  bool _isLoadingIssuances = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIssuances();
+  }
+
+  Future<void> _loadIssuances() async {
+    setState(() => _isLoadingIssuances = true);
+    try {
+      final list = await CertificateService.getIssuancesForRecord(widget.recordId);
+      if (!mounted) return;
+      setState(() {
+        _pastIssuances = list;
+        _isLoadingIssuances = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingIssuances = false);
+    }
+  }
+
   /// Opens the matching manual entry form in Edit Record Mode
   void _openEditRecord(BuildContext context) {
     Widget? editPage;
 
-    if (sacramentName == 'Baptism') {
+    if (widget.sacramentName == 'Baptism') {
       editPage = BaptismManualEntryPage(
-        initialData: rawRecordData,
+        initialData: widget.rawRecordData,
         onRecordSaved: () {
-          onRecordUpdated?.call();
-          Navigator.pop(context); // Close detail page so user returns to refreshed registry
+          widget.onRecordUpdated?.call();
+          Navigator.pop(context);
         },
       );
-    } else if (sacramentName == 'Confirmation') {
+    } else if (widget.sacramentName == 'Confirmation') {
       editPage = ConfirmationManualEntryPage(
-        initialData: rawRecordData,
+        initialData: widget.rawRecordData,
         onRecordSaved: () {
-          onRecordUpdated?.call();
+          widget.onRecordUpdated?.call();
           Navigator.pop(context);
         },
       );
-    } else if (sacramentName == 'First Communion') {
+    } else if (widget.sacramentName == 'First Communion') {
       editPage = FirstCommunionManualEntryPage(
-        initialData: rawRecordData,
+        initialData: widget.rawRecordData,
         onRecordSaved: () {
-          onRecordUpdated?.call();
+          widget.onRecordUpdated?.call();
           Navigator.pop(context);
         },
       );
-    } else if (sacramentName == 'Matrimony') {
+    } else if (widget.sacramentName == 'Matrimony') {
       editPage = MatrimonyManualEntryPage(
-        initialData: rawRecordData,
+        initialData: widget.rawRecordData,
         onRecordSaved: () {
-          onRecordUpdated?.call();
+          widget.onRecordUpdated?.call();
           Navigator.pop(context);
         },
       );
-    } else if (sacramentName == 'Death') {
+    } else if (widget.sacramentName == 'Death') {
       editPage = DeathManualEntryPage(
-        initialData: rawRecordData,
+        initialData: widget.rawRecordData,
         onRecordSaved: () {
-          onRecordUpdated?.call();
+          widget.onRecordUpdated?.call();
           Navigator.pop(context);
         },
       );
-    } else if (sacramentName == 'Conversion') {
+    } else if (widget.sacramentName == 'Conversion') {
       editPage = ConversionManualEntryPage(
-        initialData: rawRecordData,
+        initialData: widget.rawRecordData,
         onRecordSaved: () {
-          onRecordUpdated?.call();
+          widget.onRecordUpdated?.call();
           Navigator.pop(context);
         },
       );
@@ -101,9 +132,19 @@ class SacramentRecordDetailPage extends StatelessWidget {
     }
   }
 
+  void _copyReference() {
+    Clipboard.setData(ClipboardData(text: '${widget.recordId} • ${widget.bookRef}'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Canonical reference "${widget.bookRef}" copied to clipboard.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   /// Safely extracts and formats data from the raw database map
   String _val(String key) {
-    final v = rawRecordData[key];
+    final v = widget.rawRecordData[key];
     if (v == null) return '—';
     final str = v.toString().trim();
     if (str.isEmpty) return '—';
@@ -116,7 +157,6 @@ class SacramentRecordDetailPage extends StatelessWidget {
     final f = _val('${prefix}_first_name');
     final m = _val('${prefix}_middle_name');
 
-    // Check all possible schema column variants for surnames
     String l = _val('${prefix}_last_name');
     if (l == '—') {
       l = _val('${prefix}_maiden_last_name');
@@ -127,7 +167,6 @@ class SacramentRecordDetailPage extends StatelessWidget {
 
     final s = _val('${prefix}_suffix');
 
-    // Check for Canon 877 §2 placeholder
     if (f.toLowerCase() == 'not indicated') return '—';
     if (f == '—' && l == '—') return '—';
 
@@ -145,6 +184,7 @@ class SacramentRecordDetailPage extends StatelessWidget {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
+    final borderGreyColor = ParishColors.borderGrey;
 
     return Scaffold(
       backgroundColor: ParishColors.backgroundLight,
@@ -152,25 +192,25 @@ class SacramentRecordDetailPage extends StatelessWidget {
         backgroundColor: cardWhiteColor,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: themeColor, size: 26),
+          icon: Icon(Icons.arrow_back, color: widget.themeColor, size: 26),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '$sacramentName Record Details',
+              '${widget.sacramentName} Record Details',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
             ),
             Text(
-              'Canonical ID: $recordId',
+              'Canonical ID: ${widget.recordId}',
               style: TextStyle(fontSize: 12, color: textMutedColor),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.design_services_outlined, color: themeColor),
+            icon: Icon(Icons.design_services_outlined, color: widget.themeColor),
             tooltip: 'Manage Certificate Templates',
             onPressed: () {
               Navigator.push(
@@ -180,7 +220,7 @@ class SacramentRecordDetailPage extends StatelessWidget {
             },
           ),
           IconButton(
-            icon: Icon(Icons.edit_outlined, color: themeColor),
+            icon: Icon(Icons.edit_outlined, color: widget.themeColor),
             tooltip: 'Edit Record',
             onPressed: () => _openEditRecord(context),
           ),
@@ -199,16 +239,16 @@ class SacramentRecordDetailPage extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: surfaceColor,
+                    color: widget.surfaceColor,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: themeColor.withOpacity(0.4), width: 1.5),
+                    border: Border.all(color: widget.themeColor.withOpacity(0.4), width: 1.5),
                   ),
                   child: Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: themeColor,
+                          color: widget.themeColor,
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.menu_book, color: Colors.white, size: 30),
@@ -219,14 +259,39 @@ class SacramentRecordDetailPage extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              name,
+                              widget.name,
                               softWrap: true,
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: themeColor),
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: widget.themeColor),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              bookRef,
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
+                            Row(
+                              children: [
+                                Text(
+                                  widget.bookRef,
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
+                                ),
+                                const SizedBox(width: 8),
+                                InkWell(
+                                  onTap: _copyReference,
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: widget.themeColor.withOpacity(0.3)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.copy, size: 12, color: widget.themeColor),
+                                        const SizedBox(width: 4),
+                                        Text('Copy', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: widget.themeColor)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -243,34 +308,38 @@ class SacramentRecordDetailPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 _buildSacramentSpecificDetails(),
-
                 const SizedBox(height: 16),
 
-                // 3. Primary Action: Launch Official Certificate Workflow Modal
+                // 3. Official Certificate Issuance History & Audit Trail
+                _buildIssuanceHistoryCard(cardWhiteColor, borderGreyColor, textDarkColor, textMutedColor),
+                const SizedBox(height: 20),
+
+                // 4. Primary Action: Launch Official Certificate Workflow Modal
                 SizedBox(
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: themeColor,
+                      backgroundColor: widget.themeColor,
                       foregroundColor: Colors.white,
                       elevation: 1,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     onPressed: () => showGenerateCertificateModal(
                       context,
-                      sacramentType: sacramentName,
-                      recordId: recordId,
-                      recipientName: name,
-                      rawRecordData: rawRecordData,
-                      bookRef: bookRef,
+                      sacramentType: widget.sacramentName,
+                      recordId: widget.recordId,
+                      recipientName: widget.name,
+                      rawRecordData: widget.rawRecordData,
+                      bookRef: widget.bookRef,
                       onCertificateIssued: () {
-                        onRecordUpdated?.call();
+                        widget.onRecordUpdated?.call();
+                        _loadIssuances();
                       },
                     ),
                     icon: const Icon(Icons.print, size: 22),
                     label: Text(
-                      'Generate Official $sacramentName Certificate',
+                      'Generate Official ${widget.sacramentName} Certificate',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -285,11 +354,134 @@ class SacramentRecordDetailPage extends StatelessWidget {
   }
 
   // ===========================================================================
+  // Issuance History Card
+  // ===========================================================================
+  Widget _buildIssuanceHistoryCard(Color cardWhite, Color borderGrey, Color textDark, Color textMuted) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.history, color: widget.themeColor, size: 22),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Official Certificate Issuance History',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor),
+                  ),
+                ],
+              ),
+              if (_pastIssuances.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: widget.surfaceColor,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_pastIssuances.length} Issued',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
+                  ),
+                ),
+            ],
+          ),
+          const Divider(height: 20),
+
+          if (_isLoadingIssuances)
+            const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+          else if (_pastIssuances.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text(
+                'No official certificates have been issued yet for this canonical record.',
+                style: TextStyle(fontSize: 12.5, color: textMuted, fontStyle: FontStyle.italic),
+              ),
+            )
+          else
+            ..._pastIssuances.map((issuance) {
+              final isValid = issuance.isValid;
+              final statusColor = isValid ? ParishColors.oliveGreen : ParishColors.mercyRed;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderGrey),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      isValid ? Icons.verified : Icons.cancel,
+                      size: 20,
+                      color: statusColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                issuance.issuanceId,
+                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  issuance.certificateStatus.toUpperCase(),
+                                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: statusColor),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text('Purpose: ${issuance.purpose}', style: TextStyle(fontSize: 12, color: textMuted)),
+                          Text(
+                            'Issued: ${issuance.issuedAt.toIso8601String().substring(0, 10)} • Signatory: ${issuance.signatoryName}',
+                            style: TextStyle(fontSize: 11, color: textMuted),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Token: ${issuance.verificationId}',
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
   // Specific Sacrament Layout Builders
   // ===========================================================================
 
   Widget _buildSacramentSpecificDetails() {
-    switch (sacramentName) {
+    switch (widget.sacramentName) {
       case 'Baptism':
         return _buildBaptismDetails();
       case 'Confirmation':
@@ -495,9 +687,9 @@ class SacramentRecordDetailPage extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: themeColor, size: 22),
+              Icon(icon, color: widget.themeColor, size: 22),
               const SizedBox(width: 10),
-              Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: themeColor)),
+              Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor)),
             ],
           ),
           const Divider(height: 24),

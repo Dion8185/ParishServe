@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/theme/theme_controller.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/presentation/login_view.dart';
 import '../../dashboard/presentation/parishioner_dashboard_view.dart';
@@ -34,6 +35,7 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
         title: const Text('Confirm Log Out', style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('Are you sure you want to securely end your session?'),
         actions: [
@@ -57,49 +59,48 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool isDesktop = constraints.maxWidth >= 900;
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeController.themeModeNotifier,
+      builder: (context, currentMode, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isDesktop = constraints.maxWidth >= 900;
 
-        if (isDesktop) {
-          // ==========================================
-          // DESKTOP / TABLET LAYOUT (Sidebar)
-          // ==========================================
-          return Scaffold(
-            backgroundColor: ParishColors.backgroundLight,
-            body: Row(
-              children: [
-                _buildDesktopSidebar(),
-                Expanded(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1200),
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(30),
-                          bottomLeft: Radius.circular(30),
-                        ),
-                        child: Container(
-                          color: ParishColors.backgroundLight,
-                          child: _views[_currentIndex],
+            if (isDesktop) {
+              return Scaffold(
+                backgroundColor: ParishColors.backgroundLight,
+                body: Row(
+                  children: [
+                    _buildDesktopSidebar(),
+                    Expanded(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1200),
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(30),
+                              bottomLeft: Radius.circular(30),
+                            ),
+                            child: Container(
+                              color: ParishColors.backgroundLight,
+                              child: _views[_currentIndex],
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        }
+              );
+            }
 
-        // ==========================================
-        // MOBILE LAYOUT (Top App Bar & Bottom Nav)
-        // ==========================================
-        return Scaffold(
-          backgroundColor: ParishColors.backgroundLight,
-          appBar: _buildMobileTopBar(context),
-          body: SafeArea(child: _views[_currentIndex]),
-          bottomNavigationBar: _buildMobileBottomBar(),
+            return Scaffold(
+              backgroundColor: ParishColors.backgroundLight,
+              appBar: _buildMobileTopBar(context),
+              body: SafeArea(child: _views[_currentIndex]),
+              bottomNavigationBar: _buildMobileBottomBar(),
+            );
+          },
         );
       },
     );
@@ -115,7 +116,6 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
       child: Column(
         children: [
           const SizedBox(height: 40),
-          // Parish Logo & Title
           Container(
             width: 72,
             height: 72,
@@ -127,9 +127,9 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
             child: const Icon(Icons.church, size: 36, color: ParishColors.marianBlue),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'St. John Paul II Parish',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
           ),
           Text(
             'Client Portal',
@@ -137,7 +137,6 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
           ),
           const SizedBox(height: 40),
 
-          // Navigation Links
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -151,7 +150,6 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
             ),
           ),
 
-          // User Badge & Logout at Bottom
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -165,7 +163,7 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
                       backgroundColor: ParishColors.marianBlueSurface,
                       child: Text(
                         widget.currentUser.firstName[0],
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                        style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -282,9 +280,9 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'St. John Paul II Parish',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue, letterSpacing: -0.2),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive, letterSpacing: -0.2),
                       ),
                       const SizedBox(height: 1),
                       Text(
@@ -301,7 +299,7 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
                   backgroundColor: ParishColors.backgroundLight,
                   child: Text(
                     widget.currentUser.firstName[0],
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                    style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
                   ),
                 ),
               ],
@@ -327,20 +325,20 @@ class _ParishionerNavigationShellState extends State<ParishionerNavigationShell>
           indicatorColor: ParishColors.marianBlueSurface,
           elevation: 0,
           height: 65,
-          destinations: const [
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home, color: ParishColors.marianBlue),
+              icon: const Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home, color: ParishColors.marianBlueAdaptive),
               label: 'Overview',
             ),
             NavigationDestination(
-              icon: Icon(Icons.calendar_month_outlined),
-              selectedIcon: Icon(Icons.calendar_month, color: ParishColors.marianBlue),
+              icon: const Icon(Icons.calendar_month_outlined),
+              selectedIcon: Icon(Icons.calendar_month, color: ParishColors.marianBlueAdaptive),
               label: 'Calendar',
             ),
             NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person, color: ParishColors.marianBlue),
+              icon: const Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person, color: ParishColors.marianBlueAdaptive),
               label: 'Profile',
             ),
           ],
