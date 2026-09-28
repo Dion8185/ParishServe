@@ -18,6 +18,48 @@ void showRegisterAssetModal(BuildContext context, {VoidCallback? onAssetSaved}) 
   );
 }
 
+/// Custom formatter for Philippine Peso amounts with commas and decimals (e.g. 10,000.00).
+/// When empty, it leaves the field visually empty without forcing 0.00.
+class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue,
+      TextEditingValue newValue,
+      ) {
+    if (newValue.text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    // Allow digits and up to one decimal point
+    final clean = newValue.text.replaceAll(',', '');
+    if (!RegExp(r'^\d*(\.\d{0,2})?$').hasMatch(clean)) {
+      return oldValue;
+    }
+
+    final parts = clean.split('.');
+    final integerPart = parts[0];
+    final decimalPart = parts.length > 1 ? parts[1] : null;
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < integerPart.length; i++) {
+      if (i > 0 && (integerPart.length - i) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(integerPart[i]);
+    }
+
+    String formatted = buffer.toString();
+    if (decimalPart != null) {
+      formatted += '.$decimalPart';
+    }
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 class _RegisterAssetDialog extends StatefulWidget {
   final VoidCallback? onAssetSaved;
 
@@ -31,12 +73,14 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
   final _formKey = GlobalKey<FormState>();
 
   final _itemNameController = TextEditingController();
+  final _quantityController = TextEditingController(text: '1');
+  // Acquisition price per unit field is empty initially as required
+  final _unitPriceController = TextEditingController();
   final _dimensionsController = TextEditingController();
   final _colorController = TextEditingController();
   final _modelController = TextEditingController();
   final _othersController = TextEditingController();
   final _remarksController = TextEditingController();
-  final _costController = TextEditingController(text: '0.00');
   final _rfidTagController = TextEditingController();
 
   List<AssetLocationModel> _locations = [];
@@ -88,19 +132,44 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
   void initState() {
     super.initState();
     _loadReferences();
+    _quantityController.addListener(() => setState(() {}));
+    _unitPriceController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _itemNameController.dispose();
+    _quantityController.dispose();
+    _unitPriceController.dispose();
     _dimensionsController.dispose();
     _colorController.dispose();
     _modelController.dispose();
     _othersController.dispose();
     _remarksController.dispose();
-    _costController.dispose();
     _rfidTagController.dispose();
     super.dispose();
+  }
+
+  // Live Calculated Properties
+  int get _parsedQuantity {
+    final qty = int.tryParse(_quantityController.text.trim());
+    return (qty != null && qty > 0) ? qty : 1;
+  }
+
+  double get _parsedUnitPrice {
+    final clean = _unitPriceController.text.replaceAll(',', '').trim();
+    if (clean.isEmpty) return 0.0;
+    return double.tryParse(clean) ?? 0.0;
+  }
+
+  double get _calculatedTotalCost => _parsedQuantity * _parsedUnitPrice;
+
+  String get _determinedInventorySection {
+    if (_parsedUnitPrice >= 10000.0) {
+      return 'Section 1 — 10,000.00 and Above';
+    } else {
+      return 'Section 2 — Below 10,000.00';
+    }
   }
 
   Future<void> _loadReferences() async {
@@ -127,9 +196,14 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     final locAcronym = _selectedLocation?.acronym ?? 'C';
     final clsAcronym = _selectedClassification?.acronym ?? 'SI';
     final year = _dateOfAcquisition.year;
+    final qty = _parsedQuantity;
 
     setState(() {
-      _previewControlNumber = '$locAcronym-$clsAcronym-$year-001';
+      if (qty > 1) {
+        _previewControlNumber = '$locAcronym-$clsAcronym-$year-001 ... to ${(qty).toString().padLeft(3, '0')} ($qty consecutive items)';
+      } else {
+        _previewControlNumber = '$locAcronym-$clsAcronym-$year-001';
+      }
     });
   }
 
@@ -149,7 +223,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     }
   }
 
-  /// 1. Upload existing image from device storage / gallery
   Future<void> _pickImageFromDevice() async {
     try {
       final dynamic result = await FilePicker.pickFiles(
@@ -195,7 +268,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     }
   }
 
-  /// 2. Capture a fresh photo using the device camera directly
   Future<void> _capturePhotoWithCamera() async {
     try {
       final ImagePicker picker = ImagePicker();
@@ -221,7 +293,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     }
   }
 
-  /// Automatically applies the embedded security watermark to captured or uploaded image
   Future<void> _processAndWatermarkImage(Uint8List rawBytes, String filename) async {
     setState(() => _isProcessingImage = true);
 
@@ -254,14 +325,13 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       debugPrint('Error applying security watermark: $e');
       if (!mounted) return;
       setState(() {
-        _watermarkedPhotoBytes = rawBytes; // Fallback to raw if watermark fails
+        _watermarkedPhotoBytes = rawBytes;
         _photoFileName = filename;
         _isProcessingImage = false;
       });
     }
   }
 
-  /// Opens full-fidelity interactive zoomable preview modal
   void _openInteractiveImagePreview() {
     if (_watermarkedPhotoBytes == null) return;
     AssetImageWatermarkUtil.showImagePreviewModal(
@@ -287,13 +357,19 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       return;
     }
 
+    final int qty = _parsedQuantity;
+    if (qty <= 0) {
+      setState(() => _errorMessage = 'Quantity must be a positive whole number (at least 1).');
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
-      final double costValue = double.tryParse(_costController.text.trim()) ?? 0.0;
+      final double unitPriceValue = _parsedUnitPrice;
       String? uploadedPhotoUrl;
 
-      // 1. Upload watermarked photo if available
+      // 1. Upload watermarked photo if present
       if (_watermarkedPhotoBytes != null && _photoFileName != null) {
         final tempId = 'AST-${DateTime.now().millisecondsSinceEpoch % 100000}';
         uploadedPhotoUrl = await AssetService.uploadAssetPhoto(
@@ -303,9 +379,14 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
         );
       }
 
-      // 2. Register asset in database with atomic control number sequence
-      final created = await AssetService.registerAsset(
+      // 2. Perform Registration:
+      // If quantity == 1: Registers single asset record.
+      // If quantity > 1: Automatically registers individual asset records for each physical item,
+      // each with unique Control Number, unique Asset ID, and individual QR code.
+      final List<AssetModel> createdAssets = await AssetService.registerBulkAssets(
         itemName: _itemNameController.text.trim(),
+        quantity: qty,
+        unitPrice: unitPriceValue,
         classificationId: _selectedClassification!.classificationId,
         classificationAcronym: _selectedClassification!.acronym,
         classificationName: _selectedClassification!.classificationName,
@@ -320,7 +401,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
         photoUrl: uploadedPhotoUrl,
         dateOfAcquisition: _dateOfAcquisition,
         modeOfAcquisition: _modeOfAcquisition,
-        cost: costValue,
         rfidTag: _rfidTagController.text.trim(),
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
@@ -330,9 +410,13 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       Navigator.pop(context);
       widget.onAssetSaved?.call();
 
+      final summaryText = qty > 1
+          ? 'Successfully created $qty individual asset records (${createdAssets.first.controlNumber} to ${createdAssets.last.controlNumber}).'
+          : 'Asset registered successfully! Control #: ${createdAssets.first.controlNumber}';
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Asset registered successfully! Control #: ${created.controlNumber}'),
+          content: Text(summaryText),
           backgroundColor: ParishColors.oliveGreen,
           duration: const Duration(seconds: 4),
         ),
@@ -357,8 +441,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       backgroundColor: cardWhite,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Container(
-        width: 720,
-        constraints: const BoxConstraints(maxHeight: 780),
+        width: 760,
+        constraints: const BoxConstraints(maxHeight: 800),
         child: Column(
           children: [
             // Modal Header Banner
@@ -389,7 +473,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
-                          'Assign standardized Diocesan Control Number (LOCATION-CLASSIFICATION-YEAR-SEQUENCE)',
+                          'Supports individual & bulk registration with automatic consecutive Diocesan Control Numbers',
                           style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
@@ -456,13 +540,15 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Diocesan Control Number (Automatic Format):',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
+                                  Text(
+                                    _parsedQuantity > 1
+                                        ? 'Bulk Registration: Generating $_parsedQuantity Consecutive Control Numbers:'
+                                        : 'Diocesan Control Number (Automatic Format):',
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '$_previewControlNumber (Sequence verified on save)',
+                                    _previewControlNumber,
                                     style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
                                   ),
                                 ],
@@ -474,14 +560,160 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       const SizedBox(height: 18),
 
                       // Asset Name
-                      _buildLabel('Asset Name / Official Designation *'),
+                      _buildLabel('Asset Name / Designation *'),
                       TextFormField(
                         controller: _itemNameController,
                         validator: (v) => (v?.trim().isEmpty ?? true) ? 'Asset name is required.' : null,
                         style: TextStyle(fontSize: 14, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Sterling Silver Chalice with Paten'),
+                        decoration: _inputDecoration(hint: 'e.g. Church Pew, Wooden Conference Chair, Chalice'),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
+
+                      // =========================================================
+                      // QUANTITY, ACQUISITION PRICE PER UNIT & TOTAL COST
+                      // =========================================================
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: borderGrey),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Quantity & Valuation Parameters',
+                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: _parsedUnitPrice >= 10000.0
+                                        ? ParishColors.goldLight
+                                        : ParishColors.marianBlueSurface,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _parsedUnitPrice >= 10000.0
+                                          ? ParishColors.goldAccent
+                                          : ParishColors.marianBlue,
+                                      width: 1.2,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _determinedInventorySection.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: _parsedUnitPrice >= 10000.0
+                                          ? ParishColors.goldAccent
+                                          : ParishColors.marianBlue,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Classification is determined by unit price (Threshold: ₱10,000.00). When Quantity > 1, multiple individual records are automatically generated.',
+                              style: TextStyle(fontSize: 11.5, color: textMuted),
+                            ),
+                            const Divider(height: 20),
+
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // 1. Quantity Field (Defaulted to 1)
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Quantity * (Whole Number)'),
+                                      TextFormField(
+                                        controller: _quantityController,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                        validator: (v) {
+                                          final num = int.tryParse(v?.trim() ?? '');
+                                          if (num == null || num <= 0) {
+                                            return 'Must be at least 1';
+                                          }
+                                          return null;
+                                        },
+                                        onChanged: (_) => _updateLiveControlNumberPreview(),
+                                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                                        decoration: _inputDecoration(hint: '1'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+
+                                // 2. Acquisition Price per Unit (Visually empty on start)
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Acquisition Price per Unit (₱)'),
+                                      TextFormField(
+                                        controller: _unitPriceController,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
+                                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                                        decoration: _inputDecoration(
+                                          hint: 'e.g. 15,000.00 (Blank = 0.00)',
+                                          prefixIcon: const Padding(
+                                            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                            child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+
+                            // 3. Total Acquisition Cost (Calculated Automatically: Qty × Unit Price)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.5)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Total Acquisition Cost (Calculated):', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: textMuted)),
+                                      Text('Formula: $_parsedQuantity unit(s) × ₱ ${AssetModel.formatCurrency(_parsedUnitPrice)}', style: TextStyle(fontSize: 11, color: textMuted)),
+                                    ],
+                                  ),
+                                  Text(
+                                    '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.oliveGreen,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // Classification & Location Selectors
                       Row(
@@ -611,43 +843,19 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Cost & Physical RFID / NFC Tag
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('Acquisition Cost / Declared Value (₱)'),
-                                TextFormField(
-                                  controller: _costController,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  style: TextStyle(fontSize: 13.5, color: textDark),
-                                  decoration: _inputDecoration(hint: '0.00'),
-                                ),
-                              ],
-                            ),
+                      // Physical RFID / NFC Tag (Single item only)
+                      if (_parsedQuantity == 1) ...[
+                        _buildLabel('RFID / NFC Tag ID (Optional for Single Asset)'),
+                        TextFormField(
+                          controller: _rfidTagController,
+                          style: TextStyle(fontSize: 13.5, color: textDark),
+                          decoration: _inputDecoration(
+                            hint: 'e.g. 04:A2:4B:9C',
+                            prefixIcon: const Icon(Icons.nfc, size: 16, color: ParishColors.marianBlue),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('RFID / NFC Tag ID (Optional)'),
-                                TextFormField(
-                                  controller: _rfidTagController,
-                                  style: TextStyle(fontSize: 13.5, color: textDark),
-                                  decoration: _inputDecoration(
-                                    hint: 'e.g. 04:A2:4B:9C',
-                                    prefixIcon: const Icon(Icons.nfc, size: 16, color: ParishColors.marianBlue),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
 
                       // Condition Status & Operational Status
                       Row(
@@ -698,7 +906,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 TextFormField(
                                   controller: _dimensionsController,
                                   style: TextStyle(fontSize: 13, color: textDark),
-                                  decoration: _inputDecoration(hint: 'e.g. 12" H x 6" D'),
+                                  decoration: _inputDecoration(hint: 'e.g. 10ft L x 3ft H'),
                                 ),
                               ],
                             ),
@@ -712,7 +920,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 TextFormField(
                                   controller: _colorController,
                                   style: TextStyle(fontSize: 13, color: textDark),
-                                  decoration: _inputDecoration(hint: 'e.g. Gold / Velvet Red'),
+                                  decoration: _inputDecoration(hint: 'e.g. Narra Brown / Gold'),
                                 ),
                               ],
                             ),
@@ -726,7 +934,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 TextFormField(
                                   controller: _modelController,
                                   style: TextStyle(fontSize: 13, color: textDark),
-                                  decoration: _inputDecoration(hint: 'e.g. Yamaha P-125'),
+                                  decoration: _inputDecoration(hint: 'e.g. Custom Woodcraft'),
                                 ),
                               ],
                             ),
@@ -940,7 +1148,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                         controller: _remarksController,
                         maxLines: 2,
                         style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Stored inside sacristy vault, requires annual polishing'),
+                        decoration: _inputDecoration(hint: 'e.g. Stored inside main nave, requires quarterly wood varnish'),
                       ),
                     ],
                   ),
@@ -978,7 +1186,11 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.check, size: 20),
                       label: Text(
-                        _isSaving ? 'Registering Asset...' : 'Save & Register Asset',
+                        _isSaving
+                            ? 'Registering Asset...'
+                            : (_parsedQuantity > 1
+                            ? 'Save $_parsedQuantity Assets (₱ ${AssetModel.formatCurrency(_calculatedTotalCost)})'
+                            : 'Save & Register Asset'),
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                     ),

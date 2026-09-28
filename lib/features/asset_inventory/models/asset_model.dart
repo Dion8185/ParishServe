@@ -1,7 +1,3 @@
-// =============================================================================
-// FILE: lib/features/asset_inventory/models/asset_model.dart
-// =============================================================================
-
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 
@@ -24,7 +20,12 @@ class AssetModel {
   final DateTime dateOfAcquisition;
   final int acquisitionYear;
   final String modeOfAcquisition;
-  final double cost;
+
+  // Pricing & Quantity structure
+  final int quantity;
+  final double unitPrice;
+  final double totalCost;
+
   final String? rfidTag;
   final String qrCodeToken;
   final String conditionStatus; // 'VERIFIED / GOOD', 'REQUIRES REPAIR', 'DAMAGED', 'MISSING', 'UNUSABLE'
@@ -33,6 +34,11 @@ class AssetModel {
   final DateTime? archivedAt;
   final String? archivedBy;
   final String? archiveReason;
+
+  // Bulk batch association metadata
+  final String? bulkBatchId;
+  final int? itemSequenceInBatch;
+
   final DateTime? lastAuditedAt;
   final String? auditedBy;
   final String? createdBy;
@@ -59,7 +65,9 @@ class AssetModel {
     required this.dateOfAcquisition,
     required this.acquisitionYear,
     this.modeOfAcquisition = 'Purchase',
-    this.cost = 0.0,
+    this.quantity = 1,
+    this.unitPrice = 0.0,
+    double? totalCost,
     this.rfidTag,
     required this.qrCodeToken,
     this.conditionStatus = 'VERIFIED / GOOD',
@@ -68,13 +76,15 @@ class AssetModel {
     this.archivedAt,
     this.archivedBy,
     this.archiveReason,
+    this.bulkBatchId,
+    this.itemSequenceInBatch,
     this.lastAuditedAt,
     this.auditedBy,
     this.createdBy,
     required this.registrationDate,
     this.createdAt,
     this.updatedAt,
-  });
+  }) : totalCost = totalCost ?? (quantity * unitPrice);
 
   /// Human-readable date formatted as YYYY-MM-DD
   String get formattedAcquisitionDate {
@@ -90,6 +100,44 @@ class AssetModel {
   String get formattedLastAuditedDate {
     if (lastAuditedAt == null) return 'Never Audited';
     return '${lastAuditedAt!.year}-${lastAuditedAt!.month.toString().padLeft(2, '0')}-${lastAuditedAt!.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Currency formatted acquisition price per unit
+  String get formattedUnitPrice => '₱ ${formatCurrency(unitPrice)}';
+
+  /// Currency formatted total acquisition cost
+  String get formattedTotalCost => '₱ ${formatCurrency(totalCost)}';
+
+  /// Static currency formatter helper (adds comma thousand separators and two decimal digits)
+  static String formatCurrency(double amount) {
+    final parts = amount.toStringAsFixed(2).split('.');
+    final integerPart = parts[0];
+    final decimalPart = parts[1];
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < integerPart.length; i++) {
+      if (i > 0 && (integerPart.length - i) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(integerPart[i]);
+    }
+    return '${buffer.toString()}.$decimalPart';
+  }
+
+  /// Canonical Book of Inventory Section Classification:
+  /// Section 1: Acquisition price per unit of ₱10,000.00 or higher
+  /// Section 2: Acquisition price per unit lower than ₱10,000.00
+  String get inventorySection {
+    if (unitPrice >= 10000.0) {
+      return 'Section 1 — 10,000.00 and Above';
+    } else {
+      return 'Section 2 — Below 10,000.00';
+    }
+  }
+
+  /// Concise section tag for compact chips and badges
+  String get inventorySectionCode {
+    return unitPrice >= 10000.0 ? 'Section 1' : 'Section 2';
   }
 
   /// Display string for location (combining name and acronym)
@@ -187,6 +235,11 @@ class AssetModel {
       locName = map['storage_location']?.toString();
     }
 
+    final int qty = int.tryParse(map['quantity']?.toString() ?? '') ?? 1;
+    final double rawCost = double.tryParse(map['cost']?.toString() ?? '') ?? 0.0;
+    final double uPrice = double.tryParse(map['unit_price']?.toString() ?? '') ?? (rawCost > 0 ? (rawCost / (qty > 0 ? qty : 1)) : 0.0);
+    final double totCost = double.tryParse(map['total_cost']?.toString() ?? '') ?? (qty * uPrice);
+
     return AssetModel(
       assetId: map['asset_id']?.toString() ?? map['control_number']?.toString() ?? '',
       controlNumber: map['control_number']?.toString() ?? '',
@@ -206,7 +259,9 @@ class AssetModel {
       dateOfAcquisition: acqDate,
       acquisitionYear: acqYear,
       modeOfAcquisition: map['mode_of_acquisition']?.toString() ?? map['acquisition_mode']?.toString() ?? 'Purchase',
-      cost: double.tryParse(map['cost']?.toString() ?? '0') ?? 0.0,
+      quantity: qty > 0 ? qty : 1,
+      unitPrice: uPrice >= 0 ? uPrice : 0.0,
+      totalCost: totCost >= 0 ? totCost : 0.0,
       rfidTag: map['rfid_tag']?.toString(),
       qrCodeToken: map['qr_code_token']?.toString() ?? map['control_number']?.toString() ?? '',
       conditionStatus: map['condition_status']?.toString() ?? 'VERIFIED / GOOD',
@@ -215,6 +270,8 @@ class AssetModel {
       archivedAt: parseNullableDate(map['archived_at']),
       archivedBy: map['archived_by']?.toString(),
       archiveReason: map['archive_reason']?.toString(),
+      bulkBatchId: map['bulk_batch_id']?.toString(),
+      itemSequenceInBatch: int.tryParse(map['item_sequence_in_batch']?.toString() ?? ''),
       lastAuditedAt: parseNullableDate(map['last_audited_at']),
       auditedBy: map['audited_by']?.toString(),
       createdBy: map['created_by']?.toString(),
@@ -242,7 +299,10 @@ class AssetModel {
       'date_of_acquisition': formattedAcquisitionDate,
       'acquisition_year': acquisitionYear,
       'mode_of_acquisition': modeOfAcquisition,
-      'cost': cost,
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'total_cost': totalCost,
+      'cost': totalCost, // Legacy compatibility
       'rfid_tag': rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
       'qr_code_token': qrCodeToken,
       'condition_status': conditionStatus,
@@ -251,11 +311,13 @@ class AssetModel {
       'archived_at': archivedAt?.toIso8601String(),
       'archived_by': archivedBy,
       'archive_reason': archiveReason,
+      'bulk_batch_id': bulkBatchId,
+      'item_sequence_in_batch': itemSequenceInBatch,
       'last_audited_at': lastAuditedAt?.toIso8601String(),
       'audited_by': auditedBy,
       'created_by': createdBy,
       'registration_date': registrationDate.toIso8601String(),
-      // Legacy column compatibility
+      // Legacy columns
       'category': classificationName ?? classificationAcronym,
       'storage_location': locationName ?? locationAcronym,
       'acquisition_date': formattedAcquisitionDate,
@@ -283,7 +345,9 @@ class AssetModel {
     DateTime? dateOfAcquisition,
     int? acquisitionYear,
     String? modeOfAcquisition,
-    double? cost,
+    int? quantity,
+    double? unitPrice,
+    double? totalCost,
     String? rfidTag,
     String? qrCodeToken,
     String? conditionStatus,
@@ -292,6 +356,8 @@ class AssetModel {
     DateTime? archivedAt,
     String? archivedBy,
     String? archiveReason,
+    String? bulkBatchId,
+    int? itemSequenceInBatch,
     DateTime? lastAuditedAt,
     String? auditedBy,
     String? createdBy,
@@ -299,6 +365,10 @@ class AssetModel {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
+    final newQty = quantity ?? this.quantity;
+    final newUnitPrice = unitPrice ?? this.unitPrice;
+    final newTotalCost = totalCost ?? (newQty * newUnitPrice);
+
     return AssetModel(
       assetId: assetId ?? this.assetId,
       controlNumber: controlNumber ?? this.controlNumber,
@@ -318,7 +388,9 @@ class AssetModel {
       dateOfAcquisition: dateOfAcquisition ?? this.dateOfAcquisition,
       acquisitionYear: acquisitionYear ?? this.acquisitionYear,
       modeOfAcquisition: modeOfAcquisition ?? this.modeOfAcquisition,
-      cost: cost ?? this.cost,
+      quantity: newQty,
+      unitPrice: newUnitPrice,
+      totalCost: newTotalCost,
       rfidTag: rfidTag ?? this.rfidTag,
       qrCodeToken: qrCodeToken ?? this.qrCodeToken,
       conditionStatus: conditionStatus ?? this.conditionStatus,
@@ -327,6 +399,8 @@ class AssetModel {
       archivedAt: archivedAt ?? this.archivedAt,
       archivedBy: archivedBy ?? this.archivedBy,
       archiveReason: archiveReason ?? this.archiveReason,
+      bulkBatchId: bulkBatchId ?? this.bulkBatchId,
+      itemSequenceInBatch: itemSequenceInBatch ?? this.itemSequenceInBatch,
       lastAuditedAt: lastAuditedAt ?? this.lastAuditedAt,
       auditedBy: auditedBy ?? this.auditedBy,
       createdBy: createdBy ?? this.createdBy,

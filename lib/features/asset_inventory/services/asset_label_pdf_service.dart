@@ -13,7 +13,7 @@ class AssetLabelPdfService {
   static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
-  /// Generates a single compact printable asset property tag (e.g. 70mm x 35mm sticker label)
+  /// Generates a single compact printable asset property tag (70mm x 38mm sticker label)
   static Future<Uint8List> generateSingleAssetLabelPdf(AssetModel asset) async {
     const pageFormat = PdfPageFormat(
       70 * PdfPageFormat.mm,
@@ -95,7 +95,7 @@ class AssetLabelPdfService {
     );
   }
 
-  /// Prints multiple asset stickers
+  /// Prints multiple asset stickers in bulk
   static Future<void> printBatchAssetLabels(List<AssetModel> assets) async {
     final pdfBytes = await generateBatchAssetLabelsPdf(assets);
     await Printing.layoutPdf(
@@ -105,7 +105,7 @@ class AssetLabelPdfService {
   }
 
   // ===========================================================================
-  // Individual Sticker Layout Builder
+  // Individual Sticker Layout Builder (Includes Unit Price & Book Section)
   // ===========================================================================
 
   static pw.Widget _buildSingleAssetSticker(
@@ -158,32 +158,53 @@ class AssetLabelPdfService {
           ),
           pw.SizedBox(width: 6),
 
-          // Right: Parish Branding & Diocesan Control Coordinates
+          // Right: Parish Branding, Diocesan Control Coordinates & Unit Price
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
-                pw.Text(
-                  'ST. JOHN PAUL II PARISH',
-                  style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 6.5,
-                    fontWeight: pw.FontWeight.bold,
-                    color: marianBlue,
-                  ),
-                  maxLines: 1,
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'ST. JOHN PAUL II PARISH',
+                      style: pw.TextStyle(
+                        font: fontBold,
+                        fontSize: 6.2,
+                        fontWeight: pw.FontWeight.bold,
+                        color: marianBlue,
+                      ),
+                      maxLines: 1,
+                    ),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 2.5, vertical: 0.8),
+                      decoration: pw.BoxDecoration(
+                        color: asset.unitPrice >= 10000.0 ? PdfColors.amber100 : PdfColors.blue50,
+                        borderRadius: pw.BorderRadius.circular(2),
+                      ),
+                      child: pw.Text(
+                        asset.inventorySectionCode,
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 4.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: asset.unitPrice >= 10000.0 ? goldAccent : marianBlue,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 pw.Text(
                   'Diocese of San Pablo • Property Tag',
                   style: pw.TextStyle(
                     font: fontRegular,
-                    fontSize: 5.0,
+                    fontSize: 4.8,
                     color: textMuted,
                   ),
                 ),
                 pw.Container(
-                  margin: const pw.EdgeInsets.symmetric(vertical: 2),
+                  margin: const pw.EdgeInsets.symmetric(vertical: 1.5),
                   height: 0.5,
                   color: goldAccent,
                 ),
@@ -197,12 +218,12 @@ class AssetLabelPdfService {
                   ),
                   maxLines: 1,
                 ),
-                pw.SizedBox(height: 1),
+                pw.SizedBox(height: 0.5),
                 pw.Text(
                   asset.itemName,
                   style: pw.TextStyle(
                     font: fontBold,
-                    fontSize: 6.5,
+                    fontSize: 6.2,
                     fontWeight: pw.FontWeight.bold,
                     color: marianBlue,
                   ),
@@ -216,8 +237,8 @@ class AssetLabelPdfService {
                       style: pw.TextStyle(font: fontRegular, fontSize: 5.0, color: textMuted),
                     ),
                     pw.Text(
-                      'Acq: ${asset.acquisitionYear}',
-                      style: pw.TextStyle(font: fontRegular, fontSize: 5.0, color: textMuted),
+                      'Price: ${asset.formattedUnitPrice}',
+                      style: pw.TextStyle(font: fontBold, fontSize: 5.0, color: textDark),
                     ),
                   ],
                 ),

@@ -22,6 +22,8 @@ class AssetItemCard extends StatelessWidget {
 
     final conditionColor = asset.conditionColor;
     final conditionSurface = asset.conditionSurfaceColor;
+    final isDecommissioned = asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
+    final isArchived = asset.isArchived || isDecommissioned;
 
     return InkWell(
       onTap: () => showAssetDetailModal(
@@ -37,8 +39,8 @@ class AssetItemCard extends StatelessWidget {
           color: cardWhite,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: asset.isArchived ? ParishColors.mercyRed.withValues(alpha: 0.5) : borderGrey,
-            width: asset.isArchived ? 1.5 : 1.0,
+            color: isArchived ? ParishColors.mercyRed.withValues(alpha: 0.5) : borderGrey,
+            width: isArchived ? 1.5 : 1.0,
           ),
           boxShadow: [
             BoxShadow(
@@ -101,7 +103,7 @@ class AssetItemCard extends StatelessWidget {
                               letterSpacing: 0.4,
                             ),
                           ),
-                          if (asset.isArchived) ...[
+                          if (isArchived) ...[
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
@@ -177,12 +179,40 @@ class AssetItemCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
 
-                  // Acquisition Year, Value & Physical Tag Chips
+                  // Section Badge, Acquisition Year, Unit Price & Physical Tag Chips
                   Wrap(
                     spacing: 8,
                     runSpacing: 4,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      // Section 1 vs Section 2 Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: asset.unitPrice >= 10000.0
+                              ? ParishColors.goldLight
+                              : ParishColors.marianBlueSurface,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: asset.unitPrice >= 10000.0
+                                ? ParishColors.goldAccent
+                                : ParishColors.marianBlue,
+                            width: 1.0,
+                          ),
+                        ),
+                        child: Text(
+                          asset.inventorySectionCode,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: asset.unitPrice >= 10000.0
+                                ? ParishColors.goldAccent
+                                : ParishColors.marianBlue,
+                          ),
+                        ),
+                      ),
+
+                      // Acquisition Year & Mode
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -195,7 +225,9 @@ class AssetItemCard extends StatelessWidget {
                           style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.w600),
                         ),
                       ),
-                      if (asset.cost > 0)
+
+                      // Unit Price Chip
+                      if (asset.unitPrice > 0)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
@@ -203,7 +235,7 @@ class AssetItemCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            '₱ ${asset.cost.toStringAsFixed(2)}',
+                            'Unit: ${asset.formattedUnitPrice}',
                             style: const TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.bold,
@@ -211,6 +243,8 @@ class AssetItemCard extends StatelessWidget {
                             ),
                           ),
                         ),
+
+                      // NFC / RFID Tag Chip
                       if (asset.rfidTag != null && asset.rfidTag!.isNotEmpty)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

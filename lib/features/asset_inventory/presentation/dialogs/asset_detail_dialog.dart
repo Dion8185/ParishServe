@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
@@ -11,6 +12,7 @@ import '../../services/asset_label_pdf_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
+import 'register_asset_dialog.dart'; // Reuses ThousandsSeparatorCurrencyFormatter
 
 void showAssetDetailModal(
     BuildContext context, {
@@ -54,12 +56,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   // Edit Mode Controllers
   late TextEditingController _nameController;
+  late TextEditingController _quantityController;
+  late TextEditingController _unitPriceController;
   late TextEditingController _dimensionsController;
   late TextEditingController _colorController;
   late TextEditingController _modelController;
   late TextEditingController _othersController;
   late TextEditingController _remarksController;
-  late TextEditingController _costController;
   late TextEditingController _rfidController;
 
   List<AssetLocationModel> _locations = [];
@@ -87,6 +90,25 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     return role == 'superadmin' || role == 'admin' || role == 'parishpriest';
   }
 
+  int get _editQuantity {
+    final q = int.tryParse(_quantityController.text.trim());
+    return (q != null && q > 0) ? q : 1;
+  }
+
+  double get _editUnitPrice {
+    final clean = _unitPriceController.text.replaceAll(',', '').trim();
+    if (clean.isEmpty) return 0.0;
+    return double.tryParse(clean) ?? 0.0;
+  }
+
+  double get _editCalculatedTotalCost => _editQuantity * _editUnitPrice;
+
+  String get _editDeterminedSection {
+    return _editUnitPrice >= 10000.0
+        ? 'Section 1 — 10,000.00 and Above'
+        : 'Section 2 — Below 10,000.00';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -96,13 +118,19 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     _modeOfAcquisition = _asset.modeOfAcquisition;
 
     _nameController = TextEditingController(text: _asset.itemName);
+    _quantityController = TextEditingController(text: '${_asset.quantity}');
+    _unitPriceController = TextEditingController(
+      text: _asset.unitPrice > 0 ? AssetModel.formatCurrency(_asset.unitPrice) : '',
+    );
     _dimensionsController = TextEditingController(text: _asset.dimensions ?? '');
     _colorController = TextEditingController(text: _asset.color ?? '');
     _modelController = TextEditingController(text: _asset.model ?? '');
     _othersController = TextEditingController(text: _asset.others ?? '');
     _remarksController = TextEditingController(text: _asset.remarks ?? '');
-    _costController = TextEditingController(text: _asset.cost.toStringAsFixed(2));
     _rfidController = TextEditingController(text: _asset.rfidTag ?? '');
+
+    _quantityController.addListener(() => setState(() {}));
+    _unitPriceController.addListener(() => setState(() {}));
 
     _loadAuditHistory();
     _loadReferenceOptions();
@@ -111,12 +139,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   @override
   void dispose() {
     _nameController.dispose();
+    _quantityController.dispose();
+    _unitPriceController.dispose();
     _dimensionsController.dispose();
     _colorController.dispose();
     _modelController.dispose();
     _othersController.dispose();
     _remarksController.dispose();
-    _costController.dispose();
     _rfidController.dispose();
     super.dispose();
   }
@@ -155,7 +184,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     }
   }
 
-  /// Option 1: Upload existing image from device storage / gallery
   Future<void> _pickImageFromDevice() async {
     try {
       final dynamic result = await FilePicker.pickFiles(
@@ -201,7 +229,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     }
   }
 
-  /// Option 2: Capture a new image directly with device camera
   Future<void> _capturePhotoWithCamera() async {
     try {
       final ImagePicker picker = ImagePicker();
@@ -222,7 +249,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Camera access error: $e. You can also upload an image using "Upload Image".'),
+            content: Text('Camera error: $e. You can upload an image using "Upload Image".'),
             backgroundColor: ParishColors.goldAccent,
           ),
         );
@@ -230,7 +257,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     }
   }
 
-  /// Automatically applies embedded security watermark
   Future<void> _processAndWatermarkNewImage(Uint8List rawBytes, String filename) async {
     setState(() => _isProcessingImage = true);
 
@@ -252,7 +278,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Security watermark embedded! Tap the photo thumbnail to inspect preview.'),
+          content: Text('Security watermark embedded! Tap the thumbnail to preview.'),
           backgroundColor: ParishColors.oliveGreen,
           duration: Duration(seconds: 3),
         ),
@@ -268,7 +294,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     }
   }
 
-  /// Opens full zoomable preview modal showing watermark
   void _openInteractivePreview(ImageProvider imageProvider) {
     AssetImageWatermarkUtil.showImagePreviewModal(
       context,
@@ -281,10 +306,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   Future<void> _saveAssetUpdates() async {
     setState(() => _isUpdating = true);
     try {
-      final double costVal = double.tryParse(_costController.text.trim()) ?? _asset.cost;
       String? photoUrlToSave = _asset.photoUrl;
 
-      // Upload new watermarked photo if user captured or uploaded one
       if (_newWatermarkedPhotoBytes != null && _newPhotoFileName != null) {
         final uploaded = await AssetService.uploadAssetPhoto(
           assetId: _asset.assetId,
@@ -312,7 +335,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         photoUrl: photoUrlToSave,
         dateOfAcquisition: _asset.dateOfAcquisition,
         modeOfAcquisition: _modeOfAcquisition,
-        cost: costVal,
+        quantity: _editQuantity,
+        unitPrice: _editUnitPrice,
         rfidTag: _rfidController.text.trim(),
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
@@ -335,7 +359,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           content: Text(_operationalStatus == 'Decommissioned'
               ? 'Asset marked as Decommissioned and moved to Archive quarantine.'
               : 'Asset record updated successfully.'),
-          backgroundColor: _operationalStatus == 'Decommissioned' ? ParishColors.goldAccent : ParishColors.oliveGreen,
+          backgroundColor: _operationalStatus == 'Decommissioned'
+              ? ParishColors.goldAccent
+              : ParishColors.oliveGreen,
         ),
       );
     } catch (e) {
@@ -471,7 +497,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Container(
         width: 780,
-        constraints: const BoxConstraints(maxHeight: 780),
+        constraints: const BoxConstraints(maxHeight: 800),
         child: Column(
           children: [
             // Dialog Header Banner
@@ -792,7 +818,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   _buildDataRow(Icons.category_outlined, 'Classification', _asset.displayClassification),
                   _buildDataRow(Icons.location_on_outlined, 'Location', _asset.displayLocation),
                   _buildDataRow(Icons.calendar_today_outlined, 'Acquisition', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
-                  _buildDataRow(Icons.payments_outlined, 'Cost / Value', '₱ ${_asset.cost.toStringAsFixed(2)}'),
+                  _buildDataRow(Icons.menu_book, 'Book of Inventory', _asset.inventorySection),
                   if (_asset.rfidTag != null && _asset.rfidTag!.isNotEmpty)
                     _buildDataRow(Icons.nfc, 'RFID / NFC Tag', _asset.rfidTag!),
                 ],
@@ -801,6 +827,46 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ],
         ),
         const SizedBox(height: 20),
+
+        // Valuation & Quantity Summary Card
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0FDF4),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Column(
+                children: [
+                  Text('Quantity', style: TextStyle(fontSize: 11, color: textMuted, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 3),
+                  Text('${_asset.quantity} unit(s)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
+                ],
+              ),
+              Container(width: 1, height: 32, color: ParishColors.borderGrey),
+              Column(
+                children: [
+                  Text('Price per Unit', style: TextStyle(fontSize: 11, color: textMuted, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 3),
+                  Text(_asset.formattedUnitPrice, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                ],
+              ),
+              Container(width: 1, height: 32, color: ParishColors.borderGrey),
+              Column(
+                children: [
+                  Text('Total Acquisition Cost', style: TextStyle(fontSize: 11, color: textMuted, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 3),
+                  Text(_asset.formattedTotalCost, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
 
         // Specifications & Dimensions
         Container(
@@ -934,6 +1000,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   Widget _buildEditForm() {
     final textDark = ParishColors.textDark;
+    final borderGrey = ParishColors.borderGrey;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -969,7 +1036,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           decoration: BoxDecoration(
             color: ParishColors.backgroundLight,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: ParishColors.borderGrey),
+            border: Border.all(color: borderGrey),
           ),
           child: Row(
             children: [
@@ -988,7 +1055,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: ParishColors.borderGrey),
+                    border: Border.all(color: borderGrey),
                   ),
                   child: _isProcessingImage
                       ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
@@ -1064,6 +1131,75 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         TextFormField(
           controller: _nameController,
           decoration: _inputDecoration(),
+        ),
+        const SizedBox(height: 12),
+
+        // Quantity & Unit Price in Edit Mode
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Quantity *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _quantityController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: _inputDecoration(),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Acquisition Price per Unit (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _unitPriceController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
+                    decoration: _inputDecoration(prefixIcon: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold)),
+                    )),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Live Calculated Total & Section Preview
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: ParishColors.backgroundLight,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Total: ₱ ${AssetModel.formatCurrency(_editCalculatedTotalCost)}',
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+              ),
+              Text(
+                _editDeterminedSection,
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
 
@@ -1177,31 +1313,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         ],
         const SizedBox(height: 12),
 
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Acquisition Cost (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  TextFormField(controller: _costController, decoration: _inputDecoration()),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('RFID / NFC Tag ID', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  TextFormField(controller: _rfidController, decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C')),
-                ],
-              ),
-            ),
-          ],
-        ),
+        _buildLabel('RFID / NFC Tag ID (Optional)'),
+        TextFormField(controller: _rfidController, decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C')),
         const SizedBox(height: 12),
 
         Row(
@@ -1254,6 +1367,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     );
   }
 
+  Widget _buildLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+    );
+  }
+
   Widget _buildDataRow(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6.0),
@@ -1287,9 +1407,10 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     );
   }
 
-  InputDecoration _inputDecoration({String? hint}) {
+  InputDecoration _inputDecoration({String? hint, Widget? prefixIcon}) {
     return InputDecoration(
       hintText: hint,
+      prefixIcon: prefixIcon,
       filled: true,
       fillColor: ParishColors.backgroundLight,
       isDense: true,
