@@ -32,7 +32,8 @@ class AssetService {
       ''');
 
       if (!includeArchived) {
-        query = query.eq('is_archived', false);
+        // Items marked as archived or decommissioned are strictly excluded from active queries
+        query = query.eq('is_archived', false).neq('operational_status', 'Decommissioned');
       }
 
       if (categoryFilter != null && categoryFilter != 'All') {
@@ -66,7 +67,6 @@ class AssetService {
     if (clean.isEmpty) return null;
 
     try {
-      // Direct match by control_number, asset_id, or qr_code_token
       final response = await _client
           .from('parish_assets')
           .select('''
@@ -121,7 +121,6 @@ class AssetService {
   }
 
   /// Atomically invokes the Postgres stored procedure to generate a Diocesan Control Number
-  /// Format: LOCATION-CLASSIFICATION-YEAR-SEQUENCE (e.g. C-SI-2008-001)
   static Future<String> generateControlNumber({
     required String locationAcronym,
     required String classificationAcronym,
@@ -144,7 +143,6 @@ class AssetService {
       debugPrint('RPC error generating control number: $e. Falling back to local sequence generation.');
     }
 
-    // Fallback: Query highest sequence locally if procedure is unavailable
     final prefix = '${locationAcronym.trim().toUpperCase()}-${classificationAcronym.trim().toUpperCase()}-$acquisitionYear-';
     final records = await _client
         .from('parish_assets')
@@ -174,7 +172,6 @@ class AssetService {
     return '$prefix-$token';
   }
 
-  /// Helper to safely resolve a valid user ID for foreign keys
   static Future<String?> _resolveValidUserId() async {
     String? currentUserId = AuthService.currentUser?.userId;
     if (currentUserId != null && currentUserId.isNotEmpty) {
@@ -222,11 +219,9 @@ class AssetService {
     final validUserId = await _resolveValidUserId();
     final int acquisitionYear = dateOfAcquisition.year;
 
-    // 1. Generate unique identifiers
     final assetId = generatePermanentIdentifier('AST');
     final qrCodeToken = generatePermanentIdentifier('QR');
 
-    // 2. Generate Diocesan Control Number: LOCATION-CLASSIFICATION-YEAR-SEQUENCE
     final controlNumber = await generateControlNumber(
       locationAcronym: locationAcronym,
       classificationAcronym: classificationAcronym,
@@ -234,6 +229,7 @@ class AssetService {
     );
 
     final now = DateTime.now();
+    final bool isDecommissioned = operationalStatus.trim().toLowerCase() == 'decommissioned';
 
     final payload = {
       'asset_id': assetId,
@@ -257,7 +253,10 @@ class AssetService {
       'qr_code_token': qrCodeToken,
       'condition_status': conditionStatus,
       'operational_status': operationalStatus,
-      'is_archived': false,
+      'is_archived': isDecommissioned,
+      'archived_at': isDecommissioned ? now.toIso8601String() : null,
+      'archived_by': isDecommissioned ? validUserId : null,
+      'archive_reason': isDecommissioned ? 'Registered with Decommissioned status.' : null,
       'registration_date': now.toIso8601String(),
       'created_by': validUserId,
       'created_at': now.toIso8601String(),
@@ -276,7 +275,6 @@ class AssetService {
         .select()
         .single();
 
-    // 3. Create initial registration audit log entry
     try {
       await _client.from('asset_audit_logs').insert({
         'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
@@ -288,7 +286,9 @@ class AssetService {
         'previous_location': null,
         'new_location': locationName ?? locationAcronym,
         'audit_method': 'MANUAL',
-        'audit_notes': 'Initial registration in parish inventory.',
+        'audit_notes': isDecommissioned
+            ? 'Initial registration (Decommissioned & Archived).'
+            : 'Initial registration in parish inventory.',
         'audited_at': now.toIso8601String(),
       });
     } catch (e) {
@@ -299,6 +299,7 @@ class AssetService {
   }
 
   /// Updates an existing asset while strictly preserving its original Control Number
+  /// and automatically synchronizing decommissioning with archive quarantine status.
   static Future<AssetModel> updateAsset({
     required String assetId,
     required String itemName,
@@ -323,7 +324,9 @@ class AssetService {
     final cleanItemName = itemName.trim();
     if (cleanItemName.isEmpty) throw 'Asset designation / item name is required.';
 
+    final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
+    final bool isDecommissioned = operationalStatus.trim().toLowerCase() == 'decommissioned';
 
     final updatePayload = {
       'item_name': cleanItemName,
@@ -344,6 +347,17 @@ class AssetService {
       'rfid_tag': rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
       'condition_status': conditionStatus,
       'operational_status': operationalStatus,
+      // If marked Decommissioned, it is automatically archived
+      'is_archived': isDecommissioned,
+      if (isDecommissioned) ...{
+        'archived_at': now.toIso8601String(),
+        'archived_by': validUserId,
+        'archive_reason': 'Operational status set to Decommissioned.',
+      } else ...{
+        'archived_at': null,
+        'archived_by': null,
+        'archive_reason': null,
+      },
       'updated_at': now.toIso8601String(),
       // Legacy columns
       'storage_location': locationName ?? locationAcronym,
@@ -370,7 +384,7 @@ class AssetService {
     String? previousCondition,
     String? previousLocation,
     String? newLocation,
-    String auditMethod = 'QR_SCAN', // 'QR_SCAN', 'RFID_NFC', 'MANUAL'
+    String auditMethod = 'QR_SCAN',
     String? auditNotes,
   }) async {
     final validUserId = await _resolveValidUserId();

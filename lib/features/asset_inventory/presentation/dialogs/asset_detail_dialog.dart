@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../models/asset_audit_log_model.dart';
@@ -7,6 +10,7 @@ import '../../models/asset_reference_models.dart';
 import '../../services/asset_label_pdf_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
+import '../../utils/asset_image_watermark_util.dart';
 
 void showAssetDetailModal(
     BuildContext context, {
@@ -42,6 +46,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   bool _isEditing = false;
   bool _isUpdating = false;
+  bool _isProcessingImage = false;
+
+  // New photo bytes if captured/uploaded during edit mode
+  Uint8List? _newWatermarkedPhotoBytes;
+  String? _newPhotoFileName;
 
   // Edit Mode Controllers
   late TextEditingController _nameController;
@@ -60,6 +69,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   late String _conditionStatus;
   late String _operationalStatus;
   late String _modeOfAcquisition;
+
+  bool get _isEffectivelyArchived =>
+      _asset.isArchived || _asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
 
   bool get _canModify {
     final role = AuthService.currentUser?.userRole.toLowerCase() ?? '';
@@ -143,10 +155,146 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     }
   }
 
+  /// Option 1: Upload existing image from device storage / gallery
+  Future<void> _pickImageFromDevice() async {
+    try {
+      final dynamic result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+      );
+
+      if (result != null) {
+        dynamic file;
+        if (result is List && result.isNotEmpty) {
+          file = result.first;
+        } else {
+          try {
+            final files = (result as dynamic).files;
+            if (files != null && files.isNotEmpty) file = files.first;
+          } catch (_) {
+            file = result;
+          }
+        }
+
+        if (file != null) {
+          Uint8List? rawBytes;
+          try {
+            rawBytes = await (file as dynamic).readAsBytes();
+          } catch (_) {
+            try {
+              rawBytes = (file as dynamic).bytes;
+            } catch (_) {}
+          }
+
+          String? name;
+          try {
+            name = (file as dynamic).name;
+          } catch (_) {}
+
+          if (rawBytes != null) {
+            await _processAndWatermarkNewImage(rawBytes, name ?? 'asset_photo.jpg');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error uploading image: $e');
+    }
+  }
+
+  /// Option 2: Capture a new image directly with device camera
+  Future<void> _capturePhotoWithCamera() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? photo = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 92,
+      );
+
+      if (photo != null) {
+        final Uint8List rawBytes = await photo.readAsBytes();
+        await _processAndWatermarkNewImage(
+          rawBytes,
+          photo.name.isNotEmpty ? photo.name : 'camera_capture.jpg',
+        );
+      }
+    } catch (e) {
+      debugPrint('Error capturing photo from camera: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Camera access error: $e. You can also upload an image using "Upload Image".'),
+            backgroundColor: ParishColors.goldAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Automatically applies embedded security watermark
+  Future<void> _processAndWatermarkNewImage(Uint8List rawBytes, String filename) async {
+    setState(() => _isProcessingImage = true);
+
+    try {
+      final idLabel = '${_asset.controlNumber} • ${_nameController.text.trim()}';
+
+      final watermarked = await AssetImageWatermarkUtil.applySecurityWatermark(
+        rawImageBytes: rawBytes,
+        assetIdentifier: idLabel,
+        captureTime: DateTime.now(),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _newWatermarkedPhotoBytes = watermarked;
+        _newPhotoFileName = filename;
+        _isProcessingImage = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Security watermark embedded! Tap the photo thumbnail to inspect preview.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error watermarking image: $e');
+      if (!mounted) return;
+      setState(() {
+        _newWatermarkedPhotoBytes = rawBytes;
+        _newPhotoFileName = filename;
+        _isProcessingImage = false;
+      });
+    }
+  }
+
+  /// Opens full zoomable preview modal showing watermark
+  void _openInteractivePreview(ImageProvider imageProvider) {
+    AssetImageWatermarkUtil.showImagePreviewModal(
+      context,
+      imageProvider: imageProvider,
+      title: _asset.itemName,
+      controlNumber: _asset.controlNumber,
+    );
+  }
+
   Future<void> _saveAssetUpdates() async {
     setState(() => _isUpdating = true);
     try {
       final double costVal = double.tryParse(_costController.text.trim()) ?? _asset.cost;
+      String? photoUrlToSave = _asset.photoUrl;
+
+      // Upload new watermarked photo if user captured or uploaded one
+      if (_newWatermarkedPhotoBytes != null && _newPhotoFileName != null) {
+        final uploaded = await AssetService.uploadAssetPhoto(
+          assetId: _asset.assetId,
+          fileBytes: _newWatermarkedPhotoBytes!,
+          fileName: _newPhotoFileName!,
+        );
+        if (uploaded != null) {
+          photoUrlToSave = uploaded;
+        }
+      }
 
       final updated = await AssetService.updateAsset(
         assetId: _asset.assetId,
@@ -161,7 +309,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         model: _modelController.text.trim(),
         others: _othersController.text.trim(),
         remarks: _remarksController.text.trim(),
-        photoUrl: _asset.photoUrl,
+        photoUrl: photoUrlToSave,
         dateOfAcquisition: _asset.dateOfAcquisition,
         modeOfAcquisition: _modeOfAcquisition,
         cost: costVal,
@@ -173,6 +321,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       if (!mounted) return;
       setState(() {
         _asset = updated;
+        _newWatermarkedPhotoBytes = null;
+        _newPhotoFileName = null;
         _isEditing = false;
         _isUpdating = false;
       });
@@ -181,9 +331,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       _loadAuditHistory();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Asset record updated successfully.'),
-          backgroundColor: ParishColors.oliveGreen,
+        SnackBar(
+          content: Text(_operationalStatus == 'Decommissioned'
+              ? 'Asset marked as Decommissioned and moved to Archive quarantine.'
+              : 'Asset record updated successfully.'),
+          backgroundColor: _operationalStatus == 'Decommissioned' ? ParishColors.goldAccent : ParishColors.oliveGreen,
         ),
       );
     } catch (e) {
@@ -216,7 +368,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Archiving removes "${_asset.itemName}" (${_asset.controlNumber}) from active inventory audits while preserving all historical records, past audit logs, and photos.',
+              'Archiving marks "${_asset.itemName}" (${_asset.controlNumber}) as Decommissioned and transfers it to the Archive quarantine, while preserving historical audit logs.',
               style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.35),
             ),
             const SizedBox(height: 14),
@@ -282,7 +434,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Asset "${_asset.controlNumber}" restored to active inventory.'),
+          content: Text('Asset "${_asset.controlNumber}" restored to active inventory (Status: Active).'),
           backgroundColor: ParishColors.oliveGreen,
         ),
       );
@@ -311,6 +463,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
+    final isArchived = _isEffectivelyArchived;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -325,7 +478,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: _asset.isArchived ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
+                color: isArchived ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 border: Border(bottom: BorderSide(color: borderGrey)),
               ),
@@ -334,7 +487,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _asset.isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
+                      color: isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -355,7 +508,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: _asset.isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
+                                color: isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
                                 letterSpacing: 0.5,
                               ),
                             ),
@@ -428,7 +581,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                       ),
                       const SizedBox(width: 8),
                       if (_canArchive)
-                        _asset.isArchived
+                        isArchived
                             ? OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: ParishColors.oliveGreen,
@@ -515,34 +668,114 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
+    final isArchived = _isEffectivelyArchived;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (isArchived) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: ParishColors.mercyRedSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: ParishColors.mercyRed.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.archive_outlined, color: ParishColors.mercyRed, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'ARCHIVED / DECOMMISSIONED PROPERTY',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
+                      ),
+                      Text(
+                        _asset.archiveReason != null && _asset.archiveReason!.isNotEmpty
+                            ? 'Reason: ${_asset.archiveReason}'
+                            : 'This asset is decommissioned from active parish operations and quarantined in the archives.',
+                        style: TextStyle(fontSize: 11.5, color: textDark),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Top Section: Reference Photo & Primary Particulars
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                color: ParishColors.backgroundLight,
+            // Interactive Photo Box with Watermark Preview on Tap
+            Tooltip(
+              message: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
+                  ? 'Tap to preview photo with security watermark'
+                  : 'No photo uploaded',
+              child: InkWell(
+                onTap: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
+                    ? () => _openInteractivePreview(NetworkImage(_asset.photoUrl!))
+                    : null,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: borderGrey),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(13),
-                child: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
-                    ? Image.network(
-                  _asset.photoUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Center(
-                    child: Icon(_asset.classificationIcon, size: 48, color: ParishColors.marianBlue),
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    color: ParishColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _asset.photoUrl != null ? ParishColors.goldAccent : borderGrey,
+                      width: _asset.photoUrl != null ? 1.5 : 1.0,
+                    ),
                   ),
-                )
-                    : Center(
-                  child: Icon(_asset.classificationIcon, size: 48, color: ParishColors.marianBlue),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(13),
+                    child: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
+                        ? Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          _asset.photoUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Icon(_asset.classificationIcon, size: 48, color: ParishColors.marianBlue),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            color: Colors.black54,
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.zoom_in, color: Colors.white, size: 10),
+                                SizedBox(width: 3),
+                                Text(
+                                  'WATERMARKED',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 7.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                        : Center(
+                      child: Icon(_asset.classificationIcon, size: 48, color: ParishColors.marianBlue),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -588,7 +821,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   Expanded(child: _buildSpecItem('Dimensions', _asset.dimensions ?? '—')),
                   Expanded(child: _buildSpecItem('Primary Color', _asset.color ?? '—')),
                   Expanded(child: _buildSpecItem('Model / Brand', _asset.model ?? '—')),
-                  Expanded(child: _buildSpecItem('Operational Status', _asset.operationalStatus)),
+                  Expanded(
+                    child: _buildSpecItem(
+                      'Operational Status',
+                      _asset.operationalStatus,
+                      highlightRed: _asset.operationalStatus == 'Decommissioned',
+                    ),
+                  ),
                 ],
               ),
               if (_asset.others != null && _asset.others!.isNotEmpty) ...[
@@ -690,7 +929,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   }
 
   // ===========================================================================
-  // Edit Mode: Field Form
+  // Edit Mode: Field Form with Photo Watermark Capture / Upload
   // ===========================================================================
 
   Widget _buildEditForm() {
@@ -721,6 +960,104 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             ],
           ),
         ),
+
+        // Photo Update Section with Watermark
+        Text('Asset Documentation Photo & Security Watermark', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: ParishColors.backgroundLight,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: ParishColors.borderGrey),
+          ),
+          child: Row(
+            children: [
+              InkWell(
+                onTap: () {
+                  if (_newWatermarkedPhotoBytes != null) {
+                    _openInteractivePreview(MemoryImage(_newWatermarkedPhotoBytes!));
+                  } else if (_asset.photoUrl != null && _asset.photoUrl!.isNotEmpty) {
+                    _openInteractivePreview(NetworkImage(_asset.photoUrl!));
+                  }
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ParishColors.borderGrey),
+                  ),
+                  child: _isProcessingImage
+                      ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                      : _newWatermarkedPhotoBytes != null
+                      ? ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Image.memory(_newWatermarkedPhotoBytes!, fit: BoxFit.cover),
+                  )
+                      : (_asset.photoUrl != null && _asset.photoUrl!.isNotEmpty)
+                      ? ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Image.network(_asset.photoUrl!, fit: BoxFit.cover),
+                  )
+                      : const Icon(Icons.photo_outlined, size: 32, color: ParishColors.marianBlue),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _newWatermarkedPhotoBytes != null
+                          ? 'New Watermarked Photo Selected'
+                          : (_asset.photoUrl != null ? 'Current Photo on File' : 'No photo uploaded'),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: _newWatermarkedPhotoBytes != null ? ParishColors.oliveGreen : textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('Auto-stamps parish name, date, time, and control number.', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ParishColors.marianBlue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          ),
+                          onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
+                          icon: const Icon(Icons.camera_alt, size: 14),
+                          label: const Text('Take Photo', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        ),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ParishColors.marianBlue,
+                            side: const BorderSide(color: ParishColors.marianBlue),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          ),
+                          onPressed: _isProcessingImage ? null : _pickImageFromDevice,
+                          icon: const Icon(Icons.upload_file, size: 14),
+                          label: const Text('Upload Image', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
 
         Text('Asset Designation / Item Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
@@ -806,7 +1143,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                       DropdownMenuItem(value: 'Active', child: Text('Active')),
                       DropdownMenuItem(value: 'In Storage', child: Text('In Storage')),
                       DropdownMenuItem(value: 'Under Maintenance', child: Text('Under Maintenance')),
-                      DropdownMenuItem(value: 'Decommissioned', child: Text('Decommissioned')),
+                      DropdownMenuItem(value: 'Decommissioned', child: Text('Decommissioned (Archived)')),
                     ],
                     onChanged: (val) => setState(() => _operationalStatus = val!),
                   ),
@@ -815,6 +1152,29 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             ),
           ],
         ),
+        if (_operationalStatus == 'Decommissioned') ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: ParishColors.goldLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: ParishColors.goldAccent),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, size: 18, color: ParishColors.goldAccent),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Setting Operational Status to "Decommissioned" will automatically transfer this asset to the Archive quarantine.',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
 
         Row(
@@ -909,13 +1269,20 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     );
   }
 
-  Widget _buildSpecItem(String label, String value) {
+  Widget _buildSpecItem(String label, String value, {bool highlightRed = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted, fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
-        Text(value, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.bold,
+            color: highlightRed ? ParishColors.mercyRed : ParishColors.textDark,
+          ),
+        ),
       ],
     );
   }

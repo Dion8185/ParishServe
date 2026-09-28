@@ -81,14 +81,21 @@ class _AssetInventoryViewState extends State<AssetInventoryView> {
     }
   }
 
+  /// Determines whether an asset belongs in the archived quarantine.
+  /// If the item is marked as archived OR its operational status is Decommissioned,
+  /// it is strictly classified as Archived and never shown in Active Parish Properties.
+  bool _isAssetArchived(AssetModel a) {
+    return a.isArchived || a.operationalStatus.trim().toLowerCase() == 'decommissioned';
+  }
+
   List<AssetModel> get _filteredAssets {
     var list = _assets;
 
     // Filter by Active vs Archived
     if (_statusTab == 'Active') {
-      list = list.where((a) => !a.isArchived).toList();
+      list = list.where((a) => !_isAssetArchived(a)).toList();
     } else {
-      list = list.where((a) => a.isArchived).toList();
+      list = list.where((a) => _isAssetArchived(a)).toList();
     }
 
     // Filter by Classification
@@ -123,10 +130,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView> {
     return list;
   }
 
-  int get _activeCount => _assets.where((a) => !a.isArchived).length;
-  int get _archivedCount => _assets.where((a) => a.isArchived).length;
-  int get _needsRepairCount => _assets.where((a) => !a.isArchived && a.conditionStatus.contains('REPAIR')).length;
-  int get _missingCount => _assets.where((a) => !a.isArchived && a.conditionStatus.contains('MISSING')).length;
+  int get _activeCount => _assets.where((a) => !_isAssetArchived(a)).length;
+  int get _archivedCount => _assets.where((a) => _isAssetArchived(a)).length;
+  int get _needsRepairCount => _assets.where((a) => !_isAssetArchived(a) && a.conditionStatus.contains('REPAIR')).length;
+  int get _missingCount => _assets.where((a) => !_isAssetArchived(a) && a.conditionStatus.contains('MISSING')).length;
 
   Future<void> _printBatchStickers() async {
     final list = _filteredAssets;
@@ -332,7 +339,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView> {
             ),
             const SizedBox(height: 18),
 
-            // Statistics Summary Cards
+            // Statistics Summary Cards (Decommissioned assets accurately grouped with Archived)
             Row(
               children: [
                 Expanded(
@@ -522,7 +529,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '${_statusTab == "Active" ? "Active" : "Archived"} Parish Properties ($totalCount)',
+                  '${_statusTab == "Active" ? "Active" : "Archived / Decommissioned"} Parish Properties ($totalCount)',
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
                 ),
                 Row(
@@ -690,7 +697,27 @@ class _AssetInventoryViewState extends State<AssetInventoryView> {
                   child: Text(a.conditionStatus, style: TextStyle(color: a.conditionColor, fontWeight: FontWeight.bold, fontSize: 10)),
                 ),
               ),
-              DataCell(Text(a.operationalStatus)),
+              DataCell(
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: a.operationalStatus == 'Decommissioned'
+                        ? ParishColors.mercyRedSurface
+                        : ParishColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    a.operationalStatus,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      color: a.operationalStatus == 'Decommissioned'
+                          ? ParishColors.mercyRed
+                          : ParishColors.textDark,
+                    ),
+                  ),
+                ),
+              ),
               DataCell(
                 TextButton.icon(
                   style: TextButton.styleFrom(visualDensity: VisualDensity.compact),

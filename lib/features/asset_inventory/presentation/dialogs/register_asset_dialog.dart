@@ -2,11 +2,13 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_model.dart';
 import '../../models/asset_reference_models.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
+import '../../utils/asset_image_watermark_util.dart';
 
 void showRegisterAssetModal(BuildContext context, {VoidCallback? onAssetSaved}) {
   showDialog(
@@ -50,8 +52,11 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
   String _previewControlNumber = 'C-SI-2026-001';
 
-  Uint8List? _photoBytes;
+  // Photo & Security Watermark State
+  Uint8List? _watermarkedPhotoBytes;
   String? _photoFileName;
+  bool _isProcessingImage = false;
+
   bool _isSaving = false;
   String? _errorMessage;
 
@@ -124,7 +129,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     final year = _dateOfAcquisition.year;
 
     setState(() {
-      _previewControlNumber = '$locAcronym-$clsAcronym-$year-001 (Sequence verified on save)';
+      _previewControlNumber = '$locAcronym-$clsAcronym-$year-001';
     });
   }
 
@@ -144,7 +149,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     }
   }
 
-  Future<void> _pickPhoto() async {
+  /// 1. Upload existing image from device storage / gallery
+  Future<void> _pickImageFromDevice() async {
     try {
       final dynamic result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -165,12 +171,12 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
         }
 
         if (file != null) {
-          Uint8List? bytes;
+          Uint8List? rawBytes;
           try {
-            bytes = await (file as dynamic).readAsBytes();
+            rawBytes = await (file as dynamic).readAsBytes();
           } catch (_) {
             try {
-              bytes = (file as dynamic).bytes;
+              rawBytes = (file as dynamic).bytes;
             } catch (_) {}
           }
 
@@ -179,17 +185,93 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
             name = (file as dynamic).name;
           } catch (_) {}
 
-          if (bytes != null) {
-            setState(() {
-              _photoBytes = bytes;
-              _photoFileName = name ?? 'asset_photo.jpg';
-            });
+          if (rawBytes != null) {
+            await _processAndWatermarkImage(rawBytes, name ?? 'asset_upload.jpg');
           }
         }
       }
     } catch (e) {
-      debugPrint('Error picking asset photo: $e');
+      debugPrint('Error selecting image from device: $e');
     }
+  }
+
+  /// 2. Capture a fresh photo using the device camera directly
+  Future<void> _capturePhotoWithCamera() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? photo = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 92,
+      );
+
+      if (photo != null) {
+        final Uint8List rawBytes = await photo.readAsBytes();
+        await _processAndWatermarkImage(rawBytes, photo.name.isNotEmpty ? photo.name : 'camera_capture.jpg');
+      }
+    } catch (e) {
+      debugPrint('Error capturing photo from camera: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Camera access error: $e. You can also upload an image using "Upload Image".'),
+            backgroundColor: ParishColors.goldAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Automatically applies the embedded security watermark to captured or uploaded image
+  Future<void> _processAndWatermarkImage(Uint8List rawBytes, String filename) async {
+    setState(() => _isProcessingImage = true);
+
+    try {
+      final assetIdLabel = _itemNameController.text.trim().isNotEmpty
+          ? '$_previewControlNumber • ${_itemNameController.text.trim()}'
+          : _previewControlNumber;
+
+      final watermarked = await AssetImageWatermarkUtil.applySecurityWatermark(
+        rawImageBytes: rawBytes,
+        assetIdentifier: assetIdLabel,
+        captureTime: DateTime.now(),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _watermarkedPhotoBytes = watermarked;
+        _photoFileName = filename;
+        _isProcessingImage = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Security watermark embedded successfully! Tap the photo to inspect preview.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error applying security watermark: $e');
+      if (!mounted) return;
+      setState(() {
+        _watermarkedPhotoBytes = rawBytes; // Fallback to raw if watermark fails
+        _photoFileName = filename;
+        _isProcessingImage = false;
+      });
+    }
+  }
+
+  /// Opens full-fidelity interactive zoomable preview modal
+  void _openInteractiveImagePreview() {
+    if (_watermarkedPhotoBytes == null) return;
+    AssetImageWatermarkUtil.showImagePreviewModal(
+      context,
+      imageProvider: MemoryImage(_watermarkedPhotoBytes!),
+      title: _itemNameController.text.trim().isNotEmpty
+          ? _itemNameController.text.trim()
+          : 'Asset Image Preview',
+      controlNumber: _previewControlNumber,
+    );
   }
 
   Future<void> _submitAsset() async {
@@ -211,12 +293,12 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       final double costValue = double.tryParse(_costController.text.trim()) ?? 0.0;
       String? uploadedPhotoUrl;
 
-      // 1. Upload photo if selected
-      if (_photoBytes != null && _photoFileName != null) {
+      // 1. Upload watermarked photo if available
+      if (_watermarkedPhotoBytes != null && _photoFileName != null) {
         final tempId = 'AST-${DateTime.now().millisecondsSinceEpoch % 100000}';
         uploadedPhotoUrl = await AssetService.uploadAssetPhoto(
           assetId: tempId,
-          fileBytes: _photoBytes!,
+          fileBytes: _watermarkedPhotoBytes!,
           fileName: _photoFileName!,
         );
       }
@@ -276,7 +358,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Container(
         width: 720,
-        constraints: const BoxConstraints(maxHeight: 760),
+        constraints: const BoxConstraints(maxHeight: 780),
         child: Column(
           children: [
             // Modal Header Banner
@@ -380,7 +462,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    _previewControlNumber,
+                                    '$_previewControlNumber (Sequence verified on save)',
                                     style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
                                   ),
                                 ],
@@ -651,73 +733,196 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 18),
 
-                      // Photo Picker Attachment Box
-                      _buildLabel('Asset Reference Photo (Optional)'),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _photoBytes != null ? ParishColors.oliveGreenSurface : ParishColors.backgroundLight,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: _photoBytes != null ? ParishColors.oliveGreen : borderGrey,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            if (_photoBytes != null)
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.memory(
-                                  _photoBytes!,
-                                  width: 52,
-                                  height: 52,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            else
-                              Container(
-                                width: 52,
-                                height: 52,
-                                decoration: BoxDecoration(
-                                  color: ParishColors.marianBlueSurface,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.add_a_photo, color: ParishColors.marianBlue, size: 24),
-                              ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                      // =========================================================
+                      // ASSET IMAGE CAPTURE, WATERMARK & PREVIEW SECTION
+                      // =========================================================
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildLabel('Asset Documentation Photo & Security Watermark'),
+                          if (_watermarkedPhotoBytes != null)
+                            InkWell(
+                              onTap: _openInteractiveImagePreview,
+                              child: const Row(
                                 children: [
+                                  Icon(Icons.zoom_in, size: 16, color: ParishColors.marianBlue),
+                                  SizedBox(width: 4),
                                   Text(
-                                    _photoFileName ?? 'No photo attached yet',
+                                    'Inspect Full Preview',
                                     style: TextStyle(
-                                      fontSize: 13,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: _photoBytes != null ? ParishColors.oliveGreen : textDark,
+                                      color: ParishColors.marianBlue,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  Text('Upload a clear reference photo (JPG, PNG)', style: TextStyle(fontSize: 11, color: textMuted)),
                                 ],
                               ),
                             ),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: ParishColors.marianBlue),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              ),
-                              onPressed: _pickPhoto,
-                              icon: const Icon(Icons.upload_file, size: 16),
-                              label: Text(_photoBytes != null ? 'Change' : 'Select Photo', style: const TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: _watermarkedPhotoBytes != null
+                              ? ParishColors.oliveGreenSurface
+                              : ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _watermarkedPhotoBytes != null
+                                ? ParishColors.oliveGreen
+                                : borderGrey,
+                            width: _watermarkedPhotoBytes != null ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Image Thumbnail / Watermark Box
+                                InkWell(
+                                  onTap: _watermarkedPhotoBytes != null ? _openInteractiveImagePreview : null,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    width: 90,
+                                    height: 90,
+                                    decoration: BoxDecoration(
+                                      color: ParishColors.marianBlueSurface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: _watermarkedPhotoBytes != null
+                                            ? ParishColors.goldAccent
+                                            : borderGrey,
+                                        width: _watermarkedPhotoBytes != null ? 2 : 1,
+                                      ),
+                                    ),
+                                    child: _isProcessingImage
+                                        ? const Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                        : _watermarkedPhotoBytes != null
+                                        ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          Image.memory(
+                                            _watermarkedPhotoBytes!,
+                                            fit: BoxFit.cover,
+                                          ),
+                                          Positioned(
+                                            bottom: 0,
+                                            left: 0,
+                                            right: 0,
+                                            child: Container(
+                                              color: Colors.black54,
+                                              padding: const EdgeInsets.symmetric(vertical: 2),
+                                              child: const Text(
+                                                'WATERMARKED',
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 7.5,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                        : const Icon(
+                                      Icons.image_outlined,
+                                      color: ParishColors.marianBlue,
+                                      size: 36,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+
+                                // Actions & Instructions
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _watermarkedPhotoBytes != null
+                                            ? 'Security Watermark Embedded'
+                                            : 'Attach or Capture Asset Photo',
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: _watermarkedPhotoBytes != null
+                                              ? ParishColors.oliveGreen
+                                              : textDark,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        _watermarkedPhotoBytes != null
+                                            ? 'Includes: Parish Name (Saint John Paul II Parish), Timestamp, and Diocesan Control # (${_previewControlNumber}). Tap thumbnail to preview.'
+                                            : 'Images are automatically stamped with an immutable parish watermark including date, time, and Diocesan Control number.',
+                                        style: TextStyle(fontSize: 11, color: textMuted, height: 1.35),
+                                      ),
+                                      const SizedBox(height: 10),
+
+                                      // Dual Action Buttons: Upload Image & Take Photo
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: ParishColors.marianBlue,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                            ),
+                                            onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
+                                            icon: const Icon(Icons.camera_alt, size: 16),
+                                            label: const Text('Take Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                          ),
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: ParishColors.marianBlue,
+                                              side: const BorderSide(color: ParishColors.marianBlue),
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                            ),
+                                            onPressed: _isProcessingImage ? null : _pickImageFromDevice,
+                                            icon: const Icon(Icons.file_upload_outlined, size: 16),
+                                            label: const Text('Upload Image', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                          ),
+                                          if (_watermarkedPhotoBytes != null)
+                                            TextButton.icon(
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: ParishColors.mercyRed,
+                                                visualDensity: VisualDensity.compact,
+                                              ),
+                                              onPressed: () {
+                                                setState(() {
+                                                  _watermarkedPhotoBytes = null;
+                                                  _photoFileName = null;
+                                                });
+                                              },
+                                              icon: const Icon(Icons.delete_outline, size: 16),
+                                              label: const Text('Remove', style: TextStyle(fontSize: 12)),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
 
                       // Others / Special Specifications
                       _buildLabel('Other Specifications / Inscriptions'),
