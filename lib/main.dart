@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/auth_gate.dart';
@@ -13,6 +14,9 @@ Future<void> main() async {
     url: 'https://wdosrvmkgdrkcotlkzgi.supabase.co',
     anonKey: 'sb_publishable_wzE6ee-MEqpM8Qz7H8awDQ_4q1i2oJq',
   );
+
+  // Initialize OneSignal push notification service (mobile staff devices)
+  await NotificationService.initialize();
 
   runApp(const ParishServeApp());
 }
@@ -41,6 +45,7 @@ class ParishServeApp extends StatelessWidget {
       valueListenable: AppThemeController.themeModeNotifier,
       builder: (context, currentMode, _) {
         return MaterialApp(
+          navigatorKey: NotificationService.navigatorKey,
           title: isVerification
               ? 'Certificate Verification - Saint John Paul II Parish'
               : 'ParishServe',

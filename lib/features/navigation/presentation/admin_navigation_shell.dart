@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/theme_controller.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/presentation/admin_users_page.dart';
@@ -23,6 +24,10 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
   @override
   void initState() {
     super.initState();
+
+    // Auto-sync admin device tags with OneSignal upon dashboard load
+    NotificationService.syncStaffUser(widget.currentUser);
+
     _views = [
       AdminDashboardView(
         currentUser: widget.currentUser,
@@ -391,7 +396,6 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
           ),
           const SizedBox(height: 20),
 
-          // Security Boundary Advisory Card
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -426,7 +430,6 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
           ),
           const SizedBox(height: 24),
 
-          // Server & Database Health Status
           Text('Cloud Infrastructure & Storage', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 12),
 
@@ -456,7 +459,6 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
 
           const SizedBox(height: 24),
 
-          // Superadmin Multi-Parish Tenant Scaling Preview
           Text('Diocesan Multi-Parish Scaling', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 4),
           Text('Tenant management for future multi-parish deployments', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),

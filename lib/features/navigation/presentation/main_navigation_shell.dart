@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/theme_controller.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/services/auth_service.dart';
@@ -37,6 +38,12 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   @override
   void initState() {
     super.initState();
+
+    // Auto-synchronize staff push tags upon dashboard load
+    if (widget.currentUser != null) {
+      NotificationService.syncStaffUser(widget.currentUser!);
+    }
+
     _views = [
       DashboardView(currentUser: widget.currentUser),
       const SacramentalRecordsView(),
@@ -212,7 +219,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       child: Column(
         children: [
           const SizedBox(height: 36),
-          // Parish Logo & Title
           Container(
             width: 68,
             height: 68,
@@ -242,7 +248,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
           ),
           const SizedBox(height: 28),
 
-          // Sidebar Navigation Links
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -264,7 +269,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
             ),
           ),
 
-          // Notification Alert Shortcut
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: InkWell(
@@ -298,7 +302,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
             ),
           ),
 
-          // User Identity Card & Logout
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -579,7 +582,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
               Expanded(child: _buildNavItem(index: 1, label: 'Records', icon: Icons.menu_book_outlined, activeIcon: Icons.menu_book)),
               Expanded(child: _buildNavItem(index: 2, label: 'Receipts', icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long)),
               Expanded(child: _buildNavItem(index: 3, label: 'Appts', icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month)),
-              const SizedBox(width: 72), // Elevated center gap
+              const SizedBox(width: 72),
               Expanded(child: _buildNavItem(index: 4, label: 'Assets', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2)),
               Expanded(child: _buildNavItem(index: 5, label: 'IoT', icon: Icons.sensors_outlined, activeIcon: Icons.sensors)),
               Expanded(child: _buildNavItem(index: 6, label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person)),

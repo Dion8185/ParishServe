@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "620738454065",
+    "project_id": "parishserve",
+    "storage_bucket": "parishserve.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:620738454065:android:21ba2cb9d17f1bf437eb10",
+        "android_client_info": {
+          "package_name": "com.example.parishserve"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBc8GB9JWfffynuvqr68WoqWXw18NSJMM0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

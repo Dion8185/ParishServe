@@ -45,3 +45,5 @@ app.*.map.json
 /android/app/release
 
 /supabase.env
+parishserve-firebase-adminsdk-fbsvc-d701fa6dc2.json
+*firebase-adminsdk*.json
