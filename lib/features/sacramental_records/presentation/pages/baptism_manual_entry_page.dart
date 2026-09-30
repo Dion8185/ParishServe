@@ -104,9 +104,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
   // 5. Baptism & Minister Details (Page 5)
   final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish Church');
-  final _ministerFirstNameController = TextEditingController(text: 'Joseph');
+  final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerLastNameController = TextEditingController(text: 'Santos');
+  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
   DateTime? _dateOfBaptism = DateTime.now();
   final _stipendController = TextEditingController();
   final _remarksController = TextEditingController();

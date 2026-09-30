@@ -425,7 +425,7 @@ class _ReceiptTemplateEditorDialogState extends State<_ReceiptTemplateEditorDial
       text: t?.headerText ?? 'Diocese of San Pablo\nSaint John Paul II Parish\nSanta Cruz, Laguna',
     );
     _cashierTitleController = TextEditingController(text: t?.cashierTitle ?? 'Parish Cashier / Secretary');
-    _parishPriestController = TextEditingController(text: t?.parishPriestName ?? 'Rev. Fr. Joseph Santos');
+    _parishPriestController = TextEditingController(text: t?.parishPriestName ?? 'Rev. Fr. Roy G. Reyes');
 
     _paperSize = t?.paperSize ?? 'Ecclesiastical';
     _orientation = t?.orientation ?? 'Landscape';

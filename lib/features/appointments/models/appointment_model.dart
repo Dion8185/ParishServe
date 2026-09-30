@@ -90,7 +90,7 @@ class AppointmentModel {
       requestedTime: map['requested_time']?.toString() ?? '00:00:00',
       endTime: map['end_time']?.toString() ?? '00:00:00',
       venue: map['venue'] ?? 'Main Church Altar',
-      officiantName: map['officiant_name'] ?? 'Rev. Fr. Joseph Santos',
+      officiantName: map['officiant_name'] ?? 'Rev. Fr. Roy G. Reyes',
       appointmentStatus: map['appointment_status'] ?? 'pending',
       appointmentRemarks: map['appointment_remarks'],
       idType: map['id_type'],

@@ -93,9 +93,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   // 6. Administration Details (Page 5)
   DateTime? _dateOfConfirmation = DateTime.now();
   final _stipendController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Joseph');
+  final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerLastNameController = TextEditingController(text: 'Santos');
+  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
 

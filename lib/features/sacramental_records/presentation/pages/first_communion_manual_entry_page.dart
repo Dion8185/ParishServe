@@ -68,9 +68,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   final _motherMaidenLastNameController = TextEditingController();
 
   // 4. Officiating Clergy & Remarks (Page 4)
-  final _ministerFirstNameController = TextEditingController(text: 'Joseph');
+  final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerLastNameController = TextEditingController(text: 'Santos');
+  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
   final _remarksController = TextEditingController();
 
   bool _isSubmitting = false;

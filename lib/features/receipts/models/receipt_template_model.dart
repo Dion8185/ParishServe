@@ -159,7 +159,7 @@ class ReceiptTemplateModel {
     this.showDioceseLogo = true,
     this.showParishSeal = true,
     this.cashierTitle = 'Parish Cashier / Secretary',
-    this.parishPriestName = 'Rev. Fr. Joseph Santos',
+    this.parishPriestName = 'Rev. Fr. Roy G. Reyes',
     this.signatureImageUrl,
     this.enableQrVerification = true,
     this.styleConfig = ReceiptStyleConfig.defaultConfig,
@@ -251,7 +251,7 @@ class ReceiptTemplateModel {
       showDioceseLogo: map['show_diocese_logo'] ?? true,
       showParishSeal: map['show_parish_seal'] ?? true,
       cashierTitle: map['cashier_title']?.toString() ?? 'Parish Cashier / Secretary',
-      parishPriestName: map['parish_priest_name']?.toString() ?? 'Rev. Fr. Joseph Santos',
+      parishPriestName: map['parish_priest_name']?.toString() ?? 'Rev. Fr. Roy G. Reyes',
       signatureImageUrl: map['signature_image_url']?.toString(),
       enableQrVerification: map['enable_qr_verification'] ?? true,
       styleConfig: ReceiptStyleConfig.fromMap(

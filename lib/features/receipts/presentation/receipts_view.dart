@@ -5,8 +5,10 @@ import '../services/secretary_service.dart';
 import 'dialogs/manage_particulars_dialog.dart';
 import 'dialogs/new_transaction_dialog.dart';
 import 'dialogs/receipt_detail_dialog.dart';
+import 'dialogs/remittance_report_dialog.dart';
 import 'pages/pos_cashier_page.dart';
 import 'pages/receipt_template_management_page.dart';
+import 'widgets/receipt_card.dart';
 
 class ReceiptManagementView extends StatefulWidget {
   const ReceiptManagementView({super.key});
@@ -37,6 +39,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     'Cash',
     'GCash',
     'Gratis',
+    'Voided',
   ];
 
   final List<String> _dateRangeOptions = [
@@ -90,6 +93,13 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     }
   }
 
+  bool _isTransactionVoided(Map<String, dynamic> t) {
+    final status = (t['transaction_status'] ?? '').toString().toLowerCase();
+    if (status.contains('void') || status.contains('cancel')) return true;
+    final details = (t['transaction_details'] ?? '').toString().toUpperCase();
+    return details.contains('[VOIDED') || details.contains('VOIDED ON');
+  }
+
   String _getTenderMode(Map<String, dynamic> t) {
     final details = (t['transaction_details'] ?? '').toString().toLowerCase();
     final type = (t['transaction_type'] ?? '').toString().toLowerCase();
@@ -116,9 +126,12 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
   List<Map<String, dynamic>> get _filteredTransactions {
     var list = List<Map<String, dynamic>>.from(_transactions);
 
-    // 1. Payment Tender Mode Filter
-    if (_selectedPaymentMode != 'All') {
+    // 1. Payment Tender Mode & Voided Filter
+    if (_selectedPaymentMode == 'Voided') {
+      list = list.where((t) => _isTransactionVoided(t)).toList();
+    } else if (_selectedPaymentMode != 'All') {
       list = list.where((t) {
+        if (_isTransactionVoided(t)) return false;
         final mode = _getTenderMode(t);
         return mode.toLowerCase() == _selectedPaymentMode.toLowerCase();
       }).toList();
@@ -201,18 +214,25 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     return list;
   }
 
-  // Live KPI Summary Metrics
   double get _totalCollectedToday {
     final today = DateTime.now().toIso8601String().substring(0, 10);
     return _transactions.where((t) {
+      if (_isTransactionVoided(t)) return false;
       final date = (t['transaction_date'] ?? t['created_at'] ?? '').toString();
       return date.startsWith(today);
     }).fold(0.0, (sum, t) => sum + _getAmount(t));
   }
 
   double get _totalFilteredAmount {
-    return _filteredTransactions.fold(0.0, (sum, t) => sum + _getAmount(t));
+    if (_selectedPaymentMode == 'Voided') {
+      return _filteredTransactions.fold(0.0, (sum, t) => sum + _getAmount(t));
+    }
+    return _filteredTransactions
+        .where((t) => !_isTransactionVoided(t))
+        .fold(0.0, (sum, t) => sum + _getAmount(t));
   }
+
+  int get _voidedCount => _transactions.where((t) => _isTransactionVoided(t)).length;
 
   int get _totalPages {
     final total = _filteredTransactions.length;
@@ -284,6 +304,10 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     );
   }
 
+  void _openRemittanceReports() {
+    showRemittanceReportModal(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
@@ -319,7 +343,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                         style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textDark),
                       ),
                       Text(
-                        'Issue official ecclesiastical receipts, manage offerings, and oversee financial journals',
+                        'Issue ecclesiastical receipts, oversee voided records, and manage parish ledgers',
                         style: TextStyle(color: textMuted, fontSize: 13),
                       ),
                     ],
@@ -328,6 +352,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    IconButton(
+                      icon: const Icon(Icons.assessment_outlined, color: ParishColors.marianBlue),
+                      onPressed: _openRemittanceReports,
+                      tooltip: 'Remittance & Financial Reports',
+                    ),
                     IconButton(
                       icon: const Icon(Icons.style_outlined, color: ParishColors.marianBlue),
                       onPressed: _openTemplateManager,
@@ -352,7 +381,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
             // Top Action Primary Buttons
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 700;
+                final isWide = constraints.maxWidth > 800;
                 return isWide
                     ? Row(
                   children: [
@@ -370,12 +399,12 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                           icon: const Icon(Icons.point_of_sale, size: 22),
                           label: const Text(
                             'Launch POS Cashier Terminal',
-                            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
                       flex: 3,
                       child: SizedBox(
@@ -395,21 +424,21 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
                       flex: 3,
                       child: SizedBox(
                         height: 52,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-                            foregroundColor: ParishColors.goldAccent,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ParishColors.marianBlue,
+                            foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: _openTemplateManager,
-                          icon: const Icon(Icons.design_services_outlined, size: 18),
+                          onPressed: _openRemittanceReports,
+                          icon: const Icon(Icons.assessment_outlined, size: 18),
                           label: const Text(
-                            'Receipt Templates',
+                            'Remittance Reports',
                             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                           ),
                         ),
@@ -450,7 +479,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                               ),
                               onPressed: () => showNewTransactionModal(context, onTransactionSaved: _loadTransactions),
                               icon: const Icon(Icons.receipt_long, size: 16),
-                              label: const Text('Single Entry', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                              label: const Text('Single Entry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ),
@@ -458,15 +487,15 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                         Expanded(
                           child: SizedBox(
                             height: 44,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-                                foregroundColor: ParishColors.goldAccent,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: ParishColors.marianBlue,
+                                foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
-                              onPressed: _openTemplateManager,
-                              icon: const Icon(Icons.design_services_outlined, size: 16),
-                              label: const Text('Templates', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                              onPressed: _openRemittanceReports,
+                              icon: const Icon(Icons.assessment_outlined, size: 16),
+                              label: const Text('Reports', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ),
@@ -495,7 +524,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text("Today's Total Intake", style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.bold)),
+                            Text("Today's Valid Intake", style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 4),
                             Text(
                               '₱ ${_totalCollectedToday.toStringAsFixed(2)}',
@@ -519,14 +548,24 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _selectedDateRangeFilter == 'All Dates' ? 'Total Filtered Intake' : '$_selectedDateRangeFilter Intake',
-                              style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.bold),
+                              _selectedPaymentMode == 'Voided'
+                                  ? 'Total Voided Amount'
+                                  : (_selectedDateRangeFilter == 'All Dates' ? 'Total Valid Intake' : '$_selectedDateRangeFilter Intake'),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: _selectedPaymentMode == 'Voided' ? ParishColors.mercyRed : textMuted,
+                                fontWeight: FontWeight.bold,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4),
                             Text(
                               '₱ ${_totalFilteredAmount.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
+                              style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.bold,
+                                color: _selectedPaymentMode == 'Voided' ? ParishColors.mercyRed : ParishColors.goldAccent,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ],
@@ -546,11 +585,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Ledger Records', style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.bold)),
+                              Text('Active / Voided Ratio', style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 4),
                               Text(
-                                '$totalItems / ${_transactions.length} Slips',
-                                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                '${_transactions.length - _voidedCount} Valid • $_voidedCount Voided',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ],
@@ -631,7 +670,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
             ),
             const SizedBox(height: 12),
 
-            // Payment Tender Mode Filter Tabs (All, Cash, GCash, Gratis)
+            // Payment Tender & Voided Filter Tabs
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -641,6 +680,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                   if (mode == 'Cash') activeColor = ParishColors.oliveGreen;
                   if (mode == 'GCash') activeColor = const Color(0xFF005CEE);
                   if (mode == 'Gratis') activeColor = ParishColors.goldAccent;
+                  if (mode == 'Voided') activeColor = ParishColors.mercyRed;
 
                   return Padding(
                     padding: const EdgeInsets.only(right: 8.0),
@@ -663,9 +703,10 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                             if (mode == 'Cash') Icon(Icons.payments_outlined, size: 14, color: isSelected ? Colors.white : activeColor),
                             if (mode == 'GCash') Icon(Icons.qr_code_2, size: 14, color: isSelected ? Colors.white : activeColor),
                             if (mode == 'Gratis') Icon(Icons.volunteer_activism, size: 14, color: isSelected ? Colors.white : activeColor),
+                            if (mode == 'Voided') Icon(Icons.block, size: 14, color: isSelected ? Colors.white : activeColor),
                             if (mode != 'All') const SizedBox(width: 5),
                             Text(
-                              mode == 'All' ? 'All Tenders' : mode,
+                              mode == 'All' ? 'All Tenders' : (mode == 'Voided' ? 'Voided ($_voidedCount)' : mode),
                               style: TextStyle(
                                 color: isSelected ? Colors.white : textDark,
                                 fontWeight: FontWeight.bold,
@@ -687,7 +728,9 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Ecclesiastical Receipts ($totalItems)',
+                  _selectedPaymentMode == 'Voided'
+                      ? 'Voided / Cancelled Slips ($totalItems)'
+                      : 'Ecclesiastical Receipts ($totalItems)',
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
                 ),
                 Text(
@@ -707,7 +750,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
   }
 
   // ===========================================================================
-  // Clean List Builder
+  // Receipts List Builder
   // ===========================================================================
 
   Widget _buildReceiptsList(List<Map<String, dynamic>> pagedTransactions, int totalItems) {
@@ -742,12 +785,14 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
             Icon(Icons.receipt_long, size: 44, color: textMuted),
             const SizedBox(height: 10),
             Text(
-              'No receipt transactions match your criteria.',
+              _selectedPaymentMode == 'Voided'
+                  ? 'No voided transactions found.'
+                  : 'No receipt transactions match your criteria.',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textDark),
             ),
             const SizedBox(height: 4),
             Text(
-              'Adjust the filters or search keywords above.',
+              'Adjust filters or search keywords above.',
               style: TextStyle(fontSize: 12, color: textMuted),
             ),
           ],
@@ -762,15 +807,16 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
           final String payor = (t['payor_name'] ?? 'Parishioner').toString();
           final String service = (t['related_service'] ?? t['transaction_type'] ?? 'Parish Service').toString();
           final double amountVal = _getAmount(t);
-          final String amount = 'P ${amountVal.toStringAsFixed(2)}';
+          final String amount = '₱ ${amountVal.toStringAsFixed(2)}';
           final String dateRaw = (t['transaction_date'] ?? t['created_at'] ?? '').toString();
           final String date = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
           final String status = (t['transaction_status'] ?? 'paid').toString().toUpperCase();
           final String mode = _getTenderMode(t);
           final String? contact = t['payor_contact']?.toString();
           final String? details = t['transaction_details']?.toString();
+          final bool isVoided = _isTransactionVoided(t);
 
-          return _buildReceiptCard(
+          return ReceiptCard(
             receiptNo: rNo,
             payer: payor,
             purpose: service,
@@ -780,6 +826,24 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
             payorContact: contact,
             transactionDetails: details,
             paymentMode: mode,
+            isVoided: isVoided,
+            transactionId: t['transaction_id']?.toString(),
+            onTap: () {
+              showReceiptDetailModal(
+                context,
+                receiptNo: rNo,
+                payer: payor,
+                purpose: service,
+                amount: amount,
+                date: date,
+                payorContact: contact,
+                transactionDetails: details,
+                paymentMode: mode,
+                transactionId: t['transaction_id']?.toString(),
+                status: status,
+                onTransactionUpdated: _loadTransactions,
+              );
+            },
           );
         }),
         const SizedBox(height: 14),
@@ -787,205 +851,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
       ],
     );
   }
-
-  // ===========================================================================
-  // Self-Contained Card Renderer (Immune to External Import Path Failures)
-  // ===========================================================================
-
-  Widget _buildReceiptCard({
-    required String receiptNo,
-    required String payer,
-    required String purpose,
-    required String amount,
-    required String date,
-    required String status,
-    String? payorContact,
-    String? transactionDetails,
-    String paymentMode = 'Cash',
-  }) {
-    Color tenderColor = ParishColors.oliveGreen;
-    if (paymentMode.toLowerCase().contains('gcash')) {
-      tenderColor = const Color(0xFF005CEE);
-    } else if (paymentMode.toLowerCase().contains('gratis')) {
-      tenderColor = ParishColors.goldAccent;
-    }
-
-    Color statusColor = ParishColors.oliveGreen;
-    if (status.toLowerCase().contains('void') || status.toLowerCase().contains('cancel')) {
-      statusColor = ParishColors.mercyRed;
-    } else if (status.toLowerCase().contains('pending')) {
-      statusColor = ParishColors.goldAccent;
-    }
-
-    return InkWell(
-      onTap: () => showReceiptDetailModal(
-        context,
-        receiptNo: receiptNo,
-        payer: payer,
-        purpose: purpose,
-        amount: amount,
-        date: date,
-        payorContact: payorContact,
-        transactionDetails: transactionDetails,
-        paymentMode: paymentMode,
-      ),
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: ParishColors.cardWhite,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: ParishColors.borderGrey),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.02),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: tenderColor.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.receipt_long, color: tenderColor, size: 28),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            receiptNo,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: ParishColors.marianBlue,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: tenderColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: tenderColor.withOpacity(0.3)),
-                            ),
-                            child: Text(
-                              paymentMode.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
-                                color: tenderColor,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        amount,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: ParishColors.textDark,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    payer,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textDark,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    purpose,
-                    style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.calendar_today_outlined, size: 13, color: ParishColors.textMuted),
-                          const SizedBox(width: 4),
-                          Text(date, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-                          if (payorContact != null && payorContact.isNotEmpty) ...[
-                            const SizedBox(width: 12),
-                            Icon(Icons.phone_outlined, size: 13, color: ParishColors.textMuted),
-                            const SizedBox(width: 4),
-                            Text(payorContact, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-                          ],
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          status.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: statusColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Alias method supporting any existing call signature
-  Widget ReceiptCard({
-    required String receiptNo,
-    required String payer,
-    required String purpose,
-    required String amount,
-    required String date,
-    required String status,
-    String? payorContact,
-    String? transactionDetails,
-    String paymentMode = 'Cash',
-  }) => _buildReceiptCard(
-    receiptNo: receiptNo,
-    payer: payer,
-    purpose: purpose,
-    amount: amount,
-    date: date,
-    status: status,
-    payorContact: payorContact,
-    transactionDetails: transactionDetails,
-    paymentMode: paymentMode,
-  );
 
   // ===========================================================================
   // Dropdown Builders & Toolbar

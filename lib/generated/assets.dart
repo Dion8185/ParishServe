@@ -32,32 +32,29 @@ class $AssetsPresentationGen {
 
   final $AssetsDialogsGen dialogs = const $AssetsDialogsGen();
   final $AssetsWidgetsGen widgets = const $AssetsWidgetsGen();
-  final String receiptsView =
-      'lib/features/receipts/presentation/receipts_view.dart';
+  final String receiptsView = 'lib/features/receipts/presentation/receipts_view.dart';
 }
 
 class $AssetsDialogsGen {
   const $AssetsDialogsGen();
 
-  final String manageParticularsDialog =
-      'lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart';
-  final String newTransactionDialog =
-      'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
-  final String receiptDetailDialog =
-      'lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart';
+  final String manageParticularsDialog = 'lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart';
+  final String newTransactionDialog = 'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
+  final String receiptDetailDialog = 'lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart';
+  final String remittanceReportDialog = 'lib/features/receipts/presentation/dialogs/remittance_report_dialog.dart';
 }
 
 class $AssetsWidgetsGen {
   const $AssetsWidgetsGen();
 
-  final String receiptCard =
-      'lib/features/receipts/presentation/widgets/receipt_card.dart';
+  final String receiptCard = 'lib/features/receipts/presentation/widgets/receipt_card.dart';
 }
 
 class AssetGenImage {
   const AssetGenImage(this._assetName, {this.size, this.flavors = const {}});
 
   final String _assetName;
+
 
   final Size? size;
   final Set<String> flavors;
@@ -115,8 +112,15 @@ class AssetGenImage {
     );
   }
 
-  ImageProvider provider({AssetBundle? bundle, String? package}) {
-    return AssetImage(_assetName, bundle: bundle, package: package);
+  ImageProvider provider({
+    AssetBundle? bundle,
+    String? package,
+  }) {
+    return AssetImage(
+      _assetName,
+      bundle: bundle,
+      package: package,
+    );
   }
 
   Widget custom({
@@ -133,3 +137,4 @@ class AssetGenImage {
 
   String get keyName => _assetName;
 }
+

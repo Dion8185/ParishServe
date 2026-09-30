@@ -58,7 +58,7 @@ class CertificateTemplateModel {
     this.orientation = 'Portrait',
     this.backgroundImageUrl,
     this.backgroundMode = 'Border',
-    this.signatoryName = 'Rev. Fr. Joseph Santos',
+    this.signatoryName = 'Rev. Fr. Roy G. Reyes',
     this.signatoryTitle = 'Parish Priest',
     this.signatureImageUrl,
     this.styleConfig = CertificateStyleConfig.defaultConfig,
@@ -107,7 +107,7 @@ class CertificateTemplateModel {
       orientation: map['orientation']?.toString() ?? 'Portrait',
       backgroundImageUrl: map['background_image_url']?.toString(),
       backgroundMode: map['background_mode']?.toString() ?? 'Border',
-      signatoryName: map['signatory_name']?.toString() ?? 'Rev. Fr. Joseph Santos',
+      signatoryName: map['signatory_name']?.toString() ?? 'Rev. Fr. Roy G. Reyes',
       signatoryTitle: map['signatory_title']?.toString() ?? 'Parish Priest',
       signatureImageUrl: map['signature_image_url']?.toString(),
       styleConfig: CertificateStyleConfig.fromMap(

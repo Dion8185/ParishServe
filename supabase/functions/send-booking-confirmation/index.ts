@@ -127,7 +127,7 @@ serve(async (req) => {
                 <tr><td style="padding: 5px 0; color: #64748B;">Confirmed Date:</td><td style="font-weight: bold;">${requested_date}</td></tr>
                 <tr><td style="padding: 5px 0; color: #64748B;">Time Window:</td><td style="font-weight: bold;">${requested_time} – ${end_time}</td></tr>
                 <tr><td style="padding: 5px 0; color: #64748B;">Parish Venue:</td><td style="font-weight: bold;">${venue || 'Main Church Altar'}</td></tr>
-                <tr><td style="padding: 5px 0; color: #64748B;">Presiding Clergy:</td><td style="font-weight: bold;">${officiant_name || 'Rev. Fr. Joseph Santos'}</td></tr>
+                <tr><td style="padding: 5px 0; color: #64748B;">Presiding Clergy:</td><td style="font-weight: bold;">${officiant_name || 'Rev. Fr. Roy G. Reyes'}</td></tr>
                 ${appointment_remarks ? `<tr><td style="padding: 5px 0; color: #64748B;">Remarks:</td><td style="font-style: italic; color: #475569;">${appointment_remarks}</td></tr>` : ''}
               </table>
             </div>

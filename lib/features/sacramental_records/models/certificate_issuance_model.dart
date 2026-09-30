@@ -83,7 +83,7 @@ class CertificateIssuanceModel {
       templateId: map['template_id']?.toString(),
       templateVersion: int.tryParse(map['template_version']?.toString() ?? '1') ?? 1,
       renderedWording: map['rendered_wording']?.toString() ?? '',
-      signatoryName: map['signatory_name']?.toString() ?? 'Rev. Fr. Joseph Santos',
+      signatoryName: map['signatory_name']?.toString() ?? 'Rev. Fr. Roy G. Reyes',
       signatoryTitle: map['signatory_title']?.toString() ?? 'Parish Priest',
       bookNumber: map['book_number']?.toString(),
       pageNumber: map['page_number']?.toString(),

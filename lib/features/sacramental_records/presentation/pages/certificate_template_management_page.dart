@@ -193,10 +193,10 @@ class _CertificateTemplateManagementPageState
       'page_number': '82',
       'line_number': '03',
       'control_number': 'FCM-2026-0001',
-      'minister_first_name': 'Joseph',
-      'minister_last_name': 'Santos',
-      'solemnizer_first_name': 'Joseph',
-      'solemnizer_last_name': 'Santos',
+      'minister_first_name': 'Roy',
+      'minister_last_name': 'Reyes',
+      'solemnizer_first_name': 'Roy',
+      'solemnizer_last_name': 'Reyes',
       'parish_name': 'St. John Paul II Parish',
     };
 
@@ -808,7 +808,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
     );
     _bodyController = TextEditingController(text: t?.bodyWording ?? _getDefaultWordingFor(_sacramentType));
     _purposeController = TextEditingController(text: t?.defaultPurpose ?? 'For Legal / Personal Records');
-    _signatoryNameController = TextEditingController(text: t?.signatoryName ?? 'Rev. Fr. Joseph Santos');
+    _signatoryNameController = TextEditingController(text: t?.signatoryName ?? 'Rev. Fr. Roy G. Reyes');
     _signatoryTitleController = TextEditingController(text: t?.signatoryTitle ?? 'Parish Priest');
 
     _paperSize = t?.paperSize ?? 'A4';

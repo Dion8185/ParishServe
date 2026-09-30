@@ -6,6 +6,7 @@ class SecretaryService {
 
   // Cached verified enum string from database to optimize subsequent inserts
   static String? _cachedValidTransactionType;
+  static String? _cachedValidVoidStatus;
 
   /// Fetch all ecclesiastical receipts for cashiering and remittance
   static Future<List<Map<String, dynamic>>> getTransactions() async {
@@ -141,6 +142,93 @@ class SecretaryService {
     throw 'Failed to record transaction in parish ledger.';
   }
 
+  /// Voids an existing ecclesiastical receipt, updates transaction status, appends reason audit log,
+  /// and registers a pastoral audit entry.
+  static Future<Map<String, dynamic>> voidTransaction({
+    required String transactionId,
+    required String reason,
+  }) async {
+    if (reason.trim().isEmpty) {
+      throw 'A void reason is required for canonical audit compliance.';
+    }
+
+    final currentUser = AuthService.currentUser;
+    final userId = currentUser?.userId ?? 'S26-0003';
+    final userFullName = currentUser?.fullName ?? 'Parish Staff';
+    final now = DateTime.now();
+    final dateStamp =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    // 1. Retrieve the existing transaction details to preserve historical items
+    final existing = await _client
+        .from('parish_transactions')
+        .select()
+        .eq('transaction_id', transactionId)
+        .single();
+
+    final currentDetails = existing['transaction_details']?.toString() ?? '';
+    final voidAuditLog =
+        '[VOIDED on $dateStamp by $userFullName ($userId)]: Reason: ${reason.trim()}';
+    final updatedDetails = currentDetails.isEmpty
+        ? voidAuditLog
+        : '$currentDetails\n$voidAuditLog';
+
+    // 2. Candidate enum pool for transaction_status ('cancelled', 'voided', 'void')
+    final candidateStatuses = [
+      if (_cachedValidVoidStatus != null) _cachedValidVoidStatus!,
+      'cancelled',
+      'voided',
+      'void',
+      'Cancelled',
+      'Voided',
+      'Void',
+    ].toSet().toList();
+
+    PostgrestException? lastError;
+
+    for (final status in candidateStatuses) {
+      try {
+        final response = await _client
+            .from('parish_transactions')
+            .update({
+          'transaction_status': status,
+          'transaction_details': updatedDetails,
+        })
+            .eq('transaction_id', transactionId)
+            .select()
+            .single();
+
+        _cachedValidVoidStatus = status;
+
+        // 3. Pastoral audit record logging (best effort)
+        try {
+          await _client.from('pastoral_audit_logs').insert({
+            'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+            'priest_id': userId,
+            'action_type': 'RECEIPT_VOIDED',
+            'target_reference_id': existing['receipt_number'] ?? transactionId,
+            'justification': 'Voided Receipt ${existing['receipt_number']}. Reason: ${reason.trim()}',
+            'created_at': now.toIso8601String(),
+          });
+        } catch (_) {}
+
+        return response;
+      } on PostgrestException catch (e) {
+        if (e.code == '22P02' && e.message.contains('transaction_status')) {
+          lastError = e;
+          continue;
+        }
+        rethrow;
+      }
+    }
+
+    if (lastError != null) {
+      throw 'Could not void receipt due to database enum mismatch. Allowed transaction_status values required.';
+    }
+
+    throw 'Failed to void transaction.';
+  }
+
   /// Helper to generate sequential receipt numbers: REC-YYYY-XXXXX
   static Future<String> _generateReceiptNumber() async {
     final year = DateTime.now().year;
@@ -152,7 +240,7 @@ class SecretaryService {
           .order('receipt_number', ascending: false)
           .limit(20);
 
-      int highest = 0;
+      int highest = 890;
       for (final item in res) {
         final rNo = item['receipt_number']?.toString() ?? '';
         final parts = rNo.split('-');

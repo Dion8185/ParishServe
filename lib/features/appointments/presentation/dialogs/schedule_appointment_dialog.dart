@@ -120,7 +120,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   String _selectedService = 'Nuptial Mass (Wedding)';
   String _selectedVenue = 'Main Church Altar';
-  String _selectedOfficiant = 'Rev. Fr. Joseph Santos';
+  String _selectedOfficiant = 'Rev. Fr. Roy G. Reyes';
   String _selectedIdType = 'Philippine National ID (PhilID / ePhilID)';
 
   // Attached File State (Web & Mobile Compatible)
@@ -163,7 +163,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     'Nuptial Mass (Wedding)': _ServicePreset(
       durationMinutes: 90,
       defaultVenue: 'Main Church Altar',
-      defaultOfficiant: 'Rev. Fr. Joseph Santos',
+      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
       durationLabel: '1 hr 30 mins',
     ),
     'Community Baptism': _ServicePreset(
@@ -176,37 +176,37 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     'Funeral Mass & Blessing': _ServicePreset(
       durationMinutes: 60,
       defaultVenue: 'Main Church Altar',
-      defaultOfficiant: 'Rev. Fr. Joseph Santos',
+      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
       durationLabel: '1 hour',
     ),
     'Anointing of the Sick & Viaticum': _ServicePreset(
       durationMinutes: 45,
       defaultVenue: 'Off-site / Home Visit',
-      defaultOfficiant: 'Rev. Fr. Joseph Santos',
+      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
       durationLabel: '45 mins',
     ),
     'House / Business Blessing': _ServicePreset(
       durationMinutes: 45,
       defaultVenue: 'Off-site / Home Visit',
-      defaultOfficiant: 'Rev. Fr. Joseph Santos',
+      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
       durationLabel: '45 mins',
     ),
     'Thanksgiving Mass Intention': _ServicePreset(
       durationMinutes: 60,
       defaultVenue: 'Main Church Altar',
-      defaultOfficiant: 'Rev. Fr. Joseph Santos',
+      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
       durationLabel: '1 hour',
     ),
     'Canonical Interview / Pre-Cana': _ServicePreset(
       durationMinutes: 45,
       defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Joseph Santos',
+      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
       durationLabel: '45 mins',
     ),
     'Confession & Spiritual Direction': _ServicePreset(
       durationMinutes: 30,
       defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Joseph Santos',
+      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
       durationLabel: '30 mins',
     ),
   };
@@ -221,7 +221,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   ];
 
   final List<String> _officiants = [
-    'Rev. Fr. Joseph Santos',
+    'Rev. Fr. Roy G. Reyes',
     'Rev. Fr. Parochial Vicar',
     'Guest Priest / Visiting Clergy',
   ];

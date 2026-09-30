@@ -73,7 +73,7 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
   String get _contactNo => widget.appointment?.contactNumber ?? widget.contact ?? 'N/A';
   String? get _email => widget.appointment?.email;
   String get _venue => widget.appointment?.venue ?? 'Main Church Altar';
-  String get _priest => widget.appointment?.officiantName ?? widget.officiant ?? 'Rev. Fr. Joseph Santos';
+  String get _priest => widget.appointment?.officiantName ?? widget.officiant ?? 'Rev. Fr. Roy G. Reyes';
   String? get _remarks => widget.appointment?.appointmentRemarks;
   String? get _fee => widget.feeStatus;
 

@@ -74,7 +74,7 @@ class _RescheduleAppointmentDialogState
   ];
 
   final List<String> _officiants = [
-    'Rev. Fr. Joseph Santos',
+    'Rev. Fr. Roy G. Reyes',
     'Rev. Fr. Parochial Vicar',
     'Guest Priest / Visiting Clergy',
   ];

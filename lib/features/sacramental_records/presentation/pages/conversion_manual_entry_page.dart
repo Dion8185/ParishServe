@@ -99,9 +99,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _witness2LastNameController = TextEditingController();
 
   final _stipendController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Joseph');
+  final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerLastNameController = TextEditingController(text: 'Santos');
+  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
 

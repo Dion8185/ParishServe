@@ -82,9 +82,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   bool _sacramentsReceived = true;
   String _liturgicalService = 'Funeral Mass';
   final _stipendController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Joseph');
+  final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerLastNameController = TextEditingController(text: 'Santos');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
 
