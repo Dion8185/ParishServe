@@ -213,7 +213,7 @@ class BaptismRecordModel {
       ministerMiddleName: map['minister_middle_name'],
       ministerLastName: map['minister_last_name'] ?? '',
       dateOfBaptism: DateTime.tryParse(map['date_of_baptism']?.toString() ?? '') ?? DateTime.now(),
-      placeOfBaptism: map['place_of_baptism'] ?? 'St. John Paul II Parish Church',
+      placeOfBaptism: map['place_of_baptism'] ?? 'St. John Paul II Parish',
       stipend: map['stipend'] != null ? double.tryParse(map['stipend'].toString()) : null,
       remarks: map['remarks'],
       scannedImageUrl: map['scanned_image_url'],
@@ -697,7 +697,7 @@ class CertificateTemplateModel {
     this.showDioceseLogo = true,
     this.showParishSeal = true,
     required this.bodyWording,
-    this.defaultPurpose = 'For Legal / Personal Records',
+    this.defaultPurpose = 'For Record / Reference',
     this.paperSize = 'A4',
     this.orientation = 'Portrait',
     this.backgroundImageUrl,
@@ -746,7 +746,7 @@ class CertificateTemplateModel {
       showDioceseLogo: map['show_diocese_logo'] ?? true,
       showParishSeal: map['show_parish_seal'] ?? true,
       bodyWording: map['body_wording']?.toString() ?? '',
-      defaultPurpose: map['default_purpose']?.toString() ?? 'For Legal / Personal Records',
+      defaultPurpose: map['default_purpose']?.toString() ?? 'For Record / Reference',
       paperSize: map['paper_size']?.toString() ?? 'A4',
       orientation: map['orientation']?.toString() ?? 'Portrait',
       backgroundImageUrl: map['background_image_url']?.toString(),
@@ -2994,10 +2994,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final List<TextEditingController> _otherGodparentControllers = [];
 
   // 5. Baptism & Minister Details (Page 5)
-  final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish Church');
+  final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish');
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   DateTime? _dateOfBaptism = DateTime.now();
   final _stipendController = TextEditingController();
   final _remarksController = TextEditingController();
@@ -3081,7 +3081,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
     _parishChurchController.text = data['place_of_baptism']?.toString() ??
         data['parish_name']?.toString() ??
-        'St. John Paul II Parish Church';
+        'St. John Paul II Parish';
     _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
     _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
     _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
@@ -6368,7 +6368,7 @@ class _CertificateTemplateManagementPageState
       'sponsor_2_first_name': 'Elena',
       'sponsor_2_last_name': 'Ramos',
       'date_of_baptism': '1998-06-20',
-      'place_of_baptism': 'St. John Paul II Parish Church',
+      'place_of_baptism': 'St. John Paul II Parish',
       'date_of_confirmation': '2010-10-12',
       'date_of_communion': '2007-04-18',
       'date_of_marriage': '2024-02-14',
@@ -6994,7 +6994,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
       text: t?.headerText ?? 'Diocese of San Pablo\nSaint John Paul II Parish\nSanta Cruz, Laguna',
     );
     _bodyController = TextEditingController(text: t?.bodyWording ?? _getDefaultWordingFor(_sacramentType));
-    _purposeController = TextEditingController(text: t?.defaultPurpose ?? 'For Legal / Personal Records');
+    _purposeController = TextEditingController(text: t?.defaultPurpose ?? 'For Record / Reference');
     _signatoryNameController = TextEditingController(text: t?.signatoryName ?? 'Rev. Fr. Roy G. Reyes');
     _signatoryTitleController = TextEditingController(text: t?.signatoryTitle ?? 'Parish Priest');
 
@@ -8466,7 +8466,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   DateTime? _dateOfBirth;
   final _ageController = TextEditingController();
   DateTime? _dateOfBaptism;
-  final _churchBaptizedController = TextEditingController(text: 'St. John Paul II Parish Church');
+  final _churchBaptizedController = TextEditingController(text: 'St. John Paul II Parish');
   final _addressController = TextEditingController();
 
   // 3. Father Information (Page 3 - Canon 877 §2)
@@ -8498,7 +8498,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   final _stipendController = TextEditingController();
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
 
@@ -10114,7 +10114,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _stipendController = TextEditingController();
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
 
@@ -12838,7 +12838,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   final _communicantFirstNameController = TextEditingController();
   final _communicantMiddleNameController = TextEditingController();
   final _communicantLastNameController = TextEditingController();
-  final _baptismParishController = TextEditingController(text: 'St. John Paul II Parish Church');
+  final _baptismParishController = TextEditingController(text: 'St. John Paul II Parish');
   DateTime? _baptismDate;
 
   // 3. Parents' Information (Page 3 - Batch Optional)
@@ -12853,7 +12853,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   // 4. Officiating Clergy & Remarks (Page 4)
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   final _remarksController = TextEditingController();
 
   bool _isSubmitting = false;
@@ -21224,7 +21224,7 @@ class PlaceholderRegistry {
       map['{Godmother\'s Name}'] = fullName('sponsor_2');
       map['{Other Sponsors}'] = val('other_godparents');
       map['{Date of Baptism}'] = _formatDate(val('date_of_baptism'));
-      map['{Place of Baptism}'] = val('place_of_baptism', 'St. John Paul II Parish Church');
+      map['{Place of Baptism}'] = val('place_of_baptism', 'St. John Paul II Parish');
       map['{Minister Name}'] = 'Rev. Fr. ${fullName('minister')}';
     } else if (sacramentType == 'Confirmation') {
       map['{Full Name}'] = fullName('confirmand');
@@ -21252,7 +21252,7 @@ class PlaceholderRegistry {
       map['{Date of Baptism}'] = _formatDate(val('baptism_date'));
       map['{Place of Baptism}'] = val('baptism_parish');
       map['{Date of First Communion}'] = _formatDate(val('date_of_communion'));
-      map['{Place of First Communion}'] = 'St. John Paul II Parish Church';
+      map['{Place of First Communion}'] = 'St. John Paul II Parish';
       map['{Minister Name}'] = 'Rev. Fr. ${fullName('minister')}';
       map['{Record Number}'] = val('control_number');
       map['{Year}'] = val('year');
@@ -21269,7 +21269,7 @@ class PlaceholderRegistry {
       map['{Bride Mother\'s Name}'] = fullName('bride_mother');
       map['{Marriage Type}'] = val('marriage_type');
       map['{Date of Marriage}'] = _formatDate(val('date_of_marriage'));
-      map['{Place of Marriage}'] = val('parish_name', 'St. John Paul II Parish Church');
+      map['{Place of Marriage}'] = val('parish_name', 'St. John Paul II Parish');
       map['{Godfather\'s Name}'] = fullName('sponsor_1');
       map['{Godmother\'s Name}'] = fullName('sponsor_2');
       map['{Other Sponsors}'] = val('other_sponsors');
@@ -21304,7 +21304,7 @@ class PlaceholderRegistry {
       map['{Father\'s Name}'] = fullName('father');
       map['{Mother\'s Name}'] = fullName('mother');
       map['{Date of Reception}'] = _formatDate(val('date_of_reception'));
-      map['{Place of Reception}'] = val('parish_name', 'St. John Paul II Parish Church');
+      map['{Place of Reception}'] = val('parish_name', 'St. John Paul II Parish');
       map['{Godfather\'s Name}'] = fullName('witness_1');
       map['{Godmother\'s Name}'] = fullName('witness_2');
       map['{Minister Name}'] = 'Rev. Fr. ${fullName('minister')}';

@@ -27,6 +27,10 @@ class CertificateIssuanceModel {
   final DateTime? revokedAt;
   final String? revokedBy;
 
+  // Relational Linkage to Receipt System
+  final String? transactionId;
+  final String? receiptNumber;
+
   final String? issuedBy;
   final DateTime issuedAt;
   final DateTime? createdAt;
@@ -53,6 +57,8 @@ class CertificateIssuanceModel {
     this.revocationReason,
     this.revokedAt,
     this.revokedBy,
+    this.transactionId,
+    this.receiptNumber,
     this.issuedBy,
     required this.issuedAt,
     this.createdAt,
@@ -95,6 +101,8 @@ class CertificateIssuanceModel {
       revocationReason: map['revocation_reason']?.toString(),
       revokedAt: map['revoked_at'] != null ? DateTime.tryParse(map['revoked_at'].toString()) : null,
       revokedBy: map['revoked_by']?.toString(),
+      transactionId: map['transaction_id']?.toString(),
+      receiptNumber: map['receipt_number']?.toString(),
       issuedBy: map['issued_by']?.toString(),
       issuedAt: DateTime.tryParse(map['issued_at']?.toString() ?? '') ?? DateTime.now(),
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
@@ -124,6 +132,8 @@ class CertificateIssuanceModel {
       'revocation_reason': revocationReason,
       'revoked_at': revokedAt?.toIso8601String(),
       'revoked_by': revokedBy,
+      'transaction_id': transactionId,
+      'receipt_number': receiptNumber,
       'issued_by': issuedBy,
       'issued_at': issuedAt.toIso8601String(),
     };

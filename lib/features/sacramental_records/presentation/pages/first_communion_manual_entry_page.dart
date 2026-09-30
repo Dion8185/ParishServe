@@ -55,7 +55,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   final _communicantFirstNameController = TextEditingController();
   final _communicantMiddleNameController = TextEditingController();
   final _communicantLastNameController = TextEditingController();
-  final _baptismParishController = TextEditingController(text: 'St. John Paul II Parish Church');
+  final _baptismParishController = TextEditingController(text: 'St. John Paul II Parish');
   DateTime? _baptismDate;
 
   // 3. Parents' Information (Page 3 - Batch Optional)
@@ -70,7 +70,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   // 4. Officiating Clergy & Remarks (Page 4)
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   final _remarksController = TextEditingController();
 
   bool _isSubmitting = false;

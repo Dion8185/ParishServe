@@ -81,7 +81,6 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
   final _payorContactController = TextEditingController();
   final _amountController = TextEditingController();
   final _detailsController = TextEditingController();
-  final _gcashRefController = TextEditingController();
 
   DateTime _transactionDate = DateTime.now();
 
@@ -89,7 +88,6 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
   PosItemModel? _selectedParticular;
   bool _isLoadingParticulars = true;
 
-  String _paymentMode = 'Cash';
   bool _isSaving = false;
   String? _errorMessage;
 
@@ -153,7 +151,6 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
     _payorContactController.dispose();
     _amountController.dispose();
     _detailsController.dispose();
-    _gcashRefController.dispose();
     super.dispose();
   }
 
@@ -172,13 +169,8 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final parsedAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
-    if (_paymentMode != 'Gratis' && parsedAmount <= 0) {
-      setState(() => _errorMessage = 'Please enter a valid amount greater than 0.00.');
-      return;
-    }
-
-    if (_paymentMode == 'GCash' && _gcashRefController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Please provide the GCash Reference Number.');
+    if (parsedAmount < 0) {
+      setState(() => _errorMessage = 'Please enter a valid amount.');
       return;
     }
 
@@ -186,24 +178,17 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
 
     try {
       final serviceTitle = _selectedParticular?.title ?? 'Parish Offering';
-      final notes = <String>[];
+      final notes = _detailsController.text.trim();
 
-      notes.add('Tender: $_paymentMode');
-      if (_paymentMode == 'GCash') {
-        notes.add('GCash Ref: ${_gcashRefController.text.trim()}');
-      }
-      if (_detailsController.text.trim().isNotEmpty) {
-        notes.add(_detailsController.text.trim());
-      }
-
-      final details = '• $serviceTitle @ ₱${parsedAmount.toStringAsFixed(2)} = ₱${parsedAmount.toStringAsFixed(2)}\nRemarks: ${notes.join(" | ")}';
+      final lineDetails = '• $serviceTitle x1\n  @ ₱${parsedAmount.toStringAsFixed(2)} = ₱${parsedAmount.toStringAsFixed(2)}';
+      final details = notes.isNotEmpty ? '$lineDetails\nRemarks: $notes' : lineDetails;
 
       final record = await SecretaryService.createTransaction(
         payorName: _payorNameController.text.trim(),
         payorContact: _payorContactController.text.trim(),
         relatedService: serviceTitle,
         transactionDetails: details,
-        transactionAmount: _paymentMode == 'Gratis' ? 0.00 : parsedAmount,
+        transactionAmount: parsedAmount,
         transactionType: _resolveTransactionTypeCategory(),
         transactionDate: _transactionDate,
       );
@@ -221,7 +206,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
         date: _transactionDate.toIso8601String().substring(0, 10),
         payorContact: record['payor_contact'],
         transactionDetails: record['transaction_details'],
-        paymentMode: _paymentMode,
+        paymentMode: 'Cash',
       );
     } catch (e) {
       setState(() {
@@ -403,66 +388,16 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
                   ),
                 const SizedBox(height: 12),
 
-                // Amount & Tender Mode
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Amount (PHP) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _amountController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
-                            decoration: _inputDecoration(hint: '0.00'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Payment Mode *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                          const SizedBox(height: 6),
-                          DropdownButtonFormField<String>(
-                            value: _paymentMode,
-                            isExpanded: true,
-                            items: const [
-                              DropdownMenuItem(value: 'Cash', child: Text('Cash', overflow: TextOverflow.ellipsis)),
-                              DropdownMenuItem(value: 'GCash', child: Text('GCash', overflow: TextOverflow.ellipsis)),
-                              DropdownMenuItem(value: 'Gratis', child: Text('Gratis', overflow: TextOverflow.ellipsis)),
-                            ],
-                            onChanged: (val) => setState(() => _paymentMode = val!),
-                            decoration: _inputDecoration(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                // Amount Field (Tender mode completely removed)
+                Text('Amount (PHP) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _amountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                  decoration: _inputDecoration(hint: '0.00'),
                 ),
                 const SizedBox(height: 12),
-
-                // Conditional GCash Reference Field
-                if (_paymentMode == 'GCash') ...[
-                  Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _gcashRefController,
-                    style: TextStyle(fontSize: 13.5, color: textDark),
-                    validator: (v) => _paymentMode == 'GCash' && (v?.trim().isEmpty ?? true) ? 'Required for GCash transactions' : null,
-                    decoration: _inputDecoration(
-                      hint: 'e.g. 1002 9847 1120',
-                      prefixIcon: const Icon(Icons.qr_code_2, size: 18, color: Color(0xFF005CEE)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
 
                 Text('Particulars / Notes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                 const SizedBox(height: 6),

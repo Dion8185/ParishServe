@@ -63,7 +63,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   DateTime? _dateOfBirth;
   final _ageController = TextEditingController();
   DateTime? _dateOfBaptism;
-  final _churchBaptizedController = TextEditingController(text: 'St. John Paul II Parish Church');
+  final _churchBaptizedController = TextEditingController(text: 'St. John Paul II Parish');
   final _addressController = TextEditingController();
 
   // 3. Father Information (Page 3 - Canon 877 §2)
@@ -95,7 +95,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   final _stipendController = TextEditingController();
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
 

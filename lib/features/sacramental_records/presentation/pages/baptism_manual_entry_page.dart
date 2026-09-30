@@ -103,10 +103,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final List<TextEditingController> _otherGodparentControllers = [];
 
   // 5. Baptism & Minister Details (Page 5)
-  final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish Church');
+  final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish');
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
-  final _ministerFirstNameController = TextEditingController(text: 'Reyes');
+  final _ministerLastNameController = TextEditingController(text: 'Reyes');
   DateTime? _dateOfBaptism = DateTime.now();
   final _stipendController = TextEditingController();
   final _remarksController = TextEditingController();
@@ -190,7 +190,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
     _parishChurchController.text = data['place_of_baptism']?.toString() ??
         data['parish_name']?.toString() ??
-        'St. John Paul II Parish Church';
+        'St. John Paul II Parish';
     _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
     _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
     _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';

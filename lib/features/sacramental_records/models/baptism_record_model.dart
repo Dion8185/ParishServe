@@ -209,7 +209,7 @@ class BaptismRecordModel {
       ministerMiddleName: map['minister_middle_name'],
       ministerLastName: map['minister_last_name'] ?? '',
       dateOfBaptism: DateTime.tryParse(map['date_of_baptism']?.toString() ?? '') ?? DateTime.now(),
-      placeOfBaptism: map['place_of_baptism'] ?? 'St. John Paul II Parish Church',
+      placeOfBaptism: map['place_of_baptism'] ?? 'St. John Paul II Parish',
       stipend: map['stipend'] != null ? double.tryParse(map['stipend'].toString()) : null,
       remarks: map['remarks'],
       scannedImageUrl: map['scanned_image_url'],

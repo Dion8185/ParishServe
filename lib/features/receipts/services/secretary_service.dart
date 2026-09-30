@@ -18,7 +18,8 @@ class SecretaryService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Register a new transaction with automatic enum resolution, custom date support, and varchar(100) bound guard
+  /// Register a new transaction with automatic enum resolution, custom date support,
+  /// linked issuance reference, and varchar(100) bound guard
   static Future<Map<String, dynamic>> createTransaction({
     required String payorName,
     String? payorContact,
@@ -28,6 +29,7 @@ class SecretaryService {
     String? transactionType,
     String? relatedAppointmentId,
     String? relatedRequestId,
+    String? relatedIssuanceId,
     DateTime? transactionDate,
   }) async {
     final receiptNo = await _generateReceiptNumber();
@@ -64,14 +66,14 @@ class SecretaryService {
       if (_cachedValidTransactionType != null) _cachedValidTransactionType!,
       if (transactionType != null && transactionType.isNotEmpty) transactionType,
       // Canonical and standard parish transaction_type enum members:
+      'certificate',
+      'Certificate',
       'donation',
       'Donation',
       'stipend',
       'Stipend',
       'mass_intention',
       'Mass Intention',
-      'certificate',
-      'Certificate',
       'sacrament',
       'Sacrament',
       'service',
@@ -112,6 +114,7 @@ class SecretaryService {
         'transaction_status': 'paid',
         'related_appointment_id': relatedAppointmentId,
         'related_request_id': relatedRequestId,
+        'related_issuance_id': relatedIssuanceId,
         'encoded_by': userId,
         'created_at': DateTime.now().toIso8601String(),
       };

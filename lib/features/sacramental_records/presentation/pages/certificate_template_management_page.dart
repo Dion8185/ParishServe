@@ -181,7 +181,7 @@ class _CertificateTemplateManagementPageState
       'sponsor_2_first_name': 'Elena',
       'sponsor_2_last_name': 'Ramos',
       'date_of_baptism': '1998-06-20',
-      'place_of_baptism': 'St. John Paul II Parish Church',
+      'place_of_baptism': 'St. John Paul II Parish',
       'date_of_confirmation': '2010-10-12',
       'date_of_communion': '2007-04-18',
       'date_of_marriage': '2024-02-14',
@@ -807,7 +807,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
       text: t?.headerText ?? 'Diocese of San Pablo\nSaint John Paul II Parish\nSanta Cruz, Laguna',
     );
     _bodyController = TextEditingController(text: t?.bodyWording ?? _getDefaultWordingFor(_sacramentType));
-    _purposeController = TextEditingController(text: t?.defaultPurpose ?? 'For Legal / Personal Records');
+    _purposeController = TextEditingController(text: t?.defaultPurpose ?? 'For Record / Reference');
     _signatoryNameController = TextEditingController(text: t?.signatoryName ?? 'Rev. Fr. Roy G. Reyes');
     _signatoryTitleController = TextEditingController(text: t?.signatoryTitle ?? 'Parish Priest');
 

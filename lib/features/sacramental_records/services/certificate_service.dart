@@ -281,7 +281,7 @@ class CertificateService {
   // ===========================================================================
 
   /// Issues an official certificate, creating a permanent issuance snapshot,
-  /// using the upfront pre-generated verification token and recording audit entries.
+  /// linked to the corresponding payment transaction/receipt number in the Receipt System.
   static Future<CertificateIssuanceModel> issueCertificate({
     required String recordId,
     required String sacramentType,
@@ -296,6 +296,8 @@ class CertificateService {
     Uint8List? generatedPdfBytes,
     String? verificationId,
     String? qrVerificationUrl,
+    String? transactionId,
+    String? receiptNumber,
   }) async {
     final effectiveVerificationId = verificationId ?? generateSecureVerificationId();
     final effectiveQrUrl = qrVerificationUrl ?? buildVerificationUrl(effectiveVerificationId);
@@ -336,6 +338,8 @@ class CertificateService {
       qrVerificationUrl: effectiveQrUrl,
       pdfStoragePath: pdfPath,
       certificateStatus: 'Valid',
+      transactionId: transactionId,
+      receiptNumber: receiptNumber,
       issuedBy: currentUserId,
       issuedAt: now,
       createdAt: now,
@@ -347,13 +351,22 @@ class CertificateService {
         .select()
         .single();
 
+    // Bi-directional link back to parish_transactions if transactionId was created
+    if (transactionId != null && transactionId.isNotEmpty) {
+      try {
+        await _client.from('parish_transactions').update({
+          'related_issuance_id': issuanceId,
+        }).eq('transaction_id', transactionId);
+      } catch (_) {}
+    }
+
     try {
       await _client.from('pastoral_audit_logs').insert({
         'log_id': 'LOG-${now.millisecondsSinceEpoch}',
         'priest_id': currentUserId,
         'action_type': 'CERTIFICATE_ISSUED',
         'target_reference_id': recordId,
-        'justification': 'Issued $sacramentType Certificate for $recipientName. Purpose: $purpose. Verification ID: $effectiveVerificationId',
+        'justification': 'Issued $sacramentType Certificate for $recipientName. Purpose: $purpose. Receipt: ${receiptNumber ?? "None/Exempt"}. Verification ID: $effectiveVerificationId',
       });
     } catch (_) {}
 

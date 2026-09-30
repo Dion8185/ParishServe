@@ -168,7 +168,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
               autofocus: true,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               decoration: const InputDecoration(
-                prefixText: 'P ',
+                prefixText: '₱ ',
                 labelText: 'Amount (PHP)',
                 border: OutlineInputBorder(),
               ),
@@ -250,7 +250,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
         ? rawAmount.toDouble()
         : (double.tryParse(rawAmount?.toString() ?? '0') ?? _subtotal);
 
-    final amount = 'P ${amountVal.toStringAsFixed(2)}';
+    final amount = '₱ ${amountVal.toStringAsFixed(2)}';
     final date = record['transaction_date']?.toString().substring(0, 10) ?? 'Today';
 
     showReceiptDetailModal(
@@ -553,7 +553,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    item.allowsCustomPrice ? 'Custom / Tithe' : 'P ${item.defaultPrice.toStringAsFixed(0)}',
+                    item.allowsCustomPrice ? 'Custom / Tithe' : '₱ ${item.defaultPrice.toStringAsFixed(0)}',
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
@@ -689,7 +689,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                           ),
                           Text(
-                            'P ${cartItem.customPrice.toStringAsFixed(2)} each',
+                            '₱ ${cartItem.customPrice.toStringAsFixed(2)} each',
                             style: TextStyle(fontSize: 11, color: textMuted),
                           ),
                         ],
@@ -718,7 +718,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'P ${cartItem.total.toStringAsFixed(2)}',
+                      '₱ ${cartItem.total.toStringAsFixed(2)}',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                     ),
                   ],
@@ -736,7 +736,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Subtotal:', style: TextStyle(fontSize: 13, color: textMuted)),
-                  Text('P ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
+                  Text('₱ ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
                 ],
               ),
               const SizedBox(height: 6),
@@ -745,7 +745,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 children: [
                   Text('Total Amount Due:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
                   Text(
-                    'P ${_subtotal.toStringAsFixed(2)}',
+                    '₱ ${_subtotal.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                   ),
                 ],
@@ -790,7 +790,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
             children: [
               Text('$_totalItemCount items in slip', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
               Text(
-                'P ${_subtotal.toStringAsFixed(2)}',
+                '₱ ${_subtotal.toStringAsFixed(2)}',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
               ),
             ],
@@ -843,7 +843,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
   @override
   void initState() {
     super.initState();
-    // Default cash tendered to total amount
     _tenderedController.text = widget.totalAmount.toStringAsFixed(2);
     _tenderedController.addListener(() => setState(() {}));
   }
@@ -877,7 +876,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_paymentMode == 'Cash' && _tenderedAmount < widget.totalAmount) {
-      setState(() => _errorMessage = 'Tendered cash is less than total amount due.');
+      setState(() => _errorMessage = 'Tendered cash is less than the total amount due.');
       return;
     }
 
@@ -895,20 +894,14 @@ class _CheckoutModalState extends State<_CheckoutModal> {
         summaryServices = '${summaryServices.substring(0, 87)}...';
       }
 
-      // Line items stored cleanly
+      // Line items formatted cleanly for receipt printing
       final lineDetails = widget.cartItems
-          .map((c) => '- ${c.item.title} x${c.quantity} @ P ${c.customPrice.toStringAsFixed(2)} = P ${c.total.toStringAsFixed(2)}')
+          .map((c) => '• ${c.item.title} x${c.quantity}\n  @ ₱${c.customPrice.toStringAsFixed(2)} = ₱${c.total.toStringAsFixed(2)}')
           .join('\n');
 
-      // Notes saved into transaction details for audit trail
-      final remarksText = [
-        if (_paymentMode == 'Cash') 'Cash Tendered: P ${_tenderedAmount.toStringAsFixed(2)} (Change: P ${_changeAmount.toStringAsFixed(2)})',
-        if (_paymentMode == 'GCash') 'GCash Ref: ${_gcashRefController.text.trim()}',
-        if (_paymentMode == 'Gratis') 'Canonical Gratis / Exemption granted by Secretariat.',
-        if (_remarksController.text.trim().isNotEmpty) 'Remarks: ${_remarksController.text.trim()}',
-      ].join(' | ');
-
-      final fullDetails = remarksText.isNotEmpty ? '$lineDetails\n$remarksText' : lineDetails;
+      // Only include user remarks if provided (tender mode is kept for modal computation only, omitted from receipt text)
+      final userRemarks = _remarksController.text.trim();
+      final fullDetails = userRemarks.isNotEmpty ? '$lineDetails\nRemarks: $userRemarks' : lineDetails;
       final resolvedType = _resolveTransactionTypeCategory();
 
       final record = await SecretaryService.createTransaction(
@@ -1016,7 +1009,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('Total Amount Payable:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark)),
-                            Text('P ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+                            Text('₱ ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
                           ],
                         ),
                       ),
@@ -1047,6 +1040,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                       ),
                       const SizedBox(height: 16),
 
+                      // Tender Mode for Easy Computation (Hidden from printed receipt)
                       Text('Payment Tender Mode *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
@@ -1071,7 +1065,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                       ),
                       const SizedBox(height: 14),
 
-                      // CASH TENDERED & CHANGE COMPUTATION PRESERVED IN MODAL CARD
+                      // Cash Tendered & Change Computation for Cashier Ease
                       if (_paymentMode == 'Cash') ...[
                         Row(
                           children: [
@@ -1079,7 +1073,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Cash Tendered (P) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   TextFormField(
                                     controller: _tenderedController,
@@ -1095,7 +1089,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Change Due (P)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   Container(
                                     height: 48,
@@ -1107,7 +1101,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                                       border: Border.all(color: borderGrey),
                                     ),
                                     child: Text(
-                                      'P ${_changeAmount.toStringAsFixed(2)}',
+                                      '₱ ${_changeAmount.toStringAsFixed(2)}',
                                       style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.bold,
@@ -1128,7 +1122,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _gcashRefController,
-                          validator: (v) => (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
+                          validator: (v) => _paymentMode == 'GCash' && (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
                           style: TextStyle(fontSize: 14, color: textDark),
                           decoration: _inputDecoration(hint: 'e.g. 1002 9847 1120'),
                         ),

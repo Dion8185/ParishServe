@@ -245,7 +245,7 @@ class PlaceholderRegistry {
       map['{Godmother\'s Name}'] = fullName('sponsor_2');
       map['{Other Sponsors}'] = val('other_godparents');
       map['{Date of Baptism}'] = _formatDate(val('date_of_baptism'));
-      map['{Place of Baptism}'] = val('place_of_baptism', 'St. John Paul II Parish Church');
+      map['{Place of Baptism}'] = val('place_of_baptism', 'St. John Paul II Parish');
       map['{Minister Name}'] = 'Rev. Fr. ${fullName('minister')}';
     } else if (sacramentType == 'Confirmation') {
       map['{Full Name}'] = fullName('confirmand');
@@ -273,7 +273,7 @@ class PlaceholderRegistry {
       map['{Date of Baptism}'] = _formatDate(val('baptism_date'));
       map['{Place of Baptism}'] = val('baptism_parish');
       map['{Date of First Communion}'] = _formatDate(val('date_of_communion'));
-      map['{Place of First Communion}'] = 'St. John Paul II Parish Church';
+      map['{Place of First Communion}'] = 'St. John Paul II Parish';
       map['{Minister Name}'] = 'Rev. Fr. ${fullName('minister')}';
       map['{Record Number}'] = val('control_number');
       map['{Year}'] = val('year');
@@ -290,7 +290,7 @@ class PlaceholderRegistry {
       map['{Bride Mother\'s Name}'] = fullName('bride_mother');
       map['{Marriage Type}'] = val('marriage_type');
       map['{Date of Marriage}'] = _formatDate(val('date_of_marriage'));
-      map['{Place of Marriage}'] = val('parish_name', 'St. John Paul II Parish Church');
+      map['{Place of Marriage}'] = val('parish_name', 'St. John Paul II Parish');
       map['{Godfather\'s Name}'] = fullName('sponsor_1');
       map['{Godmother\'s Name}'] = fullName('sponsor_2');
       map['{Other Sponsors}'] = val('other_sponsors');
@@ -325,7 +325,7 @@ class PlaceholderRegistry {
       map['{Father\'s Name}'] = fullName('father');
       map['{Mother\'s Name}'] = fullName('mother');
       map['{Date of Reception}'] = _formatDate(val('date_of_reception'));
-      map['{Place of Reception}'] = val('parish_name', 'St. John Paul II Parish Church');
+      map['{Place of Reception}'] = val('parish_name', 'St. John Paul II Parish');
       map['{Godfather\'s Name}'] = fullName('witness_1');
       map['{Godmother\'s Name}'] = fullName('witness_2');
       map['{Minister Name}'] = 'Rev. Fr. ${fullName('minister')}';
