@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import '../../features/appointments/presentation/dialogs/appointment_detail_dialog.dart';
 import '../../features/auth/models/user_model.dart';
+import '../../features/auth/services/auth_service.dart';
+import '../../features/smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
 
 class NotificationService {
   NotificationService._();
@@ -13,6 +16,9 @@ class NotificationService {
 
   /// Global navigator key reference for in-app push deep-linking
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+  /// Caches push payloads received during cold start / killed state before the user session is mounted
+  static Map<String, dynamic>? pendingNotificationData;
 
   /// Initializes the OneSignal SDK on mobile platforms
   static Future<void> initialize() async {
@@ -36,11 +42,13 @@ class NotificationService {
         debugPrint('[OneSignal Observer] Opted In: ${state.current.optedIn}');
       });
 
+      // Foreground notification banner display
       OneSignal.Notifications.addForegroundWillDisplayListener((event) {
         debugPrint('[OneSignal Foreground]: ${event.notification.title} - ${event.notification.body}');
         event.notification.display();
       });
 
+      // Notification click listener with cold-start resilience
       OneSignal.Notifications.addClickListener((event) {
         final notification = event.notification;
         debugPrint('[OneSignal Clicked]: ${notification.title}');
@@ -74,7 +82,7 @@ class NotificationService {
       // 1. Opt-in the device push channel
       OneSignal.User.pushSubscription.optIn();
 
-      // 2. Link OneSignal External ID to Supabase user_id (Uses 0 tag quota!)
+      // 2. Link OneSignal External ID to Supabase user_id (Uses 0 tag quota)
       await OneSignal.login(user.userId);
 
       // 3. Set exactly 1 clean tag (Complies with OneSignal Free Tier quota)
@@ -100,32 +108,60 @@ class NotificationService {
     }
   }
 
-  /// Routes the staff user to the appropriate screen depending on the alert payload
+  /// Consumes and executes any pending notification payload once the app is authenticated and mounted
+  static void consumePendingNotification(BuildContext context) {
+    if (pendingNotificationData != null) {
+      final data = pendingNotificationData;
+      pendingNotificationData = null;
+      debugPrint('[NotificationService] Consuming pending cold-start notification payload.');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleNotificationClick(data);
+      });
+    }
+  }
+
+  /// Routes the staff user to the appropriate screen or modal depending on the alert payload
   static void _handleNotificationClick(Map<String, dynamic>? additionalData) {
     if (additionalData == null) return;
 
-    final type = additionalData['type']?.toString().toLowerCase();
+    final context = navigatorKey.currentContext;
 
-    switch (type) {
-      case 'iot_alert':
-      case 'humidity_breach':
-      case 'temperature_spike':
-        debugPrint('[NotificationService] Deep-linking to Smart Archive Telemetry screen.');
-        break;
+    // If context is unmounted or user session is not yet loaded, cache and defer execution
+    if (context == null || AuthService.currentUser == null) {
+      debugPrint('[NotificationService] Context or session not yet ready. Caching notification payload.');
+      pendingNotificationData = additionalData;
+      return;
+    }
 
-      case 'appointment_pending':
-      case 'tuesday_approval':
-        debugPrint('[NotificationService] Deep-linking to Appointments Desk.');
-        break;
+    final type = (additionalData['type'] ?? additionalData['alertType'])?.toString().toLowerCase() ?? '';
+    final refId = (additionalData['appointment_id'] ?? additionalData['reference_id'] ?? additionalData['node_id'])?.toString();
 
-      case 'certificate_ready':
-      case 'pabuklat_request':
-        debugPrint('[NotificationService] Deep-linking to Sacramental Records.');
-        break;
+    try {
+      // 1. Appointments, Tuesday Approvals, and 24h/12h Reminders
+      if (type.contains('appointment') || type.contains('tuesday') || type.contains('reminder')) {
+        debugPrint('[NotificationService] Deep-linking to Appointment Detail: $refId');
+        showAppointmentDetailModal(
+          context,
+          refNo: refId ?? 'APT-RECORD',
+        );
+      }
+      // 2. Smart Archive IoT Environmental Breaches
+      else if (type.contains('iot') || type.contains('humidity') || type.contains('temperature')) {
+        debugPrint('[NotificationService] Deep-linking to Smart Archive Sensor Dialog: $refId');
+        final tempStr = additionalData['temperature'] != null ? '${additionalData["temperature"]} °C' : '28.5 °C';
+        final humStr = additionalData['humidity'] != null ? '${additionalData["humidity"]} %' : '68.2 %';
 
-      default:
-        debugPrint('[NotificationService] Notification opened with generic payload: $additionalData');
-        break;
+        showSensorDetailModal(
+          context,
+          roomTitle: 'Monitored Archive Storage Room',
+          nodeId: refId ?? 'ESP32-NODE-01',
+          temperature: tempStr,
+          humidity: humStr,
+          isWarning: true,
+        );
+      }
+    } catch (e) {
+      debugPrint('[NotificationService] Error executing deep-link action: $e');
     }
   }
 }

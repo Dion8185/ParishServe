@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
 import '../../models/appointment_model.dart';
 import '../../services/appointment_service.dart';
 import 'reschedule_appointment_dialog.dart';
@@ -66,35 +68,63 @@ class _AppointmentDetailDialog extends StatefulWidget {
 class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
   bool _isUpdating = false;
   late bool _isIdVerified;
+  AppointmentModel? _loadedAppointment;
+  bool _isLoadingRecord = false;
 
-  String get _id => widget.appointment?.appointmentId ?? widget.refNo ?? 'APT-RECORD';
-  String get _service => widget.appointment?.serviceType ?? widget.serviceName ?? 'Parish Service';
-  String get _reqName => widget.appointment?.requesterName ?? widget.requester ?? 'Parishioner';
-  String get _contactNo => widget.appointment?.contactNumber ?? widget.contact ?? 'N/A';
-  String? get _email => widget.appointment?.email;
-  String get _venue => widget.appointment?.venue ?? 'Main Church Altar';
-  String get _priest => widget.appointment?.officiantName ?? widget.officiant ?? 'Rev. Fr. Roy G. Reyes';
-  String? get _remarks => widget.appointment?.appointmentRemarks;
+  AppointmentModel? get _activeApt => widget.appointment ?? _loadedAppointment;
+
+  String get _id => _activeApt?.appointmentId ?? widget.refNo ?? 'APT-RECORD';
+  String get _service => _activeApt?.serviceType ?? widget.serviceName ?? 'Parish Service';
+  String get _reqName => _activeApt?.requesterName ?? widget.requester ?? 'Parishioner';
+  String get _contactNo => _activeApt?.contactNumber ?? widget.contact ?? 'N/A';
+  String? get _email => _activeApt?.email;
+  String get _venue => _activeApt?.venue ?? 'Main Church Altar';
+  String get _priest => _activeApt?.officiantName ?? widget.officiant ?? 'Rev. Fr. Joseph Santos';
+  String? get _remarks => _activeApt?.appointmentRemarks;
   String? get _fee => widget.feeStatus;
 
   String get _timeDisplay {
-    if (widget.appointment != null) {
-      return '${widget.appointment!.formattedDate} • ${widget.appointment!.formattedTimeRange}';
+    if (_activeApt != null) {
+      return '${_activeApt!.formattedDate} • ${_activeApt!.formattedTimeRange}';
     }
     return widget.scheduleTime ?? 'Scheduled Time';
   }
 
   String get _currentStatus {
-    return (widget.appointment?.appointmentStatus ?? widget.status ?? 'pending').toLowerCase();
+    return (_activeApt?.appointmentStatus ?? widget.status ?? 'pending').toLowerCase();
   }
 
   bool get _hasIdAttachment =>
-      widget.appointment?.idType != null || widget.appointment?.idDocumentUrl != null;
+      _activeApt?.idType != null || _activeApt?.idDocumentUrl != null;
 
   @override
   void initState() {
     super.initState();
     _isIdVerified = widget.appointment?.isIdVerified ?? false;
+
+    // If opened from a notification click with only refNo, load full appointment from Supabase
+    if (widget.appointment == null && widget.refNo != null && widget.refNo!.isNotEmpty) {
+      _fetchAppointmentRecord(widget.refNo!);
+    }
+  }
+
+  Future<void> _fetchAppointmentRecord(String refId) async {
+    setState(() => _isLoadingRecord = true);
+    try {
+      final res = await Supabase.instance.client
+          .from('appointments')
+          .select()
+          .eq('appointment_id', refId)
+          .maybeSingle();
+
+      if (res != null && mounted) {
+        setState(() {
+          _loadedAppointment = AppointmentModel.fromMap(res);
+          _isIdVerified = _loadedAppointment?.isIdVerified ?? false;
+        });
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isLoadingRecord = false);
   }
 
   Future<void> _updateStatus(String newStatus) async {
@@ -237,8 +267,16 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final status = _currentStatus;
-    final apt = widget.appointment;
-    final bool canModify = status != 'cancelled' && status != 'completed';
+    final apt = _activeApt;
+
+    // RBAC: Only Parish Priest, Secretary, and System Admins have booking mutation authority
+    final callerRole = AuthService.currentUser?.userRole.toLowerCase() ?? '';
+    final bool hasSchedulingAuthority = callerRole == 'parishpriest' ||
+        callerRole == 'secretary' ||
+        callerRole == 'admin' ||
+        callerRole == 'superadmin';
+
+    final bool canModify = hasSchedulingAuthority && status != 'cancelled' && status != 'completed';
 
     Color statusColor = ParishColors.goldAccent;
     Color statusSurface = ParishColors.goldLight;
@@ -265,10 +303,24 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const Text('Booking Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          Text(_id, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+          Text(_id, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive)),
         ],
       ),
-      content: SingleChildScrollView(
+      content: _isLoadingRecord
+          ? const SizedBox(
+        height: 180,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('Loading canonical schedule details...', style: TextStyle(fontSize: 12.5)),
+            ],
+          ),
+        ),
+      )
+          : SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -286,7 +338,7 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Service Requested', style: TextStyle(fontSize: 12, color: textMuted)),
-                  Text(_service, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                  Text(_service, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive)),
                 ],
               ),
             ),
@@ -337,7 +389,7 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
                         if (apt?.idDocumentUrl != null)
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: ParishColors.marianBlue),
+                              side: BorderSide(color: ParishColors.marianBlueAdaptive),
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             ),
                             onPressed: () => _openIdDocumentPreview(apt!.idDocumentUrl!),
@@ -346,7 +398,8 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
                                 style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                           ),
                         const SizedBox(width: 8),
-                        if (!_isIdVerified)
+                        // Only staff with authority can approve IDs
+                        if (!_isIdVerified && hasSchedulingAuthority)
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: ParishColors.oliveGreen,
@@ -408,6 +461,32 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: statusColor),
               ),
             ),
+
+            // Informational notice for PFC and Encoders
+            if (!hasSchedulingAuthority) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: ParishColors.borderGrey),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: ParishColors.marianBlueAdaptive),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Informational View: Schedule modifications and booking approvals are reserved for Secretariat and Clergy.',
+                        style: TextStyle(fontSize: 11, color: textMuted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -415,9 +494,10 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
         if (_isUpdating)
           const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()))
         else ...[
+          // Mutation actions strictly hidden for PFC and Encoders
           if (canModify) ...[
             // 1. Reschedule Action
-            if (widget.appointment != null)
+            if (_activeApt != null)
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFF7C3AED)),
@@ -426,7 +506,7 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
                 onPressed: () {
                   showRescheduleAppointmentModal(
                     context,
-                    appointment: widget.appointment!,
+                    appointment: _activeApt!,
                     onRescheduled: widget.onStatusUpdated,
                   );
                 },
@@ -492,7 +572,7 @@ class _AppointmentDetailDialogState extends State<_AppointmentDetailDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: ParishColors.marianBlue),
+          Icon(icon, size: 18, color: ParishColors.marianBlueAdaptive),
           const SizedBox(width: 8),
           Expanded(
             child: RichText(

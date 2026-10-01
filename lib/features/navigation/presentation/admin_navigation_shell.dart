@@ -28,6 +28,11 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     // Auto-sync admin device tags with OneSignal upon dashboard load
     NotificationService.syncStaffUser(widget.currentUser);
 
+    // Consume and execute any pending notification payload received during cold-start / app-killed launch
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.consumePendingNotification(context);
+    });
+
     _views = [
       AdminDashboardView(
         currentUser: widget.currentUser,
@@ -227,7 +232,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
                     ),
                     onPressed: () => _confirmLogout(context),
                     icon: const Icon(Icons.logout, size: 16),
-                    label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   ),
                 ),
               ],
