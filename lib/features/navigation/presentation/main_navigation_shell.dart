@@ -6,6 +6,7 @@ import '../../auth/models/user_model.dart';
 import '../../auth/services/auth_service.dart';
 import '../../dashboard/presentation/dashboard_view.dart';
 import '../../dashboard/presentation/dialogs/notification_dialog.dart';
+import '../../notifications/services/in_app_notification_service.dart';
 import '../../sacramental_records/presentation/records_view.dart';
 import '../../receipts/presentation/receipts_view.dart';
 import '../../appointments/presentation/appointments_view.dart';
@@ -44,6 +45,14 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       NotificationService.syncStaffUser(widget.currentUser!);
     }
 
+    // Start live Supabase Realtime listener for in-app notification count & history
+    InAppNotificationService.startRealtimeListener();
+
+    // Consume and execute any pending notification payload received during cold-start / app-killed launch
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.consumePendingNotification(context);
+    });
+
     _views = [
       DashboardView(currentUser: widget.currentUser),
       const SacramentalRecordsView(),
@@ -53,6 +62,12 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       const SmartArchiveView(),
       ProfileView(currentUser: widget.currentUser),
     ];
+  }
+
+  @override
+  void dispose() {
+    InAppNotificationService.stopRealtimeListener();
+    super.dispose();
   }
 
   // ===========================================================================
@@ -219,6 +234,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       child: Column(
         children: [
           const SizedBox(height: 36),
+          // Parish Logo & Title
           Container(
             width: 68,
             height: 68,
@@ -248,6 +264,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
           ),
           const SizedBox(height: 28),
 
+          // Sidebar Navigation Links
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -269,39 +286,62 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
             ),
           ),
 
+          // Live In-App Notification Alert Shortcut on Desktop Sidebar
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: InkWell(
-              onTap: () => showNotificationModal(context),
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: ParishColors.backgroundLight,
+            child: ValueListenableBuilder<int>(
+              valueListenable: InAppNotificationService.unreadCountNotifier,
+              builder: (context, unreadCount, _) {
+                final bool hasUnread = unreadCount > 0;
+
+                return InkWell(
+                  onTap: () => showNotificationModal(context),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: ParishColors.borderGrey),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.notifications_active_outlined, size: 18, color: ParishColors.mercyRed),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '3 Active Parish Alerts',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-                      ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: hasUnread ? ParishColors.mercyRedSurface : ParishColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: hasUnread ? ParishColors.mercyRed.withOpacity(0.5) : ParishColors.borderGrey),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: const BoxDecoration(color: ParishColors.mercyRed, shape: BoxShape.circle),
-                      child: const Text('3', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                    child: Row(
+                      children: [
+                        Icon(
+                          hasUnread ? Icons.notifications_active_outlined : Icons.notifications_outlined,
+                          size: 18,
+                          color: hasUnread ? ParishColors.mercyRed : ParishColors.marianBlueAdaptive,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            hasUnread
+                                ? '$unreadCount New Alert${unreadCount > 1 ? "s" : ""}'
+                                : 'Parish Alerts',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: hasUnread ? FontWeight.bold : FontWeight.w600,
+                              color: hasUnread ? ParishColors.mercyRed : ParishColors.textDark,
+                            ),
+                          ),
+                        ),
+                        if (hasUnread)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: const BoxDecoration(color: ParishColors.mercyRed, shape: BoxShape.circle),
+                            child: Text(
+                              unreadCount > 9 ? '9+' : '$unreadCount',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
           ),
 
+          // User Identity Card & Logout
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -433,7 +473,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   }
 
   // ---------------------------------------------------------------------------
-  // MOBILE TOP APP BAR
+  // MOBILE TOP APP BAR (With Live Realtime Unread Counter Badge)
   // ---------------------------------------------------------------------------
   PreferredSizeWidget _buildTopNavigationBar(BuildContext context) {
     return PreferredSize(
@@ -504,7 +544,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                   ),
                 ),
 
-                // Notification Bell with Badge
+                // Live Realtime Notification Bell with Dynamic Unread Badge
                 InkWell(
                   onTap: () => showNotificationModal(context),
                   borderRadius: BorderRadius.circular(12),
@@ -518,30 +558,42 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     ),
                     child: Stack(
                       alignment: Alignment.center,
+                      clipBehavior: Clip.none,
                       children: [
                         Icon(
                           Icons.notifications_outlined,
                           size: 26,
                           color: ParishColors.marianBlueAdaptive,
                         ),
-                        Positioned(
-                          top: 6,
-                          right: 6,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: ParishColors.mercyRed,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Text(
-                              '3',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
+                        ValueListenableBuilder<int>(
+                          valueListenable: InAppNotificationService.unreadCountNotifier,
+                          builder: (context, unreadCount, _) {
+                            if (unreadCount <= 0) return const SizedBox.shrink();
+
+                            return Positioned(
+                              top: 4,
+                              right: 4,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: ParishColors.mercyRed,
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                child: Center(
+                                  child: Text(
+                                    unreadCount > 9 ? '9+' : '$unreadCount',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
                       ],
                     ),
