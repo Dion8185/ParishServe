@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/asset_inventory/presentation/dialogs/asset_detail_dialog.dart
+// =============================================================================
+
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +57,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   Uint8List? _newWatermarkedPhotoBytes;
   String? _newPhotoFileName;
 
-  // Edit Mode Controllers
   late TextEditingController _nameController;
   late TextEditingController _quantityController;
   late TextEditingController _unitPriceController;
@@ -71,6 +74,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   late String _conditionStatus;
   late String _operationalStatus;
   late String _modeOfAcquisition;
+
+  List<AssetModel> _groupSiblingUnits = [];
+  bool _isLoadingSiblings = false;
 
   bool get _isEffectivelyArchived =>
       _asset.isArchived || _asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
@@ -108,10 +114,18 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         : 'Section 2 — Below 10,000.00';
   }
 
+  String get _cleanBaseGroupName {
+    return _asset.itemName.replaceAll(RegExp(r'\s*(—|-)?\s*\d{3}$'), '').trim();
+  }
+
   @override
   void initState() {
     super.initState();
-    _asset = widget.initialAsset;
+    _initializeAsset(widget.initialAsset);
+  }
+
+  void _initializeAsset(AssetModel asset) {
+    _asset = asset;
     _conditionStatus = _asset.conditionStatus;
     _operationalStatus = _asset.operationalStatus;
     _modeOfAcquisition = _asset.modeOfAcquisition;
@@ -133,6 +147,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
     _loadAuditHistory();
     _loadReferenceOptions();
+    _loadGroupSiblingUnits();
   }
 
   @override
@@ -181,6 +196,59 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     } catch (_) {
       if (mounted) setState(() => _isLoadingHistory = false);
     }
+  }
+
+  Future<void> _loadGroupSiblingUnits() async {
+    if (_asset.bulkBatchId == null || _asset.bulkBatchId!.isEmpty) {
+      if (_asset.childItems.isNotEmpty) {
+        setState(() => _groupSiblingUnits = _asset.childItems);
+      } else {
+        setState(() => _groupSiblingUnits = [_asset]);
+      }
+      return;
+    }
+
+    setState(() => _isLoadingSiblings = true);
+    try {
+      final allMatching = await AssetService.getAssets(includeArchived: true);
+      final siblings = allMatching.where((a) =>
+      a.controlNumber == _asset.controlNumber ||
+          a.bulkBatchId == _asset.bulkBatchId
+      ).toList();
+
+      List<AssetModel> units = [];
+      for (final s in siblings) {
+        if (s.childItems.isNotEmpty) {
+          units.addAll(s.childItems);
+        } else {
+          units.add(s);
+        }
+      }
+
+      units.sort((a, b) => (a.itemSequenceInBatch ?? 0).compareTo(b.itemSequenceInBatch ?? 0));
+
+      if (!mounted) return;
+      setState(() {
+        _groupSiblingUnits = units.isNotEmpty ? units : [_asset];
+        _isLoadingSiblings = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _groupSiblingUnits = _asset.childItems.isNotEmpty ? _asset.childItems : [_asset];
+          _isLoadingSiblings = false;
+        });
+      }
+    }
+  }
+
+  void _switchToUnit(AssetModel targetUnit) {
+    setState(() {
+      _isEditing = false;
+      _newWatermarkedPhotoBytes = null;
+      _newPhotoFileName = null;
+    });
+    _initializeAsset(targetUnit);
   }
 
   Future<void> _pickImageFromDevice() async {
@@ -244,15 +312,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         );
       }
     } catch (e) {
-      debugPrint('Error capturing photo from camera: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Camera error: $e. You can upload an image using "Upload Image".'),
-            backgroundColor: ParishColors.goldAccent,
-          ),
-        );
-      }
+      debugPrint('Camera error: $e');
     }
   }
 
@@ -274,16 +334,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         _newPhotoFileName = filename;
         _isProcessingImage = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Security watermark embedded! Tap the thumbnail to preview.'),
-          backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 3),
-        ),
-      );
     } catch (e) {
-      debugPrint('Error watermarking image: $e');
       if (!mounted) return;
       setState(() {
         _newWatermarkedPhotoBytes = rawBytes;
@@ -321,11 +372,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       final updated = await AssetService.updateAsset(
         assetId: _asset.assetId,
         itemName: _nameController.text.trim(),
-        classificationId: _selectedClassification?.classificationId ?? _asset.classificationId,
-        classificationAcronym: _selectedClassification?.acronym ?? _asset.classificationAcronym,
-        locationId: _selectedLocation?.locationId ?? _asset.locationId,
-        locationAcronym: _selectedLocation?.acronym ?? _asset.locationAcronym,
-        locationName: _selectedLocation?.locationName ?? _asset.locationName,
+        classificationAcronym: _asset.classificationAcronym,
+        locationAcronym: _asset.locationAcronym,
+        locationName: _asset.locationName,
         dimensions: _dimensionsController.text.trim(),
         color: _colorController.text.trim(),
         model: _modelController.text.trim(),
@@ -352,6 +401,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
       widget.onAssetUpdated?.call();
       _loadAuditHistory();
+      _loadGroupSiblingUnits();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -367,10 +417,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       if (!mounted) return;
       setState(() => _isUpdating = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Update failed: $e'),
-          backgroundColor: ParishColors.mercyRed,
-        ),
+        SnackBar(content: Text('Update failed: $e'), backgroundColor: ParishColors.mercyRed),
       );
     }
   }
@@ -381,105 +428,49 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.archive_outlined, color: ParishColors.mercyRed, size: 24),
-            SizedBox(width: 8),
-            Text('Archive Diocesan Asset?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
+        title: const Text('Archive Diocesan Asset?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Archiving marks "${_asset.itemName}" (${_asset.controlNumber}) as Decommissioned and transfers it to the Archive quarantine, while preserving historical audit logs.',
-              style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.35),
-            ),
+            Text('Are you sure you want to archive "${_asset.itemName}" (${_asset.controlNumber})?', style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 14),
             TextField(
               controller: reasonController,
-              decoration: const InputDecoration(
-                labelText: 'Reason for Archiving / Decommissioning *',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Reason for Archiving *', border: OutlineInputBorder()),
             ),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.mercyRed,
-              foregroundColor: Colors.white,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: ParishColors.mercyRed, foregroundColor: Colors.white),
             onPressed: () {
-              if (reasonController.text.trim().isNotEmpty) {
-                Navigator.pop(ctx, true);
-              }
+              if (reasonController.text.trim().isNotEmpty) Navigator.pop(ctx, true);
             },
-            child: const Text('Archive Asset'),
+            child: const Text('Archive'),
           ),
         ],
       ),
     );
 
     if (confirmed == true && reasonController.text.trim().isNotEmpty) {
-      try {
-        await AssetService.archiveAsset(
-          assetId: _asset.assetId,
-          reason: reasonController.text.trim(),
-        );
-
-        if (!mounted) return;
-        Navigator.pop(context);
-        widget.onAssetUpdated?.call();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Asset "${_asset.controlNumber}" moved to archive quarantine.'),
-            backgroundColor: ParishColors.mercyRed,
-          ),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: ParishColors.mercyRed),
-        );
-      }
+      await AssetService.archiveAsset(assetId: _asset.assetId, reason: reasonController.text.trim());
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onAssetUpdated?.call();
     }
   }
 
   Future<void> _restoreAsset() async {
-    try {
-      await AssetService.restoreAsset(_asset.assetId);
-      if (!mounted) return;
-      Navigator.pop(context);
-      widget.onAssetUpdated?.call();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Asset "${_asset.controlNumber}" restored to active inventory (Status: Active).'),
-          backgroundColor: ParishColors.oliveGreen,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: ParishColors.mercyRed),
-      );
-    }
+    await AssetService.restoreAsset(_asset.assetId);
+    if (!mounted) return;
+    Navigator.pop(context);
+    widget.onAssetUpdated?.call();
   }
 
   Future<void> _printLabelSticker() async {
-    try {
-      await AssetLabelPdfService.printSingleAssetLabel(_asset);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Print error: $e'), backgroundColor: ParishColors.mercyRed),
-      );
-    }
+    await AssetLabelPdfService.printSingleAssetLabel(_asset);
   }
 
   @override
@@ -502,20 +493,18 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             vertical: isMobile ? 14 : 24,
           ),
           child: Container(
-            width: 780,
-            constraints: const BoxConstraints(maxHeight: 780),
+            width: 820,
+            constraints: const BoxConstraints(maxHeight: 840),
             child: Column(
               children: [
-                // Dialog Header Banner (Responsive & Non-Clipping)
+                // Dialog Header Banner
                 Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: isMobile ? 14 : 20,
                     vertical: isMobile ? 12 : 16,
                   ),
                   decoration: BoxDecoration(
-                    color: isArchived
-                        ? ParishColors.mercyRedSurface
-                        : ParishColors.marianBlueSurface,
+                    color: isArchived ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                     border: Border(bottom: BorderSide(color: borderGrey)),
                   ),
@@ -528,11 +517,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                           color: isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          _asset.classificationIcon,
-                          color: Colors.white,
-                          size: isMobile ? 18 : 22,
-                        ),
+                        child: Icon(_asset.classificationIcon, color: Colors.white, size: isMobile ? 18 : 22),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -549,7 +534,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                                       fontSize: isMobile ? 14.5 : 16.5,
                                       fontWeight: FontWeight.bold,
                                       color: isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
-                                      letterSpacing: 0.3,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -564,11 +548,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                                   ),
                                   child: Text(
                                     _asset.conditionStatus.toUpperCase(),
-                                    style: TextStyle(
-                                      fontSize: 8.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: _asset.conditionColor,
-                                    ),
+                                    style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: _asset.conditionColor),
                                   ),
                                 ),
                               ],
@@ -593,7 +573,105 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   ),
                 ),
 
-                // Content Area (View Mode vs Edit Mode)
+                // Responsive Property Group Unit Selector Bar (Wrapped in Flexible/Expanded to prevent vertical wrapping)
+                if (_groupSiblingUnits.length > 1) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: ParishColors.backgroundLight,
+                      border: Border(bottom: BorderSide(color: borderGrey)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'PROPERTY GROUP: $_cleanBaseGroupName',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${_groupSiblingUnits.length} total units inside this group',
+                                style: TextStyle(fontSize: 10, color: textMuted),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.4)),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<AssetModel>(
+                              value: _groupSiblingUnits.firstWhere(
+                                    (u) => u.assetId == _asset.assetId,
+                                orElse: () => _groupSiblingUnits.first,
+                              ),
+                              isDense: true,
+                              icon: const Icon(Icons.arrow_drop_down, color: ParishColors.marianBlue, size: 20),
+                              items: _groupSiblingUnits.map((unit) {
+                                return DropdownMenuItem<AssetModel>(
+                                  value: unit,
+                                  child: Text(
+                                    'Unit #${unit.propertyLabelSuffix} (${unit.conditionStatus})',
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (selected) {
+                                if (selected != null) _switchToUnit(selected);
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton(
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: borderGrey)),
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(34, 34),
+                          ),
+                          icon: const Icon(Icons.chevron_left, size: 16, color: ParishColors.marianBlue),
+                          tooltip: 'Previous Unit',
+                          onPressed: () {
+                            final currentIndex = _groupSiblingUnits.indexWhere((u) => u.assetId == _asset.assetId);
+                            if (currentIndex > 0) _switchToUnit(_groupSiblingUnits[currentIndex - 1]);
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: borderGrey)),
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(34, 34),
+                          ),
+                          icon: const Icon(Icons.chevron_right, size: 16, color: ParishColors.marianBlue),
+                          tooltip: 'Next Unit',
+                          onPressed: () {
+                            final currentIndex = _groupSiblingUnits.indexWhere((u) => u.assetId == _asset.assetId);
+                            if (currentIndex != -1 && currentIndex < _groupSiblingUnits.length - 1) {
+                              _switchToUnit(_groupSiblingUnits[currentIndex + 1]);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Content Area
                 Expanded(
                   child: SingleChildScrollView(
                     padding: EdgeInsets.all(isMobile ? 14 : 20),
@@ -603,10 +681,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
                 // Footer Actions
                 Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 14 : 20,
-                    vertical: isMobile ? 10 : 14,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: isMobile ? 10 : 14),
                   decoration: BoxDecoration(
                     color: cardWhite,
                     borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
@@ -615,7 +690,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Left: Print Label Sticker & Archive Actions
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -623,54 +697,29 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: ParishColors.marianBlue,
                               foregroundColor: Colors.white,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isMobile ? 10 : 14,
-                                vertical: isMobile ? 8 : 10,
-                              ),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                             onPressed: _printLabelSticker,
                             icon: const Icon(Icons.qr_code, size: 15),
-                            label: Text(
-                              isMobile ? 'Tag' : 'Print QR Tag',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                            ),
+                            label: Text(isMobile ? 'Tag' : 'Print QR Tag', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                           ),
                           const SizedBox(width: 6),
                           if (_canArchive)
                             isArchived
                                 ? OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: ParishColors.oliveGreen,
-                                side: const BorderSide(color: ParishColors.oliveGreen),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isMobile ? 8 : 12,
-                                  vertical: isMobile ? 8 : 10,
-                                ),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
+                              style: OutlinedButton.styleFrom(foregroundColor: ParishColors.oliveGreen, side: const BorderSide(color: ParishColors.oliveGreen)),
                               onPressed: _restoreAsset,
                               icon: const Icon(Icons.restore, size: 15),
                               label: const Text('Restore', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                             )
                                 : OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: ParishColors.mercyRed,
-                                side: const BorderSide(color: ParishColors.mercyRed),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isMobile ? 8 : 12,
-                                  vertical: isMobile ? 8 : 10,
-                                ),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
+                              style: OutlinedButton.styleFrom(foregroundColor: ParishColors.mercyRed, side: const BorderSide(color: ParishColors.mercyRed)),
                               onPressed: _confirmArchiveAsset,
                               icon: const Icon(Icons.archive_outlined, size: 15),
                               label: const Text('Archive', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                             ),
                         ],
                       ),
-
-                      // Right: Edit/Save or Close Button
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -682,34 +731,16 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                               ),
                               const SizedBox(width: 4),
                               ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: ParishColors.oliveGreen,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: isMobile ? 12 : 16,
-                                    vertical: isMobile ? 8 : 10,
-                                  ),
-                                ),
+                                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.oliveGreen, foregroundColor: Colors.white),
                                 onPressed: _isUpdating ? null : _saveAssetUpdates,
                                 icon: _isUpdating
                                     ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                     : const Icon(Icons.save, size: 15),
-                                label: Text(
-                                  _isUpdating ? 'Saving...' : 'Save',
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                ),
+                                label: Text(_isUpdating ? 'Saving...' : 'Save', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                               ),
                             ] else ...[
                               OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: ParishColors.marianBlue),
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: isMobile ? 10 : 14,
-                                    vertical: isMobile ? 8 : 10,
-                                  ),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
+                                style: OutlinedButton.styleFrom(side: const BorderSide(color: ParishColors.marianBlue)),
                                 onPressed: () => setState(() => _isEditing = true),
                                 icon: const Icon(Icons.edit_outlined, size: 15, color: ParishColors.marianBlue),
                                 label: const Text('Edit Details', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
@@ -734,10 +765,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       },
     );
   }
-
-  // ===========================================================================
-  // View Mode: Complete Information & Responsive Layout
-  // ===========================================================================
 
   Widget _buildViewDetails(bool isMobile) {
     final textDark = ParishColors.textDark;
@@ -772,7 +799,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                       Text(
                         _asset.archiveReason != null && _asset.archiveReason!.isNotEmpty
                             ? 'Reason: ${_asset.archiveReason}'
-                            : 'This asset is decommissioned from active parish operations and quarantined in the archives.',
+                            : 'This asset is decommissioned from active parish operations.',
                         style: TextStyle(fontSize: 11, color: textDark),
                       ),
                     ],
@@ -782,10 +809,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             ),
           ),
         ],
-
-        // Top Section: Photo + Metadata
         if (isMobile) ...[
-          // Mobile Stack Layout
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -805,25 +829,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                       decoration: BoxDecoration(
-                        color: _asset.unitPrice >= 10000.0
-                            ? ParishColors.goldLight
-                            : ParishColors.marianBlueSurface,
+                        color: _asset.unitPrice >= 10000.0 ? ParishColors.goldLight : ParishColors.marianBlueSurface,
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: _asset.unitPrice >= 10000.0
-                              ? ParishColors.goldAccent
-                              : ParishColors.marianBlue,
-                          width: 1.0,
-                        ),
                       ),
                       child: Text(
                         _asset.inventorySection,
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: _asset.unitPrice >= 10000.0
-                              ? ParishColors.goldAccent
-                              : ParishColors.marianBlue,
+                          color: _asset.unitPrice >= 10000.0 ? ParishColors.goldAccent : ParishColors.marianBlue,
                         ),
                       ),
                     ),
@@ -851,7 +865,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             ),
           ),
         ] else ...[
-          // Desktop Horizontal Row
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -879,8 +892,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ),
         ],
         const SizedBox(height: 16),
-
-        // Valuation Summary Card
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -894,9 +905,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             children: [
               Column(
                 children: [
-                  Text('Quantity', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.bold)),
+                  Text('Unit Identifier', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 2),
-                  Text('${_asset.quantity} unit(s)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Unit #${_asset.propertyLabelSuffix}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
                 ],
               ),
               Container(width: 1, height: 28, color: ParishColors.borderGrey),
@@ -919,8 +930,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ),
         ),
         const SizedBox(height: 14),
-
-        // Physical Specifications Grid (Responsive 2x2 grid)
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(14),
@@ -969,8 +978,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ),
         ),
         const SizedBox(height: 16),
-
-        // Historical Audit Trail
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -979,7 +986,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ],
         ),
         const SizedBox(height: 8),
-
         if (_isLoadingHistory)
           const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
         else if (_auditHistory.isEmpty)
@@ -1120,12 +1126,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     );
   }
 
-  // ===========================================================================
-  // Edit Mode: Field Form
-  // ===========================================================================
-
   Widget _buildEditForm() {
     final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
 
     return Column(
@@ -1145,15 +1148,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Diocesan Control Number (${_asset.controlNumber}) is permanently locked and protected against unauthorized reassignment.',
+                  'Diocesan Control Number (${_asset.controlNumber}) and Classification are permanently locked to protect inventory integrity.',
                   style: const TextStyle(fontSize: 11.5, color: ParishColors.marianBlue, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
           ),
         ),
-
-        // Photo Update Section
         Text('Asset Documentation Photo & Security Watermark', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
         Container(
@@ -1229,7 +1230,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                           label: const Text('Camera', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
                         OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
+                          style: ElevatedButton.styleFrom(
                             foregroundColor: ParishColors.marianBlue,
                             side: const BorderSide(color: ParishColors.marianBlue),
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1248,16 +1249,10 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ),
         ),
         const SizedBox(height: 14),
-
         Text('Asset Designation / Item Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
-        TextFormField(
-          controller: _nameController,
-          decoration: _inputDecoration(),
-        ),
+        TextFormField(controller: _nameController, decoration: _inputDecoration()),
         const SizedBox(height: 12),
-
-        // Quantity & Unit Price
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1302,7 +1297,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ],
         ),
         const SizedBox(height: 8),
-
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1326,29 +1320,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ),
         ),
         const SizedBox(height: 12),
-
         Row(
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Classification *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Classification (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<AssetClassificationModel>(
-                    value: _selectedClassification,
-                    isExpanded: true,
-                    decoration: _inputDecoration(),
-                    items: _classifications
-                        .map((c) => DropdownMenuItem(
-                        value: c,
-                        child: Text(
-                          '${c.classificationName} (${c.acronym})',
-                          overflow: TextOverflow.ellipsis,
-                        )))
-                        .toList(),
-                    onChanged: (val) => setState(() => _selectedClassification = val),
-                  ),
+                  TextFormField(initialValue: _asset.displayClassification, enabled: false, decoration: _inputDecoration()),
                 ],
               ),
             ),
@@ -1357,29 +1337,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Location *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Location (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<AssetLocationModel>(
-                    value: _selectedLocation,
-                    isExpanded: true,
-                    decoration: _inputDecoration(),
-                    items: _locations
-                        .map((l) => DropdownMenuItem(
-                        value: l,
-                        child: Text(
-                          '${l.locationName} (${l.acronym})',
-                          overflow: TextOverflow.ellipsis,
-                        )))
-                        .toList(),
-                    onChanged: (val) => setState(() => _selectedLocation = val),
-                  ),
+                  TextFormField(initialValue: _asset.displayLocation, enabled: false, decoration: _inputDecoration()),
                 ],
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-
         Row(
           children: [
             Expanded(
@@ -1427,11 +1393,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ],
         ),
         const SizedBox(height: 12),
-
         _buildLabel('RFID / NFC Tag ID (Optional)'),
         TextFormField(controller: _rfidController, decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C')),
         const SizedBox(height: 12),
-
         Row(
           children: [
             Expanded(
@@ -1469,12 +1433,10 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ],
         ),
         const SizedBox(height: 12),
-
         Text('Other Specifications', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
         TextFormField(controller: _othersController, maxLines: 2, decoration: _inputDecoration()),
         const SizedBox(height: 12),
-
         Text('Remarks & Maintenance Notes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
         TextFormField(controller: _remarksController, maxLines: 2, decoration: _inputDecoration()),

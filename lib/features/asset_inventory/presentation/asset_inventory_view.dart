@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/asset_inventory/presentation/asset_inventory_view.dart
+// =============================================================================
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
@@ -87,11 +91,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     try {
       final assetsFuture = AssetService.getAssets(includeArchived: true);
       final locsFuture = AssetReferenceService.getLocations(activeOnly: false);
-      final classifsFuture =
-      AssetReferenceService.getClassifications(activeOnly: false);
+      final classifs = AssetReferenceService.getClassifications(activeOnly: false);
 
-      final results =
-      await Future.wait([assetsFuture, locsFuture, classifsFuture]);
+      final results = await Future.wait([assetsFuture, locsFuture, classifs]);
 
       if (!mounted) return;
       setState(() {
@@ -175,17 +177,24 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           .toList();
     }
 
-    // 6. Search Query
+    // 6. Search Query (Searches control number, name, child items, RFID, model)
     if (_searchQuery.trim().isNotEmpty) {
       final q = _searchQuery.toLowerCase().trim();
       list = list.where((a) {
-        return a.controlNumber.toLowerCase().contains(q) ||
+        final matchesGroup = a.controlNumber.toLowerCase().contains(q) ||
             a.itemName.toLowerCase().contains(q) ||
             (a.model ?? '').toLowerCase().contains(q) ||
             (a.color ?? '').toLowerCase().contains(q) ||
             (a.rfidTag ?? '').toLowerCase().contains(q) ||
             a.displayLocation.toLowerCase().contains(q) ||
             a.displayClassification.toLowerCase().contains(q);
+
+        final matchesChild = a.childItems.any((child) =>
+        child.controlNumber.toLowerCase().contains(q) ||
+            child.itemName.toLowerCase().contains(q) ||
+            (child.rfidTag ?? '').toLowerCase().contains(q));
+
+        return matchesGroup || matchesChild;
       }).toList();
     }
 
@@ -265,8 +274,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     });
   }
 
-  /// Opens the interactive tag selection dialog where the user chooses
-  /// exactly which asset stickers to include on the A4 batch print sheet.
   void _openBatchPrintSelectionModal() {
     final list = _filteredAssets;
     if (list.isEmpty) {
@@ -292,7 +299,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
-  /// Centralized Modal Filter Sheet containing Classification, Location, Condition, and Status
   void _openFilterAndSortBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -315,7 +321,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Handle bar
                   Center(
                     child: Container(
                       width: 36,
@@ -327,7 +332,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       ),
                     ),
                   ),
-
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -355,8 +359,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ],
                   ),
                   const Divider(height: 14),
-
-                  // 1. Sort Section
                   Text('Sort Sequence',
                       style: TextStyle(
                           fontSize: 12.5,
@@ -407,13 +409,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                           setState(() => _sortAscending = !_sortAscending);
                           setSheetState(() {});
                         },
-                        tooltip: _sortAscending ? 'Ascending' : 'Descending',
                       ),
                     ],
                   ),
                   const SizedBox(height: 14),
-
-                  // 2. Active vs Archived Status Filter
                   Text('Registry Status',
                       style: TextStyle(
                           fontSize: 12.5,
@@ -462,8 +461,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ],
                   ),
                   const SizedBox(height: 14),
-
-                  // 3. Classification Filter Dropdown
                   Text('Property Classification',
                       style: TextStyle(
                           fontSize: 12.5,
@@ -494,8 +491,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     },
                   ),
                   const SizedBox(height: 14),
-
-                  // 4. Location Filter Dropdown
                   Text('Storage Location',
                       style: TextStyle(
                           fontSize: 12.5,
@@ -525,49 +520,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       }
                     },
                   ),
-                  const SizedBox(height: 14),
-
-                  // 5. Physical Condition Filter Dropdown
-                  Text('Physical Condition',
-                      style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.textDark)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: _selectedCondition,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'All', child: Text('All Conditions')),
-                      DropdownMenuItem(
-                          value: 'VERIFIED / GOOD',
-                          child: Text('VERIFIED / GOOD')),
-                      DropdownMenuItem(
-                          value: 'REQUIRES REPAIR',
-                          child: Text('REQUIRES REPAIR')),
-                      DropdownMenuItem(
-                          value: 'DAMAGED', child: Text('DAMAGED')),
-                      DropdownMenuItem(
-                          value: 'MISSING', child: Text('MISSING')),
-                      DropdownMenuItem(
-                          value: 'UNUSABLE', child: Text('UNUSABLE')),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _selectedCondition = val);
-                        setSheetState(() {});
-                      }
-                    },
-                  ),
                   const SizedBox(height: 18),
-
                   SizedBox(
                     width: double.infinity,
                     height: 46,
@@ -631,7 +584,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. Header Title & Actions
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -648,7 +600,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                             ),
                           ),
                           Text(
-                            'Manages parish assets, properties, and inventory records.',
+                            'Manages parish assets, property groups, and inventory records.',
                             style: TextStyle(color: textMuted, fontSize: 11.5),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -676,8 +628,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ],
                 ),
                 const SizedBox(height: 12),
-
-                // 2. Action Buttons: + Register as Primary, Field Audit as Prominent Companion
                 Row(
                   children: [
                     Expanded(
@@ -696,7 +646,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                               onAssetSaved: _loadAllData),
                           icon: const Icon(Icons.add, size: 18),
                           label: const Text(
-                            'Register Asset',
+                            'Register Asset / Group',
                             style: TextStyle(
                                 fontSize: 13, fontWeight: FontWeight.bold),
                           ),
@@ -731,12 +681,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ],
                 ),
                 const SizedBox(height: 12),
-
-                // 3. Compact 4-Pill Statistics Row
                 _buildCompactStatsRow(),
                 const SizedBox(height: 14),
-
-                // 4. Compact Section Tabs (All Assets, Section 1, Section 2)
                 Container(
                   height: 38,
                   decoration: BoxDecoration(
@@ -764,9 +710,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       ),
                       Tab(
                         child: Text(
-                          isMobile
-                              ? 'Sec 1 (≥₱10k)'
-                              : 'Section 1 (≥₱10,000.00)',
+                          isMobile ? 'Sec 1 (≥₱10k)' : 'Section 1 (≥₱10,000.00)',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: isMobile ? 11 : 12),
@@ -774,9 +718,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       ),
                       Tab(
                         child: Text(
-                          isMobile
-                              ? 'Sec 2 (<₱10k)'
-                              : 'Section 2 (<₱10,000.00)',
+                          isMobile ? 'Sec 2 (<₱10k)' : 'Section 2 (<₱10,000.00)',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: isMobile ? 11 : 12),
@@ -786,8 +728,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                 ),
                 const SizedBox(height: 10),
-
-                // 5. Full-Width Single-Line Search Bar
                 Container(
                   width: double.infinity,
                   height: 44,
@@ -811,7 +751,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                           }),
                           style: TextStyle(fontSize: 13, color: textDark),
                           decoration: InputDecoration(
-                            hintText: 'Search by Control #, name, location, RFID...',
+                            hintText: 'Search by Control #, group name, RFID...',
                             hintStyle:
                             TextStyle(fontSize: 12, color: textMuted),
                             border: InputBorder.none,
@@ -837,11 +777,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                 ),
                 const SizedBox(height: 10),
-
-                // 6. Secondary Toolbar: Filter & Sort Trigger + View Toggle
                 Row(
                   children: [
-                    // Unified "Filter & Sort" Modal Trigger
                     InkWell(
                       onTap: _openFilterAndSortBottomSheet,
                       borderRadius: BorderRadius.circular(8),
@@ -887,8 +824,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       ),
                     ),
                     const Spacer(),
-
-                    // Items Count Indicator
                     Text(
                       '$totalCount items',
                       style: TextStyle(
@@ -897,8 +832,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                           color: textMuted),
                     ),
                     const SizedBox(width: 10),
-
-                    // Card / Table View Toggle
                     Container(
                       height: 32,
                       decoration: BoxDecoration(
@@ -931,8 +864,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                   ],
                 ),
-
-                // Active Filter Summary Badges (If any active)
                 if (_hasActiveFilters) ...[
                   const SizedBox(height: 8),
                   Wrap(
@@ -973,8 +904,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                 ],
                 const SizedBox(height: 12),
-
-                // 7. Content View (Cards vs Full-Width Table)
                 if (_isLoading)
                   const Center(
                       child: Padding(
@@ -999,8 +928,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       _buildFullWidthResponsiveTable(paged, constraints.maxWidth),
 
                 const SizedBox(height: 14),
-
-                // 8. Pagination Footer
                 if (totalCount > 0)
                   _buildPaginationFooter(
                       totalCount, totalPages, startIndex, endIndex),
@@ -1011,10 +938,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       },
     );
   }
-
-  // ===========================================================================
-  // Compact 4-Pill Statistics Widget
-  // ===========================================================================
 
   Widget _buildCompactStatsRow() {
     return Container(
@@ -1036,7 +959,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
           Expanded(
             child: _buildCompactStatItem(
-              'Sec 1',
+              'Sec I',
               '$_section1Count',
               ParishColors.goldAccent,
             ),
@@ -1044,7 +967,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
           Expanded(
             child: _buildCompactStatItem(
-              'Sec 2',
+              'Sec II',
               '$_section2Count',
               ParishColors.oliveGreen,
             ),
@@ -1101,212 +1024,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
-  // ===========================================================================
-  // Full-Width Responsive Table Layout
-  // ===========================================================================
-
   Widget _buildFullWidthResponsiveTable(
       List<AssetModel> assets, double availableWidth) {
-    final bool isWideDesktop = availableWidth >= 1100;
-
-    if (isWideDesktop) {
-      return Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: ParishColors.cardWhite,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: ParishColors.borderGrey),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: Table(
-            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-            columnWidths: const {
-              0: FlexColumnWidth(1.8), // Control #
-              1: FlexColumnWidth(2.2), // Asset Name
-              2: FlexColumnWidth(0.6), // Qty
-              3: FlexColumnWidth(2.0), // Classification
-              4: FlexColumnWidth(1.3), // Location
-              5: FlexColumnWidth(0.8), // Year
-              6: FlexColumnWidth(1.4), // Price/Unit
-              7: FlexColumnWidth(1.4), // Total Cost
-              8: FlexColumnWidth(1.5), // Condition
-              9: FlexColumnWidth(1.2), // Status
-              10: FixedColumnWidth(80), // Action
-            },
-            children: [
-              TableRow(
-                decoration:
-                BoxDecoration(color: ParishColors.marianBlueSurface),
-                children: [
-                  _buildHeaderCell('Control #', sortField: 'Control Number'),
-                  _buildHeaderCell('Asset Name', sortField: 'Asset Name'),
-                  _buildHeaderCell('Qty'),
-                  _buildHeaderCell('Classification'),
-                  _buildHeaderCell('Location'),
-                  _buildHeaderCell('Year', sortField: 'Acquisition Year'),
-                  _buildHeaderCell('Price / Unit', sortField: 'Price / Unit'),
-                  _buildHeaderCell('Total Cost', sortField: 'Total Cost'),
-                  _buildHeaderCell('Condition'),
-                  _buildHeaderCell('Status'),
-                  _buildHeaderCell('Action', align: TextAlign.center),
-                ],
-              ),
-              ...assets.map((a) {
-                return TableRow(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: ParishColors.borderGrey.withOpacity(0.4),
-                      ),
-                    ),
-                  ),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 12),
-                      child: Text(
-                        a.controlNumber,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.marianBlue,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 12),
-                      child: Text(
-                        a.itemName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12.5),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 12),
-                      child: Text('${a.quantity}',
-                          style: const TextStyle(fontSize: 12.5)),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 12),
-                      child: Text(
-                        a.displayClassification,
-                        style: const TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 12),
-                      child: Text(
-                        a.displayLocation,
-                        style: const TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 12),
-                      child: Text('${a.acquisitionYear}',
-                          style: const TextStyle(fontSize: 12)),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 12),
-                      child: Text(
-                        a.formattedUnitPrice,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 12),
-                      child: Text(
-                        a.formattedTotalCost,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.oliveGreen,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 12),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: a.conditionSurfaceColor,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            a.conditionStatus,
-                            style: TextStyle(
-                              color: a.conditionColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 9.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 12),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: a.operationalStatus == 'Decommissioned'
-                                ? ParishColors.mercyRedSurface
-                                : ParishColors.backgroundLight,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            a.operationalStatus,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
-                              color: a.operationalStatus == 'Decommissioned'
-                                  ? ParishColors.mercyRed
-                                  : ParishColors.textDark,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 8),
-                      child: Center(
-                        child: IconButton(
-                          icon: const Icon(Icons.visibility_outlined,
-                              size: 18, color: ParishColors.marianBlue),
-                          tooltip: 'View Details',
-                          onPressed: () => showAssetDetailModal(context,
-                              asset: a, onAssetUpdated: _loadAllData),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              }),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1335,38 +1054,14 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               columnSpacing: 18,
               horizontalMargin: 16,
               columns: [
-                DataColumn(
-                  label: _buildSortableColumnLabel(
-                      'Control Number', 'Control Number'),
-                  onSort: (columnIndex, ascending) =>
-                      _onSortChanged('Control Number'),
-                ),
-                DataColumn(
-                  label:
-                  _buildSortableColumnLabel('Asset Name', 'Asset Name'),
-                  onSort: (columnIndex, ascending) =>
-                      _onSortChanged('Asset Name'),
-                ),
+                DataColumn(label: _buildSortableColumnLabel('Control Number', 'Control Number')),
+                DataColumn(label: _buildSortableColumnLabel('Asset Name / Group', 'Asset Name')),
                 const DataColumn(label: Text('Qty')),
                 const DataColumn(label: Text('Classification')),
                 const DataColumn(label: Text('Location')),
-                DataColumn(
-                  label: _buildSortableColumnLabel('Year', 'Acquisition Year'),
-                  onSort: (columnIndex, ascending) =>
-                      _onSortChanged('Acquisition Year'),
-                ),
-                DataColumn(
-                  label:
-                  _buildSortableColumnLabel('Price / Unit', 'Price / Unit'),
-                  onSort: (columnIndex, ascending) =>
-                      _onSortChanged('Price / Unit'),
-                ),
-                DataColumn(
-                  label:
-                  _buildSortableColumnLabel('Total Cost', 'Total Cost'),
-                  onSort: (columnIndex, ascending) =>
-                      _onSortChanged('Total Cost'),
-                ),
+                DataColumn(label: _buildSortableColumnLabel('Year', 'Acquisition Year')),
+                DataColumn(label: _buildSortableColumnLabel('Price / Unit', 'Price / Unit')),
+                DataColumn(label: _buildSortableColumnLabel('Total Cost', 'Total Cost')),
                 const DataColumn(label: Text('Condition')),
                 const DataColumn(label: Text('Status')),
                 const DataColumn(label: Text('Action')),
@@ -1383,34 +1078,38 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                   ),
                   DataCell(
-                    Text(
-                      a.itemName,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    Row(
+                      children: [
+                        Text(
+                          a.isPropertyGroup ? a.itemName.replaceAll(RegExp(r'\s*(—|-)?\s*\d{3}$'), '').trim() : a.itemName,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (a.isPropertyGroup) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: ParishColors.marianBlueSurface,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text(
+                              '(${a.quantity})',
+                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   DataCell(Text('${a.quantity}')),
                   DataCell(Text(a.displayClassification)),
                   DataCell(Text(a.displayLocation)),
                   DataCell(Text('${a.acquisitionYear}')),
-                  DataCell(
-                    Text(
-                      a.formattedUnitPrice,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      a.formattedTotalCost,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.oliveGreen,
-                      ),
-                    ),
-                  ),
+                  DataCell(Text(a.formattedUnitPrice, style: const TextStyle(fontWeight: FontWeight.bold))),
+                  DataCell(Text(a.formattedTotalCost, style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.oliveGreen))),
                   DataCell(
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: a.conditionSurfaceColor,
                         borderRadius: BorderRadius.circular(4),
@@ -1427,8 +1126,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   DataCell(
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: a.operationalStatus == 'Decommissioned'
                             ? ParishColors.mercyRedSurface
@@ -1449,58 +1147,18 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   DataCell(
                     TextButton.icon(
-                      style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact),
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                       onPressed: () => showAssetDetailModal(context,
                           asset: a, onAssetUpdated: _loadAllData),
                       icon: const Icon(Icons.visibility, size: 14),
                       label: const Text('View',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.bold)),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ]);
               }).toList(),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeaderCell(String label,
-      {String? sortField, TextAlign align = TextAlign.left}) {
-    final bool isSorted = sortField != null && _sortBy == sortField;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: InkWell(
-        onTap: sortField != null ? () => _onSortChanged(sortField) : null,
-        child: Row(
-          mainAxisAlignment: align == TextAlign.center
-              ? MainAxisAlignment.center
-              : MainAxisAlignment.start,
-          children: [
-            Flexible(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12.5,
-                  color: ParishColors.marianBlue,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (isSorted) ...[
-              const SizedBox(width: 4),
-              Icon(
-                _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                size: 13,
-                color: ParishColors.marianBlue,
-              ),
-            ],
-          ],
         ),
       ),
     );
@@ -1526,55 +1184,41 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
   Widget _buildPaginationFooter(
       int totalCount, int totalPages, int startIndex, int endIndex) {
-    final cardWhite = ParishColors.cardWhite;
-    final borderGrey = ParishColors.borderGrey;
-    final textMuted = ParishColors.textMuted;
-    final textDark = ParishColors.textDark;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderGrey),
+        border: Border.all(color: ParishColors.borderGrey),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             'Showing ${startIndex + 1}–$endIndex of $totalCount items',
-            style: TextStyle(fontSize: 12, color: textMuted),
+            style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
           ),
           Row(
             children: [
               IconButton(
                 icon: const Icon(Icons.first_page, size: 20),
-                onPressed:
-                _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
+                onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
               ),
               IconButton(
                 icon: const Icon(Icons.chevron_left, size: 20),
-                onPressed:
-                _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
               ),
               Text(
                 '${_currentPage + 1} / $totalPages',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: textDark),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
               ),
               IconButton(
                 icon: const Icon(Icons.chevron_right, size: 20),
-                onPressed: _currentPage < totalPages - 1
-                    ? () => setState(() => _currentPage++)
-                    : null,
+                onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
               ),
               IconButton(
                 icon: const Icon(Icons.last_page, size: 20),
-                onPressed: _currentPage < totalPages - 1
-                    ? () => setState(() => _currentPage = totalPages - 1)
-                    : null,
+                onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage = totalPages - 1) : null,
               ),
             ],
           ),
@@ -1598,7 +1242,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           const SizedBox(height: 12),
           Text(
             _searchQuery.isNotEmpty
-                ? 'No registered assets match your search.'
+                ? 'No registered assets or groups match your search.'
                 : 'No assets registered under this inventory section yet.',
             style: TextStyle(
                 fontWeight: FontWeight.bold,
@@ -1606,9 +1250,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 color: ParishColors.textDark),
           ),
           const SizedBox(height: 4),
-          Text('Tap "+ Register Asset" above to record parish properties.',
-              style:
-              TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+          Text('Tap "+ Register Asset / Group" above to record parish properties.',
+              style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
         ],
       ),
     );
