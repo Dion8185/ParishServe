@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/theme/theme_controller.dart';
@@ -41,13 +43,59 @@ class AuthService {
   /// In-memory cache of the active user profile
   static UserModel? currentUser;
 
+  /// Local storage key for offline persistent session profile
+  static const String _cachedUserKey = 'parishserve_cached_user_profile';
+
   /// Quarantine flag: True while the user is actively resetting their password.
   /// Prevents AuthGate from auto-redirecting to the dashboard when verifyOTP succeeds.
   static bool isPasswordRecoveryInProgress = false;
 
-  /// Check if an active Supabase auth session exists in storage (Web or Mobile)
+  /// Check if an active session or valid cached offline user exists
   static bool get hasActiveSession =>
-      _client.auth.currentSession != null && !isPasswordRecoveryInProgress;
+      (currentUser != null || _client.auth.currentSession != null) && !isPasswordRecoveryInProgress;
+
+  // ===========================================================================
+  // Local Offline Cache Helpers
+  // ===========================================================================
+
+  static Future<void> _saveCachedUser(UserModel user) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = jsonEncode(user.toMap());
+      await prefs.setString(_cachedUserKey, jsonStr);
+      debugPrint('[AuthService] User profile cached locally for offline authentication.');
+    } catch (e) {
+      debugPrint('[AuthService] Error caching user profile locally: $e');
+    }
+  }
+
+  static Future<UserModel?> getCachedUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_cachedUserKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        return UserModel.fromMap(map);
+      }
+    } catch (e) {
+      debugPrint('[AuthService] Error reading cached user profile: $e');
+    }
+    return null;
+  }
+
+  static Future<void> _clearCachedUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_cachedUserKey);
+      debugPrint('[AuthService] Local offline cache cleared.');
+    } catch (e) {
+      debugPrint('[AuthService] Error clearing local cache: $e');
+    }
+  }
+
+  // ===========================================================================
+  // Authentication & Session Restoration
+  // ===========================================================================
 
   /// Resolves a username or email input into the canonical registered email
   static Future<String> resolveIdentifierToEmail(String identifier) async {
@@ -67,7 +115,7 @@ class AuthService {
     return userRecord['email'].toString().trim().toLowerCase();
   }
 
-  /// Authenticate staff or parishioners using Supabase Auth, restore theme & sync push tags
+  /// Authenticate staff or parishioners using Supabase Auth, restore theme & cache locally
   static Future<UserModel?> login({
     required String identifier, // username or email
     required String password,
@@ -106,28 +154,33 @@ class AuthService {
 
     if (user == null) {
       await _client.auth.signOut();
+      await _clearCachedUser();
       throw 'User profile record not found in parish database.';
     }
 
     // 4. Verify account active status
     if (!user.accountStatus) {
       await _client.auth.signOut();
+      await _clearCachedUser();
       currentUser = null;
       throw 'This account has been deactivated. Please contact the Parish Administrator.';
     }
 
     currentUser = user;
 
-    // 5. Automatically apply user's saved Dark Mode preference from Supabase
+    // 5. Persist profile locally for seamless offline app launches
+    await _saveCachedUser(user);
+
+    // 6. Automatically apply user's saved Dark Mode preference from Supabase
     AppThemeController.applyUserPreference(user.darkModeEnabled);
 
-    // 6. Synchronize staff device tags with OneSignal Push Service
+    // 7. Synchronize staff device tags with OneSignal Push Service
     await NotificationService.syncStaffUser(user);
 
     return user;
   }
 
-  /// Restores session on app startup (e.g., after F5 on web or app restart on mobile)
+  /// Restores session on app startup (Supports 100% offline access when previous session exists)
   static Future<UserModel?> restoreSession() async {
     // If user is currently recovering their password, DO NOT hydrate profile or enter dashboard
     if (isPasswordRecoveryInProgress) {
@@ -135,9 +188,20 @@ class AuthService {
       return null;
     }
 
+    // 1. Read local storage cache first (Ensures immediate offline access)
+    final cachedUser = await getCachedUser();
+    if (cachedUser != null && cachedUser.accountStatus) {
+      currentUser = cachedUser;
+      AppThemeController.applyUserPreference(cachedUser.darkModeEnabled);
+    }
+
     try {
       final session = _client.auth.currentSession;
       if (session == null || session.user.email == null) {
+        // If offline and we have a valid cached user, allow them in!
+        if (cachedUser != null && cachedUser.accountStatus) {
+          return cachedUser;
+        }
         currentUser = null;
         return null;
       }
@@ -145,23 +209,37 @@ class AuthService {
       final email = session.user.email!;
       final user = await fetchProfileByEmail(email);
 
-      if (user == null || !user.accountStatus) {
+      // If account was explicitly deactivated on server, force logout
+      if (user != null && !user.accountStatus) {
         await _client.auth.signOut();
+        await _clearCachedUser();
         currentUser = null;
         return null;
       }
 
-      currentUser = user;
+      if (user != null) {
+        currentUser = user;
+        await _saveCachedUser(user);
+        AppThemeController.applyUserPreference(user.darkModeEnabled);
+        await NotificationService.syncStaffUser(user);
+        return user;
+      }
 
-      // Automatically sync saved Dark Mode preference from Supabase
-      AppThemeController.applyUserPreference(user.darkModeEnabled);
+      // If server returned null due to temporary connectivity glitch, keep offline cached session
+      if (cachedUser != null && cachedUser.accountStatus) {
+        return cachedUser;
+      }
 
-      // Re-sync staff device tags with OneSignal
-      await NotificationService.syncStaffUser(user);
-
-      return user;
+      return null;
     } catch (e) {
-      debugPrint('Error restoring session: $e');
+      debugPrint('[AuthService] Network/offline detected during session restore: $e. Falling back to local offline profile.');
+
+      // OFFLINE MODE SUCCESS: Retain the cached user profile without kicking to login screen
+      if (cachedUser != null && cachedUser.accountStatus) {
+        currentUser = cachedUser;
+        return cachedUser;
+      }
+
       currentUser = null;
       return null;
     }
@@ -179,7 +257,7 @@ class AuthService {
       if (profile == null) return null;
       return UserModel.fromMap(profile);
     } catch (e) {
-      debugPrint('Error fetching user profile: $e');
+      debugPrint('[AuthService] Error fetching user profile from database: $e');
       return null;
     }
   }
@@ -260,6 +338,7 @@ class AuthService {
 
     final newUser = UserModel.fromMap(profileResponse);
     currentUser = newUser;
+    await _saveCachedUser(newUser);
 
     return {
       'user': newUser,
@@ -290,6 +369,7 @@ class AuthService {
     }
 
     currentUser = user;
+    await _saveCachedUser(user);
     AppThemeController.applyUserPreference(user.darkModeEnabled);
     await NotificationService.syncStaffUser(user);
     return user;
@@ -385,6 +465,7 @@ class AuthService {
     } finally {
       // 4. Terminate recovery session and reset quarantine flag
       await _client.auth.signOut();
+      await _clearCachedUser();
       isPasswordRecoveryInProgress = false;
       currentUser = null;
     }
@@ -401,10 +482,11 @@ class AuthService {
     }
   }
 
-  /// Terminate session across Web and Mobile, clearing OneSignal push tags and resetting theme
+  /// Terminate session across Web and Mobile, clearing local cache, OneSignal push tags, and resetting theme
   static Future<void> signOut() async {
     try {
       await NotificationService.clearStaffUser();
+      await _clearCachedUser();
       await _client.auth.signOut();
     } finally {
       isPasswordRecoveryInProgress = false;

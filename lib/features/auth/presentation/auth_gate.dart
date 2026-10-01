@@ -26,9 +26,9 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   void _initAuthListener() {
-    // Listen to session events (login, logout, token refresh, recovery)
+    // 1. Listen to Supabase auth state changes (login, logout, token refresh, recovery)
     Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-      // 1. If password recovery is active, quarantine the session and DO NOT route to dashboard
+      // If password recovery is active, quarantine the session and DO NOT route to dashboard
       if (AuthService.isPasswordRecoveryInProgress ||
           data.event == AuthChangeEvent.passwordRecovery) {
         if (mounted) {
@@ -40,9 +40,8 @@ class _AuthGateState extends State<AuthGate> {
         return;
       }
 
-      final session = data.session;
-
-      if (session == null) {
+      // Explicit Sign Out event
+      if (data.event == AuthChangeEvent.signedOut) {
         if (mounted) {
           setState(() {
             _currentUser = null;
@@ -52,23 +51,27 @@ class _AuthGateState extends State<AuthGate> {
         return;
       }
 
-      // 2. If user session changed during normal authentication, re-hydrate profile from public.users
-      final sessionEmail = session.user.email;
-      if (_currentUser == null || _currentUser!.email.toLowerCase() != sessionEmail?.toLowerCase()) {
-        if (mounted) setState(() => _isLoading = true);
+      final session = data.session;
 
-        final freshUser = await AuthService.restoreSession();
+      // If user session changed during normal authentication, re-hydrate profile
+      if (session != null) {
+        final sessionEmail = session.user.email;
+        if (_currentUser == null || _currentUser!.email.toLowerCase() != sessionEmail?.toLowerCase()) {
+          if (mounted) setState(() => _isLoading = true);
 
-        if (mounted) {
-          setState(() {
-            _currentUser = freshUser;
-            _isLoading = false;
-          });
+          final freshUser = await AuthService.restoreSession();
+
+          if (mounted) {
+            setState(() {
+              _currentUser = freshUser;
+              _isLoading = false;
+            });
+          }
         }
       }
     });
 
-    // Initial check on boot (Web F5 or Mobile cold start)
+    // 2. Initial check on boot (Supports 100% offline startup from local storage)
     _checkInitialSession();
   }
 
@@ -79,18 +82,23 @@ class _AuthGateState extends State<AuthGate> {
       return;
     }
 
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-
-    final user = await AuthService.restoreSession();
-    if (mounted) {
-      setState(() {
-        _currentUser = user;
-        _isLoading = false;
-      });
+    try {
+      // restoreSession() retrieves local cache first, enabling offline startup
+      final user = await AuthService.restoreSession();
+      if (mounted) {
+        setState(() {
+          _currentUser = user;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[AuthGate] Initial session restore error: $e');
+      if (mounted) {
+        setState(() {
+          _currentUser = AuthService.currentUser;
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -100,17 +108,14 @@ class _AuthGateState extends State<AuthGate> {
       return _buildSplashLoading();
     }
 
-    final session = Supabase.instance.client.auth.currentSession;
-
-    // Unauthenticated, deactivated, or in the middle of password recovery
-    if (session == null ||
-        _currentUser == null ||
+    // Unauthenticated, deactivated account, or in the middle of password recovery
+    if (_currentUser == null ||
         !_currentUser!.accountStatus ||
         AuthService.isPasswordRecoveryInProgress) {
       return const LoginView();
     }
 
-    // Dynamic 3-Tier Routing
+    // Dynamic 3-Tier Role Routing (Works seamlessly both Online and Offline)
     return _routeByRole(_currentUser!);
   }
 
@@ -149,25 +154,25 @@ class _AuthGateState extends State<AuthGate> {
               child: const Icon(Icons.church, size: 42, color: ParishColors.marianBlue),
             ),
             const SizedBox(height: 18),
-            const Text(
+            Text(
               'St. John Paul II Parish',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: ParishColors.marianBlue,
+                color: ParishColors.marianBlueAdaptive,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              'Authenticating session...',
+              'Loading secure parish session...',
               style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
             ),
             const SizedBox(height: 24),
-            const SizedBox(
+            SizedBox(
               width: 28,
               height: 28,
               child: CircularProgressIndicator(
-                color: ParishColors.marianBlue,
+                color: ParishColors.marianBlueAdaptive,
                 strokeWidth: 2.5,
               ),
             ),
