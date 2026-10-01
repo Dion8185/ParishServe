@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/asset_inventory/presentation/dialogs/register_asset_dialog.dart
+// =============================================================================
+
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -18,7 +22,6 @@ void showRegisterAssetModal(BuildContext context, {VoidCallback? onAssetSaved}) 
   );
 }
 
-/// Custom formatter for Philippine Peso amounts with commas and decimals (e.g. 10,000.00).
 class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -195,9 +198,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     final qty = _parsedQuantity;
 
     setState(() {
-      // Format: Location-Classification Year-Sequence (e.g. C-FF 2026-001)
       if (qty > 1) {
-        _previewControlNumber = '$locAcronym-$clsAcronym $year-001 ... to ${(qty).toString().padLeft(3, '0')} ($qty items)';
+        _previewControlNumber = '$locAcronym-$clsAcronym $year-001 (Property Group Folder • $qty Units)';
       } else {
         _previewControlNumber = '$locAcronym-$clsAcronym $year-001';
       }
@@ -213,9 +215,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     );
 
     if (picked != null) {
-      setState(() {
-        _dateOfAcquisition = picked;
-      });
+      setState(() => _dateOfAcquisition = picked);
       _updateLiveControlNumberPreview();
     }
   }
@@ -403,7 +403,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       widget.onAssetSaved?.call();
 
       final summaryText = qty > 1
-          ? 'Successfully created $qty individual asset records (${createdAssets.first.controlNumber} to ${createdAssets.last.controlNumber}).'
+          ? 'Property Group registered successfully! Control # ${createdAssets.first.controlNumber} containing $qty individual units.'
           : 'Asset registered successfully! Control #: ${createdAssets.first.controlNumber}';
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -434,7 +434,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Container(
         width: 720,
-        constraints: const BoxConstraints(maxHeight: 800),
+        constraints: const BoxConstraints(maxHeight: 820),
         child: Column(
           children: [
             // Modal Header Banner
@@ -461,11 +461,11 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Register Diocesan Parish Property',
+                          'Register Diocesan Parish Property / Group',
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
-                          'Assign standardized Diocesan Control Number (Location-Classification Year-Sequence)',
+                          'Assign standardized Diocesan Control Number with automatic child item numbering for bulk quantities',
                           style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
@@ -526,17 +526,15 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.tag, color: ParishColors.goldAccent, size: 22),
+                            const Icon(Icons.folder_copy_outlined, color: ParishColors.goldAccent, size: 22),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    _parsedQuantity > 1
-                                        ? 'Bulk Registration: Generating $_parsedQuantity Consecutive Control Numbers:'
-                                        : 'Diocesan Control Number (Automatic Format):',
-                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
+                                  const Text(
+                                    'Diocesan Control Number Preview (Property Group Structure):',
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
@@ -557,11 +555,11 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                         controller: _itemNameController,
                         validator: (v) => (v?.trim().isEmpty ?? true) ? 'Asset name is required.' : null,
                         style: TextStyle(fontSize: 14, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Church Pew, Wooden Conference Chair, Chalice'),
+                        decoration: _inputDecoration(hint: 'e.g. Church Pew, Wooden Conference Chair, Monoblock'),
                       ),
                       const SizedBox(height: 16),
 
-                      // QUANTITY, ACQUISITION PRICE PER UNIT & TOTAL COST
+                      // Quantity & Unit Price Valuation Container
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -608,7 +606,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Classification is determined by unit price (Threshold: ₱10,000.00). When Quantity > 1, multiple individual records are automatically generated.',
+                              'When Quantity > 1, a Property Group folder is created with individual item numbers (001, 002...) generated automatically.',
                               style: TextStyle(fontSize: 11.5, color: textMuted),
                             ),
                             const Divider(height: 20),
@@ -616,22 +614,19 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Quantity Field
                                 Expanded(
                                   flex: 2,
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel('Quantity * (Whole Number)'),
+                                      _buildLabel('Quantity *'),
                                       TextFormField(
                                         controller: _quantityController,
                                         keyboardType: TextInputType.number,
                                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                         validator: (v) {
                                           final num = int.tryParse(v?.trim() ?? '');
-                                          if (num == null || num <= 0) {
-                                            return 'Must be at least 1';
-                                          }
+                                          if (num == null || num <= 0) return 'Must be ≥ 1';
                                           return null;
                                         },
                                         onChanged: (_) => _updateLiveControlNumberPreview(),
@@ -642,8 +637,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                   ),
                                 ),
                                 const SizedBox(width: 14),
-
-                                // Acquisition Price per Unit
                                 Expanded(
                                   flex: 3,
                                   child: Column(
@@ -656,7 +649,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                         inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
                                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
                                         decoration: _inputDecoration(
-                                          hint: 'e.g. 15,000.00 (Blank = 0.00)',
+                                          hint: 'e.g. 15,000.00',
                                           prefixIcon: const Padding(
                                             padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                             child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
@@ -670,7 +663,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             ),
                             const SizedBox(height: 14),
 
-                            // Total Acquisition Cost
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -685,17 +677,13 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                   Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Total Acquisition Cost (Calculated):', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: textMuted)),
-                                      Text('Formula: $_parsedQuantity unit(s) × ₱ ${AssetModel.formatCurrency(_parsedUnitPrice)}', style: TextStyle(fontSize: 11, color: textMuted)),
+                                      Text('Total Acquisition Cost:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: textMuted)),
+                                      Text('$_parsedQuantity unit(s) × ₱ ${AssetModel.formatCurrency(_parsedUnitPrice)}', style: TextStyle(fontSize: 11, color: textMuted)),
                                     ],
                                   ),
                                   Text(
                                     '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.oliveGreen,
-                                    ),
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                                   ),
                                 ],
                               ),
@@ -833,7 +821,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Physical RFID / NFC Tag (Single item only)
+                      // RFID Tag (Single items only)
                       if (_parsedQuantity == 1) ...[
                         _buildLabel('RFID / NFC Tag ID (Optional for Single Asset)'),
                         TextFormField(
@@ -847,7 +835,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                         const SizedBox(height: 14),
                       ],
 
-                      // Condition Status & Operational Status
+                      // Condition & Operational Status
                       Row(
                         children: [
                           Expanded(
@@ -885,7 +873,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Specifications: Dimensions, Color, Model
+                      // Dimensions, Color, Model
                       Row(
                         children: [
                           Expanded(
@@ -893,11 +881,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildLabel('Dimensions (Optional)'),
-                                TextFormField(
-                                  controller: _dimensionsController,
-                                  style: TextStyle(fontSize: 13, color: textDark),
-                                  decoration: _inputDecoration(hint: 'e.g. 10ft L x 3ft H'),
-                                ),
+                                TextFormField(controller: _dimensionsController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. 10ft L x 3ft H')),
                               ],
                             ),
                           ),
@@ -906,12 +890,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Primary Color'),
-                                TextFormField(
-                                  controller: _colorController,
-                                  style: TextStyle(fontSize: 13, color: textDark),
-                                  decoration: _inputDecoration(hint: 'e.g. Narra Brown / Gold'),
-                                ),
+                                _buildLabel('Color'),
+                                TextFormField(controller: _colorController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Brown')),
                               ],
                             ),
                           ),
@@ -920,12 +900,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Model / Brand'),
-                                TextFormField(
-                                  controller: _modelController,
-                                  style: TextStyle(fontSize: 13, color: textDark),
-                                  decoration: _inputDecoration(hint: 'e.g. Custom Woodcraft'),
-                                ),
+                                _buildLabel('Model'),
+                                TextFormField(controller: _modelController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Custom')),
                               ],
                             ),
                           ),
@@ -933,7 +909,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 18),
 
-                      // ASSET IMAGE CAPTURE, WATERMARK & PREVIEW SECTION
+                      // Watermarked Photo Capture Section
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -945,14 +921,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 children: [
                                   Icon(Icons.zoom_in, size: 16, color: ParishColors.marianBlue),
                                   SizedBox(width: 4),
-                                  Text(
-                                    'Inspect Full Preview',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.marianBlue,
-                                    ),
-                                  ),
+                                  Text('Inspect Preview', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
                                 ],
                               ),
                             ),
@@ -962,182 +931,96 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: _watermarkedPhotoBytes != null
-                              ? ParishColors.oliveGreenSurface
-                              : ParishColors.backgroundLight,
+                          color: _watermarkedPhotoBytes != null ? ParishColors.oliveGreenSurface : ParishColors.backgroundLight,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: _watermarkedPhotoBytes != null
-                                ? ParishColors.oliveGreen
-                                : borderGrey,
+                            color: _watermarkedPhotoBytes != null ? ParishColors.oliveGreen : borderGrey,
                             width: _watermarkedPhotoBytes != null ? 1.5 : 1.0,
                           ),
                         ),
-                        child: Column(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Image Thumbnail / Watermark Box
-                                InkWell(
-                                  onTap: _watermarkedPhotoBytes != null ? _openInteractiveImagePreview : null,
+                            InkWell(
+                              onTap: _watermarkedPhotoBytes != null ? _openInteractiveImagePreview : null,
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                width: 90,
+                                height: 90,
+                                decoration: BoxDecoration(
+                                  color: ParishColors.marianBlueSurface,
                                   borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    width: 90,
-                                    height: 90,
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.marianBlueSurface,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: _watermarkedPhotoBytes != null
-                                            ? ParishColors.goldAccent
-                                            : borderGrey,
-                                        width: _watermarkedPhotoBytes != null ? 2 : 1,
-                                      ),
-                                    ),
-                                    child: _isProcessingImage
-                                        ? const Center(
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                        : _watermarkedPhotoBytes != null
-                                        ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          Image.memory(
-                                            _watermarkedPhotoBytes!,
-                                            fit: BoxFit.cover,
-                                          ),
-                                          Positioned(
-                                            bottom: 0,
-                                            left: 0,
-                                            right: 0,
-                                            child: Container(
-                                              color: Colors.black54,
-                                              padding: const EdgeInsets.symmetric(vertical: 2),
-                                              child: const Text(
-                                                'WATERMARKED',
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 7.5,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                        : const Icon(
-                                      Icons.image_outlined,
-                                      color: ParishColors.marianBlue,
-                                      size: 36,
+                                  border: Border.all(color: _watermarkedPhotoBytes != null ? ParishColors.goldAccent : borderGrey, width: 2),
+                                ),
+                                child: _isProcessingImage
+                                    ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                                    : _watermarkedPhotoBytes != null
+                                    ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(_watermarkedPhotoBytes!, fit: BoxFit.cover),
+                                )
+                                    : const Icon(Icons.image_outlined, color: ParishColors.marianBlue, size: 36),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _watermarkedPhotoBytes != null ? 'Security Watermark Embedded' : 'Attach or Capture Asset Photo',
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: _watermarkedPhotoBytes != null ? ParishColors.oliveGreen : textDark,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 16),
-
-                                // Actions & Instructions
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Images are automatically stamped with an immutable parish watermark including date, time, and Diocesan Control number.',
+                                    style: TextStyle(fontSize: 11, color: textMuted, height: 1.35),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
                                     children: [
-                                      Text(
-                                        _watermarkedPhotoBytes != null
-                                            ? 'Security Watermark Embedded'
-                                            : 'Attach or Capture Asset Photo',
-                                        style: TextStyle(
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: _watermarkedPhotoBytes != null
-                                              ? ParishColors.oliveGreen
-                                              : textDark,
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: ParishColors.marianBlue,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                         ),
+                                        onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
+                                        icon: const Icon(Icons.camera_alt, size: 16),
+                                        label: const Text('Take Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                       ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        _watermarkedPhotoBytes != null
-                                            ? 'Includes: Parish Name (Saint John Paul II Parish), Timestamp, and Diocesan Control # (${_previewControlNumber}). Tap thumbnail to preview.'
-                                            : 'Images are automatically stamped with an immutable parish watermark including date, time, and Diocesan Control number.',
-                                        style: TextStyle(fontSize: 11, color: textMuted, height: 1.35),
-                                      ),
-                                      const SizedBox(height: 10),
-
-                                      // Dual Action Buttons: Upload Image & Take Photo
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: ParishColors.marianBlue,
-                                              foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                            ),
-                                            onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
-                                            icon: const Icon(Icons.camera_alt, size: 16),
-                                            label: const Text('Take Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                          ),
-                                          OutlinedButton.icon(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: ParishColors.marianBlue,
-                                              side: const BorderSide(color: ParishColors.marianBlue),
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                            ),
-                                            onPressed: _isProcessingImage ? null : _pickImageFromDevice,
-                                            icon: const Icon(Icons.file_upload_outlined, size: 16),
-                                            label: const Text('Upload Image', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                          ),
-                                          if (_watermarkedPhotoBytes != null)
-                                            TextButton.icon(
-                                              style: TextButton.styleFrom(
-                                                foregroundColor: ParishColors.mercyRed,
-                                                visualDensity: VisualDensity.compact,
-                                              ),
-                                              onPressed: () {
-                                                setState(() {
-                                                  _watermarkedPhotoBytes = null;
-                                                  _photoFileName = null;
-                                                });
-                                              },
-                                              icon: const Icon(Icons.delete_outline, size: 16),
-                                              label: const Text('Remove', style: TextStyle(fontSize: 12)),
-                                            ),
-                                        ],
+                                      OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: ParishColors.marianBlue,
+                                          side: const BorderSide(color: ParishColors.marianBlue),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        ),
+                                        onPressed: _isProcessingImage ? null : _pickImageFromDevice,
+                                        icon: const Icon(Icons.file_upload_outlined, size: 16),
+                                        label: const Text('Upload Image', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 16),
 
-                      // Others / Special Specifications
                       _buildLabel('Other Specifications / Inscriptions'),
-                      TextFormField(
-                        controller: _othersController,
-                        maxLines: 2,
-                        style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Inscribed "Donated by Santos Family, Year 2008"'),
-                      ),
+                      TextFormField(controller: _othersController, maxLines: 2, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Inscribed "Donated by Family"')),
                       const SizedBox(height: 14),
 
-                      // Remarks
-                      _buildLabel('Remarks / Maintenance Notes'),
-                      TextFormField(
-                        controller: _remarksController,
-                        maxLines: 2,
-                        style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Stored inside main nave, requires quarterly wood varnish'),
-                      ),
+                      _buildLabel('Remarks & Maintenance Notes'),
+                      TextFormField(controller: _remarksController, maxLines: 2, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Stored inside main nave')),
                     ],
                   ),
                 ),
@@ -1174,11 +1057,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.check, size: 20),
                       label: Text(
-                        _isSaving
-                            ? 'Registering Asset...'
-                            : (_parsedQuantity > 1
-                            ? 'Save $_parsedQuantity Assets (₱ ${AssetModel.formatCurrency(_calculatedTotalCost)})'
-                            : 'Save & Register Asset'),
+                        _isSaving ? 'Registering...' : 'Save & Register Property Group',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                     ),
@@ -1208,8 +1087,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10)), borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8)),
     );
   }
 }

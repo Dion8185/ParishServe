@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/asset_inventory/services/asset_label_pdf_service.dart
+// =============================================================================
+
 import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -13,7 +17,7 @@ class AssetLabelPdfService {
   static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
-  /// Generates a single compact printable asset property tag (70mm x 38mm sticker label)
+  /// Generates printable sticker labels for an asset or property group.
   static Future<Uint8List> generateSingleAssetLabelPdf(AssetModel asset) async {
     const pageFormat = PdfPageFormat(
       70 * PdfPageFormat.mm,
@@ -31,19 +35,32 @@ class AssetLabelPdfService {
       ),
     );
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: pageFormat,
-        build: (context) {
-          return _buildSingleAssetSticker(asset, fontRegular, fontBold);
-        },
-      ),
-    );
+    if (asset.isPropertyGroup && asset.childItems.isNotEmpty) {
+      for (final child in asset.childItems) {
+        pdf.addPage(
+          pw.Page(
+            pageFormat: pageFormat,
+            build: (context) {
+              return _buildSingleAssetSticker(child, fontRegular, fontBold, isChildUnit: true);
+            },
+          ),
+        );
+      }
+    } else {
+      pdf.addPage(
+        pw.Page(
+          pageFormat: pageFormat,
+          build: (context) {
+            return _buildSingleAssetSticker(asset, fontRegular, fontBold, isChildUnit: false);
+          },
+        ),
+      );
+    }
 
     return pdf.save();
   }
 
-  /// Generates a full sheet of asset labels (A4 with 3x8 = 24 labels grid)
+  /// Generates a full sheet of asset labels (A4 with 3x8 = 24 labels grid).
   static Future<Uint8List> generateBatchAssetLabelsPdf(List<AssetModel> assets) async {
     const pageFormat = PdfPageFormat.a4;
     final fontRegular = await PdfGoogleFonts.arimoRegular();
@@ -56,12 +73,20 @@ class AssetLabelPdfService {
       ),
     );
 
-    // 24 labels per A4 page (3 columns x 8 rows)
+    final List<AssetModel> printableStickers = [];
+    for (final asset in assets) {
+      if (asset.isPropertyGroup && asset.childItems.isNotEmpty) {
+        printableStickers.addAll(asset.childItems);
+      } else {
+        printableStickers.add(asset);
+      }
+    }
+
     const int labelsPerPage = 24;
-    for (int i = 0; i < assets.length; i += labelsPerPage) {
-      final pageAssets = assets.sublist(
+    for (int i = 0; i < printableStickers.length; i += labelsPerPage) {
+      final pageAssets = printableStickers.sublist(
         i,
-        (i + labelsPerPage > assets.length) ? assets.length : i + labelsPerPage,
+        (i + labelsPerPage > printableStickers.length) ? printableStickers.length : i + labelsPerPage,
       );
 
       pdf.addPage(
@@ -75,7 +100,7 @@ class AssetLabelPdfService {
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
               children: pageAssets.map((asset) {
-                return _buildSingleAssetSticker(asset, fontRegular, fontBold);
+                return _buildSingleAssetSticker(asset, fontRegular, fontBold, isChildUnit: asset.itemSequenceInBatch != null);
               }).toList(),
             );
           },
@@ -86,7 +111,6 @@ class AssetLabelPdfService {
     return pdf.save();
   }
 
-  /// Prints single asset sticker directly to OS printer / print dialog
   static Future<void> printSingleAssetLabel(AssetModel asset) async {
     final pdfBytes = await generateSingleAssetLabelPdf(asset);
     await Printing.layoutPdf(
@@ -95,7 +119,6 @@ class AssetLabelPdfService {
     );
   }
 
-  /// Prints multiple asset stickers in bulk
   static Future<void> printBatchAssetLabels(List<AssetModel> assets) async {
     final pdfBytes = await generateBatchAssetLabelsPdf(assets);
     await Printing.layoutPdf(
@@ -105,16 +128,28 @@ class AssetLabelPdfService {
   }
 
   // ===========================================================================
-  // Individual Sticker Layout Builder (Includes Date of Acquisition, No Price)
+  // Individual Sticker Layout Builder
   // ===========================================================================
 
   static pw.Widget _buildSingleAssetSticker(
       AssetModel asset,
       pw.Font fontRegular,
       pw.Font fontBold,
+      {bool isChildUnit = false}
       ) {
-    // The QR data embeds the unique permanent token or control number for instant verification lookup
     final qrData = asset.qrCodeToken.isNotEmpty ? asset.qrCodeToken : asset.controlNumber;
+
+    // Uses clean base control number without redundant -001 suffix
+    final displayControlNo = asset.controlNumber;
+
+    // Resolve full readable names for Location and Classification
+    final locationText = asset.locationName != null && asset.locationName!.isNotEmpty
+        ? asset.locationName!
+        : asset.locationAcronym;
+
+    final classificationText = asset.classificationName != null && asset.classificationName!.isNotEmpty
+        ? asset.classificationName!
+        : asset.classificationAcronym;
 
     return pw.Container(
       decoration: pw.BoxDecoration(
@@ -146,7 +181,7 @@ class AssetLabelPdfService {
               ),
               pw.SizedBox(height: 1),
               pw.Text(
-                'DSP-SJP2',
+                isChildUnit ? 'ITEM #${asset.propertyLabelSuffix}' : 'DSP-SJP2',
                 style: pw.TextStyle(
                   font: fontBold,
                   fontSize: 5.5,
@@ -158,7 +193,7 @@ class AssetLabelPdfService {
           ),
           pw.SizedBox(width: 6),
 
-          // Right: Parish Branding, Diocesan Control Coordinates & Date of Acquisition
+          // Right: Parish Branding & Control Coordinates
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -196,7 +231,7 @@ class AssetLabelPdfService {
                   ],
                 ),
                 pw.Text(
-                  'Diocese of San Pablo • Property Tag',
+                  isChildUnit ? 'Property Group Item Unit' : 'Diocese of San Pablo • Property Tag',
                   style: pw.TextStyle(
                     font: fontRegular,
                     fontSize: 4.8,
@@ -209,7 +244,7 @@ class AssetLabelPdfService {
                   color: goldAccent,
                 ),
                 pw.Text(
-                  asset.controlNumber,
+                  displayControlNo,
                   style: pw.TextStyle(
                     font: fontBold,
                     fontSize: 8.5,
@@ -223,21 +258,25 @@ class AssetLabelPdfService {
                   asset.itemName,
                   style: pw.TextStyle(
                     font: fontBold,
-                    fontSize: 6.2,
+                    fontSize: 6.0,
                     fontWeight: pw.FontWeight.bold,
                     color: marianBlue,
                   ),
                   maxLines: 1,
                 ),
+                pw.SizedBox(height: 2),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text(
-                      'Loc: ${asset.locationAcronym} • Cls: ${asset.classificationAcronym}',
-                      style: pw.TextStyle(font: fontRegular, fontSize: 5.0, color: textMuted),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Location: $locationText\nClassification: $classificationText',
+                        style: pw.TextStyle(font: fontRegular, fontSize: 4.5, color: textMuted, lineSpacing: 1.1),
+                        maxLines: 2,
+                      ),
                     ),
                     pw.Text(
-                      'Acquired: ${asset.formattedAcquisitionDate}',
+                      'Acq: ${asset.formattedAcquisitionDate}',
                       style: pw.TextStyle(font: fontBold, fontSize: 5.0, color: textDark),
                     ),
                   ],
