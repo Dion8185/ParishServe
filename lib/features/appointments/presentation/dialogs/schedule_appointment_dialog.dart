@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
+import '../../../sacramental_records/validators/sacramental_validators.dart';
 import '../../models/appointment_model.dart';
 import '../../services/appointment_service.dart';
 import '../../services/liturgical_calendar_service.dart';
@@ -120,10 +123,10 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   String _selectedService = 'Nuptial Mass (Wedding)';
   String _selectedVenue = 'Main Church Altar';
-  String _selectedOfficiant = 'Rev. Fr. Roy G. Reyes';
+  String _selectedOfficiant = 'Rev. Fr. Roy';
   String _selectedIdType = 'Philippine National ID (PhilID / ePhilID)';
 
-  // Attached File State (Web & Mobile Compatible)
+  // Attached File State
   Uint8List? _attachedIdFileBytes;
   String? _attachedIdFileName;
   int? _attachedIdFileSize;
@@ -142,6 +145,8 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   String? _duplicateRequesterWarning;
   Map<String, TimeOfDay>? _suggestedSlot;
   Timer? _debounceTimer;
+
+  static const String _draftStorageKey = 'parishserve_draft_appointment_form';
 
   bool get _isParishioner =>
       AuthService.currentUser?.userRole.toLowerCase() == 'user';
@@ -163,50 +168,50 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     'Nuptial Mass (Wedding)': _ServicePreset(
       durationMinutes: 90,
       defaultVenue: 'Main Church Altar',
-      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
+      defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hr 30 mins',
     ),
     'Community Baptism': _ServicePreset(
       durationMinutes: 60,
       defaultVenue: 'Baptistery & Main Altar',
-      defaultOfficiant: 'Rev. Fr. Parochial Vicar',
-      durationLabel: '1 hour',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '1 hour (11:00 AM Batch)',
       isCommunityBaptism: true,
     ),
     'Funeral Mass & Blessing': _ServicePreset(
       durationMinutes: 60,
       defaultVenue: 'Main Church Altar',
-      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
+      defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour',
     ),
     'Anointing of the Sick & Viaticum': _ServicePreset(
       durationMinutes: 45,
       defaultVenue: 'Off-site / Home Visit',
-      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
+      defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '45 mins',
     ),
     'House / Business Blessing': _ServicePreset(
       durationMinutes: 45,
       defaultVenue: 'Off-site / Home Visit',
-      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
+      defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '45 mins',
     ),
     'Thanksgiving Mass Intention': _ServicePreset(
       durationMinutes: 60,
       defaultVenue: 'Main Church Altar',
-      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
+      defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour',
     ),
     'Canonical Interview / Pre-Cana': _ServicePreset(
       durationMinutes: 45,
       defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
+      defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '45 mins',
     ),
     'Confession & Spiritual Direction': _ServicePreset(
       durationMinutes: 30,
       defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Roy G. Reyes',
+      defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '30 mins',
     ),
   };
@@ -221,8 +226,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   ];
 
   final List<String> _officiants = [
-    'Rev. Fr. Roy G. Reyes',
-    'Rev. Fr. Parochial Vicar',
+    'Rev. Fr. Roy',
     'Guest Priest / Visiting Clergy',
   ];
 
@@ -259,7 +263,77 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     _contactFocusNode.addListener(() => setState(() {}));
     _emailFocusNode.addListener(() => setState(() {}));
 
+    _restoreDraft();
     _runLiveConflictCheck();
+  }
+
+  // ===========================================================================
+  // Draft Persistence Lifecycle (Auto-save / Restore via SharedPreferences)
+  // ===========================================================================
+
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draftMap = {
+        'service': _selectedService,
+        'requesterName': _requesterNameController.text.trim(),
+        'contact': _contactNumberController.text.trim(),
+        'email': _emailController.text.trim(),
+        'idType': _selectedIdType,
+        'idNumber': _idNumberController.text.trim(),
+        'remarks': _remarksController.text.trim(),
+        'venue': _selectedVenue,
+        'officiant': _selectedOfficiant,
+        'date': _selectedDate.toIso8601String(),
+        'startHour': _startTime.hour,
+        'startMinute': _startTime.minute,
+      };
+      await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
+    } catch (_) {}
+  }
+
+  Future<void> _restoreDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_draftStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            if (!_isParishioner && map['requesterName'] != null && (map['requesterName'] as String).isNotEmpty) {
+              _requesterNameController.text = map['requesterName'];
+            }
+            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
+              _contactNumberController.text = map['contact'];
+            }
+            if (!_isParishioner && map['email'] != null && (map['email'] as String).isNotEmpty) {
+              _emailController.text = map['email'];
+            }
+            if (map['idNumber'] != null) _idNumberController.text = map['idNumber'];
+            if (map['remarks'] != null) _remarksController.text = map['remarks'];
+            if (map['service'] != null && _presets.containsKey(map['service'])) {
+              _selectedService = map['service'];
+            }
+            if (map['venue'] != null && _venues.contains(map['venue'])) {
+              _selectedVenue = map['venue'];
+            }
+            if (map['officiant'] != null && _officiants.contains(map['officiant'])) {
+              _selectedOfficiant = _isParishioner ? 'Rev. Fr. Roy' : map['officiant'];
+            }
+            if (map['idType'] != null && _philippineIdTypes.contains(map['idType'])) {
+              _selectedIdType = map['idType'];
+            }
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _clearDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftStorageKey);
+    } catch (_) {}
   }
 
   DateTime _getInitialValidDate() {
@@ -290,20 +364,18 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   bool get _isNameValid {
     final text = _requesterNameController.text.trim();
-    if (text.isEmpty) return false;
-    final parts = text.split(RegExp(r'\s+'));
-    return parts.length >= 2 && RegExp(r'^[a-zA-Z\s\.\-]+$').hasMatch(text);
+    return SacramentalValidators.validateName(text, 'Name', isRequired: true) == null;
   }
 
   bool get _isPhoneValid {
-    final digits = _contactNumberController.text.replaceAll(RegExp(r'\D'), '');
-    return digits.length == 11 && digits.startsWith('09');
+    return SacramentalValidators.validatePhoneNumber(_contactNumberController.text) == null &&
+        _contactNumberController.text.trim().isNotEmpty;
   }
 
   bool get _isEmailValid {
     final text = _emailController.text.trim();
     if (text.isEmpty) return !_isParishioner;
-    return RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(text);
+    return RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(text);
   }
 
   TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
@@ -316,7 +388,12 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   void _applyPresetInitialTimes() {
     final preset = _presets[_selectedService]!;
     if (preset.isCommunityBaptism) {
-      _startTime = const TimeOfDay(hour: 11, minute: 0);
+      _startTime = const TimeOfDay(hour: 11, minute: 0); // Strictly locked at 11:00 AM
+    } else {
+      // Standard operating start time within 9:00 AM - 5:00 PM
+      if (_startTime.hour < 9 || _startTime.hour >= 17) {
+        _startTime = const TimeOfDay(hour: 10, minute: 0);
+      }
     }
     _endTime = _addMinutes(_startTime, preset.durationMinutes);
   }
@@ -377,6 +454,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   }
 
   void _triggerDebouncedValidation() {
+    _saveDraft();
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 400), () {
       _runLiveConflictCheck();
@@ -386,7 +464,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   Future<void> _runDuplicateRequesterCheck() async {
     final name = _requesterNameController.text.trim();
-    if (name.length < 4) {
+    if (name.length < 3) {
       if (_duplicateRequesterWarning != null) {
         setState(() => _duplicateRequesterWarning = null);
       }
@@ -397,6 +475,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     final warning = await AppointmentService.checkDuplicateRequester(
       requesterName: name,
       date: dateStr,
+      serviceType: _selectedService,
     );
 
     if (mounted) {
@@ -422,6 +501,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       endTime: endStr,
       venue: _selectedVenue,
       officiant: _selectedOfficiant,
+      serviceType: _selectedService,
     );
 
     if (!mounted) return;
@@ -436,6 +516,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
         venue: _selectedVenue,
         officiant: _selectedOfficiant,
         preferredStartTime: _startTime,
+        serviceType: _selectedService,
       );
 
       setState(() {
@@ -468,18 +549,23 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       final preset = _presets[service];
       if (preset != null) {
         _selectedVenue = preset.defaultVenue;
-        _selectedOfficiant = preset.defaultOfficiant;
+        _selectedOfficiant = 'Rev. Fr. Roy';
 
         if (preset.isCommunityBaptism) {
-          _startTime = const TimeOfDay(hour: 11, minute: 0);
+          _startTime = const TimeOfDay(hour: 11, minute: 0); // Locked strictly at 11:00 AM
           if (_selectedDate.weekday != DateTime.saturday && _selectedDate.weekday != DateTime.sunday) {
             _selectedDate = _getInitialValidDate();
+          }
+        } else {
+          if (_startTime.hour < 9 || _startTime.hour >= 17) {
+            _startTime = const TimeOfDay(hour: 10, minute: 0);
           }
         }
 
         _endTime = _addMinutes(_startTime, preset.durationMinutes);
       }
     });
+    _saveDraft();
     _runLiveConflictCheck();
   }
 
@@ -508,6 +594,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);
+      _saveDraft();
       _runLiveConflictCheck();
     }
   }
@@ -515,12 +602,13 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   Future<void> _pickTime(bool isStart) async {
     final preset = _presets[_selectedService];
 
-    if (preset?.isCommunityBaptism == true && isStart) {
+    // Community Baptism is strictly locked at 11:00 AM
+    if (preset?.isCommunityBaptism == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Community Baptism start time is strictly fixed at 11:00 AM.'),
+          content: Text('Community Baptism ceremony strictly begins at 11:00 AM on Weekends.'),
           backgroundColor: ParishColors.goldAccent,
-          duration: Duration(seconds: 2),
+          duration: Duration(seconds: 3),
         ),
       );
       return;
@@ -531,18 +619,22 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       context: context,
       initialTime: initial,
     );
+
     if (picked != null) {
-      if (preset?.isCommunityBaptism == true) {
-        final totalMin = picked.hour * 60 + picked.minute;
-        if (totalMin < 660 || totalMin > 780) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Community Baptism must be scheduled between 11:00 AM and 1:00 PM.'),
-              backgroundColor: ParishColors.mercyRed,
-            ),
-          );
-          return;
-        }
+      final totalMin = picked.hour * 60 + picked.minute;
+
+      // Operating Hours Enforcement: 9:00 AM (540 min) to 5:00 PM (1020 min)
+      if (totalMin < AppointmentService.operatingDayStartMin ||
+          totalMin > AppointmentService.operatingDayEndMin) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Parish appointments must be scheduled between 9:00 AM and 5:00 PM.'),
+            backgroundColor: ParishColors.mercyRed,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
       }
 
       setState(() {
@@ -554,6 +646,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
           _endTime = picked;
         }
       });
+      _saveDraft();
       _runLiveConflictCheck();
     }
   }
@@ -563,6 +656,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
         title: Row(
           children: [
             Icon(
@@ -625,11 +719,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
         setState(() => _errorMessage = 'Community Baptism is strictly restricted to Weekends (Saturday & Sunday).');
         return;
       }
-      final startMin = _startTime.hour * 60 + _startTime.minute;
-      if (startMin < 660 || startMin > 780) {
-        setState(() => _errorMessage = 'Community Baptism must take place between 11:00 AM and 1:00 PM.');
-        return;
-      }
     }
 
     final startStr = _formatTimeOfDay(_startTime);
@@ -667,12 +756,15 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
         startTime: startStr,
         endTime: endStr,
         venue: _selectedVenue,
-        officiant: _selectedOfficiant,
+        officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
         idType: _selectedIdType,
         idNumber: _idNumberController.text.trim(),
         idDocumentUrl: uploadedDocumentPath,
         remarks: _remarksController.text.trim(),
       );
+
+      // Wipe local draft on success
+      await _clearDraft();
 
       if (!mounted) return;
 
@@ -714,7 +806,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       backgroundColor: cardWhiteColor,
       child: Container(
         width: double.maxFinite,
-        constraints: const BoxConstraints(maxHeight: 740),
+        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 760),
         child: Column(
           children: [
             // Modal Header
@@ -729,8 +821,8 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: ParishColors.marianBlue,
+                    decoration: BoxDecoration(
+                      color: ParishColors.marianBlueAdaptive,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.edit_calendar, color: Colors.white, size: 20),
@@ -746,12 +838,12 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         ),
                         Text(
                           currentPreset?.isCommunityBaptism == true
-                              ? 'Community Baptism: Weekends Only (11:00 AM – 1:00 PM)'
-                              : 'Operating Hours: 6:00 AM – 7:00 PM (Mondays Closed)',
+                              ? 'Community Baptism: Weekends (Strictly 11:00 AM Batch)'
+                              : 'Operating Hours: 9:00 AM – 5:00 PM (Mondays Closed)',
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: currentPreset?.isCommunityBaptism == true ? FontWeight.bold : FontWeight.normal,
-                            color: currentPreset?.isCommunityBaptism == true ? ParishColors.marianBlue : textMutedColor,
+                            color: currentPreset?.isCommunityBaptism == true ? ParishColors.marianBlueAdaptive : textMutedColor,
                           ),
                         ),
                       ],
@@ -807,7 +899,8 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       _buildFieldLabel('Service Requested *'),
                       DropdownButtonFormField<String>(
                         value: _selectedService,
-                        items: _presets.keys.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 14)))).toList(),
+                        isExpanded: true,
+                        items: _presets.keys.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis))).toList(),
                         onChanged: (val) {
                           if (val != null) _onServiceSelected(val);
                         },
@@ -821,18 +914,18 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                           decoration: BoxDecoration(
                             color: ParishColors.marianBlueSurface,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.2)),
+                            border: Border.all(color: ParishColors.marianBlueAdaptive.withOpacity(0.2)),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.auto_awesome, size: 16, color: ParishColors.marianBlue),
+                              Icon(Icons.auto_awesome, size: 16, color: ParishColors.marianBlueAdaptive),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   currentPreset.isCommunityBaptism
-                                      ? 'Preset: Community Baptism (Weekends 11AM–1PM • Baptistery)'
-                                      : 'Preset: ${currentPreset.durationLabel} • Venue & end time set.',
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.marianBlue),
+                                      ? 'Preset: Community Baptism (Weekends Strictly 11:00 AM • Baptistery)'
+                                      : 'Preset: ${currentPreset.durationLabel} • Operating window 9:00 AM – 5:00 PM.',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.marianBlueAdaptive),
                                 ),
                               ),
                             ],
@@ -849,23 +942,14 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         controller: _requesterNameController,
                         focusNode: _nameFocusNode,
                         enabled: !_isParishioner,
+                        maxLength: 100,
+                        buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                         inputFormatters: [TitleCaseInputFormatter()],
                         onChanged: (_) {
                           setState(() {});
                           _triggerDebouncedValidation();
                         },
-                        validator: (v) {
-                          final text = v?.trim() ?? '';
-                          if (text.isEmpty) return 'Please enter requester full name';
-                          final words = text.split(RegExp(r'\s+'));
-                          if (words.length < 2) {
-                            return 'Please enter both First Name and Last Name';
-                          }
-                          if (!RegExp(r'^[a-zA-Z\s\.\-]+$').hasMatch(text)) {
-                            return 'Name must contain letters only';
-                          }
-                          return null;
-                        },
+                        validator: (v) => SacramentalValidators.validateName(v, 'Requester full name', isRequired: true),
                         style: TextStyle(
                           fontSize: 14,
                           color: _isParishioner ? textMutedColor : textDarkColor,
@@ -874,7 +958,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         decoration: _inputDecoration(
                           hint: 'First Name and Last Name',
                           prefixIcon: _isParishioner
-                              ? const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue)
+                              ? Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive)
                               : null,
                           suffixIcon: _isNameValid
                               ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20)
@@ -920,19 +1004,14 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                   controller: _contactNumberController,
                                   focusNode: _contactFocusNode,
                                   keyboardType: TextInputType.phone,
+                                  maxLength: 13,
+                                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                                   inputFormatters: [
                                     FilteringTextInputFormatter.digitsOnly,
                                     PhilippinePhoneInputFormatter(),
                                   ],
-                                  onChanged: (_) => setState(() {}),
-                                  validator: (v) {
-                                    final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                                    if (digits.isEmpty) return 'Contact number is required';
-                                    if (digits.length != 11 || !digits.startsWith('09')) {
-                                      return 'Format: 09XX-XXX-XXXX';
-                                    }
-                                    return null;
-                                  },
+                                  onChanged: (_) => _triggerDebouncedValidation(),
+                                  validator: SacramentalValidators.validatePhoneNumber,
                                   style: const TextStyle(fontSize: 14),
                                   decoration: _inputDecoration(
                                     hint: '09XX-XXX-XXXX',
@@ -956,15 +1035,17 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                   controller: _emailController,
                                   focusNode: _emailFocusNode,
                                   enabled: !_isParishioner,
+                                  maxLength: 100,
+                                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                                   keyboardType: TextInputType.emailAddress,
-                                  onChanged: (_) => setState(() {}),
+                                  onChanged: (_) => _triggerDebouncedValidation(),
                                   validator: (v) {
                                     final text = (v ?? '').trim();
                                     if (_isParishioner && text.isEmpty) {
                                       return 'Email address is required';
                                     }
                                     if (text.isNotEmpty &&
-                                        !RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(text)) {
+                                        !RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(text)) {
                                       return 'Invalid email address';
                                     }
                                     return null;
@@ -977,8 +1058,8 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                   decoration: _inputDecoration(
                                     hint: 'name@email.com',
                                     prefixIcon: _isParishioner
-                                        ? const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue)
-                                        : const Icon(Icons.email_outlined, size: 18, color: ParishColors.marianBlue),
+                                        ? Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive)
+                                        : Icon(Icons.email_outlined, size: 18, color: ParishColors.marianBlueAdaptive),
                                     suffixIcon: _emailController.text.trim().isNotEmpty
                                         ? (_isEmailValid
                                         ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20)
@@ -999,14 +1080,18 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                           : 'Identification Document for Verification *'),
                       DropdownButtonFormField<String>(
                         value: _selectedIdType,
+                        isExpanded: true,
                         items: _philippineIdTypes
                             .map((id) => DropdownMenuItem(
                           value: id,
-                          child: Text(id, style: const TextStyle(fontSize: 13)),
+                          child: Text(id, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
                         ))
                             .toList(),
                         onChanged: (val) {
-                          if (val != null) setState(() => _selectedIdType = val);
+                          if (val != null) {
+                            setState(() => _selectedIdType = val);
+                            _saveDraft();
+                          }
                         },
                         decoration: _inputDecoration(),
                       ),
@@ -1014,10 +1099,13 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
                       TextFormField(
                         controller: _idNumberController,
+                        maxLength: 50,
+                        buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                         style: const TextStyle(fontSize: 13),
+                        onChanged: (_) => _saveDraft(),
                         decoration: _inputDecoration(
                           hint: 'ID Serial / Control Number (Optional)',
-                          prefixIcon: const Icon(Icons.badge_outlined, size: 18, color: ParishColors.marianBlue),
+                          prefixIcon: Icon(Icons.badge_outlined, size: 18, color: ParishColors.marianBlueAdaptive),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -1053,7 +1141,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                       size: 18,
                                       color: _attachedIdFileBytes != null
                                           ? ParishColors.oliveGreen
-                                          : ParishColors.marianBlue,
+                                          : ParishColors.marianBlueAdaptive,
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
@@ -1091,8 +1179,8 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                 height: 38,
                                 child: OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: ParishColors.marianBlue, width: 1.2),
-                                    foregroundColor: ParishColors.marianBlue,
+                                    side: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.2),
+                                    foregroundColor: ParishColors.marianBlueAdaptive,
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
                                   onPressed: _pickIdDocument,
@@ -1141,7 +1229,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                 '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
                                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDarkColor),
                               ),
-                              const Icon(Icons.calendar_month, color: ParishColors.marianBlue, size: 20),
+                              Icon(Icons.calendar_month, color: ParishColors.marianBlueAdaptive, size: 20),
                             ],
                           ),
                         ),
@@ -1171,7 +1259,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      'Tuesdays may be scheduled, but the Parish Priest will approve the appointment first before it is finalized. This booking will be filed as PENDING.',
+                                      'Tuesdays may be scheduled, but Rev. Fr. Roy will approve the appointment first before it is finalized. This booking will be filed as PENDING.',
                                       style: TextStyle(fontSize: 11.5, color: textDarkColor, height: 1.3),
                                     ),
                                   ],
@@ -1183,21 +1271,23 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ],
                       const SizedBox(height: 14),
 
-                      // Time Pickers
+                      // Time Pickers (Locked at 11:00 AM for Community Baptism)
                       Row(
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildFieldLabel('Start Time *'),
+                                _buildFieldLabel(currentPreset?.isCommunityBaptism == true ? 'Start Time (Locked)' : 'Start Time (9AM–5PM) *'),
                                 InkWell(
                                   onTap: () => _pickTime(true),
                                   borderRadius: BorderRadius.circular(10),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
                                     decoration: BoxDecoration(
-                                      color: ParishColors.backgroundLight,
+                                      color: currentPreset?.isCommunityBaptism == true
+                                          ? ParishColors.borderGrey.withOpacity(0.15)
+                                          : ParishColors.backgroundLight,
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(color: hasConflict ? ParishColors.mercyRed : borderGreyColor),
                                     ),
@@ -1205,7 +1295,11 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(_formatTime12Hour(_startTime), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor)),
-                                        const Icon(Icons.access_time, size: 18, color: ParishColors.marianBlue),
+                                        Icon(
+                                          currentPreset?.isCommunityBaptism == true ? Icons.lock_outline : Icons.access_time,
+                                          size: 18,
+                                          color: ParishColors.marianBlueAdaptive,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -1233,7 +1327,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(_formatTime12Hour(_endTime), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor)),
-                                        const Icon(Icons.access_time, size: 18, color: ParishColors.marianBlue),
+                                        Icon(Icons.access_time, size: 18, color: ParishColors.marianBlueAdaptive),
                                       ],
                                     ),
                                   ),
@@ -1316,16 +1410,18 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                           decoration: BoxDecoration(
                             color: ParishColors.oliveGreenSurface,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.3)),
+                            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 16),
-                              SizedBox(width: 6),
+                              const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 16),
+                              const SizedBox(width: 6),
                               Text(
-                                'Time slot is available on the parish schedule.',
-                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                                currentPreset?.isCommunityBaptism == true
+                                    ? 'Community Baptism 11:00 AM slot is open.'
+                                    : 'Time slot is available on the parish schedule.',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                               ),
                             ],
                           ),
@@ -1336,10 +1432,12 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       _buildFieldLabel('Parish Venue *'),
                       DropdownButtonFormField<String>(
                         value: _selectedVenue,
-                        items: _venues.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 13)))).toList(),
+                        isExpanded: true,
+                        items: _venues.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setState(() => _selectedVenue = val);
+                            _saveDraft();
                             _runLiveConflictCheck();
                           }
                         },
@@ -1347,13 +1445,29 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       ),
                       const SizedBox(height: 14),
 
-                      _buildFieldLabel('Presiding Clergy *'),
-                      DropdownButtonFormField<String>(
+                      // Presiding Clergy: Locked to Rev. Fr. Roy for parishioners, selectable for staff
+                      _buildFieldLabel(_isParishioner
+                          ? 'Presiding Clergy (Parish Assigned: Rev. Fr. Roy)'
+                          : 'Presiding Clergy *'),
+                      _isParishioner
+                          ? TextFormField(
+                        initialValue: 'Rev. Fr. Roy (Parish Priest)',
+                        enabled: false,
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDarkColor),
+                        decoration: _inputDecoration(
+                          prefixIcon: Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive),
+                        ).copyWith(
+                          fillColor: ParishColors.borderGrey.withOpacity(0.15),
+                        ),
+                      )
+                          : DropdownButtonFormField<String>(
                         value: _selectedOfficiant,
-                        items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13)))).toList(),
+                        isExpanded: true,
+                        items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setState(() => _selectedOfficiant = val);
+                            _saveDraft();
                             _runLiveConflictCheck();
                           }
                         },
@@ -1383,7 +1497,10 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         maxLength: 250,
                         maxLines: 2,
                         buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) {
+                          setState(() {});
+                          _saveDraft();
+                        },
                         style: const TextStyle(fontSize: 13),
                         decoration: _inputDecoration(hint: 'Special requests, intentions, or notes'),
                       ),
@@ -1465,6 +1582,8 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.8)),
     );
   }
 }

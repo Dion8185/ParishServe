@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
+import '../../../sacramental_records/validators/sacramental_validators.dart';
 import '../../models/mass_intention_model.dart';
 import '../../services/mass_intention_service.dart';
 import 'schedule_appointment_dialog.dart';
@@ -45,6 +48,8 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
   bool _isSubmitting = false;
   String? _errorMessage;
 
+  static const String _draftStorageKey = 'parishserve_draft_mass_intention';
+
   bool get _isParishioner =>
       AuthService.currentUser?.userRole.toLowerCase() == 'user';
 
@@ -58,7 +63,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       _emailController.text = user.email;
       _paymentMethod = 'GCash';
     } else {
-      // Staff default is in-person walk-in cash transaction
       _paymentMethod = 'Cash (Walk-In Desk)';
     }
 
@@ -68,6 +72,88 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
     _thanksgivingControllers.add(TextEditingController());
     _reposeSoulsControllers.add(TextEditingController());
     _specialIntentionsControllers.add(TextEditingController());
+
+    _restoreDraft();
+  }
+
+  // ===========================================================================
+  // Draft Persistence Lifecycle (Auto-save / Restore via SharedPreferences)
+  // ===========================================================================
+
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draftMap = {
+        'requesterName': _requesterNameController.text.trim(),
+        'contact': _contactNumberController.text.trim(),
+        'email': _emailController.text.trim(),
+        'otherIntentions': _otherIntentionsController.text.trim(),
+        'gcashRef': _gcashRefController.text.trim(),
+        'paymentMethod': _paymentMethod,
+        'date': _selectedDate.toIso8601String(),
+        'massTime': _selectedMassTime,
+        'thanksgiving': _extractCleanList(_thanksgivingControllers),
+        'repose': _extractCleanList(_reposeSoulsControllers),
+        'special': _extractCleanList(_specialIntentionsControllers),
+      };
+      await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
+    } catch (_) {}
+  }
+
+  Future<void> _restoreDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_draftStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            if (!_isParishioner && map['requesterName'] != null && (map['requesterName'] as String).isNotEmpty) {
+              _requesterNameController.text = map['requesterName'];
+            }
+            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
+              _contactNumberController.text = map['contact'];
+            }
+            if (!_isParishioner && map['email'] != null && (map['email'] as String).isNotEmpty) {
+              _emailController.text = map['email'];
+            }
+            if (map['otherIntentions'] != null) _otherIntentionsController.text = map['otherIntentions'];
+            if (map['gcashRef'] != null) _gcashRefController.text = map['gcashRef'];
+
+            // Restore Thanksgiving items
+            if (map['thanksgiving'] is List && (map['thanksgiving'] as List).isNotEmpty) {
+              _thanksgivingControllers.clear();
+              for (var name in (map['thanksgiving'] as List)) {
+                _thanksgivingControllers.add(TextEditingController(text: name.toString()));
+              }
+            }
+
+            // Restore Repose of Souls items
+            if (map['repose'] is List && (map['repose'] as List).isNotEmpty) {
+              _reposeSoulsControllers.clear();
+              for (var name in (map['repose'] as List)) {
+                _reposeSoulsControllers.add(TextEditingController(text: name.toString()));
+              }
+            }
+
+            // Restore Special Intentions items
+            if (map['special'] is List && (map['special'] as List).isNotEmpty) {
+              _specialIntentionsControllers.clear();
+              for (var name in (map['special'] as List)) {
+                _specialIntentionsControllers.add(TextEditingController(text: name.toString()));
+              }
+            }
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _clearDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftStorageKey);
+    } catch (_) {}
   }
 
   DateTime _getNextValidMassDate() {
@@ -112,6 +198,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       setState(() {
         list.add(TextEditingController());
       });
+      _saveDraft();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -128,6 +215,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       list[index].dispose();
       list.removeAt(index);
     });
+    _saveDraft();
   }
 
   List<String> _extractCleanList(List<TextEditingController> list) {
@@ -159,6 +247,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
         _selectedDate = picked;
         _updateMassTimeForDate(picked);
       });
+      _saveDraft();
     }
   }
 
@@ -187,6 +276,11 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       return;
     }
 
+    if (_paymentMethod == 'GCash' && _gcashRefController.text.trim().isEmpty && _isParishioner) {
+      setState(() => _errorMessage = 'Please enter your GCash Reference Number.');
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
     try {
@@ -207,6 +301,9 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
         paymentMethod: _paymentMethod,
         gcashReferenceNo: _paymentMethod == 'GCash' ? _gcashRefController.text.trim() : 'WALK-IN-CASH-STIPEND',
       );
+
+      // Clear draft on successful submission
+      await _clearDraft();
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -229,10 +326,11 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: ParishColors.cardWhite,
         title: Row(
           children: [
             const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 26),
-            SizedBox(width: 10),
+            const SizedBox(width: 10),
             Text(isStaff ? 'Walk-In Intention Encoded!' : 'Mass Intention Filed!',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           ],
@@ -243,7 +341,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
           children: [
             Text(
               isStaff
-                  ? 'The walk-in Mass intention (${item.intentionId}) has been registered and linked to cash receipting:'
+                  ? 'The walk-in Mass intention (${item.intentionId}) has been registered and recorded in the liturgical book:'
                   : 'Your mass intention request (${item.intentionId}) has been submitted for liturgical celebration on:',
               style: TextStyle(fontSize: 13.5, color: ParishColors.textDark),
             ),
@@ -261,13 +359,8 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                 children: [
                   Text('Date: ${item.formattedDate}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   Text('Time: ${item.formattedTime12Hour}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue)),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlueAdaptive)),
                   Text('Total Intentions: ${item.totalIntentionsCount} names', style: const TextStyle(fontSize: 12)),
-                  if (isStaff) ...[
-                    const SizedBox(height: 4),
-                    const Text('Transaction: Linked to #REC-2026-00894 (Cash Walk-in)',
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
-                  ],
                 ],
               ),
             ),
@@ -318,8 +411,8 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: ParishColors.marianBlue,
+                    decoration: BoxDecoration(
+                      color: ParishColors.marianBlueAdaptive,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.volunteer_activism, color: Colors.white, size: 20),
@@ -371,15 +464,14 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                         ),
                       ],
 
-                      // Service Type (Locked on Mass Intention)
                       _buildFieldLabel('Service Type (Locked)'),
                       TextFormField(
                         initialValue: 'Mass Intention',
                         enabled: false,
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDarkColor),
                         decoration: _inputDecoration().copyWith(
-                          prefixIcon: const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue),
-                          fillColor: ParishColors.borderGrey.withValues(alpha: 0.15),
+                          prefixIcon: Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive),
+                          fillColor: ParishColors.borderGrey.withOpacity(0.15),
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -389,12 +481,15 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                       TextFormField(
                         controller: _requesterNameController,
                         enabled: !_isParishioner,
+                        maxLength: 100,
+                        buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                         inputFormatters: [TitleCaseInputFormatter()],
-                        validator: (v) => (v?.trim().isEmpty ?? true) ? 'Requester name is required' : null,
+                        validator: (v) => SacramentalValidators.validateName(v, 'Requester name', isRequired: true),
+                        onChanged: (_) => _saveDraft(),
                         style: TextStyle(fontSize: 14, color: _isParishioner ? textMutedColor : textDarkColor),
                         decoration: _inputDecoration(
                           hint: 'First Name and Last Name',
-                          prefixIcon: _isParishioner ? const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue) : null,
+                          prefixIcon: _isParishioner ? Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive) : null,
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -409,17 +504,14 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                                 TextFormField(
                                   controller: _contactNumberController,
                                   keyboardType: TextInputType.phone,
+                                  maxLength: 13,
+                                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                                   inputFormatters: [
                                     FilteringTextInputFormatter.digitsOnly,
                                     PhilippinePhoneInputFormatter(),
                                   ],
-                                  validator: (v) {
-                                    final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                                    if (digits.length != 11 || !digits.startsWith('09')) {
-                                      return 'Format: 09XX-XXX-XXXX';
-                                    }
-                                    return null;
-                                  },
+                                  validator: SacramentalValidators.validatePhoneNumber,
+                                  onChanged: (_) => _saveDraft(),
                                   style: const TextStyle(fontSize: 14),
                                   decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
                                 ),
@@ -435,7 +527,10 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                                 TextFormField(
                                   controller: _emailController,
                                   enabled: !_isParishioner,
+                                  maxLength: 100,
+                                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                                   keyboardType: TextInputType.emailAddress,
+                                  onChanged: (_) => _saveDraft(),
                                   validator: (v) {
                                     final text = (v ?? '').trim();
                                     if (_isParishioner && text.isEmpty) return 'Required';
@@ -471,7 +566,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                                 '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')} (${_getDayName(_selectedDate.weekday)})',
                                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDarkColor),
                               ),
-                              const Icon(Icons.calendar_month, color: ParishColors.marianBlue, size: 20),
+                              Icon(Icons.calendar_month, color: ParishColors.marianBlueAdaptive, size: 20),
                             ],
                           ),
                         ),
@@ -483,12 +578,16 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                       if (isSunday)
                         DropdownButtonFormField<String>(
                           value: _selectedMassTime,
+                          isExpanded: true,
                           items: const [
-                            DropdownMenuItem(value: '08:00:00', child: Text('8:00 AM (Sunday Morning Mass)', style: TextStyle(fontSize: 13.5))),
-                            DropdownMenuItem(value: '16:00:00', child: Text('4:00 PM (Sunday Afternoon Mass)', style: TextStyle(fontSize: 13.5))),
+                            DropdownMenuItem(value: '08:00:00', child: Text('8:00 AM (Sunday Morning Mass)', style: TextStyle(fontSize: 13.5), overflow: TextOverflow.ellipsis)),
+                            DropdownMenuItem(value: '16:00:00', child: Text('4:00 PM (Sunday Afternoon Mass)', style: TextStyle(fontSize: 13.5), overflow: TextOverflow.ellipsis)),
                           ],
                           onChanged: (val) {
-                            if (val != null) setState(() => _selectedMassTime = val);
+                            if (val != null) {
+                              setState(() => _selectedMassTime = val);
+                              _saveDraft();
+                            }
                           },
                           decoration: _inputDecoration(),
                         )
@@ -498,8 +597,8 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                           enabled: false,
                           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDarkColor),
                           decoration: _inputDecoration().copyWith(
-                            prefixIcon: const Icon(Icons.access_time, size: 18, color: ParishColors.marianBlue),
-                            fillColor: ParishColors.borderGrey.withValues(alpha: 0.15),
+                            prefixIcon: Icon(Icons.access_time, size: 18, color: ParishColors.marianBlueAdaptive),
+                            fillColor: ParishColors.borderGrey.withOpacity(0.15),
                           ),
                         ),
                       const SizedBox(height: 20),
@@ -515,7 +614,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                         title: '1. Thanksgiving (Pasasalamat)',
                         subtitle: 'Birthdays, anniversaries, blessings received, recoveries',
                         icon: Icons.celebration,
-                        color: ParishColors.marianBlue,
+                        color: ParishColors.marianBlueAdaptive,
                         controllers: _thanksgivingControllers,
                         hintText: 'e.g. For the gift of life of Maria Santos',
                       ),
@@ -560,7 +659,10 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                         maxLength: 150,
                         maxLines: 2,
                         buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) {
+                          setState(() {});
+                          _saveDraft();
+                        },
                         style: const TextStyle(fontSize: 13),
                         decoration: _inputDecoration(hint: 'Other specific intentions (Max 150 characters)'),
                       ),
@@ -568,8 +670,8 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
 
                       const Divider(height: 24),
 
-                      // Payment & Receipt Module Linkage
-                      Text(isStaff ? 'Cashiering & Receipt Linkage' : 'Mass Offering & Payment',
+                      // Payment & Offering Details
+                      Text(isStaff ? 'Offering Mode & Stipend' : 'Mass Offering & Payment',
                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDarkColor)),
                       const SizedBox(height: 12),
 
@@ -577,9 +679,9 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF0FDF4),
+                          color: ParishColors.oliveGreenSurface,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.4), width: 1.2),
+                          border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4), width: 1.2),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -592,7 +694,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                                     Icon(isStaff ? Icons.point_of_sale : Icons.qr_code_2,
                                         color: ParishColors.oliveGreen, size: 26),
                                     const SizedBox(width: 8),
-                                    Text(isStaff ? 'Desk Cash Intake' : 'Parish Official GCash QR',
+                                    Text(isStaff ? 'Desk Offering Intake' : 'Parish Official GCash QR',
                                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.oliveGreen)),
                                   ],
                                 ),
@@ -614,34 +716,18 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                               const SizedBox(height: 6),
                               DropdownButtonFormField<String>(
                                 value: _paymentMethod,
+                                isExpanded: true,
                                 items: const [
-                                  DropdownMenuItem(value: 'Cash (Walk-In Desk)', child: Text('Cash (Walk-In at Secretariat Desk)', style: TextStyle(fontSize: 13))),
-                                  DropdownMenuItem(value: 'GCash', child: Text('GCash Direct Transfer', style: TextStyle(fontSize: 13))),
+                                  DropdownMenuItem(value: 'Cash (Walk-In Desk)', child: Text('Cash (Walk-In at Secretariat Desk)', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                                  DropdownMenuItem(value: 'GCash', child: Text('GCash Direct Transfer', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
                                 ],
                                 onChanged: (val) {
-                                  if (val != null) setState(() => _paymentMethod = val);
+                                  if (val != null) {
+                                    setState(() => _paymentMethod = val);
+                                    _saveDraft();
+                                  }
                                 },
                                 decoration: _inputDecoration(),
-                              ),
-                              const SizedBox(height: 10),
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: ParishColors.marianBlueSurface,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(Icons.receipt_long, size: 18, color: ParishColors.marianBlue),
-                                    SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Auto-Receipt: This walk-in intention will be recorded under Receipt #REC-2026-00894 in Receipt Management.',
-                                        style: TextStyle(fontSize: 11.5, color: ParishColors.marianBlue, fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ),
                             ] else ...[
                               Center(
@@ -670,10 +756,13 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              _buildFieldLabel('GCash Reference Number (Optional for now)'),
+                              _buildFieldLabel('GCash Reference Number *'),
                               TextFormField(
                                 controller: _gcashRefController,
+                                maxLength: 50,
+                                buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                                 style: const TextStyle(fontSize: 13),
+                                onChanged: (_) => _saveDraft(),
                                 decoration: _inputDecoration(
                                   hint: 'e.g. 1002 9847 1120',
                                   prefixIcon: const Icon(Icons.receipt_long, size: 18, color: ParishColors.oliveGreen),
@@ -767,7 +856,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
                 child: Text('${controllers.length}/10', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color)),
               ),
             ],
@@ -784,7 +873,12 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                   Expanded(
                     child: TextFormField(
                       controller: ctrl,
-                      onChanged: (_) => setState(() {}),
+                      maxLength: 100,
+                      buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                      onChanged: (_) {
+                        setState(() {});
+                        _saveDraft();
+                      },
                       style: const TextStyle(fontSize: 13),
                       decoration: _inputDecoration(hint: '$hintText #${idx + 1}'),
                     ),
@@ -848,10 +942,12 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       hintText: hint,
       prefixIcon: prefixIcon,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: ParishColors.backgroundLight,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.8)),
     );
   }
 }

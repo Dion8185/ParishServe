@@ -4,9 +4,11 @@ import '../../../../core/constants/colors.dart';
 import '../../../appointments/models/appointment_model.dart';
 import '../../../appointments/models/liturgical_event_model.dart';
 import '../../../appointments/presentation/dialogs/appointment_detail_dialog.dart';
+import '../../../appointments/presentation/dialogs/parishioner_appointment_detail_dialog.dart';
 import '../../../appointments/presentation/dialogs/schedule_appointment_dialog.dart';
 import '../../../appointments/services/appointment_service.dart';
 import '../../../appointments/services/liturgical_calendar_service.dart';
+import '../../../auth/services/auth_service.dart';
 
 enum CalendarViewMode { month, week, day }
 
@@ -31,11 +33,14 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   static const Color colorPhilippineSpecific = Color(0xFF2563EB); // BLUE: Philippine Proper Feasts
   static const Color colorAppointments = Color(0xFFF59E0B);       // AMBER: Appointments
 
-  final List<String> _categories = [
+  bool get _isParishioner =>
+      AuthService.currentUser?.userRole.toLowerCase() == 'user';
+
+  List<String> get _categories => [
     'All',
     'Global Liturgical',
     'Philippine Proper',
-    'Appointments',
+    _isParishioner ? 'My Bookings' : 'Appointments',
   ];
 
   @override
@@ -51,7 +56,15 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     });
 
     try {
-      final appointmentsData = await AppointmentService.getAppointments();
+      List<AppointmentModel> appointmentsData;
+
+      // RBAC PRIVACY ISOLATION: Parishioners only fetch their own bookings
+      if (_isParishioner) {
+        appointmentsData = await AppointmentService.getMyAppointments();
+      } else {
+        appointmentsData = await AppointmentService.getAppointments();
+      }
+
       await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
 
       if (!mounted) return;
@@ -81,7 +94,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
   List<LiturgicalEvent> _liturgicalFeastsForDate(DateTime date) {
     final allFeasts = LiturgicalCalendarService.getCelebrationsForDateSync(date);
-    if (_selectedCategory == 'Appointments') {
+    if (_selectedCategory == 'Appointments' || _selectedCategory == 'My Bookings') {
       return [];
     }
     if (_selectedCategory == 'Global Liturgical') {
@@ -109,6 +122,23 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     });
   }
 
+  void _openAppointmentDetail(AppointmentModel apt) {
+    // RBAC MODAL ROUTING: Parishioners open personal modal; Staff open administrative approval modal
+    if (_isParishioner) {
+      showParishionerAppointmentDetailModal(
+        context,
+        appointment: apt,
+        onStatusUpdated: _loadData,
+      );
+    } else {
+      showAppointmentDetailModal(
+        context,
+        appointment: apt,
+        onStatusUpdated: _loadData,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final textColorDark = ParishColors.textDark;
@@ -125,25 +155,27 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             backgroundColor: ParishColors.cardWhite,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+              icon: Icon(Icons.arrow_back, color: ParishColors.marianBlueAdaptive, size: 26),
               onPressed: () => Navigator.pop(context),
             ),
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Parish Master Calendar',
+                  _isParishioner ? 'My Parish Calendar' : 'Parish Master Calendar',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColorDark),
                 ),
                 Text(
-                  'Diocese of San Pablo • Liturgical & Appointment Engine',
+                  _isParishioner
+                      ? 'Your Booked Sacraments & Catholic Liturgical Feasts'
+                      : 'Diocese of San Pablo • Liturgical & Appointment Engine',
                   style: TextStyle(fontSize: 12, color: textColorMuted),
                 ),
               ],
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.refresh, color: ParishColors.marianBlue),
+                icon: Icon(Icons.refresh, color: ParishColors.marianBlueAdaptive),
                 onPressed: _loadData,
                 tooltip: 'Sync Liturgy & Appointments',
               ),
@@ -152,7 +184,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 child: TextButton.icon(
                   style: TextButton.styleFrom(
                     backgroundColor: ParishColors.marianBlueSurface,
-                    foregroundColor: ParishColors.marianBlue,
+                    foregroundColor: ParishColors.marianBlueAdaptive,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   onPressed: () {
@@ -184,7 +216,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                   padding: const EdgeInsets.all(12),
                   color: ParishColors.mercyRedSurface,
                   child: Text(
-                    'Supabase Sync Error: $_errorMessage',
+                    'Sync Notice: $_errorMessage',
                     style: const TextStyle(fontSize: 12, color: ParishColors.mercyRed, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -197,7 +229,10 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             backgroundColor: ParishColors.marianBlue,
             foregroundColor: Colors.white,
             icon: const Icon(Icons.add),
-            label: const Text('Schedule Service', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: Text(
+              _isParishioner ? 'Request Service' : 'Schedule Service',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             onPressed: () => showScheduleAppointmentModal(
               context,
               initialDate: _selectedDate.weekday == DateTime.monday ? null : _selectedDate,
@@ -244,17 +279,17 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.chevron_left, size: 28, color: ParishColors.marianBlue),
+                icon: Icon(Icons.chevron_left, size: 28, color: ParishColors.marianBlueAdaptive),
                 onPressed: () => _navigateDate(-1),
               ),
               const SizedBox(width: 8),
               Text(
                 _getDateHeaderTitle(),
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
               ),
               const SizedBox(width: 8),
               IconButton(
-                icon: const Icon(Icons.chevron_right, size: 28, color: ParishColors.marianBlue),
+                icon: Icon(Icons.chevron_right, size: 28, color: ParishColors.marianBlueAdaptive),
                 onPressed: () => _navigateDate(1),
               ),
             ],
@@ -283,15 +318,15 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: const Icon(Icons.chevron_left, size: 28, color: ParishColors.marianBlue),
+                icon: Icon(Icons.chevron_left, size: 28, color: ParishColors.marianBlueAdaptive),
                 onPressed: () => _navigateDate(-1),
               ),
               Text(
                 _getDateHeaderTitle(),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
               ),
               IconButton(
-                icon: const Icon(Icons.chevron_right, size: 28, color: ParishColors.marianBlue),
+                icon: Icon(Icons.chevron_right, size: 28, color: ParishColors.marianBlueAdaptive),
                 onPressed: () => _navigateDate(1),
               ),
             ],
@@ -375,16 +410,16 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     selected: isSelected,
                     selectedColor: ParishColors.marianBlueSurface,
                     backgroundColor: ParishColors.backgroundLight,
-                    checkmarkColor: ParishColors.marianBlue,
+                    checkmarkColor: ParishColors.marianBlueAdaptive,
                     labelStyle: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
-                      color: isSelected ? ParishColors.marianBlue : ParishColors.textMuted,
+                      color: isSelected ? ParishColors.marianBlueAdaptive : ParishColors.textMuted,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                       side: BorderSide(
-                        color: isSelected ? ParishColors.marianBlue : ParishColors.borderGrey,
+                        color: isSelected ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
                       ),
                     ),
                     onSelected: (_) => setState(() => _selectedCategory = cat),
@@ -398,11 +433,11 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildLegendItem(colorGlobalLiturgical, 'Global Liturgical'),
+              _buildLegendItem(colorGlobalLiturgical, 'Global Feasts'),
               const SizedBox(width: 12),
               _buildLegendItem(colorPhilippineSpecific, 'Philippine Proper'),
               const SizedBox(width: 12),
-              _buildLegendItem(colorAppointments, 'Bookings'),
+              _buildLegendItem(colorAppointments, _isParishioner ? 'My Bookings' : 'Bookings'),
               const SizedBox(width: 12),
               _buildLegendItem(const Color(0xFF94A3B8), 'Monday Rest', isGray: true),
             ],
@@ -449,7 +484,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 1. DESKTOP MONTH VIEW: Side-by-Side Split Screen (Grid on Left, Details on Right)
+  // 1. DESKTOP MONTH VIEW: Side-by-Side Split Screen
   // ===========================================================================
   Widget _buildDesktopSplitMonthView() {
     final selectedDayEvents = _appointmentsForDate(_selectedDate);
@@ -560,7 +595,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
                     const SizedBox(height: 8),
                     Text(
-                      'Pastoral Ceremonies & Appointments',
+                      _isParishioner ? 'My Scheduled Appointments' : 'Pastoral Ceremonies & Appointments',
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                     ),
                     const SizedBox(height: 10),
@@ -621,7 +656,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Appointments on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
+                _isParishioner
+                    ? 'My Bookings on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}'
+                    : 'Appointments on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark),
               ),
               Container(
@@ -668,7 +705,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 12.5,
-                color: isMonday ? const Color(0xFF94A3B8) : ParishColors.marianBlue,
+                color: isMonday ? const Color(0xFF94A3B8) : ParishColors.marianBlueAdaptive,
               ),
             ),
           );
@@ -717,7 +754,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           Color borderColor = ParishColors.borderGrey.withOpacity(0.4);
 
           if (isMonday) {
-            cellBackground = const Color(0xFFF1F5F9);
+            cellBackground = ParishColors.backgroundLight;
           } else if (isSelected) {
             cellBackground = ParishColors.marianBlue;
             borderColor = ParishColors.marianBlue;
@@ -831,7 +868,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                               fontWeight: FontWeight.bold,
                               color: isSelected
                                   ? Colors.white
-                                  : (isMonday ? const Color(0xFF64748B) : ParishColors.marianBlue),
+                                  : (isMonday ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive),
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -880,33 +917,36 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                             Padding(
                               padding: const EdgeInsets.only(top: 12.0),
                               child: Text(
-                                isMonday ? 'Rest Day' : 'Open',
+                                isMonday ? 'Rest Day' : (_isParishioner ? 'No Bookings' : 'Open'),
                                 style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
                               ),
                             )
                           else
-                            ...dayAppointments.map((a) => Container(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: colorAppointments.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: colorAppointments.withOpacity(0.5)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    a.requestedTime.length >= 5 ? a.requestedTime.substring(0, 5) : a.requestedTime,
-                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: colorAppointments),
-                                  ),
-                                  Text(
-                                    a.serviceType,
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
+                            ...dayAppointments.map((a) => InkWell(
+                              onTap: () => _openAppointmentDetail(a),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: colorAppointments.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: colorAppointments.withOpacity(0.5)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      a.requestedTime.length >= 5 ? a.requestedTime.substring(0, 5) : a.requestedTime,
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: colorAppointments),
+                                    ),
+                                    Text(
+                                      a.serviceType,
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
                               ),
                             )),
                         ],
@@ -967,7 +1007,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
-                            color: isMonday ? const Color(0xFF64748B) : ParishColors.marianBlue,
+                            color: isMonday ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1044,14 +1084,14 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 3. DAY VIEW (Desktop 2-Column Split, Mobile Stack)
+  // 3. DAY VIEW: Desktop 2-Column Split, Mobile Stack
   // ===========================================================================
   Widget _buildDayView(bool isDesktop) {
     final isMonday = _selectedDate.weekday == DateTime.monday;
     final isTuesday = _selectedDate.weekday == DateTime.tuesday;
     final dayAppointments = _appointmentsForDate(_selectedDate);
     final dayFeasts = _liturgicalFeastsForDate(_selectedDate);
-    final hours = [6, 8, 10, 12, 14, 16, 18];
+    final hours = [9, 11, 13, 15, 17]; // Formatted within 9:00 AM – 5:00 PM operating window
 
     if (isDesktop) {
       return Padding(
@@ -1245,7 +1285,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Appointments booked on Tuesdays are recorded as PENDING until approved by the Parish Priest.',
+                  'Appointments booked on Tuesdays are recorded as PENDING until approved by Rev. Fr. Roy.',
                   style: TextStyle(fontSize: 11.5, color: ParishColors.textDark),
                 ),
               ],
@@ -1330,11 +1370,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
   Widget _buildAppointmentCard(AppointmentModel apt) {
     return InkWell(
-      onTap: () => showAppointmentDetailModal(
-        context,
-        appointment: apt,
-        onStatusUpdated: _loadData,
-      ),
+      onTap: () => _openAppointmentDetail(apt),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -1430,18 +1466,18 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           Icon(
             isMonday ? Icons.lock_clock : Icons.event_available,
             size: 36,
-            color: isMonday ? const Color(0xFF64748B) : ParishColors.marianBlue,
+            color: isMonday ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive,
           ),
           const SizedBox(height: 8),
           Text(
-            isMonday ? 'Pastoral Rest Day' : 'No Appointments Booked',
+            isMonday ? 'Pastoral Rest Day' : (_isParishioner ? 'No Personal Bookings Today' : 'No Appointments Booked'),
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
             isMonday
                 ? 'The Parish Office is closed on Mondays.'
-                : 'This day is open on the parish calendar.',
+                : 'This day is open for bookings within 9:00 AM – 5:00 PM.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
           ),
@@ -1459,7 +1495,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 onAppointmentSaved: _loadData,
               ),
               icon: const Icon(Icons.add, size: 16),
-              label: const Text('Book This Day'),
+              label: Text(_isParishioner ? 'Request This Date' : 'Book This Day'),
             ),
           ],
         ],

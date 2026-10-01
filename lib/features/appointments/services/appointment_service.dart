@@ -8,6 +8,10 @@ import 'liturgical_calendar_service.dart';
 class AppointmentService {
   static final SupabaseClient _client = Supabase.instance.client;
 
+  /// Operating Hours Constraints: 9:00 AM (540 min) to 5:00 PM (1020 min)
+  static const int operatingDayStartMin = 540; // 09:00 AM
+  static const int operatingDayEndMin = 1020;  // 05:00 PM
+
   /// Converts time strings ("10:00:00", "10:00") to minutes from midnight (0–1439)
   static int _timeToMinutes(String timeStr) {
     try {
@@ -44,9 +48,16 @@ class AppointmentService {
     return TimeOfDay(hour: h, minute: m);
   }
 
-  /// Fetch all appointments ordered by scheduled date and time
-  static Future<List<AppointmentModel>> getAppointments({String? statusFilter}) async {
+  /// Fetch all appointments subject to role constraints (or filtered by specific user)
+  static Future<List<AppointmentModel>> getAppointments({
+    String? statusFilter,
+    String? userIdFilter,
+  }) async {
     var query = _client.from('appointments').select();
+
+    if (userIdFilter != null && userIdFilter.trim().isNotEmpty) {
+      query = query.eq('created_by', userIdFilter.trim());
+    }
 
     if (statusFilter != null && statusFilter.toLowerCase() != 'all') {
       query = query.eq('appointment_status', statusFilter.toLowerCase());
@@ -59,6 +70,14 @@ class AppointmentService {
     return (response as List)
         .map((row) => AppointmentModel.fromMap(row as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Fetch appointments belonging exclusively to the currently authenticated user
+  static Future<List<AppointmentModel>> getMyAppointments() async {
+    final user = AuthService.currentUser;
+    if (user == null) return [];
+
+    return getAppointments(userIdFilter: user.userId);
   }
 
   /// Uploads valid ID document bytes to private Supabase Storage bucket
@@ -105,7 +124,7 @@ class AppointmentService {
 
       final signedUrl = await _client.storage
           .from('appointment-documents')
-          .createSignedUrl(cleanPath, 60 * 60); // 1 hour validity
+          .createSignedUrl(cleanPath, 60 * 60);
 
       return signedUrl;
     } catch (e) {
@@ -127,10 +146,11 @@ class AppointmentService {
   static Future<String?> checkDuplicateRequester({
     required String requesterName,
     required String date,
+    String? serviceType,
     String? excludeAppointmentId,
   }) async {
     final cleanName = requesterName.trim().toLowerCase();
-    if (cleanName.length < 4) return null;
+    if (cleanName.length < 3) return null;
 
     final parsedDate = DateTime.tryParse(date);
     final cleanDate = parsedDate != null
@@ -150,11 +170,19 @@ class AppointmentService {
     final bookings = await query;
     for (final b in bookings) {
       final existingName = b['requester_name'].toString().trim().toLowerCase();
+      final existingService = b['service_type'].toString().trim();
+
       if (existingName == cleanName) {
-        final service = b['service_type'];
         final time =
             '${formatTime12Hour(b['requested_time'].toString())} – ${formatTime12Hour(b['end_time'].toString())}';
-        return 'Duplicate Booking Notice: "$requesterName" already has an active booking for "$service" on this date ($time).';
+
+        if (serviceType != null &&
+            serviceType.toLowerCase().contains('baptism') &&
+            existingService.toLowerCase().contains('baptism')) {
+          return 'Duplicate Baptism Booking: You already have a Community Baptism booked for this date ($time). A requester may only book one slot per date.';
+        }
+
+        return 'Duplicate Booking Notice: "$requesterName" already has an active booking for "$existingService" on this date ($time).';
       }
     }
     return null;
@@ -167,6 +195,7 @@ class AppointmentService {
     required String endTime,    // HH:mm:ss
     required String venue,
     required String officiant,
+    String? serviceType,
     String? excludeAppointmentId,
   }) async {
     try {
@@ -176,6 +205,7 @@ class AppointmentService {
         endTime: endTime,
         venue: venue,
         officiant: officiant,
+        serviceType: serviceType,
         excludeAppointmentId: excludeAppointmentId,
       );
       return null;
@@ -184,13 +214,14 @@ class AppointmentService {
     }
   }
 
-  /// Finds the earliest non-conflicting time slot for a given day and service duration
+  /// Finds the earliest non-conflicting time slot for a given day within 9:00 AM – 5:00 PM
   static Future<Map<String, TimeOfDay>?> findNextAvailableSlot({
     required String date,
     required int durationMinutes,
     required String venue,
     required String officiant,
     required TimeOfDay preferredStartTime,
+    String? serviceType,
     String? excludeAppointmentId,
   }) async {
     final parsedDate = DateTime.tryParse(date);
@@ -201,12 +232,20 @@ class AppointmentService {
       return null;
     }
 
+    // Community Baptism is strictly locked to 11:00 AM on Weekends
+    if (serviceType != null && serviceType.toLowerCase().contains('community baptism')) {
+      return {
+        'start': const TimeOfDay(hour: 11, minute: 0),
+        'end': const TimeOfDay(hour: 12, minute: 0),
+      };
+    }
+
     final cleanDate =
         '${parsedDate.year}-${parsedDate.month.toString().padLeft(2, '0')}-${parsedDate.day.toString().padLeft(2, '0')}';
 
     var query = _client
         .from('appointments')
-        .select('appointment_id, requested_time, end_time')
+        .select('appointment_id, service_type, requested_time, end_time')
         .eq('requested_date', cleanDate)
         .neq('appointment_status', 'cancelled');
 
@@ -218,6 +257,10 @@ class AppointmentService {
     final List<Map<String, int>> bookedIntervals = [];
 
     for (final b in activeBookings) {
+      final sType = (b['service_type'] ?? '').toString().toLowerCase();
+      // Ignore other community baptisms since they are batched
+      if (sType.contains('community baptism')) continue;
+
       bookedIntervals.add({
         'start': _timeToMinutes(b['requested_time'].toString()),
         'end': _timeToMinutes(b['end_time'].toString()),
@@ -226,22 +269,19 @@ class AppointmentService {
 
     bookedIntervals.sort((a, b) => a['start']!.compareTo(b['start']!));
 
-    const int dayStartMin = 360;  // 06:00 AM
-    const int dayEndMin = 1140;   // 07:00 PM
-
     int candidateStart = preferredStartTime.hour * 60 + preferredStartTime.minute;
-    if (candidateStart < dayStartMin) candidateStart = dayStartMin;
+    if (candidateStart < operatingDayStartMin) candidateStart = operatingDayStartMin;
 
     Map<String, TimeOfDay>? slot = _scanForFreeSlot(
       candidateStart: candidateStart,
-      limitMin: dayEndMin,
+      limitMin: operatingDayEndMin,
       durationMinutes: durationMinutes,
       bookedIntervals: bookedIntervals,
     );
 
-    if (slot == null && candidateStart > dayStartMin) {
+    if (slot == null && candidateStart > operatingDayStartMin) {
       slot = _scanForFreeSlot(
-        candidateStart: dayStartMin,
+        candidateStart: operatingDayStartMin,
         limitMin: candidateStart,
         durationMinutes: durationMinutes,
         bookedIntervals: bookedIntervals,
@@ -282,20 +322,21 @@ class AppointmentService {
     return null;
   }
 
-  /// Automated Conflict Checking, Operating Hours & Liturgical Law Engine
+  /// Automated Conflict Checking, Operating Hours (9 AM – 5 PM), and Batch Baptism Logic
   static Future<void> checkScheduleConflict({
     required String date,       // YYYY-MM-DD
     required String startTime,  // HH:mm:ss
     required String endTime,    // HH:mm:ss
     required String venue,
     required String officiant,
+    String? serviceType,
     String? excludeAppointmentId,
   }) async {
     final parsedDate = DateTime.tryParse(date);
     if (parsedDate != null) {
       // 1. Mondays are strictly forbidden (Clergy Rest Day)
       if (parsedDate.weekday == DateTime.monday) {
-        throw 'Paramount Rule Violation: Mondays are designated Clergy Rest Days and Parish Office closure. No services can be scheduled on Mondays.';
+        throw 'Paramount Rule Violation: Mondays are designated Clergy Rest Days and Parish Office closure. No appointments can be scheduled on Mondays.';
       }
 
       // 2. Liturgical Law Prohibition
@@ -307,12 +348,27 @@ class AppointmentService {
       }
     }
 
-    // 3. Operating Hours: 06:00 AM to 07:00 PM
     final newStartMinutes = _timeToMinutes(startTime);
     final newEndMinutes = _timeToMinutes(endTime);
+    final bool isCommunityBaptism = serviceType != null &&
+        serviceType.toLowerCase().contains('community baptism');
 
-    if (newStartMinutes < 360 || newEndMinutes > 1140) {
-      throw 'Outside Operating Hours: Parish services must be scheduled between 6:00 AM and 7:00 PM.';
+    // 3. Operating Hours Enforcement:
+    // Community Baptism is strictly locked at 11:00 AM on Weekends
+    if (isCommunityBaptism) {
+      if (parsedDate != null &&
+          parsedDate.weekday != DateTime.saturday &&
+          parsedDate.weekday != DateTime.sunday) {
+        throw 'Schedule Restriction: Community Baptisms are strictly held on Weekends (Saturday & Sunday).';
+      }
+      if (!startTime.startsWith('11:00')) {
+        throw 'Schedule Restriction: Community Baptisms are strictly scheduled starting at 11:00 AM.';
+      }
+    } else {
+      // All other sacramental services must fall within 9:00 AM to 5:00 PM
+      if (newStartMinutes < operatingDayStartMin || newEndMinutes > operatingDayEndMin) {
+        throw 'Outside Parish Office Operating Hours: Parish services must be scheduled between 9:00 AM and 5:00 PM.';
+      }
     }
 
     final cleanDate = parsedDate != null
@@ -336,8 +392,8 @@ class AppointmentService {
       final existingEndStr = booking['end_time'].toString();
       final existingVenue = booking['venue'].toString();
       final existingOfficiant = booking['officiant_name'].toString();
-      final service = booking['service_type'].toString();
-      final requester = booking['requester_name'].toString();
+      final existingService = booking['service_type'].toString();
+      final existingRequester = booking['requester_name'].toString();
 
       final existingStartMinutes = _timeToMinutes(existingStartStr);
       final existingEndMinutes = _timeToMinutes(existingEndStr);
@@ -346,25 +402,33 @@ class AppointmentService {
           (newEndMinutes > existingStartMinutes);
 
       if (isOverlapping) {
+        final bool existingIsCommunityBaptism =
+        existingService.toLowerCase().contains('community baptism');
+
+        // BAPTISM BATCH ALLOWANCE: If both are community baptisms at 11:00 AM, allow same time & venue
+        if (isCommunityBaptism && existingIsCommunityBaptism) {
+          continue; // Allowed: Batch baptism ceremony
+        }
+
         final formattedExistStart = formatTime12Hour(existingStartStr);
         final formattedExistEnd = formatTime12Hour(existingEndStr);
         final formattedNewStart = formatTime12Hour(startTime);
         final formattedNewEnd = formatTime12Hour(endTime);
 
         if (existingVenue.toLowerCase() == venue.toLowerCase()) {
-          throw 'Schedule Conflict: Venue "$venue" is already booked for "$service" ($requester) from $formattedExistStart to $formattedExistEnd. Your requested window ($formattedNewStart – $formattedNewEnd) overlaps with it.';
+          throw 'Venue Conflict: Venue "$venue" is already booked for "$existingService" ($existingRequester) from $formattedExistStart to $formattedExistEnd. Your requested window ($formattedNewStart – $formattedNewEnd) overlaps with it.';
         }
 
         if (existingOfficiant.toLowerCase() == officiant.toLowerCase()) {
-          throw 'Clergy Conflict: $officiant is already scheduled to preside over "$service" from $formattedExistStart to $formattedExistEnd. Your requested window ($formattedNewStart – $formattedNewEnd) overlaps with it.';
+          throw 'Clergy Conflict: $officiant is already scheduled to preside over "$existingService" from $formattedExistStart to $formattedExistEnd. Time windows cannot overlap.';
         }
 
-        throw 'Schedule Conflict: An appointment ("$service" - $requester) is already scheduled on this day from $formattedExistStart to $formattedExistEnd. Time windows cannot overlap on the parish schedule.';
+        throw 'Schedule Conflict: An appointment ("$existingService" - $existingRequester) is already scheduled on this day from $formattedExistStart to $formattedExistEnd.';
       }
     }
   }
 
-  /// Dedicated Rescheduling Method with Role-Aware Re-Approval Enforcement
+  /// Rescheduling Method with Role-Aware Re-Approval & Operating Bounds
   static Future<void> rescheduleAppointment({
     required String appointmentId,
     required String newDate,      // YYYY-MM-DD
@@ -373,6 +437,7 @@ class AppointmentService {
     required String venue,
     required String officiant,
     required String reason,
+    String? serviceType,
     String? previousRemarks,
     String? previousDate,
     String? previousTimeRange,
@@ -390,6 +455,7 @@ class AppointmentService {
       endTime: newEndTime,
       venue: venue,
       officiant: officiant,
+      serviceType: serviceType,
       excludeAppointmentId: appointmentId,
     );
 
@@ -418,6 +484,8 @@ class AppointmentService {
       'officiant_name': officiant,
       'appointment_status': targetStatus,
       'appointment_remarks': updatedRemarks,
+      'reminder_24h_sent': false, // Reset reminder flags for new schedule
+      'reminder_12h_sent': false,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('appointment_id', appointmentId);
   }
@@ -449,12 +517,23 @@ class AppointmentService {
       throw 'End Time must be later than Start Time.';
     }
 
+    // Check single person booking limit
+    final duplicateWarning = await checkDuplicateRequester(
+      requesterName: requesterName,
+      date: date,
+      serviceType: serviceType,
+    );
+    if (duplicateWarning != null) {
+      throw duplicateWarning;
+    }
+
     await checkScheduleConflict(
       date: date,
       startTime: startTime,
       endTime: endTime,
       venue: venue,
       officiant: officiant,
+      serviceType: serviceType,
     );
 
     final String? currentUserId = AuthService.currentUser?.userId;
@@ -518,20 +597,33 @@ class AppointmentService {
     throw 'Could not generate a unique booking ID. Please try again.';
   }
 
-  /// Update appointment status + triggers email notification on confirmation + clean up storage on completion
+  /// Update appointment status + triggers email notification only on FIRST transition to confirmed
   static Future<void> updateStatus(String appointmentId, String newStatus) async {
     final cleanStatus = newStatus.toLowerCase();
 
-    // 1. Auto-Purge Storage Cleanup on Completion (RA 10173 compliance)
+    // 1. Fetch current appointment record to inspect prior status
+    final currentRecord = await _client
+        .from('appointments')
+        .select()
+        .eq('appointment_id', appointmentId)
+        .maybeSingle();
+
+    if (currentRecord == null) {
+      throw 'Appointment record not found.';
+    }
+
+    final priorStatus = (currentRecord['appointment_status'] ?? '').toString().toLowerCase();
+
+    // Prevent duplicate re-approval if already confirmed
+    if (priorStatus == 'confirmed' && cleanStatus == 'confirmed') {
+      debugPrint('[AppointmentService] Appointment is already confirmed. Skipping duplicate status update and email dispatch.');
+      return;
+    }
+
+    // 2. Auto-Purge Storage Cleanup on Completion (RA 10173 compliance)
     if (cleanStatus == 'completed') {
       try {
-        final record = await _client
-            .from('appointments')
-            .select('id_document_url')
-            .eq('appointment_id', appointmentId)
-            .maybeSingle();
-
-        final filePath = record?['id_document_url']?.toString();
+        final filePath = currentRecord['id_document_url']?.toString();
         if (filePath != null && filePath.isNotEmpty) {
           await _client.storage.from('appointment-documents').remove([filePath]);
           await _client
@@ -544,29 +636,25 @@ class AppointmentService {
       }
     }
 
-    // 2. Update status in Database
+    // 3. Update status in Database
     await _client.from('appointments').update({
       'appointment_status': cleanStatus,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('appointment_id', appointmentId);
 
-    // 3. Automated Approval Email Trigger via Edge Function
-    if (cleanStatus == 'confirmed') {
+    // 4. Automated Approval Email Trigger via Edge Function (Only when transitioning from pending/rescheduled -> confirmed)
+    if (cleanStatus == 'confirmed' && priorStatus != 'confirmed') {
       try {
-        final record = await _client
-            .from('appointments')
-            .select()
-            .eq('appointment_id', appointmentId)
-            .maybeSingle();
-
-        if (record != null &&
-            record['email'] != null &&
-            record['email'].toString().trim().isNotEmpty) {
-          debugPrint('Dispatching approval confirmation email to: ${record['email']}');
+        if (currentRecord['email'] != null &&
+            currentRecord['email'].toString().trim().isNotEmpty) {
+          debugPrint('Dispatching single approval confirmation email to: ${currentRecord['email']}');
 
           await _client.functions.invoke(
             'send-booking-confirmation',
-            body: record,
+            body: {
+              ...currentRecord,
+              'appointment_status': 'confirmed',
+            },
           );
         }
       } catch (e) {
