@@ -15,7 +15,7 @@ class AssetService {
     String? categoryFilter,
     String? locationFilter,
     String? conditionFilter,
-    String? sectionFilter, // 'Section 1', 'Section 2', or null
+    String? sectionFilter,
   }) async {
     try {
       var query = _client.from('parish_assets').select('''
@@ -102,6 +102,40 @@ class AssetService {
     return null;
   }
 
+  /// Real-time autocomplete suggestions for search-as-you-type in manual control number lookup
+  static Future<List<AssetModel>> searchAssetSuggestions(String query, {int limit = 6}) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return [];
+
+    try {
+      final response = await _client
+          .from('parish_assets')
+          .select('''
+            *,
+            asset_classifications (
+              classification_id,
+              acronym,
+              classification_name
+            ),
+            asset_locations (
+              location_id,
+              acronym,
+              location_name
+            )
+          ''')
+          .or('control_number.ilike.%$clean%,item_name.ilike.%$clean%,rfid_tag.ilike.%$clean%,model.ilike.%$clean%')
+          .order('control_number', ascending: true)
+          .limit(limit);
+
+      return (response as List)
+          .map((row) => AssetModel.fromMap(row as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error searching asset suggestions: $e');
+      return [];
+    }
+  }
+
   /// Uploads asset photographic documentation to Supabase Storage
   static Future<String?> uploadAssetPhoto({
     required String assetId,
@@ -128,23 +162,8 @@ class AssetService {
     }
   }
 
-  /// Atomically invokes Postgres stored procedure to generate a single Diocesan Control Number
-  static Future<String> generateControlNumber({
-    required String locationAcronym,
-    required String classificationAcronym,
-    required int acquisitionYear,
-  }) async {
-    final batch = await generateControlNumberBatch(
-      locationAcronym: locationAcronym,
-      classificationAcronym: classificationAcronym,
-      acquisitionYear: acquisitionYear,
-      count: 1,
-    );
-    return batch.first;
-  }
-
-  /// Atomically generates consecutive Diocesan Control Numbers for bulk registrations:
-  /// LOCATION-CLASSIFICATION-YEAR-SEQUENCE (e.g. C-FF-2026-001, C-FF-2026-002, ...)
+  /// Atomically invokes Postgres stored procedure to generate globally continuous control numbers.
+  /// Format: Location-Classification Year-Sequence (e.g. C-FF 2026-001, C-FF 2026-002)
   static Future<List<String>> generateControlNumberBatch({
     required String locationAcronym,
     required String classificationAcronym,
@@ -170,28 +189,28 @@ class AssetService {
         return result.map((r) => r['control_number'].toString().trim()).toList();
       }
     } catch (e) {
-      debugPrint('Batch RPC notice: $e. Falling back to sequential generator.');
+      debugPrint('Batch RPC notice: $e. Falling back to global sequence scanner.');
     }
 
-    // Fallback: Query highest sequence locally and generate consecutive strings
-    final prefix = '$locClean-$clsClean-$acquisitionYear-';
+    // Fallback: Scan ALL existing control numbers across the entire table for absolute highest sequence
     final records = await _client
         .from('parish_assets')
-        .select('control_number')
-        .like('control_number', '$prefix%');
+        .select('control_number');
 
     int highestSeq = 0;
     for (final r in records) {
       final cNo = r['control_number']?.toString() ?? '';
-      if (cNo.startsWith(prefix)) {
-        final seqPart = cNo.substring(prefix.length);
-        final parsed = int.tryParse(seqPart);
+      final dashIndex = cNo.lastIndexOf('-');
+      if (dashIndex != -1 && dashIndex < cNo.length - 1) {
+        final parsed = int.tryParse(cNo.substring(dashIndex + 1));
         if (parsed != null && parsed > highestSeq) {
           highestSeq = parsed;
         }
       }
     }
 
+    // Format prefix: Location-Classification Year- (e.g. C-FF 2026-)
+    final prefix = '$locClean-$clsClean $acquisitionYear-';
     final List<String> list = [];
     for (int i = 1; i <= safeCount; i++) {
       list.add('$prefix${(highestSeq + i).toString().padLeft(3, '0')}');
@@ -199,7 +218,6 @@ class AssetService {
     return list;
   }
 
-  /// Generates a permanent canonical UUID v4 for Asset ID and QR Code Token
   static String generatePermanentIdentifier(String prefix) {
     final rand = Random.secure();
     final values = List<int>.generate(8, (_) => rand.nextInt(256));
@@ -273,10 +291,7 @@ class AssetService {
     return results.first;
   }
 
-  /// Bulk Asset Registration Workflow:
-  /// Takes shared properties and a quantity count (e.g. 16 Church Pews @ ₱15,000.00).
-  /// Generates 16 distinct consecutive Diocesan Control Numbers (C-FF-2026-001 ... 016),
-  /// 16 unique Asset IDs, and 16 unique QR codes, inserting 16 individual records in database.
+  /// Bulk Asset Registration Workflow with Globally Continuous Sequences
   static Future<List<AssetModel>> registerBulkAssets({
     required String itemName,
     required int quantity,
@@ -308,7 +323,6 @@ class AssetService {
     final now = DateTime.now();
     final bool isDecommissioned = operationalStatus.trim().toLowerCase() == 'decommissioned';
 
-    // 1. Generate consecutive control numbers atomically
     final controlNumbers = await generateControlNumberBatch(
       locationAcronym: locationAcronym,
       classificationAcronym: classificationAcronym,
@@ -328,7 +342,6 @@ class AssetService {
       final String qrCodeToken = generatePermanentIdentifier('QR');
       final String controlNumber = controlNumbers[i];
 
-      // Format individual name if multiple items exist (e.g. Church Pew 001)
       final String itemDesignation = quantity > 1
           ? '$cleanItemName ${(i + 1).toString().padLeft(3, '0')}'
           : cleanItemName;
@@ -350,10 +363,10 @@ class AssetService {
         'date_of_acquisition': dateString,
         'acquisition_year': acquisitionYear,
         'mode_of_acquisition': modeOfAcquisition,
-        'quantity': 1, // Each individual physical asset record represents 1 unit
+        'quantity': 1,
         'unit_price': safeUnitPrice,
-        'total_cost': safeUnitPrice, // 1 * unitPrice
-        'cost': safeUnitPrice, // Legacy column compatibility
+        'total_cost': safeUnitPrice,
+        'cost': safeUnitPrice,
         'rfid_tag': (quantity == 1 && rfidTag != null && rfidTag.trim().isNotEmpty) ? rfidTag.trim() : null,
         'qr_code_token': qrCodeToken,
         'condition_status': conditionStatus,
@@ -383,6 +396,8 @@ class AssetService {
         'audited_by': validUserId,
         'previous_condition': null,
         'new_condition': conditionStatus,
+        'previous_status': null,
+        'new_status': operationalStatus,
         'previous_location': null,
         'new_location': locationName ?? locationAcronym,
         'audit_method': 'MANUAL',
@@ -393,13 +408,11 @@ class AssetService {
       });
     }
 
-    // 2. Perform bulk insert in a single transaction
     final List<dynamic> response = await _client
         .from('parish_assets')
         .insert(payloads)
         .select();
 
-    // 3. Log initial audit records
     try {
       await _client.from('asset_audit_logs').insert(auditLogs);
     } catch (e) {
@@ -442,7 +455,6 @@ class AssetService {
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
     final double safeTotalCost = quantity * safeUnitPrice;
 
-    // Check RFID uniqueness if being modified or assigned
     if (rfidTag != null && rfidTag.trim().isNotEmpty) {
       final cleanRfid = rfidTag.trim();
       final duplicate = await _client
@@ -475,7 +487,7 @@ class AssetService {
       'quantity': quantity,
       'unit_price': safeUnitPrice,
       'total_cost': safeTotalCost,
-      'cost': safeTotalCost, // Legacy column compatibility
+      'cost': safeTotalCost,
       'rfid_tag': rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
       'condition_status': conditionStatus,
       'operational_status': operationalStatus,
@@ -507,12 +519,14 @@ class AssetService {
     return AssetModel.fromMap(response);
   }
 
-  /// Records an audit inspection and updates condition and location
+  /// Records an audit inspection, verifying both Condition Status and Operational Status
   static Future<void> recordAuditScan({
     required String assetId,
     required String controlNumber,
     required String newCondition,
     String? previousCondition,
+    required String newStatus,
+    String? previousStatus,
     String? previousLocation,
     String? newLocation,
     String auditMethod = 'QR_SCAN',
@@ -520,6 +534,7 @@ class AssetService {
   }) async {
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
+    final bool isDecommissioned = newStatus.trim().toLowerCase() == 'decommissioned';
 
     await _client.from('asset_audit_logs').insert({
       'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
@@ -528,6 +543,8 @@ class AssetService {
       'audited_by': validUserId,
       'previous_condition': previousCondition,
       'new_condition': newCondition,
+      'previous_status': previousStatus,
+      'new_status': newStatus,
       'previous_location': previousLocation,
       'new_location': newLocation,
       'audit_method': auditMethod,
@@ -535,13 +552,31 @@ class AssetService {
       'audited_at': now.toIso8601String(),
     });
 
-    await _client.from('parish_assets').update({
+    final Map<String, dynamic> assetUpdate = {
       'condition_status': newCondition,
+      'operational_status': newStatus,
       'last_audited_at': now.toIso8601String(),
       'audited_by': validUserId,
-      if (newLocation != null && newLocation.isNotEmpty) 'storage_location': newLocation,
       'updated_at': now.toIso8601String(),
-    }).eq('asset_id', assetId);
+    };
+
+    if (newLocation != null && newLocation.isNotEmpty) {
+      assetUpdate['storage_location'] = newLocation;
+    }
+
+    if (isDecommissioned) {
+      assetUpdate['is_archived'] = true;
+      assetUpdate['archived_at'] = now.toIso8601String();
+      assetUpdate['archived_by'] = validUserId;
+      assetUpdate['archive_reason'] = 'Marked Decommissioned during Field Audit.';
+    } else {
+      assetUpdate['is_archived'] = false;
+      assetUpdate['archived_at'] = null;
+      assetUpdate['archived_by'] = null;
+      assetUpdate['archive_reason'] = null;
+    }
+
+    await _client.from('parish_assets').update(assetUpdate).eq('asset_id', assetId);
   }
 
   /// Fetches historical audit logs for a specific asset

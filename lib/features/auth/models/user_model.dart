@@ -24,19 +24,19 @@ class UserModel {
   String get roleDisplay {
     switch (userRole.toLowerCase()) {
       case 'superadmin':
-        return 'Super Administrator (S)';
+        return 'Super Administrator';
       case 'admin':
-        return 'Administrator (A)';
+        return 'Administrator';
       case 'secretary':
-        return 'Parish Secretary (Sc)';
+        return 'Parish Secretary';
       case 'encoder':
-        return 'Records Encoder (E)';
+        return 'Records Encoder';
       case 'parishpriest':
-        return 'Parish Priest (P)';
+        return 'Parish Priest';
       case 'pfc':
-        return 'Parish Finance Council Auditor (PFC)';
+        return 'Parish Finance Council Auditor';
       case 'user':
-        return 'Parishioner / Client (U)';
+        return 'Parishioner / Client';
       default:
         return userRole.toUpperCase();
     }

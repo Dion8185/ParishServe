@@ -260,7 +260,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 const SizedBox(height: 4),
                 _buildSidebarItem(index: 3, label: 'Appointments & Masses', icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month),
                 const SizedBox(height: 4),
-                _buildSidebarItem(index: 4, label: 'Diocesan Assets', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2),
+                _buildSidebarItem(index: 4, label: 'Parish Assets', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2),
                 const SizedBox(height: 4),
                 _buildSidebarItem(index: 5, label: 'Smart Archive IoT', icon: Icons.sensors_outlined, activeIcon: Icons.sensors),
                 const SizedBox(height: 4),

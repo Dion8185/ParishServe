@@ -1,7 +1,3 @@
-// =============================================================================
-// FILE: lib/features/asset_inventory/models/asset_audit_log_model.dart
-// =============================================================================
-
 class AssetAuditLogModel {
   final String auditId;
   final String assetId;
@@ -10,6 +6,8 @@ class AssetAuditLogModel {
   final String? auditorName;
   final String? previousCondition;
   final String newCondition;
+  final String? previousStatus;
+  final String? newStatus;
   final String? previousLocation;
   final String? newLocation;
   final String auditMethod; // 'QR_SCAN', 'RFID_NFC', 'MANUAL'
@@ -24,6 +22,8 @@ class AssetAuditLogModel {
     this.auditorName,
     this.previousCondition,
     required this.newCondition,
+    this.previousStatus,
+    this.newStatus,
     this.previousLocation,
     this.newLocation,
     this.auditMethod = 'QR_SCAN',
@@ -51,6 +51,8 @@ class AssetAuditLogModel {
       auditorName: auditor,
       previousCondition: map['previous_condition']?.toString(),
       newCondition: map['new_condition']?.toString() ?? 'VERIFIED / GOOD',
+      previousStatus: map['previous_status']?.toString(),
+      newStatus: map['new_status']?.toString(),
       previousLocation: map['previous_location']?.toString(),
       newLocation: map['new_location']?.toString(),
       auditMethod: map['audit_method']?.toString() ?? 'QR_SCAN',
@@ -67,6 +69,8 @@ class AssetAuditLogModel {
       'audited_by': auditedBy,
       'previous_condition': previousCondition,
       'new_condition': newCondition,
+      'previous_status': previousStatus,
+      'new_status': newStatus,
       'previous_location': previousLocation,
       'new_location': newLocation,
       'audit_method': auditMethod,

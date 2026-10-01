@@ -22,7 +22,8 @@ class AssetItemCard extends StatelessWidget {
 
     final conditionColor = asset.conditionColor;
     final conditionSurface = asset.conditionSurfaceColor;
-    final isDecommissioned = asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
+    final isDecommissioned =
+        asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
     final isArchived = asset.isArchived || isDecommissioned;
 
     return InkWell(
@@ -31,39 +32,44 @@ class AssetItemCard extends StatelessWidget {
         asset: asset,
         onAssetUpdated: onRefresh,
       ),
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: cardWhite,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isArchived ? ParishColors.mercyRed.withValues(alpha: 0.5) : borderGrey,
-            width: isArchived ? 1.5 : 1.0,
+            color: isArchived
+                ? ParishColors.mercyRed.withValues(alpha: 0.4)
+                : borderGrey,
+            width: isArchived ? 1.4 : 1.0,
           ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.02),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
+              blurRadius: 4,
+              offset: const Offset(0, 1.5),
             ),
           ],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Left: Photo or Classification Emblem Icon
+            // Left: Photo or Classification Emblem
             Container(
-              width: 58,
-              height: 58,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
-                color: asset.photoUrl != null ? Colors.transparent : ParishColors.marianBlueSurface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.3)),
+                color: asset.photoUrl != null
+                    ? Colors.transparent
+                    : ParishColors.marianBlueSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: ParishColors.marianBlue.withValues(alpha: 0.25)),
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(11),
+                borderRadius: BorderRadius.circular(9),
                 child: asset.photoUrl != null && asset.photoUrl!.isNotEmpty
                     ? Image.network(
                   asset.photoUrl!,
@@ -71,24 +77,24 @@ class AssetItemCard extends StatelessWidget {
                   errorBuilder: (_, __, ___) => Icon(
                     asset.classificationIcon,
                     color: ParishColors.marianBlue,
-                    size: 28,
+                    size: 24,
                   ),
                 )
                     : Icon(
                   asset.classificationIcon,
                   color: ParishColors.marianBlue,
-                  size: 28,
+                  size: 24,
                 ),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
 
-            // Middle: Complete Diocesan Particulars
+            // Center: Clear Hierarchy Particulars
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top Coordinate Bar: Diocesan Control Number & Condition Pill
+                  // Row 1: Control Number + Condition Pill
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -100,21 +106,22 @@ class AssetItemCard extends StatelessWidget {
                               fontSize: 12.5,
                               fontWeight: FontWeight.bold,
                               color: ParishColors.marianBlue,
-                              letterSpacing: 0.4,
+                              letterSpacing: 0.3,
                             ),
                           ),
                           if (isArchived) ...[
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 5),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
                               decoration: BoxDecoration(
                                 color: ParishColors.mercyRedSurface,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(3),
                               ),
                               child: const Text(
                                 'ARCHIVED',
                                 style: TextStyle(
-                                  fontSize: 8.5,
+                                  fontSize: 8,
                                   fontWeight: FontWeight.bold,
                                   color: ParishColors.mercyRed,
                                 ),
@@ -124,16 +131,18 @@ class AssetItemCard extends StatelessWidget {
                         ],
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: conditionSurface,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: conditionColor.withValues(alpha: 0.3)),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(
+                              color: conditionColor.withValues(alpha: 0.3)),
                         ),
                         child: Text(
                           asset.conditionStatus.toUpperCase(),
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 9,
                             fontWeight: FontWeight.bold,
                             color: conditionColor,
                           ),
@@ -141,13 +150,13 @@ class AssetItemCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
 
-                  // Item Designation / Name
+                  // Row 2: Prominent Asset Name
                   Text(
                     asset.itemName,
                     style: TextStyle(
-                      fontSize: 15.5,
+                      fontSize: 15,
                       fontWeight: FontWeight.bold,
                       color: textDark,
                     ),
@@ -156,38 +165,25 @@ class AssetItemCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
 
-                  // Classification & Location Line
-                  Row(
-                    children: [
-                      Icon(Icons.category_outlined, size: 13, color: textMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        asset.displayClassification,
-                        style: TextStyle(fontSize: 12, color: textMuted),
-                      ),
-                      const SizedBox(width: 10),
-                      Icon(Icons.location_on_outlined, size: 13, color: textMuted),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          asset.displayLocation,
-                          style: TextStyle(fontSize: 12, color: textMuted),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                  // Row 3: Category & Location
+                  Text(
+                    '${asset.displayClassification} • ${asset.displayLocation}',
+                    style: TextStyle(fontSize: 11.5, color: textMuted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
 
-                  // Section Badge, Acquisition Year, Unit Price & Physical Tag Chips
+                  // Row 4: Compact Badges (Section, Price, Acquisition, RFID)
                   Wrap(
-                    spacing: 8,
+                    spacing: 6,
                     runSpacing: 4,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      // Section 1 vs Section 2 Badge
+                      // Section Badge
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1.5),
                         decoration: BoxDecoration(
                           color: asset.unitPrice >= 10000.0
                               ? ParishColors.goldLight
@@ -197,13 +193,13 @@ class AssetItemCard extends StatelessWidget {
                             color: asset.unitPrice >= 10000.0
                                 ? ParishColors.goldAccent
                                 : ParishColors.marianBlue,
-                            width: 1.0,
+                            width: 0.8,
                           ),
                         ),
                         child: Text(
                           asset.inventorySectionCode,
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 9.5,
                             fontWeight: FontWeight.bold,
                             color: asset.unitPrice >= 10000.0
                                 ? ParishColors.goldAccent
@@ -213,71 +209,49 @@ class AssetItemCard extends StatelessWidget {
                       ),
 
                       // Acquisition Year & Mode
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ParishColors.backgroundLight,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: borderGrey),
-                        ),
-                        child: Text(
-                          'Acquired: ${asset.acquisitionYear} (${asset.modeOfAcquisition})',
-                          style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.w600),
-                        ),
+                      Text(
+                        'Acq: ${asset.acquisitionYear} (${asset.modeOfAcquisition})',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: textMuted,
+                            fontWeight: FontWeight.w500),
                       ),
 
-                      // Unit Price Chip
+                      // Unit Price
                       if (asset.unitPrice > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: ParishColors.oliveGreenSurface,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Unit: ${asset.formattedUnitPrice}',
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.bold,
-                              color: ParishColors.oliveGreen,
-                            ),
+                        Text(
+                          '•  ${asset.formattedUnitPrice}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.oliveGreen,
                           ),
                         ),
 
-                      // NFC / RFID Tag Chip
+                      // NFC Tag Indicator
                       if (asset.rfidTag != null && asset.rfidTag!.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: ParishColors.goldLight,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: ParishColors.goldAccent.withValues(alpha: 0.5)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.nfc, size: 11, color: ParishColors.goldAccent),
-                              SizedBox(width: 3),
-                              Text(
-                                'NFC/RFID Tagged',
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('• ',
                                 style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: ParishColors.goldAccent,
-                                ),
-                              ),
-                            ],
-                          ),
+                                    fontSize: 11, color: Colors.grey)),
+                            Icon(Icons.nfc,
+                                size: 12, color: ParishColors.goldAccent),
+                          ],
                         ),
                     ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
 
-            // Right: Detail Navigation Indicator
-            Icon(Icons.chevron_right, color: borderGrey, size: 20),
+            // Right: Navigation Arrow
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Icon(Icons.chevron_right, color: borderGrey, size: 18),
+            ),
           ],
         ),
       ),

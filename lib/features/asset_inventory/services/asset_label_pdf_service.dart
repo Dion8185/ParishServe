@@ -105,7 +105,7 @@ class AssetLabelPdfService {
   }
 
   // ===========================================================================
-  // Individual Sticker Layout Builder (Includes Unit Price & Book Section)
+  // Individual Sticker Layout Builder (Includes Date of Acquisition, No Price)
   // ===========================================================================
 
   static pw.Widget _buildSingleAssetSticker(
@@ -158,7 +158,7 @@ class AssetLabelPdfService {
           ),
           pw.SizedBox(width: 6),
 
-          // Right: Parish Branding, Diocesan Control Coordinates & Unit Price
+          // Right: Parish Branding, Diocesan Control Coordinates & Date of Acquisition
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -237,7 +237,7 @@ class AssetLabelPdfService {
                       style: pw.TextStyle(font: fontRegular, fontSize: 5.0, color: textMuted),
                     ),
                     pw.Text(
-                      'Price: ${asset.formattedUnitPrice}',
+                      'Acquired: ${asset.formattedAcquisitionDate}',
                       style: pw.TextStyle(font: fontBold, fontSize: 5.0, color: textDark),
                     ),
                   ],

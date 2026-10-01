@@ -2,7 +2,6 @@
 lib/features/receipts/models/pos_item_model.dart
 =====================================
 
-
 import 'package:flutter/material.dart';
 
 class PosItemModel {
@@ -283,7 +282,6 @@ class PosCartItem {
 =====================================
 lib/features/receipts/models/receipt_template_model.dart
 =====================================
-
 
 import '../../sacramental_records/models/certificate_canvas_element.dart';
 
@@ -637,7 +635,6 @@ class ReceiptTemplateModel {
 =====================================
 lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart
 =====================================
-
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1516,7 +1513,6 @@ class _ParticularFormDialogState extends State<_ParticularFormDialog> {
 lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart
 =====================================
 
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
@@ -1600,7 +1596,6 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
   final _payorContactController = TextEditingController();
   final _amountController = TextEditingController();
   final _detailsController = TextEditingController();
-  final _gcashRefController = TextEditingController();
 
   DateTime _transactionDate = DateTime.now();
 
@@ -1608,7 +1603,6 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
   PosItemModel? _selectedParticular;
   bool _isLoadingParticulars = true;
 
-  String _paymentMode = 'Cash';
   bool _isSaving = false;
   String? _errorMessage;
 
@@ -1672,7 +1666,6 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
     _payorContactController.dispose();
     _amountController.dispose();
     _detailsController.dispose();
-    _gcashRefController.dispose();
     super.dispose();
   }
 
@@ -1691,13 +1684,8 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final parsedAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
-    if (_paymentMode != 'Gratis' && parsedAmount <= 0) {
-      setState(() => _errorMessage = 'Please enter a valid amount greater than 0.00.');
-      return;
-    }
-
-    if (_paymentMode == 'GCash' && _gcashRefController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Please provide the GCash Reference Number.');
+    if (parsedAmount < 0) {
+      setState(() => _errorMessage = 'Please enter a valid amount.');
       return;
     }
 
@@ -1705,24 +1693,17 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
 
     try {
       final serviceTitle = _selectedParticular?.title ?? 'Parish Offering';
-      final notes = <String>[];
+      final notes = _detailsController.text.trim();
 
-      notes.add('Tender: $_paymentMode');
-      if (_paymentMode == 'GCash') {
-        notes.add('GCash Ref: ${_gcashRefController.text.trim()}');
-      }
-      if (_detailsController.text.trim().isNotEmpty) {
-        notes.add(_detailsController.text.trim());
-      }
-
-      final details = '• $serviceTitle @ ₱${parsedAmount.toStringAsFixed(2)} = ₱${parsedAmount.toStringAsFixed(2)}\nRemarks: ${notes.join(" | ")}';
+      final lineDetails = '• $serviceTitle x1\n  @ ₱${parsedAmount.toStringAsFixed(2)} = ₱${parsedAmount.toStringAsFixed(2)}';
+      final details = notes.isNotEmpty ? '$lineDetails\nRemarks: $notes' : lineDetails;
 
       final record = await SecretaryService.createTransaction(
         payorName: _payorNameController.text.trim(),
         payorContact: _payorContactController.text.trim(),
         relatedService: serviceTitle,
         transactionDetails: details,
-        transactionAmount: _paymentMode == 'Gratis' ? 0.00 : parsedAmount,
+        transactionAmount: parsedAmount,
         transactionType: _resolveTransactionTypeCategory(),
         transactionDate: _transactionDate,
       );
@@ -1740,7 +1721,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
         date: _transactionDate.toIso8601String().substring(0, 10),
         payorContact: record['payor_contact'],
         transactionDetails: record['transaction_details'],
-        paymentMode: _paymentMode,
+        paymentMode: 'Cash',
       );
     } catch (e) {
       setState(() {
@@ -1922,66 +1903,16 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
                   ),
                 const SizedBox(height: 12),
 
-                // Amount & Tender Mode
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Amount (PHP) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _amountController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
-                            decoration: _inputDecoration(hint: '0.00'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Payment Mode *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                          const SizedBox(height: 6),
-                          DropdownButtonFormField<String>(
-                            value: _paymentMode,
-                            isExpanded: true,
-                            items: const [
-                              DropdownMenuItem(value: 'Cash', child: Text('Cash', overflow: TextOverflow.ellipsis)),
-                              DropdownMenuItem(value: 'GCash', child: Text('GCash', overflow: TextOverflow.ellipsis)),
-                              DropdownMenuItem(value: 'Gratis', child: Text('Gratis', overflow: TextOverflow.ellipsis)),
-                            ],
-                            onChanged: (val) => setState(() => _paymentMode = val!),
-                            decoration: _inputDecoration(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                // Amount Field (Tender mode completely removed)
+                Text('Amount (PHP) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _amountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                  decoration: _inputDecoration(hint: '0.00'),
                 ),
                 const SizedBox(height: 12),
-
-                // Conditional GCash Reference Field
-                if (_paymentMode == 'GCash') ...[
-                  Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _gcashRefController,
-                    style: TextStyle(fontSize: 13.5, color: textDark),
-                    validator: (v) => _paymentMode == 'GCash' && (v?.trim().isEmpty ?? true) ? 'Required for GCash transactions' : null,
-                    decoration: _inputDecoration(
-                      hint: 'e.g. 1002 9847 1120',
-                      prefixIcon: const Icon(Icons.qr_code_2, size: 18, color: Color(0xFF005CEE)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
 
                 Text('Particulars / Notes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                 const SizedBox(height: 6),
@@ -2037,7 +1968,6 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
 =====================================
 lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart
 =====================================
-
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2900,7 +2830,6 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
 lib/features/receipts/presentation/dialogs/remittance_report_dialog.dart
 =====================================
 
-
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/remittance_report_service.dart';
@@ -3483,7 +3412,6 @@ class _RemittanceReportDialogState extends State<RemittanceReportDialog> {
 lib/features/receipts/presentation/pages/pos_cashier_page.dart
 =====================================
 
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
@@ -3654,7 +3582,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
               autofocus: true,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               decoration: const InputDecoration(
-                prefixText: 'P ',
+                prefixText: '₱ ',
                 labelText: 'Amount (PHP)',
                 border: OutlineInputBorder(),
               ),
@@ -3736,7 +3664,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
         ? rawAmount.toDouble()
         : (double.tryParse(rawAmount?.toString() ?? '0') ?? _subtotal);
 
-    final amount = 'P ${amountVal.toStringAsFixed(2)}';
+    final amount = '₱ ${amountVal.toStringAsFixed(2)}';
     final date = record['transaction_date']?.toString().substring(0, 10) ?? 'Today';
 
     showReceiptDetailModal(
@@ -4039,7 +3967,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    item.allowsCustomPrice ? 'Custom / Tithe' : 'P ${item.defaultPrice.toStringAsFixed(0)}',
+                    item.allowsCustomPrice ? 'Custom / Tithe' : '₱ ${item.defaultPrice.toStringAsFixed(0)}',
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
@@ -4175,7 +4103,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                           ),
                           Text(
-                            'P ${cartItem.customPrice.toStringAsFixed(2)} each',
+                            '₱ ${cartItem.customPrice.toStringAsFixed(2)} each',
                             style: TextStyle(fontSize: 11, color: textMuted),
                           ),
                         ],
@@ -4204,7 +4132,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'P ${cartItem.total.toStringAsFixed(2)}',
+                      '₱ ${cartItem.total.toStringAsFixed(2)}',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                     ),
                   ],
@@ -4222,7 +4150,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Subtotal:', style: TextStyle(fontSize: 13, color: textMuted)),
-                  Text('P ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
+                  Text('₱ ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
                 ],
               ),
               const SizedBox(height: 6),
@@ -4231,7 +4159,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 children: [
                   Text('Total Amount Due:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
                   Text(
-                    'P ${_subtotal.toStringAsFixed(2)}',
+                    '₱ ${_subtotal.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                   ),
                 ],
@@ -4276,7 +4204,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
             children: [
               Text('$_totalItemCount items in slip', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
               Text(
-                'P ${_subtotal.toStringAsFixed(2)}',
+                '₱ ${_subtotal.toStringAsFixed(2)}',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
               ),
             ],
@@ -4329,7 +4257,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
   @override
   void initState() {
     super.initState();
-    // Default cash tendered to total amount
     _tenderedController.text = widget.totalAmount.toStringAsFixed(2);
     _tenderedController.addListener(() => setState(() {}));
   }
@@ -4363,7 +4290,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_paymentMode == 'Cash' && _tenderedAmount < widget.totalAmount) {
-      setState(() => _errorMessage = 'Tendered cash is less than total amount due.');
+      setState(() => _errorMessage = 'Tendered cash is less than the total amount due.');
       return;
     }
 
@@ -4381,20 +4308,14 @@ class _CheckoutModalState extends State<_CheckoutModal> {
         summaryServices = '${summaryServices.substring(0, 87)}...';
       }
 
-      // Line items stored cleanly
+      // Line items formatted cleanly for receipt printing
       final lineDetails = widget.cartItems
-          .map((c) => '- ${c.item.title} x${c.quantity} @ P ${c.customPrice.toStringAsFixed(2)} = P ${c.total.toStringAsFixed(2)}')
+          .map((c) => '• ${c.item.title} x${c.quantity}\n  @ ₱${c.customPrice.toStringAsFixed(2)} = ₱${c.total.toStringAsFixed(2)}')
           .join('\n');
 
-      // Notes saved into transaction details for audit trail
-      final remarksText = [
-        if (_paymentMode == 'Cash') 'Cash Tendered: P ${_tenderedAmount.toStringAsFixed(2)} (Change: P ${_changeAmount.toStringAsFixed(2)})',
-        if (_paymentMode == 'GCash') 'GCash Ref: ${_gcashRefController.text.trim()}',
-        if (_paymentMode == 'Gratis') 'Canonical Gratis / Exemption granted by Secretariat.',
-        if (_remarksController.text.trim().isNotEmpty) 'Remarks: ${_remarksController.text.trim()}',
-      ].join(' | ');
-
-      final fullDetails = remarksText.isNotEmpty ? '$lineDetails\n$remarksText' : lineDetails;
+      // Only include user remarks if provided (tender mode is kept for modal computation only, omitted from receipt text)
+      final userRemarks = _remarksController.text.trim();
+      final fullDetails = userRemarks.isNotEmpty ? '$lineDetails\nRemarks: $userRemarks' : lineDetails;
       final resolvedType = _resolveTransactionTypeCategory();
 
       final record = await SecretaryService.createTransaction(
@@ -4502,7 +4423,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('Total Amount Payable:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark)),
-                            Text('P ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+                            Text('₱ ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
                           ],
                         ),
                       ),
@@ -4533,6 +4454,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                       ),
                       const SizedBox(height: 16),
 
+                      // Tender Mode for Easy Computation (Hidden from printed receipt)
                       Text('Payment Tender Mode *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
@@ -4557,7 +4479,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                       ),
                       const SizedBox(height: 14),
 
-                      // CASH TENDERED & CHANGE COMPUTATION PRESERVED IN MODAL CARD
+                      // Cash Tendered & Change Computation for Cashier Ease
                       if (_paymentMode == 'Cash') ...[
                         Row(
                           children: [
@@ -4565,7 +4487,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Cash Tendered (P) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   TextFormField(
                                     controller: _tenderedController,
@@ -4581,7 +4503,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Change Due (P)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   Container(
                                     height: 48,
@@ -4593,7 +4515,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                                       border: Border.all(color: borderGrey),
                                     ),
                                     child: Text(
-                                      'P ${_changeAmount.toStringAsFixed(2)}',
+                                      '₱ ${_changeAmount.toStringAsFixed(2)}',
                                       style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.bold,
@@ -4614,7 +4536,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _gcashRefController,
-                          validator: (v) => (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
+                          validator: (v) => _paymentMode == 'GCash' && (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
                           style: TextStyle(fontSize: 14, color: textDark),
                           decoration: _inputDecoration(hint: 'e.g. 1002 9847 1120'),
                         ),
@@ -4696,7 +4618,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
 =====================================
 lib/features/receipts/presentation/pages/receipt_canvas_designer_page.dart
 =====================================
-
 
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
@@ -6323,7 +6244,6 @@ class _ReceiptCanvasDesignerPageState extends State<ReceiptCanvasDesignerPage> {
 lib/features/receipts/presentation/pages/receipt_template_management_page.dart
 =====================================
 
-
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -7332,7 +7252,6 @@ class _ReceiptTemplateEditorDialogState extends State<_ReceiptTemplateEditorDial
 =====================================
 lib/features/receipts/presentation/receipts_view.dart
 =====================================
-
 
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -8367,7 +8286,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
 lib/features/receipts/presentation/widgets/receipt_card.dart
 =====================================
 
-
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 
@@ -8579,7 +8497,6 @@ class ReceiptCard extends StatelessWidget {
 lib/features/receipts/services/particulars_service.dart
 =====================================
 
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/pos_item_model.dart';
 
@@ -8697,7 +8614,6 @@ class ParticularsService {
 =====================================
 lib/features/receipts/services/receipt_pdf_generator.dart
 =====================================
-
 
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -9890,7 +9806,6 @@ class ReceiptPdfGenerator {
 lib/features/receipts/services/receipt_template_service.dart
 =====================================
 
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 import '../../sacramental_records/services/certificate_service.dart';
@@ -10086,7 +10001,6 @@ class ReceiptTemplateService {
 =====================================
 lib/features/receipts/services/remittance_report_service.dart
 =====================================
-
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -10658,7 +10572,6 @@ class RemittanceReportService {
 lib/features/receipts/services/secretary_service.dart
 =====================================
 
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 
@@ -10679,7 +10592,8 @@ class SecretaryService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Register a new transaction with automatic enum resolution, custom date support, and varchar(100) bound guard
+  /// Register a new transaction with automatic enum resolution, custom date support,
+  /// linked issuance reference, and varchar(100) bound guard
   static Future<Map<String, dynamic>> createTransaction({
     required String payorName,
     String? payorContact,
@@ -10689,6 +10603,7 @@ class SecretaryService {
     String? transactionType,
     String? relatedAppointmentId,
     String? relatedRequestId,
+    String? relatedIssuanceId,
     DateTime? transactionDate,
   }) async {
     final receiptNo = await _generateReceiptNumber();
@@ -10725,14 +10640,14 @@ class SecretaryService {
       if (_cachedValidTransactionType != null) _cachedValidTransactionType!,
       if (transactionType != null && transactionType.isNotEmpty) transactionType,
       // Canonical and standard parish transaction_type enum members:
+      'certificate',
+      'Certificate',
       'donation',
       'Donation',
       'stipend',
       'Stipend',
       'mass_intention',
       'Mass Intention',
-      'certificate',
-      'Certificate',
       'sacrament',
       'Sacrament',
       'service',
@@ -10773,6 +10688,7 @@ class SecretaryService {
         'transaction_status': 'paid',
         'related_appointment_id': relatedAppointmentId,
         'related_request_id': relatedRequestId,
+        'related_issuance_id': relatedIssuanceId,
         'encoded_by': userId,
         'created_at': DateTime.now().toIso8601String(),
       };

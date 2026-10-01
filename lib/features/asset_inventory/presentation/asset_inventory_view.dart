@@ -8,6 +8,7 @@ import '../services/asset_reference_service.dart';
 import '../services/asset_service.dart';
 import 'dialogs/asset_detail_dialog.dart';
 import 'dialogs/audit_scan_dialog.dart';
+import 'dialogs/batch_print_tags_dialog.dart';
 import 'dialogs/manage_asset_references_dialog.dart';
 import 'dialogs/register_asset_dialog.dart';
 import 'widgets/asset_item_card.dart';
@@ -34,7 +35,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   String? _errorMessage;
 
   String _searchQuery = '';
-  String _selectedCategory = 'All';
+  String _selectedCategory = 'All'; // Classification filter
   String _selectedLocation = 'All';
   String _selectedCondition = 'All';
   String _statusTab = 'Active'; // 'Active' or 'Archived'
@@ -52,7 +53,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     'Registration Date',
   ];
 
-  AssetViewMode _viewMode = AssetViewMode.table;
+  AssetViewMode _viewMode = AssetViewMode.cards;
   int _currentPage = 0;
   int _rowsPerPage = 10;
 
@@ -113,19 +114,16 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         a.operationalStatus.trim().toLowerCase() == 'decommissioned';
   }
 
-  /// Natural comparison for Control Numbers like 'C-FF-2025-001' vs 'C-FF-2025-016'
   int _compareControlNumbers(String a, String b) {
     final aParts = a.split('-');
     final bParts = b.split('-');
 
     if (aParts.length >= 4 && bParts.length >= 4) {
-      // Compare prefix
       final prefixA = '${aParts[0]}-${aParts[1]}-${aParts[2]}';
       final prefixB = '${bParts[0]}-${bParts[1]}-${bParts[2]}';
       final prefixComp = prefixA.compareTo(prefixB);
       if (prefixComp != 0) return prefixComp;
 
-      // Compare trailing sequence as number
       final seqA = int.tryParse(aParts[3]) ?? 0;
       final seqB = int.tryParse(bParts[3]) ?? 0;
       return seqA.compareTo(seqB);
@@ -136,7 +134,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   List<AssetModel> get _filteredAssets {
     var list = _assets;
 
-    // 1. Active vs Archived quarantine
+    // 1. Active vs Archived
     if (_statusTab == 'Active') {
       list = list.where((a) => !_isAssetArchived(a)).toList();
     } else {
@@ -150,7 +148,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       list = list.where((a) => a.unitPrice < 10000.0).toList();
     }
 
-    // 3. Category Filter
+    // 3. Category / Classification Filter
     if (_selectedCategory != 'All') {
       list = list
           .where((a) =>
@@ -191,7 +189,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       }).toList();
     }
 
-    // 7. Sort Engine
+    // 7. Sort Order
     list.sort((a, b) {
       int comparison = 0;
       switch (_sortBy) {
@@ -199,7 +197,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           comparison = _compareControlNumbers(a.controlNumber, b.controlNumber);
           break;
         case 'Asset Name':
-          comparison = a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+          comparison =
+              a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
           break;
         case 'Price / Unit':
           comparison = a.unitPrice.compareTo(b.unitPrice);
@@ -242,49 +241,48 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   int get _section2Count =>
       _assets.where((a) => !_isAssetArchived(a) && a.unitPrice < 10000.0).length;
 
-  int get _needsRepairCount => _assets
-      .where((a) => !_isAssetArchived(a) && a.conditionStatus.contains('REPAIR'))
-      .length;
+  int get _activeFilterCount {
+    int count = 0;
+    if (_selectedCategory != 'All') count++;
+    if (_selectedLocation != 'All') count++;
+    if (_selectedCondition != 'All') count++;
+    if (_statusTab != 'Active') count++;
+    if (_sortBy != 'Control Number' || !_sortAscending) count++;
+    return count;
+  }
 
-  int get _missingCount => _assets
-      .where((a) => !_isAssetArchived(a) && a.conditionStatus.contains('MISSING'))
-      .length;
-
-  bool get _hasActiveFilters =>
-      _selectedLocation != 'All' ||
-          _selectedCondition != 'All' ||
-          _statusTab != 'Active';
+  bool get _hasActiveFilters => _activeFilterCount > 0;
 
   void _resetFilters() {
     setState(() {
+      _selectedCategory = 'All';
       _selectedLocation = 'All';
       _selectedCondition = 'All';
-      _selectedCategory = 'All';
       _statusTab = 'Active';
+      _sortBy = 'Control Number';
+      _sortAscending = true;
       _currentPage = 0;
     });
   }
 
-  Future<void> _printBatchStickers() async {
+  /// Opens the interactive tag selection dialog where the user chooses
+  /// exactly which asset stickers to include on the A4 batch print sheet.
+  void _openBatchPrintSelectionModal() {
     final list = _filteredAssets;
     if (list.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('No assets available to print under current filter.')),
+          content: Text('No assets available to print under the current filter.'),
+          backgroundColor: ParishColors.goldAccent,
+        ),
       );
       return;
     }
 
-    try {
-      await AssetLabelPdfService.printBatchAssetLabels(list);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Print error: $e'),
-            backgroundColor: ParishColors.mercyRed),
-      );
-    }
+    showBatchPrintTagsModal(
+      context,
+      availableAssets: list,
+    );
   }
 
   void _openManageReferences() {
@@ -294,178 +292,301 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
-  void _openMobileFilterSheet() {
+  /// Centralized Modal Filter Sheet containing Classification, Location, Condition, and Status
+  void _openFilterAndSortBottomSheet() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: ParishColors.cardWhite,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Filter Inventory',
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 14,
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle bar
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: ParishColors.borderGrey,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Filter & Sort Inventory',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark,
+                        ),
+                      ),
+                      if (_hasActiveFilters)
+                        TextButton(
+                          onPressed: () {
+                            _resetFilters();
+                            setSheetState(() {});
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('Reset All',
+                              style: TextStyle(
+                                  color: ParishColors.mercyRed,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13)),
+                        ),
+                    ],
+                  ),
+                  const Divider(height: 14),
+
+                  // 1. Sort Section
+                  Text('Sort Sequence',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.textDark,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _sortBy,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          items: _sortOptions
+                              .map((opt) => DropdownMenuItem(
+                              value: opt,
+                              child: Text(opt,
+                                  style: const TextStyle(fontSize: 13))))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _sortBy = val);
+                              setSheetState(() {});
+                            }
+                          },
+                        ),
                       ),
-                    ),
-                    if (_hasActiveFilters)
-                      TextButton(
+                      const SizedBox(width: 8),
+                      IconButton(
+                        style: IconButton.styleFrom(
+                          backgroundColor: ParishColors.marianBlueSurface,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: Icon(
+                          _sortAscending
+                              ? Icons.arrow_upward
+                              : Icons.arrow_downward,
+                          size: 18,
+                          color: ParishColors.marianBlue,
+                        ),
                         onPressed: () {
-                          _resetFilters();
-                          setSheetState(() {});
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('Reset All',
-                            style: TextStyle(color: ParishColors.mercyRed)),
-                      ),
-                  ],
-                ),
-                const Divider(),
-                const SizedBox(height: 8),
-
-                // Active vs Archived Toggle
-                Text('Registry Status',
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.textDark)),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ChoiceChip(
-                        label: const Center(child: Text('Active Inventory')),
-                        selected: _statusTab == 'Active',
-                        selectedColor: ParishColors.marianBlue,
-                        labelStyle: TextStyle(
-                          color: _statusTab == 'Active' ? Colors.white : ParishColors.textDark,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        onSelected: (val) {
-                          setState(() => _statusTab = 'Active');
+                          setState(() => _sortAscending = !_sortAscending);
                           setSheetState(() {});
                         },
+                        tooltip: _sortAscending ? 'Ascending' : 'Descending',
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ChoiceChip(
-                        label: const Center(child: Text('Archived / Decom')),
-                        selected: _statusTab == 'Archived',
-                        selectedColor: ParishColors.marianBlue,
-                        labelStyle: TextStyle(
-                          color: _statusTab == 'Archived' ? Colors.white : ParishColors.textDark,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        onSelected: (val) {
-                          setState(() => _statusTab = 'Archived');
-                          setSheetState(() {});
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Location Dropdown
-                Text('Location',
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.textDark)),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<String>(
-                  value: _selectedLocation,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    ],
                   ),
-                  items: [
-                    const DropdownMenuItem(value: 'All', child: Text('All Locations')),
-                    ..._locations.map((l) => DropdownMenuItem(
-                        value: l.acronym,
-                        child: Text('${l.acronym} - ${l.locationName}'))),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _selectedLocation = val);
-                      setSheetState(() {});
-                    }
-                  },
-                ),
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
-                // Condition Dropdown
-                Text('Physical Condition',
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.textDark)),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<String>(
-                  value: _selectedCondition,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                  // 2. Active vs Archived Status Filter
+                  Text('Registry Status',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Center(child: Text('Active Inventory')),
+                          selected: _statusTab == 'Active',
+                          selectedColor: ParishColors.marianBlue,
+                          labelStyle: TextStyle(
+                            color: _statusTab == 'Active'
+                                ? Colors.white
+                                : ParishColors.textDark,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          onSelected: (val) {
+                            setState(() => _statusTab = 'Active');
+                            setSheetState(() {});
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Center(child: Text('Archived / Decom')),
+                          selected: _statusTab == 'Archived',
+                          selectedColor: ParishColors.marianBlue,
+                          labelStyle: TextStyle(
+                            color: _statusTab == 'Archived'
+                                ? Colors.white
+                                : ParishColors.textDark,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          onSelected: (val) {
+                            setState(() => _statusTab = 'Archived');
+                            setSheetState(() {});
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'All', child: Text('All Conditions')),
-                    DropdownMenuItem(
-                        value: 'VERIFIED / GOOD',
-                        child: Text('VERIFIED / GOOD')),
-                    DropdownMenuItem(
-                        value: 'REQUIRES REPAIR',
-                        child: Text('REQUIRES REPAIR')),
-                    DropdownMenuItem(
-                        value: 'DAMAGED', child: Text('DAMAGED')),
-                    DropdownMenuItem(
-                        value: 'MISSING', child: Text('MISSING')),
-                    DropdownMenuItem(
-                        value: 'UNUSABLE', child: Text('UNUSABLE')),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _selectedCondition = val);
-                      setSheetState(() {});
-                    }
-                  },
-                ),
-                const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.marianBlue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
+                  // 3. Classification Filter Dropdown
+                  Text('Property Classification',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    value: _selectedCategory,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Apply Filters',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    items: [
+                      const DropdownMenuItem(
+                          value: 'All', child: Text('All Classifications')),
+                      ..._classifications.map((c) => DropdownMenuItem(
+                          value: c.acronym,
+                          child: Text('${c.classificationName} (${c.acronym})'))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedCategory = val);
+                        setSheetState(() {});
+                      }
+                    },
                   ),
-                ),
-              ],
+                  const SizedBox(height: 14),
+
+                  // 4. Location Filter Dropdown
+                  Text('Storage Location',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    value: _selectedLocation,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                          value: 'All', child: Text('All Locations')),
+                      ..._locations.map((l) => DropdownMenuItem(
+                          value: l.acronym,
+                          child: Text('${l.locationName} (${l.acronym})'))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedLocation = val);
+                        setSheetState(() {});
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 5. Physical Condition Filter Dropdown
+                  Text('Physical Condition',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    value: _selectedCondition,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'All', child: Text('All Conditions')),
+                      DropdownMenuItem(
+                          value: 'VERIFIED / GOOD',
+                          child: Text('VERIFIED / GOOD')),
+                      DropdownMenuItem(
+                          value: 'REQUIRES REPAIR',
+                          child: Text('REQUIRES REPAIR')),
+                      DropdownMenuItem(
+                          value: 'DAMAGED', child: Text('DAMAGED')),
+                      DropdownMenuItem(
+                          value: 'MISSING', child: Text('MISSING')),
+                      DropdownMenuItem(
+                          value: 'UNUSABLE', child: Text('UNUSABLE')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedCondition = val);
+                        setSheetState(() {});
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 18),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.marianBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Apply & Close',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ),
             ),
           ),
         ),
@@ -496,7 +617,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isDesktop = constraints.maxWidth >= 900;
         final bool isMobile = constraints.maxWidth < 650;
 
         return RefreshIndicator(
@@ -504,11 +624,14 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           color: ParishColors.marianBlue,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.all(isMobile ? 14 : 22),
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 14 : 20,
+              vertical: isMobile ? 12 : 18,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header Title Banner
+                // 1. Header Title & Actions
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -517,51 +640,108 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Parish Property & Asset Inventory',
+                            'Parish Asset Inventory',
                             style: TextStyle(
                               fontSize: isMobile ? 18 : 22,
                               fontWeight: FontWeight.bold,
                               color: textDark,
                             ),
                           ),
-                          const SizedBox(height: 2),
                           Text(
-                            'Diocese of San Pablo • CustodiaIMS Asset Verification',
-                            style: TextStyle(color: textMuted, fontSize: 12),
+                            'Manages parish assets, properties, and inventory records.',
+                            style: TextStyle(color: textMuted, fontSize: 11.5),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
                     IconButton(
+                      icon: const Icon(Icons.print_outlined,
+                          color: ParishColors.goldAccent, size: 20),
+                      tooltip: 'Select & Print Tags (Batch)',
+                      onPressed: _openBatchPrintSelectionModal,
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.settings_suggest_outlined,
-                          color: ParishColors.marianBlue),
+                          color: ParishColors.marianBlue, size: 20),
                       tooltip: 'Manage Locations & Classifications',
                       onPressed: _openManageReferences,
                     ),
                     IconButton(
                       icon: const Icon(Icons.refresh,
-                          color: ParishColors.marianBlue),
-                      tooltip: 'Reload Database Records',
+                          color: ParishColors.marianBlue, size: 20),
+                      tooltip: 'Reload Records',
                       onPressed: _loadAllData,
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
 
-                // Primary Action Buttons
-                _buildActionButtons(isMobile),
-                const SizedBox(height: 16),
+                // 2. Action Buttons: + Register as Primary, Field Audit as Prominent Companion
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: SizedBox(
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ParishColors.oliveGreen,
+                            foregroundColor: Colors.white,
+                            elevation: 1,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => showRegisterAssetModal(context,
+                              onAssetSaved: _loadAllData),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text(
+                            'Register Asset',
+                            style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 5,
+                      child: SizedBox(
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                                color: ParishColors.marianBlue, width: 1.5),
+                            foregroundColor: ParishColors.marianBlue,
+                            backgroundColor: ParishColors.marianBlueSurface,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => showAuditScanModal(context,
+                              onScanCompleted: _loadAllData),
+                          icon: const Icon(Icons.qr_code_scanner, size: 18),
+                          label: const Text(
+                            'Field Audit',
+                            style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
 
-                // Statistics Summary Metrics
-                _buildStatsGrid(isMobile),
-                const SizedBox(height: 18),
+                // 3. Compact 4-Pill Statistics Row
+                _buildCompactStatsRow(),
+                const SizedBox(height: 14),
 
-                // Book of Inventory: Section Tabs
+                // 4. Compact Section Tabs (All Assets, Section 1, Section 2)
                 Container(
+                  height: 38,
                   decoration: BoxDecoration(
                     color: cardWhite,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: borderGrey),
                   ),
                   child: TabBar(
@@ -571,258 +751,230 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     indicatorSize: TabBarIndicatorSize.tab,
                     indicator: BoxDecoration(
                       color: ParishColors.marianBlue,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     tabs: [
                       Tab(
                         child: Text(
-                          isMobile
-                              ? 'All (${_statusTab == "Active" ? _activeCount : _archivedCount})'
-                              : 'All Assets (${_statusTab == "Active" ? _activeCount : _archivedCount})',
+                          'All (${_statusTab == "Active" ? _activeCount : _archivedCount})',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: isMobile ? 11.5 : 12.5),
+                              fontSize: isMobile ? 11 : 12),
                         ),
                       ),
                       Tab(
                         child: Text(
                           isMobile
                               ? 'Sec 1 (≥₱10k)'
-                              : 'Section 1 — ≥₱10,000.00 ($_section1Count)',
+                              : 'Section 1 (≥₱10,000.00)',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: isMobile ? 11.5 : 12.5),
+                              fontSize: isMobile ? 11 : 12),
                         ),
                       ),
                       Tab(
                         child: Text(
                           isMobile
                               ? 'Sec 2 (<₱10k)'
-                              : 'Section 2 — <₱10,000.00 ($_section2Count)',
+                              : 'Section 2 (<₱10,000.00)',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: isMobile ? 11.5 : 12.5),
+                              fontSize: isMobile ? 11 : 12),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
 
-                // Search Bar + Filter Trigger + Sorting Controls
+                // 5. Full-Width Single-Line Search Bar
+                Container(
+                  width: double.infinity,
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: cardWhite,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: borderGrey),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search,
+                          size: 20, color: ParishColors.marianBlue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (val) => setState(() {
+                            _searchQuery = val;
+                            _currentPage = 0;
+                          }),
+                          style: TextStyle(fontSize: 13, color: textDark),
+                          decoration: InputDecoration(
+                            hintText: 'Search by Control #, name, location, RFID...',
+                            hintStyle:
+                            TextStyle(fontSize: 12, color: textMuted),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ),
+                      if (_searchQuery.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {
+                              _searchQuery = '';
+                              _currentPage = 0;
+                            });
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // 6. Secondary Toolbar: Filter & Sort Trigger + View Toggle
                 Row(
                   children: [
-                    Expanded(
+                    // Unified "Filter & Sort" Modal Trigger
+                    InkWell(
+                      onTap: _openFilterAndSortBottomSheet,
+                      borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        height: 46,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
-                          color: cardWhite,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: borderGrey),
+                          color: _hasActiveFilters
+                              ? ParishColors.marianBlueSurface
+                              : cardWhite,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _hasActiveFilters
+                                ? ParishColors.marianBlue
+                                : borderGrey,
+                          ),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.search,
-                                size: 20, color: ParishColors.marianBlue),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: _searchController,
-                                onChanged: (val) => setState(() {
-                                  _searchQuery = val;
-                                  _currentPage = 0;
-                                }),
-                                style: TextStyle(
-                                    fontSize: 13.5, color: textDark),
-                                decoration: InputDecoration(
-                                  hintText: isMobile
-                                      ? 'Search control #, item, model...'
-                                      : 'Search by Control #, item name, model, color, RFID...',
-                                  hintStyle: TextStyle(
-                                      fontSize: 12.5, color: textMuted),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                ),
+                            Icon(
+                              Icons.tune,
+                              size: 15,
+                              color: _hasActiveFilters
+                                  ? ParishColors.marianBlue
+                                  : textMuted,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              _hasActiveFilters
+                                  ? 'Filter & Sort ($_activeFilterCount)'
+                                  : 'Filter & Sort',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: _hasActiveFilters
+                                    ? ParishColors.marianBlue
+                                    : textDark,
                               ),
                             ),
-                            if (_searchQuery.isNotEmpty)
-                              IconButton(
-                                icon: const Icon(Icons.clear, size: 16),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() {
-                                    _searchQuery = '';
-                                    _currentPage = 0;
-                                  });
-                                },
-                              ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const Spacer(),
 
-                    // Sort Control
+                    // Items Count Indicator
+                    Text(
+                      '$totalCount items',
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: textMuted),
+                    ),
+                    const SizedBox(width: 10),
+
+                    // Card / Table View Toggle
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      height: 32,
                       decoration: BoxDecoration(
                         color: cardWhite,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(7),
                         border: Border.all(color: borderGrey),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.sort, size: 16, color: ParishColors.marianBlue),
-                          const SizedBox(width: 4),
-                          if (!isMobile)
-                            Text('Sort: ',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: textMuted,
-                                    fontWeight: FontWeight.bold)),
-                          DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: _sortBy,
-                              isDense: true,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: textDark),
-                              items: _sortOptions.map((opt) {
-                                return DropdownMenuItem(
-                                  value: opt,
-                                  child: Text(isMobile ? opt.split(' ')[0] : opt),
-                                );
-                              }).toList(),
-                              onChanged: (val) {
-                                if (val != null) {
-                                  setState(() => _sortBy = val);
-                                }
-                              },
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              _sortAscending
-                                  ? Icons.arrow_upward
-                                  : Icons.arrow_downward,
-                              size: 15,
-                              color: ParishColors.marianBlue,
-                            ),
-                            tooltip: _sortAscending ? 'Ascending' : 'Descending',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () =>
-                                setState(() => _sortAscending = !_sortAscending),
-                          ),
+                      child: ToggleButtons(
+                        isSelected: [
+                          _viewMode == AssetViewMode.cards,
+                          _viewMode == AssetViewMode.table
+                        ],
+                        onPressed: (idx) => setState(() => _viewMode =
+                        idx == 0 ? AssetViewMode.cards : AssetViewMode.table),
+                        borderRadius: BorderRadius.circular(6),
+                        selectedColor: Colors.white,
+                        fillColor: ParishColors.marianBlue,
+                        color: textMuted,
+                        constraints:
+                        const BoxConstraints(minHeight: 28, minWidth: 32),
+                        children: const [
+                          Tooltip(
+                              message: 'Card View',
+                              child: Icon(Icons.grid_view, size: 14)),
+                          Tooltip(
+                              message: 'Table View',
+                              child: Icon(Icons.table_chart, size: 14)),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-
-                    // Filter Button
-                    if (isMobile)
-                      InkWell(
-                        onTap: _openMobileFilterSheet,
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          height: 46,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: _hasActiveFilters
-                                ? ParishColors.marianBlueSurface
-                                : cardWhite,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _hasActiveFilters
-                                  ? ParishColors.marianBlue
-                                  : borderGrey,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.tune,
-                                size: 18,
-                                color: _hasActiveFilters
-                                    ? ParishColors.marianBlue
-                                    : textMuted,
-                              ),
-                              if (_hasActiveFilters) ...[
-                                const SizedBox(width: 4),
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: const BoxDecoration(
-                                    color: ParishColors.goldAccent,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      )
-                    else ...[
-                      _buildDesktopFilterDropdowns(),
-                    ],
                   ],
                 ),
-                const SizedBox(height: 12),
 
-                // Horizontal Category Chips
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
+                // Active Filter Summary Badges (If any active)
+                if (_hasActiveFilters) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      _buildClassificationChip('All', 'All Categories'),
-                      ..._classifications.map((c) => _buildClassificationChip(
-                          c.acronym, c.classificationName)),
+                      if (_statusTab != 'Active')
+                        _buildActiveFilterChip('Status: $_statusTab', () {
+                          setState(() => _statusTab = 'Active');
+                        }),
+                      if (_selectedCategory != 'All')
+                        _buildActiveFilterChip('Cat: $_selectedCategory', () {
+                          setState(() => _selectedCategory = 'All');
+                        }),
+                      if (_selectedLocation != 'All')
+                        _buildActiveFilterChip('Loc: $_selectedLocation', () {
+                          setState(() => _selectedLocation = 'All');
+                        }),
+                      if (_selectedCondition != 'All')
+                        _buildActiveFilterChip('Cond: $_selectedCondition', () {
+                          setState(() => _selectedCondition = 'All');
+                        }),
+                      ActionChip(
+                        label: const Text('Clear',
+                            style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.mercyRed)),
+                        backgroundColor: ParishColors.mercyRedSurface,
+                        side: BorderSide(
+                            color: ParishColors.mercyRed.withValues(alpha: 0.3)),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _resetFilters,
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-
-                // Items Count & Card/Table Mode Toggle
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${_statusTab == "Active" ? "Active" : "Archived"} Items ($totalCount)',
-                      style: TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.bold,
-                          color: textDark),
-                    ),
-                    ToggleButtons(
-                      isSelected: [
-                        _viewMode == AssetViewMode.cards,
-                        _viewMode == AssetViewMode.table
-                      ],
-                      onPressed: (idx) => setState(() => _viewMode =
-                      idx == 0 ? AssetViewMode.cards : AssetViewMode.table),
-                      borderRadius: BorderRadius.circular(8),
-                      selectedColor: Colors.white,
-                      fillColor: ParishColors.marianBlue,
-                      color: textMuted,
-                      constraints:
-                      const BoxConstraints(minHeight: 30, minWidth: 36),
-                      children: const [
-                        Tooltip(
-                            message: 'Card View',
-                            child: Icon(Icons.grid_view, size: 16)),
-                        Tooltip(
-                            message: 'Table View (Full Width)',
-                            child: Icon(Icons.table_chart, size: 16)),
-                      ],
-                    ),
-                  ],
-                ),
+                ],
                 const SizedBox(height: 12),
 
-                // Content View (Cards vs Table)
+                // 7. Content View (Cards vs Full-Width Table)
                 if (_isLoading)
                   const Center(
                       child: Padding(
@@ -831,11 +983,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 else if (_errorMessage != null)
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                         color: ParishColors.mercyRedSurface,
-                        borderRadius: BorderRadius.circular(12)),
-                    child: Text('Error loading inventory: $_errorMessage',
+                        borderRadius: BorderRadius.circular(10)),
+                    child: Text('Error: $_errorMessage',
                         style: const TextStyle(color: ParishColors.mercyRed)),
                   )
                 else if (totalCount == 0)
@@ -846,9 +998,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     else
                       _buildFullWidthResponsiveTable(paged, constraints.maxWidth),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
 
-                // Pagination Footer
+                // 8. Pagination Footer
                 if (totalCount > 0)
                   _buildPaginationFooter(
                       totalCount, totalPages, startIndex, endIndex),
@@ -861,387 +1013,96 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   }
 
   // ===========================================================================
-  // Responsive Component Builders
+  // Compact 4-Pill Statistics Widget
   // ===========================================================================
 
-  Widget _buildActionButtons(bool isMobile) {
-    if (isMobile) {
-      return Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ParishColors.marianBlue,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () => showAuditScanModal(context,
-                  onScanCompleted: _loadAllData),
-              icon: const Icon(Icons.qr_code_scanner, size: 20),
-              label: const Text('Field Audit (QR / NFC)',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.oliveGreen,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () => showRegisterAssetModal(context,
-                        onAssetSaved: _loadAllData),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Register',
-                        style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SizedBox(
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(
-                          color: ParishColors.goldAccent, width: 1.5),
-                      foregroundColor: ParishColors.goldAccent,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: _printBatchStickers,
-                    icon: const Icon(Icons.print_outlined, size: 16),
-                    label: const Text('Print Tags',
-                        style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      children: [
-        Expanded(
-          flex: 4,
-          child: SizedBox(
-            height: 48,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ParishColors.marianBlue,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () =>
-                  showAuditScanModal(context, onScanCompleted: _loadAllData),
-              icon: const Icon(Icons.qr_code_scanner, size: 20),
-              label: const Text('Field Audit (QR / NFC)',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          flex: 3,
-          child: SizedBox(
-            height: 48,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ParishColors.oliveGreen,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () =>
-                  showRegisterAssetModal(context, onAssetSaved: _loadAllData),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Register Asset',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          flex: 3,
-          child: SizedBox(
-            height: 48,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(
-                    color: ParishColors.goldAccent, width: 1.5),
-                foregroundColor: ParishColors.goldAccent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: _printBatchStickers,
-              icon: const Icon(Icons.print_outlined, size: 18),
-              label: const Text('Batch Print Tags',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatsGrid(bool isMobile) {
-    if (isMobile) {
-      return Row(
-        children: [
-          Expanded(
-            child: _buildMetricTile(
-              label: 'Total Active',
-              value: '$_activeCount',
-              icon: Icons.inventory_2,
-              color: ParishColors.marianBlue,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildMetricTile(
-              label: 'Sec 1 (≥₱10k)',
-              value: '$_section1Count',
-              icon: Icons.monetization_on_outlined,
-              color: ParishColors.goldAccent,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildMetricTile(
-              label: 'Sec 2 (<₱10k)',
-              value: '$_section2Count',
-              icon: Icons.receipt_long_outlined,
-              color: ParishColors.oliveGreen,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildMetricTile(
-              label: 'Archived',
-              value: '$_archivedCount',
-              icon: Icons.archive_outlined,
-              color: const Color(0xFF64748B),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      children: [
-        Expanded(
-          child: _buildMetricTile(
-            label: 'Total Active',
-            value: '$_activeCount',
-            icon: Icons.inventory_2,
-            color: ParishColors.marianBlue,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildMetricTile(
-            label: 'Section 1 (≥₱10k)',
-            value: '$_section1Count',
-            icon: Icons.monetization_on_outlined,
-            color: ParishColors.goldAccent,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildMetricTile(
-            label: 'Section 2 (<₱10k)',
-            value: '$_section2Count',
-            icon: Icons.receipt_long_outlined,
-            color: ParishColors.oliveGreen,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildMetricTile(
-            label: 'Needs Repair',
-            value: '$_needsRepairCount',
-            icon: Icons.build_circle_outlined,
-            color: ParishColors.goldAccent,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildMetricTile(
-            label: 'Archived / Decom',
-            value: '$_archivedCount',
-            icon: Icons.archive_outlined,
-            color: const Color(0xFF64748B),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDesktopFilterDropdowns() {
-    final textDark = ParishColors.textDark;
-    final cardWhite = ParishColors.cardWhite;
-    final borderGrey = ParishColors.borderGrey;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Location Dropdown
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          decoration: BoxDecoration(
-            color: cardWhite,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: borderGrey),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _selectedLocation,
-              isDense: true,
-              style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
-              items: [
-                const DropdownMenuItem(value: 'All', child: Text('All Locations')),
-                ..._locations.map((l) => DropdownMenuItem(
-                    value: l.acronym,
-                    child: Text('${l.acronym} - ${l.locationName}'))),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() {
-                    _selectedLocation = val;
-                    _currentPage = 0;
-                  });
-                }
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-
-        // Condition Dropdown
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          decoration: BoxDecoration(
-            color: cardWhite,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: borderGrey),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _selectedCondition,
-              isDense: true,
-              style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
-              items: const [
-                DropdownMenuItem(value: 'All', child: Text('All Conditions')),
-                DropdownMenuItem(
-                    value: 'VERIFIED / GOOD', child: Text('VERIFIED / GOOD')),
-                DropdownMenuItem(
-                    value: 'REQUIRES REPAIR', child: Text('REQUIRES REPAIR')),
-                DropdownMenuItem(
-                    value: 'DAMAGED', child: Text('DAMAGED')),
-                DropdownMenuItem(
-                    value: 'MISSING', child: Text('MISSING')),
-                DropdownMenuItem(
-                    value: 'UNUSABLE', child: Text('UNUSABLE')),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() {
-                    _selectedCondition = val;
-                    _currentPage = 0;
-                  });
-                }
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildClassificationChip(String acronym, String label) {
-    final isSelected = _selectedCategory == acronym;
-    return Padding(
-      padding: const EdgeInsets.only(right: 6.0),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: isSelected,
-        selectedColor: ParishColors.marianBlue,
-        backgroundColor: ParishColors.cardWhite,
-        labelStyle: TextStyle(
-          fontSize: 11,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-          color: isSelected ? Colors.white : ParishColors.textDark,
-        ),
-        onSelected: (_) => setState(() {
-          _selectedCategory = acronym;
-          _currentPage = 0;
-        }),
-      ),
-    );
-  }
-
-  Widget _buildMetricTile({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
+  Widget _buildCompactStatsRow() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: ParishColors.borderGrey),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textMuted),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Icon(icon, size: 14, color: color),
-            ],
+          Expanded(
+            child: _buildCompactStatItem(
+              'Total',
+              '$_activeCount',
+              ParishColors.marianBlue,
+            ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.bold, color: color),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(
+            child: _buildCompactStatItem(
+              'Sec 1',
+              '$_section1Count',
+              ParishColors.goldAccent,
+            ),
+          ),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(
+            child: _buildCompactStatItem(
+              'Sec 2',
+              '$_section2Count',
+              ParishColors.oliveGreen,
+            ),
+          ),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(
+            child: _buildCompactStatItem(
+              'Archived',
+              '$_archivedCount',
+              const Color(0xFF64748B),
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _buildCompactStatItem(String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: ParishColors.textMuted,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActiveFilterChip(String label, VoidCallback onDeleted) {
+    return Chip(
+      label: Text(label,
+          style: TextStyle(fontSize: 10, color: ParishColors.textDark)),
+      backgroundColor: ParishColors.marianBlueSurface,
+      deleteIcon: const Icon(Icons.close, size: 12),
+      onDeleted: onDeleted,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
   // ===========================================================================
-  // Responsive Full-Width Table Layout with Column Header Sorting
+  // Full-Width Responsive Table Layout
   // ===========================================================================
 
   Widget _buildFullWidthResponsiveTable(
@@ -1249,7 +1110,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     final bool isWideDesktop = availableWidth >= 1100;
 
     if (isWideDesktop) {
-      // 100% Edge-to-Edge Desktop Flex Table
       return Container(
         width: double.infinity,
         decoration: BoxDecoration(
@@ -1275,7 +1135,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               10: FixedColumnWidth(80), // Action
             },
             children: [
-              // Header Row
               TableRow(
                 decoration:
                 BoxDecoration(color: ParishColors.marianBlueSurface),
@@ -1293,7 +1152,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   _buildHeaderCell('Action', align: TextAlign.center),
                 ],
               ),
-              // Data Rows
               ...assets.map((a) {
                 return TableRow(
                   decoration: BoxDecoration(
@@ -1449,7 +1307,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       );
     }
 
-    // Horizontally scrollable data table for laptops/tablets
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1479,27 +1336,36 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               horizontalMargin: 16,
               columns: [
                 DataColumn(
-                  label: _buildSortableColumnLabel('Control Number', 'Control Number'),
-                  onSort: (columnIndex, ascending) => _onSortChanged('Control Number'),
+                  label: _buildSortableColumnLabel(
+                      'Control Number', 'Control Number'),
+                  onSort: (columnIndex, ascending) =>
+                      _onSortChanged('Control Number'),
                 ),
                 DataColumn(
-                  label: _buildSortableColumnLabel('Asset Name', 'Asset Name'),
-                  onSort: (columnIndex, ascending) => _onSortChanged('Asset Name'),
+                  label:
+                  _buildSortableColumnLabel('Asset Name', 'Asset Name'),
+                  onSort: (columnIndex, ascending) =>
+                      _onSortChanged('Asset Name'),
                 ),
                 const DataColumn(label: Text('Qty')),
                 const DataColumn(label: Text('Classification')),
                 const DataColumn(label: Text('Location')),
                 DataColumn(
                   label: _buildSortableColumnLabel('Year', 'Acquisition Year'),
-                  onSort: (columnIndex, ascending) => _onSortChanged('Acquisition Year'),
+                  onSort: (columnIndex, ascending) =>
+                      _onSortChanged('Acquisition Year'),
                 ),
                 DataColumn(
-                  label: _buildSortableColumnLabel('Price / Unit', 'Price / Unit'),
-                  onSort: (columnIndex, ascending) => _onSortChanged('Price / Unit'),
+                  label:
+                  _buildSortableColumnLabel('Price / Unit', 'Price / Unit'),
+                  onSort: (columnIndex, ascending) =>
+                      _onSortChanged('Price / Unit'),
                 ),
                 DataColumn(
-                  label: _buildSortableColumnLabel('Total Cost', 'Total Cost'),
-                  onSort: (columnIndex, ascending) => _onSortChanged('Total Cost'),
+                  label:
+                  _buildSortableColumnLabel('Total Cost', 'Total Cost'),
+                  onSort: (columnIndex, ascending) =>
+                      _onSortChanged('Total Cost'),
                 ),
                 const DataColumn(label: Text('Condition')),
                 const DataColumn(label: Text('Status')),
@@ -1740,7 +1606,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 color: ParishColors.textDark),
           ),
           const SizedBox(height: 4),
-          Text('Tap "Register Asset" above to record parish properties.',
+          Text('Tap "+ Register Asset" above to record parish properties.',
               style:
               TextStyle(fontSize: 12, color: ParishColors.textMuted)),
         ],

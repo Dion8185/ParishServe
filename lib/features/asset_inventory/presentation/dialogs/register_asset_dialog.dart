@@ -19,7 +19,6 @@ void showRegisterAssetModal(BuildContext context, {VoidCallback? onAssetSaved}) 
 }
 
 /// Custom formatter for Philippine Peso amounts with commas and decimals (e.g. 10,000.00).
-/// When empty, it leaves the field visually empty without forcing 0.00.
 class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -30,7 +29,6 @@ class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
       return newValue.copyWith(text: '');
     }
 
-    // Allow digits and up to one decimal point
     final clean = newValue.text.replaceAll(',', '');
     if (!RegExp(r'^\d*(\.\d{0,2})?$').hasMatch(clean)) {
       return oldValue;
@@ -74,7 +72,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
   final _itemNameController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
-  // Acquisition price per unit field is empty initially as required
   final _unitPriceController = TextEditingController();
   final _dimensionsController = TextEditingController();
   final _colorController = TextEditingController();
@@ -94,7 +91,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
   String _conditionStatus = 'VERIFIED / GOOD';
   String _operationalStatus = 'Active';
 
-  String _previewControlNumber = 'C-SI-2026-001';
+  String _previewControlNumber = 'C-FF 2026-001';
 
   // Photo & Security Watermark State
   Uint8List? _watermarkedPhotoBytes;
@@ -150,7 +147,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     super.dispose();
   }
 
-  // Live Calculated Properties
   int get _parsedQuantity {
     final qty = int.tryParse(_quantityController.text.trim());
     return (qty != null && qty > 0) ? qty : 1;
@@ -194,15 +190,16 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
   void _updateLiveControlNumberPreview() {
     final locAcronym = _selectedLocation?.acronym ?? 'C';
-    final clsAcronym = _selectedClassification?.acronym ?? 'SI';
+    final clsAcronym = _selectedClassification?.acronym ?? 'FF';
     final year = _dateOfAcquisition.year;
     final qty = _parsedQuantity;
 
     setState(() {
+      // Format: Location-Classification Year-Sequence (e.g. C-FF 2026-001)
       if (qty > 1) {
-        _previewControlNumber = '$locAcronym-$clsAcronym-$year-001 ... to ${(qty).toString().padLeft(3, '0')} ($qty consecutive items)';
+        _previewControlNumber = '$locAcronym-$clsAcronym $year-001 ... to ${(qty).toString().padLeft(3, '0')} ($qty items)';
       } else {
-        _previewControlNumber = '$locAcronym-$clsAcronym-$year-001';
+        _previewControlNumber = '$locAcronym-$clsAcronym $year-001';
       }
     });
   }
@@ -285,7 +282,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Camera access error: $e. You can also upload an image using "Upload Image".'),
+            content: Text('Camera error: $e. You can upload an image using "Upload Image".'),
             backgroundColor: ParishColors.goldAccent,
           ),
         );
@@ -369,7 +366,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       final double unitPriceValue = _parsedUnitPrice;
       String? uploadedPhotoUrl;
 
-      // 1. Upload watermarked photo if present
       if (_watermarkedPhotoBytes != null && _photoFileName != null) {
         final tempId = 'AST-${DateTime.now().millisecondsSinceEpoch % 100000}';
         uploadedPhotoUrl = await AssetService.uploadAssetPhoto(
@@ -379,10 +375,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
         );
       }
 
-      // 2. Perform Registration:
-      // If quantity == 1: Registers single asset record.
-      // If quantity > 1: Automatically registers individual asset records for each physical item,
-      // each with unique Control Number, unique Asset ID, and individual QR code.
       final List<AssetModel> createdAssets = await AssetService.registerBulkAssets(
         itemName: _itemNameController.text.trim(),
         quantity: qty,
@@ -441,7 +433,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       backgroundColor: cardWhite,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Container(
-        width: 760,
+        width: 720,
         constraints: const BoxConstraints(maxHeight: 800),
         child: Column(
           children: [
@@ -473,7 +465,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
-                          'Supports individual & bulk registration with automatic consecutive Diocesan Control Numbers',
+                          'Assign standardized Diocesan Control Number (Location-Classification Year-Sequence)',
                           style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
@@ -569,9 +561,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 16),
 
-                      // =========================================================
                       // QUANTITY, ACQUISITION PRICE PER UNIT & TOTAL COST
-                      // =========================================================
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -626,7 +616,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // 1. Quantity Field (Defaulted to 1)
+                                // Quantity Field
                                 Expanded(
                                   flex: 2,
                                   child: Column(
@@ -653,7 +643,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 ),
                                 const SizedBox(width: 14),
 
-                                // 2. Acquisition Price per Unit (Visually empty on start)
+                                // Acquisition Price per Unit
                                 Expanded(
                                   flex: 3,
                                   child: Column(
@@ -680,7 +670,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             ),
                             const SizedBox(height: 14),
 
-                            // 3. Total Acquisition Cost (Calculated Automatically: Qty × Unit Price)
+                            // Total Acquisition Cost
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -943,9 +933,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 18),
 
-                      // =========================================================
                       // ASSET IMAGE CAPTURE, WATERMARK & PREVIEW SECTION
-                      // =========================================================
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [

@@ -1,10 +1,14 @@
+import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_model.dart';
 import '../../services/asset_service.dart';
+import '../../utils/asset_image_watermark_util.dart';
 import 'asset_detail_dialog.dart';
 
 void showAuditScanModal(BuildContext context, {VoidCallback? onScanCompleted}) {
@@ -27,6 +31,7 @@ class _AuditScanDialog extends StatefulWidget {
 
 class _AuditScanDialogState extends State<_AuditScanDialog> {
   AuditScanMode _currentScanMode = AuditScanMode.selectMode;
+  AuditScanMode _lastActiveMode = AuditScanMode.liveCamera;
 
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _nfcInputController = TextEditingController();
@@ -36,13 +41,20 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
   bool _isSearching = false;
   String? _searchError;
+  String? _successBannerMessage;
   bool _hasProcessedScan = false;
   bool _isTorchOn = false;
   bool _cameraPermissionDenied = false;
 
+  // Autocomplete live suggestion state
+  List<AssetModel> _liveSuggestions = [];
+  bool _isLoadingSuggestions = false;
+  Timer? _debounceTimer;
+
   // Audit state once an asset is located
   AssetModel? _scannedAsset;
   String _selectedCondition = 'VERIFIED / GOOD';
+  String _selectedStatus = 'Active';
   bool _isRecordingAudit = false;
 
   final List<String> _conditionOptions = [
@@ -53,65 +65,162 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     'UNUSABLE',
   ];
 
+  final List<String> _operationalStatusOptions = [
+    'Active',
+    'In Storage',
+    'Under Maintenance',
+    'Decommissioned',
+  ];
+
+  bool get _isLiveCameraSupported {
+    if (kIsWeb) return true;
+    try {
+      return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _manualInputController.addListener(_onManualInputChanged);
+  }
+
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _manualInputController.removeListener(_onManualInputChanged);
     _manualInputController.dispose();
     _nfcInputController.dispose();
     _auditNotesController.dispose();
-    _scannerController?.dispose();
+    _safeDisposeScanner();
     super.dispose();
+  }
+
+  void _safeDisposeScanner() {
+    try {
+      _scannerController?.dispose();
+    } catch (_) {}
+    _scannerController = null;
+  }
+
+  void _onManualInputChanged() {
+    final query = _manualInputController.text.trim();
+    if (query.isEmpty) {
+      if (_liveSuggestions.isNotEmpty) {
+        setState(() {
+          _liveSuggestions = [];
+          _isLoadingSuggestions = false;
+        });
+      }
+      return;
+    }
+
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 250), () async {
+      if (!mounted) return;
+      setState(() => _isLoadingSuggestions = true);
+
+      final results = await AssetService.searchAssetSuggestions(query);
+      if (!mounted) return;
+
+      setState(() {
+        _liveSuggestions = results;
+        _isLoadingSuggestions = false;
+      });
+    });
   }
 
   void _startCameraScanner() {
     setState(() {
       _searchError = null;
+      _successBannerMessage = null;
       _hasProcessedScan = false;
       _scannedAsset = null;
       _cameraPermissionDenied = false;
-      _scannerController?.dispose();
-      _scannerController = MobileScannerController(
-        detectionSpeed: DetectionSpeed.normal,
-        facing: CameraFacing.back,
-        torchEnabled: false,
-        autoStart: true,
-      );
+      _liveSuggestions = [];
+      _safeDisposeScanner();
+
+      if (_isLiveCameraSupported) {
+        try {
+          _scannerController = MobileScannerController(
+            detectionSpeed: DetectionSpeed.normal,
+            facing: CameraFacing.back,
+            torchEnabled: false,
+            autoStart: true,
+          );
+        } catch (_) {
+          _scannerController = null;
+        }
+      }
       _currentScanMode = AuditScanMode.liveCamera;
+      _lastActiveMode = AuditScanMode.liveCamera;
     });
   }
 
   void _startNfcListener() {
     setState(() {
       _searchError = null;
+      _successBannerMessage = null;
       _hasProcessedScan = false;
       _scannedAsset = null;
-      _scannerController?.dispose();
-      _scannerController = null;
+      _liveSuggestions = [];
+      _safeDisposeScanner();
       _currentScanMode = AuditScanMode.nfcListening;
+      _lastActiveMode = AuditScanMode.nfcListening;
     });
   }
 
   void _startManualLookup() {
     setState(() {
       _searchError = null;
+      _successBannerMessage = null;
       _hasProcessedScan = false;
       _scannedAsset = null;
-      _scannerController?.dispose();
-      _scannerController = null;
+      _liveSuggestions = [];
+      _safeDisposeScanner();
       _currentScanMode = AuditScanMode.manualEntry;
+      _lastActiveMode = AuditScanMode.manualEntry;
     });
   }
 
   void _resetToModeSelection() {
     setState(() {
-      _scannerController?.dispose();
-      _scannerController = null;
+      _safeDisposeScanner();
       _currentScanMode = AuditScanMode.selectMode;
+      _scannedAsset = null;
+      _searchError = null;
+      _successBannerMessage = null;
+      _hasProcessedScan = false;
+      _isSearching = false;
+      _cameraPermissionDenied = false;
+      _liveSuggestions = [];
+      _auditNotesController.clear();
+      _manualInputController.clear();
+      _nfcInputController.clear();
+    });
+  }
+
+  void _armForNextScan() {
+    setState(() {
       _scannedAsset = null;
       _searchError = null;
       _hasProcessedScan = false;
       _isSearching = false;
-      _cameraPermissionDenied = false;
+      _liveSuggestions = [];
+      _auditNotesController.clear();
+      _manualInputController.clear();
+      _nfcInputController.clear();
     });
+
+    if (_lastActiveMode == AuditScanMode.liveCamera) {
+      _startCameraScanner();
+    } else if (_lastActiveMode == AuditScanMode.nfcListening) {
+      _startNfcListener();
+    } else {
+      _startManualLookup();
+    }
   }
 
   Future<void> _handleBarcodeDetected(BarcodeCapture capture) async {
@@ -135,7 +244,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     setState(() {
       _isSearching = true;
       _searchError = null;
+      _successBannerMessage = null;
       _scannedAsset = null;
+      _liveSuggestions = [];
     });
 
     try {
@@ -143,11 +254,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       if (!mounted) return;
 
       if (asset != null) {
-        _scannerController?.dispose();
-        _scannerController = null;
+        _safeDisposeScanner();
         setState(() {
           _scannedAsset = asset;
           _selectedCondition = asset.conditionStatus;
+          _selectedStatus = asset.operationalStatus;
           _isSearching = false;
         });
       } else {
@@ -228,12 +339,19 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
     setState(() => _isRecordingAudit = true);
 
+    final completedControlNo = _scannedAsset!.controlNumber;
+    final verifiedCondition = _selectedCondition;
+    final verifiedStatus = _selectedStatus;
+    final isDecom = verifiedStatus.trim().toLowerCase() == 'decommissioned';
+
     try {
       await AssetService.recordAuditScan(
         assetId: _scannedAsset!.assetId,
-        controlNumber: _scannedAsset!.controlNumber,
-        newCondition: _selectedCondition,
+        controlNumber: completedControlNo,
+        newCondition: verifiedCondition,
         previousCondition: _scannedAsset!.conditionStatus,
+        newStatus: verifiedStatus,
+        previousStatus: _scannedAsset!.operationalStatus,
         previousLocation: _scannedAsset!.displayLocation,
         newLocation: _scannedAsset!.displayLocation,
         auditMethod: method,
@@ -241,17 +359,30 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       );
 
       if (!mounted) return;
-      Navigator.pop(context);
+
       widget.onScanCompleted?.call();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Audit recorded for ${_scannedAsset!.controlNumber}: $_selectedCondition'),
-          backgroundColor: ParishColors.oliveGreen,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      setState(() {
+        _isRecordingAudit = false;
+        _scannedAsset = null;
+        _hasProcessedScan = false;
+        _searchError = null;
+        _liveSuggestions = [];
+        _auditNotesController.clear();
+        _manualInputController.clear();
+        _nfcInputController.clear();
+        _successBannerMessage = isDecom
+            ? 'Audit saved: $completedControlNo verified as $verifiedCondition & marked Decommissioned (Archived).'
+            : 'Audit saved for $completedControlNo: $verifiedCondition • Status: $verifiedStatus.';
+      });
+
+      if (_lastActiveMode == AuditScanMode.liveCamera) {
+        _startCameraScanner();
+      } else if (_lastActiveMode == AuditScanMode.nfcListening) {
+        _startNfcListener();
+      } else {
+        _startManualLookup();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -271,7 +402,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: cardWhite,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       child: Container(
         width: 640,
         constraints: const BoxConstraints(maxHeight: 760),
@@ -279,7 +410,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           children: [
             // Modal Header Banner
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               decoration: BoxDecoration(
                 color: ParishColors.marianBlueSurface,
                 borderRadius:
@@ -295,9 +426,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.qr_code_scanner,
-                        color: Colors.white, size: 22),
+                        color: Colors.white, size: 20),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,19 +436,25 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         Text(
                           'Mobile Field Audit & Verification',
                           style: TextStyle(
-                              fontSize: 17,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: textDark),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          'Choose between Camera QR Scanner, NFC/RFID Reader, or Manual Lookup',
-                          style: TextStyle(fontSize: 11.5, color: textMuted),
+                          'Continuous audit workflow: Scan or enter subsequent assets seamlessly',
+                          style: TextStyle(fontSize: 11, color: textMuted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -327,10 +464,51 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             // Modal Body Area
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Persistent Success Banner after submitting previous item
+                    if (_successBannerMessage != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: ParishColors.oliveGreenSurface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: ParishColors.oliveGreen
+                                  .withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle,
+                                color: ParishColors.oliveGreen, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _successBannerMessage!,
+                                style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.oliveGreen),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 16),
+                              color: ParishColors.oliveGreen,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () => setState(
+                                      () => _successBannerMessage = null),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     if (_searchError != null) ...[
                       Container(
                         width: double.infinity,
@@ -387,7 +565,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
             // Modal Footer Actions
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               decoration: BoxDecoration(
                 color: cardWhite,
                 borderRadius:
@@ -401,13 +579,15 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       _scannedAsset == null)
                     TextButton.icon(
                       onPressed: _resetToModeSelection,
-                      icon: const Icon(Icons.arrow_back, size: 16),
-                      label: const Text('Back to Options'),
+                      icon: const Icon(Icons.swap_horiz, size: 16),
+                      label: const Text('Change Mode'),
                     )
                   else
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: Text('Close', style: TextStyle(color: textMuted)),
+                      child: Text('Finish & Close',
+                          style: TextStyle(
+                              color: textMuted, fontWeight: FontWeight.bold)),
                     ),
 
                   if (_scannedAsset != null)
@@ -417,18 +597,20 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           style: OutlinedButton.styleFrom(
                             side: BorderSide(color: borderGrey),
                             foregroundColor: textDark,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
                           ),
-                          onPressed: _resetToModeSelection,
-                          icon: const Icon(Icons.refresh, size: 16),
-                          label: const Text('Audit Another'),
+                          onPressed: _armForNextScan,
+                          icon: const Icon(Icons.skip_next, size: 16),
+                          label: const Text('Skip / Next'),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: ParishColors.oliveGreen,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 18, vertical: 10),
+                                horizontal: 14, vertical: 10),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8)),
                           ),
@@ -452,9 +634,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                               : const Icon(Icons.check_circle_outline,
                               size: 18),
                           label: Text(
-                            _isRecordingAudit
-                                ? 'Saving Audit...'
-                                : 'Confirm Audit Inspection',
+                            _isRecordingAudit ? 'Saving...' : 'Save & Next',
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 13),
                           ),
@@ -471,7 +651,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   // ===========================================================================
-  // 1. Initial Mode Selection: Choose Between Camera Scanner, NFC, or Manual
+  // 1. Mode Selection Grid
   // ===========================================================================
 
   Widget _buildModeSelectionGrid() {
@@ -488,39 +668,39 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Choose the appropriate scanning tool based on the physical asset tag.',
+          'Choose your scanning tool. Once an audit is saved, the scanner stays active to verify the next item seamlessly.',
           style: TextStyle(fontSize: 12, color: textMuted),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
         _buildMethodCard(
           title: 'Camera QR Code Scanner',
           subtitle:
-          'Open camera viewfinder to scan printed physical QR stickers on furniture, equipment, and books.',
+          'Rapid optical scanning for printed physical QR stickers on furniture, equipment, and books.',
           icon: Icons.camera_alt_outlined,
-          badgeLabel: 'OPTICAL QR',
+          badgeLabel: 'RAPID SCAN',
           badgeColor: ParishColors.marianBlue,
           onTap: _startCameraScanner,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
 
         _buildMethodCard(
           title: 'NFC / RFID Wireless Sensor',
           subtitle:
-          'Tap or hold device against 13.56 MHz HF tags affixed to sacred vessels and metal furnishings.',
+          'Continuous tag detection for sacred metal vessels and high-value parish furnishings.',
           icon: Icons.nfc,
-          badgeLabel: 'WIRELESS NFC',
+          badgeLabel: 'WIRELESS',
           badgeColor: ParishColors.goldAccent,
           onTap: _startNfcListener,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
 
         _buildMethodCard(
-          title: 'Manual Control # & Token Lookup',
+          title: 'Manual Control # & Token',
           subtitle:
-          'Type Diocesan Control # (e.g. C-SI-2008-001) or asset token if label is damaged or inaccessible.',
+          'Lookup by Diocesan Control # (e.g. C-SI-2008-001) with live matching suggestions as you type.',
           icon: Icons.keyboard_outlined,
-          badgeLabel: 'MANUAL KEYBOARD',
+          badgeLabel: 'MANUAL',
           badgeColor: ParishColors.oliveGreen,
           onTap: _startManualLookup,
         ),
@@ -544,7 +724,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: ParishColors.backgroundLight,
           borderRadius: BorderRadius.circular(14),
@@ -553,32 +733,37 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
               ),
-              child: Icon(icon, color: badgeColor, size: 26),
+              child: Icon(icon, color: badgeColor, size: 22),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                            fontSize: 14.5,
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 13.5,
                             fontWeight: FontWeight.bold,
-                            color: textDark),
+                            color: textDark,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 5, vertical: 1.5),
                         decoration: BoxDecoration(
                           color: badgeColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
@@ -586,22 +771,26 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         child: Text(
                           badgeLabel,
                           style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: badgeColor),
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.bold,
+                            color: badgeColor,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     subtitle,
-                    style: TextStyle(fontSize: 11.5, color: textMuted),
+                    style: TextStyle(fontSize: 11, color: textMuted),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios, size: 14, color: borderGrey),
+            const SizedBox(width: 6),
+            Icon(Icons.arrow_forward_ios, size: 12, color: borderGrey),
           ],
         ),
       ),
@@ -609,40 +798,105 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   // ===========================================================================
-  // 2. Camera Viewfinder with Explicit Permission & Lifecycle Management
+  // 2. Camera Viewfinder with Native Desktop / Windows Fallback Handling
   // ===========================================================================
 
   Widget _buildLiveCameraScannerView() {
+    if (!_isLiveCameraSupported) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: ParishColors.borderGrey),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.desktop_windows_outlined,
+                size: 44, color: ParishColors.marianBlueLight),
+            const SizedBox(height: 10),
+            const Text(
+              'Desktop Environment Detected',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Live camera streaming in Flutter is optimized for Android, iOS, macOS, and Web. On Windows, you can scan QR codes from saved photos or use an attached USB/Bluetooth barcode scanner directly into the field below.',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.75), fontSize: 11.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: _pickImageAndScan,
+                  icon: const Icon(Icons.image, size: 18),
+                  label: const Text('Select Image with QR Code'),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white70),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: _startManualLookup,
+                  icon: const Icon(Icons.keyboard, size: 18),
+                  label: const Text('Type / USB Scan Control #'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Icon(Icons.videocam_outlined,
-                    color: ParishColors.marianBlue, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Live Camera Scanner Active',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: ParishColors.marianBlue),
-                ),
-              ],
+            Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.videocam_outlined,
+                      color: ParishColors.marianBlue, size: 18),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'Live Camera Scanner Active',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: ParishColors.marianBlue,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
             TextButton.icon(
               onPressed: _resetToModeSelection,
-              icon: const Icon(Icons.close, size: 16),
-              label: const Text('Cancel Camera'),
+              icon: const Icon(Icons.close, size: 14),
+              label: const Text('Switch Mode', style: TextStyle(fontSize: 12)),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Container(
-          height: 280,
+          height: 270,
           width: double.infinity,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
@@ -673,7 +927,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                                 isPermission
                                     ? Icons.security_outlined
                                     : Icons.no_photography_outlined,
-                                size: 42,
+                                size: 40,
                                 color: ParishColors.mercyRed,
                               ),
                               const SizedBox(height: 10),
@@ -684,16 +938,16 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                                 style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 14),
+                                    fontSize: 13.5),
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 isPermission
-                                    ? 'Camera access was not granted. Please allow camera permissions in your device settings or browser.'
-                                    : 'Failed to access camera: ${error.errorDetails?.message ?? error.toString()}',
+                                    ? 'Camera access was not granted. Please allow camera permissions in your device settings.'
+                                    : 'Camera stream notice: ${error.errorDetails?.message ?? error.toString()}',
                                 style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.75),
-                                    fontSize: 11.5),
+                                    fontSize: 11),
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 14),
@@ -709,9 +963,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                                       _startCameraScanner();
                                     },
                                     icon: const Icon(Icons.refresh, size: 16),
-                                    label: const Text('Retry Permission'),
+                                    label: const Text('Retry'),
                                   ),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(width: 8),
                                   OutlinedButton.icon(
                                     style: OutlinedButton.styleFrom(
                                       side: const BorderSide(color: Colors.white70),
@@ -759,8 +1013,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
                 // Center Focus Reticle
                 Container(
-                  width: 180,
-                  height: 180,
+                  width: 170,
+                  height: 170,
                   decoration: BoxDecoration(
                     border:
                     Border.all(color: ParishColors.goldAccent, width: 2.5),
@@ -825,11 +1079,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Center(
           child: Text(
-            'Align the printed property QR tag inside the golden reticle.',
-            style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+            'Scan any asset QR label. Audit form opens automatically.',
+            style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
           ),
         ),
       ],
@@ -846,7 +1100,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: ParishColors.goldLight,
         borderRadius: BorderRadius.circular(16),
@@ -860,53 +1114,55 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.nfc, size: 24, color: ParishColors.goldAccent),
+                  Icon(Icons.nfc, size: 22, color: ParishColors.goldAccent),
                   const SizedBox(width: 8),
                   Text(
                     'NFC / RFID Wireless Sensor Active',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 13,
                         color: ParishColors.goldAccent),
                   ),
                 ],
               ),
               IconButton(
-                icon: const Icon(Icons.close, size: 18),
+                icon: const Icon(Icons.close, size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
                 onPressed: _resetToModeSelection,
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.sensors, size: 48, color: ParishColors.goldAccent),
+            child: Icon(Icons.sensors, size: 42, color: ParishColors.goldAccent),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Text(
             'Hold Device Near 13.56 MHz RFID / NFC Tag',
             style: TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 14, color: textDark),
+                fontWeight: FontWeight.bold, fontSize: 13.5, color: textDark),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
           Text(
-            'For sacred metal vessels (chalices, ciboria, monstrances) and consecrated furnishings.',
-            style: TextStyle(fontSize: 11.5, color: textMuted),
+            'For sacred metal vessels (chalices, ciboria) and consecrated furnishings.',
+            style: TextStyle(fontSize: 11, color: textMuted),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _nfcInputController,
                   style: const TextStyle(
-                      fontSize: 13.5, fontWeight: FontWeight.bold),
+                      fontSize: 13, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
                     hintText: 'Or enter RFID Tag UID (e.g. 04:A2:4B:9C)',
                     isDense: true,
@@ -926,14 +1182,14 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   backgroundColor: ParishColors.goldAccent,
                   foregroundColor: Colors.white,
                   padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
                 onPressed: () =>
                     _searchAndLoadAsset(_nfcInputController.text),
                 child: const Text('Read Tag',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -943,17 +1199,21 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   // ===========================================================================
-  // 4. Manual Control Number / Asset ID Lookup
+  // 4. Manual Control Number Lookup with Live Autocomplete Suggestions
   // ===========================================================================
 
   Widget _buildManualLookupView() {
+    final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
+    final borderGrey = ParishColors.borderGrey;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: ParishColors.backgroundLight,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ParishColors.borderGrey),
+        border: Border.all(color: borderGrey),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -962,37 +1222,60 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Manual Diocesan Control Number Lookup',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                'Manual Control Number / USB Scanner',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
               ),
               IconButton(
-                icon: const Icon(Icons.close, size: 18),
+                icon: const Icon(Icons.close, size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
                 onPressed: _resetToModeSelection,
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Type the exact control number stamped or recorded in the Diocesan Book of Inventory.',
-            style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+            'Type to see matching assets instantly, or use an attached barcode reader.',
+            style: TextStyle(fontSize: 11, color: textMuted),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+
+          // Search Field
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _manualInputController,
+                  autofocus: true,
                   style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.bold),
+                      fontSize: 13.5, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
-                    hintText: 'e.g. C-SI-2008-001 or AST-XXXXX',
+                    hintText: 'e.g. C-SI-2008-001 or Pew',
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
+                        horizontal: 12, vertical: 10),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8)),
+                    suffixIcon: _isLoadingSuggestions
+                        ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                        : (_manualInputController.text.isNotEmpty
+                        ? IconButton(
+                      icon: const Icon(Icons.clear, size: 16),
+                      onPressed: () {
+                        _manualInputController.clear();
+                        setState(() => _liveSuggestions = []);
+                      },
+                    )
+                        : null),
                   ),
                   onSubmitted: _searchAndLoadAsset,
                 ),
@@ -1003,7 +1286,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   backgroundColor: ParishColors.marianBlue,
                   foregroundColor: Colors.white,
                   padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
@@ -1012,26 +1295,116 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 icon: const Icon(Icons.search, size: 16),
                 label: const Text('Search',
                     style:
-                    TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
+
+          // Real-time Matching Autocomplete Suggestions Container
+          if (_liveSuggestions.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 180),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _liveSuggestions.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final suggestion = _liveSuggestions[index];
+
+                  return InkWell(
+                    onTap: () {
+                      _manualInputController.text = suggestion.controlNumber;
+                      _searchAndLoadAsset(suggestion.controlNumber);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(suggestion.classificationIcon,
+                              size: 16, color: ParishColors.marianBlue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      suggestion.controlNumber,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: ParishColors.marianBlue,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        '• ${suggestion.itemName}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: textDark,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  'Loc: ${suggestion.displayLocation} • ${suggestion.conditionStatus}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_forward_ios,
+                              size: 10, color: Colors.grey),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   // ===========================================================================
-  // 5. Verification & Inspection Form (Rendered Once an Asset is Located)
+  // 5. Verification & Inspection Form: Displays Reference Image + Fields
   // ===========================================================================
 
   Widget _buildAssetAuditVerificationForm() {
     final asset = _scannedAsset!;
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
+    final borderGrey = ParishColors.borderGrey;
+    final isDecom = _selectedStatus == 'Decommissioned';
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(16),
@@ -1053,13 +1426,13 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
               Row(
                 children: [
                   const Icon(Icons.check_circle,
-                      color: ParishColors.oliveGreen, size: 22),
-                  const SizedBox(width: 8),
+                      color: ParishColors.oliveGreen, size: 20),
+                  const SizedBox(width: 6),
                   Text(
                     'Asset Found in Registry',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 13.5,
+                        fontSize: 13,
                         color: ParishColors.oliveGreen),
                   ),
                 ],
@@ -1072,34 +1445,134 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 },
                 child: const Text('View Full History',
                     style:
-                    TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
-          const Divider(height: 18),
+          const Divider(height: 16),
 
-          Text(
-            asset.itemName,
-            style: TextStyle(
-                fontSize: 16.5, fontWeight: FontWeight.bold, color: textDark),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Control #: ${asset.controlNumber} • Location: ${asset.displayLocation}',
-            style: TextStyle(fontSize: 12.5, color: textMuted),
-          ),
-          Text(
-            'Classification: ${asset.displayClassification} • Acquired: ${asset.acquisitionYear} (${asset.modeOfAcquisition})',
-            style: TextStyle(fontSize: 12, color: textMuted),
-          ),
-          const SizedBox(height: 16),
+          // Photo & Details Row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Photo Thumbnail with Watermarked Preview on Tap
+              Tooltip(
+                message: asset.photoUrl != null && asset.photoUrl!.isNotEmpty
+                    ? 'Tap to preview photo with security watermark'
+                    : 'No photo uploaded',
+                child: InkWell(
+                  onTap: asset.photoUrl != null && asset.photoUrl!.isNotEmpty
+                      ? () => AssetImageWatermarkUtil.showImagePreviewModal(
+                    context,
+                    imageProvider: NetworkImage(asset.photoUrl!),
+                    title: asset.itemName,
+                    controlNumber: asset.controlNumber,
+                  )
+                      : null,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      color: ParishColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: asset.photoUrl != null
+                            ? ParishColors.goldAccent
+                            : borderGrey,
+                        width: asset.photoUrl != null ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: asset.photoUrl != null && asset.photoUrl!.isNotEmpty
+                          ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            asset.photoUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Center(
+                              child: Icon(asset.classificationIcon,
+                                  size: 28,
+                                  color: ParishColors.marianBlue),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              color: Colors.black54,
+                              padding:
+                              const EdgeInsets.symmetric(vertical: 2),
+                              child: const Text(
+                                'PREVIEW',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 6.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                          : Center(
+                        child: Icon(asset.classificationIcon,
+                            size: 32, color: ParishColors.marianBlue),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
 
-          Text(
-            'Verified Physical Condition (Update on Inspection):',
-            style: TextStyle(
-                fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+              // Asset Description Metadata
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      asset.itemName,
+                      style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.bold,
+                          color: textDark),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Control #: ${asset.controlNumber}',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.marianBlue),
+                    ),
+                    Text(
+                      'Location: ${asset.displayLocation}',
+                      style: TextStyle(fontSize: 11.5, color: textMuted),
+                    ),
+                    Text(
+                      'Classification: ${asset.displayClassification}',
+                      style: TextStyle(fontSize: 11.5, color: textMuted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 14),
+
+          // Audit Field 1: Physical Condition Dropdown
+          Text(
+            '1. Verified Physical Condition (Inspect On-Site) *',
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
+          ),
+          const SizedBox(height: 5),
           DropdownButtonFormField<String>(
             value: _selectedCondition,
             isExpanded: true,
@@ -1108,29 +1581,92 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
               fillColor: ParishColors.backgroundLight,
               isDense: true,
               contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               border:
               OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             ),
             items: _conditionOptions
                 .map((c) => DropdownMenuItem(
                 value: c,
-                child: Text(c, style: const TextStyle(fontSize: 13))))
+                child: Text(c, style: const TextStyle(fontSize: 12.5))))
                 .toList(),
             onChanged: (val) => setState(() => _selectedCondition = val!),
           ),
           const SizedBox(height: 12),
 
+          // Audit Field 2: Operational Status Dropdown
           Text(
-            'Auditor Inspection Notes (Optional):',
+            '2. Verified Operational / Administrative Status *',
             style: TextStyle(
-                fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+                fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
+          DropdownButtonFormField<String>(
+            value: _selectedStatus,
+            isExpanded: true,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: ParishColors.backgroundLight,
+              isDense: true,
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border:
+              OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            items: _operationalStatusOptions
+                .map((s) => DropdownMenuItem(
+                value: s,
+                child: Text(
+                  s == 'Decommissioned'
+                      ? 'Decommissioned (Transfers to Archive)'
+                      : s,
+                  style: const TextStyle(fontSize: 12.5),
+                  overflow: TextOverflow.ellipsis,
+                )))
+                .toList(),
+            onChanged: (val) => setState(() => _selectedStatus = val!),
+          ),
+          if (isDecom) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRedSurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: ParishColors.mercyRed.withValues(alpha: 0.4)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 16, color: ParishColors.mercyRed),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Warning: Confirming "Decommissioned" status will move this asset to the Archive quarantine upon saving.',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: ParishColors.mercyRed,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+
+          // Audit Field 3: Inspection Notes
+          Text(
+            '3. Auditor Inspection Notes (Optional):',
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
+          ),
+          const SizedBox(height: 5),
           TextField(
             controller: _auditNotesController,
             maxLines: 2,
-            style: TextStyle(fontSize: 13, color: textDark),
+            style: TextStyle(fontSize: 12.5, color: textDark),
             decoration: InputDecoration(
               hintText:
               'e.g. Verified physically inside sacristy vault, good condition',

@@ -2,9 +2,10 @@
 PARISHSERVE SYSTEM CONTEXT DOCUMENTATION
 ================================================================================
 Application Name: ParishServe
-Description: Integrated Parish Asset Inventory, Sacramental Records Digitization,
-             Service Appointment, Receipt Management, Asset Label Printing,
-             Daily Liturgical Readings, and ESP32-Based Smart Archive System
+Description: Enterprise Ecclesiastical Administration Platform - Integrated Canonical
+             Sacramental Records Digitization, Service Appointments, POS Cashiering,
+             Receipt Management, Diocesan Asset Inventory & Watermarking,
+             Asset Label Printing, Daily Liturgical Readings, and ESP32 Smart Archive
 Parish Jurisdiction: St. John Paul II Parish (Parochia Sancti Ioannis Pauli II)
 Diocese: Diocese of San Pablo
 Location: Brgy. Labuin, Santa Cruz, Laguna, Philippines
@@ -24,11 +25,11 @@ Philippines under Canon Law (Code of Canon Law / Codex Iuris Canonici).
 
 The system seamlessly unifies seven core operational pillars:
 1. Canonical Sacramental Records Digitization (Canon 535) & Dynamic PDF/QR Certificate Generation
-2. Parish Service Appointments & Mass Intention Pastoral Scheduling
-3. POS Cashiering, Official Receipts, & Particulars Particulars Catalog
-4. Diocesan Asset Inventory, Reference Data Management, & Asset Label PDF Printing (CustodiaIMS)
+2. Parish Service Appointments, Mass Intention Scheduling & LitCal Calendar Integration
+3. POS Cashiering, Official Receipts, & Particulars Catalog Management
+4. Diocesan Asset Inventory, Reference Data Management, Security Watermarking & Asset Label Printing (CustodiaIMS)
 5. Smart Archive Environmental Telemetry (ESP32 IoT Temperature & Relative Humidity Conservation)
-6. Daily Catholic Mass Readings & Liturgical Calendar Integration
+6. Daily Catholic Mass Readings & Roman Catholic Lectionary Integration
 7. Multi-Tier Role-Based Access Control (RBAC) Governance & Security Auditing
 
 ================================================================================
@@ -208,40 +209,57 @@ Database Schema Overview:
     - Columns: id (PK, 'global'), diocese_logo_url, parish_seal_url,
       show_diocese_logo, show_parish_seal, updated_at.
 
-13. `receipt_transactions`
-    - Financial receipt records for cashiering and parish offerings.
-    - Columns: receipt_number (PK, format: OR-YYYY-XXXX), particular_id,
-      particular_name, category, amount, payor_name, payment_method ('Cash',
-      'GCash / E-Wallet', 'Bank Transfer', 'Check'), reference_number, issued_by,
-      remarks, issued_at, template_id, status ('Valid', 'Voided', 'Cancelled'),
-      cancellation_reason, voided_at, voided_by.
+13. `parish_transactions`
+    - Financial receipt transactions for cashiering, POS, and offerings.
+    - Columns: transaction_id (PK, format: TXN-timestamp), receipt_number (format: REC-YYYY-XXXXX),
+      payor_name, payor_contact, transaction_date, transaction_type ('donation', 'stipend',
+      'mass_intention', 'certificate', 'sacrament', 'service', 'offering', 'fee'),
+      related_service, transaction_details, transaction_amount, payment_required_status,
+      transaction_status ('paid', 'pending', 'cancelled'), related_appointment_id,
+      related_request_id, encoded_by, created_at.
 
-14. `particulars_catalog`
-    - Standard parish fee and offering catalog.
-    - Columns: particular_id (PK), particular_name, category, standard_amount,
-      is_active, description.
+14. `parish_particulars`
+    - Catalog of offerings, stipends, and services.
+    - Columns: particular_id (PK, format: PRT-timestamp), title, category ('Sacraments',
+      'Mass Intentions', 'Certificates', 'Devotionals', 'Others'), default_price,
+      description, icon_name, allows_custom_price, is_active, created_at, updated_at.
 
 15. `receipt_templates`
     - Receipt template styling and layout options.
-    - Columns: template_id (PK), template_name, header_title, parish_sub_title,
-      diocese_name, footer_notice, paper_width_mm, is_default, is_active,
-      style_config (JSON), created_at, updated_at.
+    - Columns: template_id (PK, format: TPL-REC-XXXXX), template_name, receipt_title,
+      header_text, paper_size ('Ecclesiastical' [8.5x4.125 in], 'A4', 'Letter', 'Legal' [8.5x13 in]),
+      orientation ('Landscape', 'Portrait'), background_image_url, background_mode
+      ('None' [Plain], 'Border', 'Full-Page'), diocese_logo_url, parish_seal_url,
+      show_diocese_logo, show_parish_seal, cashier_title, parish_priest_name,
+      signature_image_url, enable_qr_verification, style_config (JSON with Canva visual canvas support),
+      is_default, is_active, version, created_by, created_at, updated_at.
 
 16. `parish_assets`
-    - Physical parish and diocesan asset register.
-    - Columns: asset_tag_id (PK, format: AST-YYYY-XXXX), asset_name, category,
-      location, status ('Operational', 'Needs Maintenance', 'Under Repair',
-      'Decommissioned'), acquisition_cost, acquisition_date, condition_notes,
-      custodian, qr_code_path, created_at, updated_at.
+    - Registered diocesan and parish property register.
+    - Columns: asset_id (PK, format: AST-hex), control_number (Format: Location-Classification Year-Sequence,
+      e.g. C-SI-2026-001), item_name, classification_id, classification_acronym,
+      classification_name, location_id, location_acronym, location_name, dimensions,
+      color, model, others, remarks, photo_url (Security Watermarked), date_of_acquisition,
+      acquisition_year, mode_of_acquisition ('Purchase', 'Donation', 'Transfer',
+      'Diocesan Grant', 'Inherited / Legacy', 'Found / Recovered'), quantity, unit_price,
+      total_cost, rfid_tag (13.56 MHz RFID/NFC UID), qr_code_token, condition_status
+      ('VERIFIED / GOOD', 'REQUIRES REPAIR', 'DAMAGED', 'MISSING', 'UNUSABLE'),
+      operational_status ('Active', 'In Storage', 'Under Maintenance', 'Decommissioned'),
+      is_archived, archived_at, archived_by, archive_reason, bulk_batch_id,
+      item_sequence_in_batch, last_audited_at, audited_by, created_by, registration_date,
+      created_at, updated_at.
 
-17. `asset_categories` / `asset_locations` / `asset_custodians`
-    - Dynamic reference lookup catalogs for asset inventory.
-    - Stores manageable categories (Liturgical Vessels, Vestments, Reliquaries, Furniture, Audio/Visual Systems, Vehicles, etc.), physical locations (Sacristy, Sanctuary, Archive Room, Rectory, etc.), and custodians.
+17. `asset_locations` & `asset_classifications`
+    - Diocesan reference data catalogs.
+    - Locations: Church (C), Sacristy (S), Office (O), Pastoral Office (PO), Parish Eucharistic Adoration Chapel (PEAC), Multi-Purpose Hall (MH), Others (OTH).
+    - Classifications: Sacred Image (SI), Sacred Vessel (SV), Musical Instrument (MI), Liturgical Book (LB), Furniture and Fixtures (FF), Office Equipment (OE), Electrical Equipment (EE), Hand Tools (HT), Others (OTH).
 
-18. `asset_audit_scans`
-    - Physical QR audit logs for parish property.
-    - Columns: audit_id (PK), asset_tag_id, scanned_by, scanned_location,
-      scan_status, audit_notes, scanned_at.
+18. `asset_audit_logs`
+    - Physical field audit logs for parish property.
+    - Columns: audit_id (PK, format: AUD-timestamp), asset_id, control_number,
+      audited_by, previous_condition, new_condition, previous_status, new_status,
+      previous_location, new_location, audit_method ('QR_SCAN', 'RFID_NFC', 'MANUAL'),
+      audit_notes, audited_at.
 
 19. `storage_nodes`
     - ESP32 IoT micro-climate archive monitoring nodes.
@@ -261,7 +279,7 @@ Database Schema Overview:
       target_reference_id, justification, created_at.
 
 Supabase Storage Buckets:
-- `certificate-assets`: Stores uploaded border backgrounds, signatures, logos, and generated PDF certificates (`issued_pdfs/`).
+- `certificate-assets`: Stores uploaded border backgrounds, signatures, logos, watermarked asset photos, and generated PDF certificates (`issued_pdfs/`, `asset_photos/`).
 
 ================================================================================
 4. CANONICAL SACRAMENTAL RECORDS & CERTIFICATE GENERATION MODULE
@@ -330,7 +348,7 @@ Paramount Canonical Rules & Automated Validation:
 
 6. Automated Email Confirmation (Supabase Edge Function & Brevo):
    - Invokes `send-booking-confirmation` Deno Edge Function via Brevo SMTP API.
-   - Automatically attaches canonical document submission checklists based on the service type (e.g., CENOMAR, Banns, Pre-Cana for Weddings; Live Birth, Godparent Certificates for Baptisms).
+   - Automatically attaches canonical document submission checklists based on the service type.
 
 ================================================================================
 6. CASHIERING, RECEIPTS & FINANCIAL MANAGEMENT MODULE
@@ -339,24 +357,28 @@ The Receipts Module handles financial cashiering, mass intention offerings,
 and official receipt issuance.
 
 Key Features:
-- Particulars Catalog: Configurable list of services and standard fee amounts (e.g., Baptismal Certificate Fee, Nuptial Mass Stipend, Mass Intentions).
-- POS Cashiering Interface: Supports cash, GCash / E-Wallet, Bank Transfer, and Check payments.
-- Automatic Receipt ID Generation: Sequential format `OR-YYYY-XXXX`.
-- Customizable Receipt Templates: Configurable paper width (e.g., 80mm thermal roll vs A4 receipt), header text, parish sub-titles, and footer notices.
-- Void & Cancellation Auditing: Requires reason logging when voiding receipts.
+- Particulars Catalog (`ParticularsService`): Configurable list of services and standard fee amounts (Sacraments, Mass Intentions, Certificates, Devotionals, Others).
+- POS Cashiering Interface (`PosCashierPage`): Point-of-Sale shopping cart UI supporting Cash (with cash tendered & change calculation), GCash / E-Wallet (with reference number validation), and Gratis (canonically exempt).
+- Sequential Receipt Numbering (`SecretaryService`): Sequential format `REC-YYYY-XXXXX`.
+- Customizable Receipt Templates (`ReceiptTemplateService` & `ReceiptCanvasDesignerPage`): Supports Ecclesiastical Voucher Slip (8.5 × 4.125 in), A4, Letter, Legal (8.5 × 13 in) Folio, and 80mm Thermal Receipt Rolls.
+- Multi-Format Printing Engine (`ReceiptPdfGenerator`): Generates PDF slips with amount-in-words conversion, itemized line items, TrueType fonts, and QR verification tokens (`https://parishserve.web.app/verify-receipt?rec=<REC_NO>`).
 
 ================================================================================
 7. DIOCESAN ASSET INVENTORY MODULE (CustodiaIMS)
 ================================================================================
-The Asset Inventory Module provides diocesan property tracking, reference data management, asset valuation, QR label printing, and field auditing.
+The Asset Inventory Module provides diocesan property tracking, reference data management, asset valuation, security watermarking, QR label printing, and mobile field auditing.
 
 Key Features:
-- Asset Identification: Sequential Asset Tag IDs `AST-YYYY-XXXX`.
-- Categories: Liturgical Vessels, Sacred Vestments, Reliquaries, Furniture, Audio/Visual Systems, Office Equipment, Vehicles, Real Estate Property.
-- Reference Management: Manageable asset categories, locations (Sacristy, Rectory, Sanctuary, Archives), and custodians.
-- Asset Label PDF Generation: Generates printable PDF labels (`AssetLabelPdfService`) containing asset tag IDs, QR codes, asset titles, category, and parish name for physical barcode/QR sticker application.
-- Status Tracking: Operational, Needs Maintenance, Under Repair, Decommissioned.
-- QR Code Field Auditing: Camera scanner logs physical audit scans (`asset_audit_scans`) with location and auditor timestamp.
+- Diocesan Control Number System: Automatically generated continuous control numbers `Location-Classification Year-Sequence` (e.g. `C-SI-2026-001`).
+- Book of Inventory Section Classification:
+  * Section 1: Acquisition price per unit ≥ ₱10,000.00
+  * Section 2: Acquisition price per unit < ₱10,000.00
+- Reference Management (`AssetReferenceService`): Dynamic locations and classifications (Sacred Image, Sacred Vessel, Musical Instrument, Liturgical Book, Furniture, Office Equipment, Electrical, Hand Tools, Others).
+- Automated Security Watermarking (`AssetImageWatermarkUtil`): Embeds native canvas security watermark onto uploaded asset photos containing parish name, timestamp, and Diocesan Control #.
+- Asset Label PDF Generation (`AssetLabelPdfService`): Generates printable 70mm × 38mm sticker labels and batch A4 sheets (3×8 grid = 24 labels/page) with QR code tokens.
+- RFID / NFC Support: Native 13.56 MHz RFID/NFC tag UID association for sacred metal vessels and high-value furnishings.
+- Mobile Field Audit Scanner (`_AuditScanDialog`): Continuous audit workflow using live camera scanner, NFC reader, or manual/USB barcode lookup with autocomplete suggestions.
+- Archive Quarantine: Decommissioned assets are soft-archived while preserving historical audit inspection logs (`AssetAuditLogModel`).
 
 ================================================================================
 8. SMART ARCHIVE ENVIRONMENTAL TELEMETRY (ESP32 IoT)
@@ -400,6 +422,27 @@ Theme-Adaptive Colors:
 - Light Text Primary: `#1E293B` | Dark Text Primary: `#F8FAFC`
 - Light Text Muted: `#475569` | Dark Text Muted: `#94A3B8`
 - Light Border: `#CBD5E1` | Dark Border: `#334155`
+
+================================================================================
+11. BUNDLED CODEBASE TEXT FILES DIRECTORY
+================================================================================
+The project root (`C:\Users\Admin\AndroidStudioProjects\parishserve`) maintains
+6 synchronized codebase text bundle files for offline review and module inspection:
+
+1. `receipts_codebase.txt` & `Receipt-Codebase.txt`
+   - All 14 Dart files belonging to the Receipt Management System (`lib/features/receipts/`).
+
+2. `assets_codebase.txt`
+   - All 12 Dart files belonging to the Diocesan Asset Inventory System (`lib/features/asset_inventory/`).
+
+3. `sacramental_records_code.txt`
+   - All 39 Dart files belonging to the Sacramental Records Digitization System (`lib/features/sacramental_records/`).
+
+4. `parishserve_appointments_bundle.txt`
+   - All 22 Dart files belonging to the Appointments & Pastoral Scheduling Bundle (`lib/features/appointments/` + dependencies).
+
+5. `parishserve_codebase.txt`
+   - The complete Dart source tree across all modules and features in `lib/` (116 files / 63,537 lines).
 
 ================================================================================
 DOCUMENT END
