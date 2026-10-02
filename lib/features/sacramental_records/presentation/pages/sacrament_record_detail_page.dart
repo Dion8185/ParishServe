@@ -142,12 +142,68 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
     );
   }
 
-  /// Safely extracts and formats data from the raw database map
+  String _toCamelCase(String text) {
+    final parts = text.split('_');
+    if (parts.length <= 1) return text;
+    final buffer = StringBuffer(parts.first);
+    for (int i = 1; i < parts.length; i++) {
+      if (parts[i].isNotEmpty) {
+        buffer.write(parts[i][0].toUpperCase() + parts[i].substring(1));
+      }
+    }
+    return buffer.toString();
+  }
+
+  String _toSnakeCase(String text) {
+    final exp = RegExp(r'(?<=[a-z])[A-Z]');
+    return text.replaceAllMapped(exp, (m) => '_${m.group(0)}').toLowerCase();
+  }
+
+  /// Safely extracts and formats data from both snake_case and camelCase database structures
   String _val(String key) {
-    final v = widget.rawRecordData[key];
+    dynamic v = widget.rawRecordData[key];
+
+    // 1. Fallback to camelCase key if snake_case was requested
+    if (v == null) {
+      final camelKey = _toCamelCase(key);
+      v = widget.rawRecordData[camelKey];
+    }
+
+    // 2. Fallback to snake_case key if camelCase was requested
+    if (v == null) {
+      final snakeKey = _toSnakeCase(key);
+      v = widget.rawRecordData[snakeKey];
+    }
+
+    // 3. Fallback to known common database column aliases
+    if (v == null) {
+      if (key == 'entry_status' || key == 'entryStatus') {
+        v = widget.rawRecordData['status'] ??
+            widget.rawRecordData['entry_type'] ??
+            widget.rawRecordData['entryType'] ??
+            'ORIGINAL';
+      } else if (key == 'stipend') {
+        v = widget.rawRecordData['stipend_amount'] ??
+            widget.rawRecordData['stipendAmount'] ??
+            widget.rawRecordData['amount'];
+      } else if (key == 'place_of_baptism' || key == 'placeOfBaptism') {
+        v = widget.rawRecordData['parish_name'] ??
+            widget.rawRecordData['parishName'] ??
+            widget.rawRecordData['baptism_parish'] ??
+            widget.rawRecordData['baptismParish'];
+      } else if (key == 'church_baptized' || key == 'churchBaptized') {
+        v = widget.rawRecordData['baptism_parish'] ??
+            widget.rawRecordData['baptismParish'] ??
+            widget.rawRecordData['place_of_baptism'] ??
+            widget.rawRecordData['placeOfBaptism'];
+      } else if (key == 'other_godparents' || key == 'otherGodparents') {
+        v = widget.rawRecordData['other_sponsors'] ?? widget.rawRecordData['otherSponsors'];
+      }
+    }
+
     if (v == null) return '—';
     final str = v.toString().trim();
-    if (str.isEmpty) return '—';
+    if (str.isEmpty || str.toLowerCase() == 'null') return '—';
     if (v is bool) return v ? 'Yes' : 'No';
     return str;
   }
@@ -264,13 +320,15 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: widget.themeColor),
                             ),
                             const SizedBox(height: 4),
-                            Row(
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 4,
                               children: [
                                 Text(
                                   widget.bookRef,
                                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
                                 ),
-                                const SizedBox(width: 8),
                                 InkWell(
                                   onTap: _copyReference,
                                   borderRadius: BorderRadius.circular(4),
@@ -369,19 +427,18 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.history, color: widget.themeColor, size: 22),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Official Certificate Issuance History',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor),
-                  ),
-                ],
+              Icon(Icons.history, color: widget.themeColor, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Official Certificate Issuance History',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: widget.themeColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              if (_pastIssuances.isNotEmpty)
+              if (_pastIssuances.isNotEmpty) ...[
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -393,6 +450,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
                   ),
                 ),
+              ],
             ],
           ),
           const Divider(height: 20),
@@ -436,10 +494,14 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                issuance.issuanceId,
-                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+                              Expanded(
+                                child: Text(
+                                  issuance.issuanceId,
+                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
@@ -462,7 +524,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                           const SizedBox(height: 2),
                           Text(
                             'Token: ${issuance.verificationId}',
-                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                           ),
                         ],
                       ),
@@ -547,6 +609,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         _buildDetailCard('Administration Details', Icons.church, [
           _buildDataRow('Date of Confirmation', _val('date_of_confirmation'), 'Parish', _val('parish_name')),
           _buildDataRow('Officiating Bishop/Minister', 'Rev. Fr. ${_fullName('minister')}', 'Stipend (₱)', _val('stipend')),
+          _buildDataRow('Entry Status', _val('entry_status')),
           if (_val('remarks') != '—') _buildDataRow('Marginal Annotations', _val('remarks')),
         ]),
       ],
@@ -566,6 +629,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         _buildDetailCard('Administration Details', Icons.church, [
           _buildDataRow('Date of Communion', _val('date_of_communion'), 'Reception Year', _val('year')),
           _buildDataRow('Officiating Minister', 'Rev. Fr. ${_fullName('minister')}'),
+          _buildDataRow('Control Number', _val('control_number'), 'Entry Status', _val('entry_status')),
           if (_val('remarks') != '—') _buildDataRow('Batch / Mass Annotations', _val('remarks')),
         ]),
       ],
@@ -602,6 +666,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         _buildDetailCard('Solemnizing Minister', Icons.verified, [
           _buildDataRow('Minister Name', 'Rev. Fr. ${_fullName('solemnizer')}'),
           _buildDataRow('CRASM Number', _val('crasm_number'), 'CRASM Validity', _val('crasm_validity_date')),
+          _buildDataRow('Stipend (₱)', _val('stipend'), 'Entry Status', _val('entry_status')),
           if (_val('remarks') != '—') _buildDataRow('Marginal Annotations', _val('remarks')),
         ]),
       ],
@@ -628,7 +693,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         ]),
         _buildDetailCard('Liturgical Service & Minister', Icons.church, [
           _buildDataRow('Liturgical Rite', _val('liturgical_service'), 'Stipend (₱)', _val('stipend')),
-          _buildDataRow('Officiating Priest', 'Rev. Fr. ${_fullName('minister')}'),
+          _buildDataRow('Officiating Priest', 'Rev. Fr. ${_fullName('minister')}', 'Entry Status', _val('entry_status')),
           if (_val('remarks') != '—') _buildDataRow('Observanda (Remarks)', _val('remarks')),
         ]),
       ],
@@ -654,7 +719,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         _buildDetailCard('Witnesses & Minister', Icons.church, [
           _buildDataRow('Witness 1', _fullName('witness_1'), 'Witness 2', _fullName('witness_2')),
           _buildDataRow('Officiating Minister', 'Rev. Fr. ${_fullName('minister')}'),
-          _buildDataRow('Is Gratis?', _val('is_gratis'), 'Stipend (₱)', _val('stipend')),
+          _buildDataRow('Is Gratis?', _val('is_gratis'), 'Entry Status', _val('entry_status')),
           if (_val('remarks') != '—') _buildDataRow('Marginal Annotations', _val('remarks')),
         ]),
       ],
@@ -689,7 +754,13 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
             children: [
               Icon(icon, color: widget.themeColor, size: 22),
               const SizedBox(width: 10),
-              Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
           const Divider(height: 24),
