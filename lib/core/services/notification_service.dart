@@ -10,7 +10,7 @@ class NotificationService {
   NotificationService._();
 
   // Replace with your OneSignal App ID from your OneSignal Dashboard
-  static const String _oneSignalAppId = "YOUR_ONESIGNAL_APP_ID_HERE";
+  static const String _oneSignalAppId = "54bdc4cd-8445-4c44-883c-068487b04ca7";
 
   static bool _isInitialized = false;
 

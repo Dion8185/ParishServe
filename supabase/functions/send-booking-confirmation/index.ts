@@ -155,7 +155,7 @@ serve(async (req) => {
       </html>
     `
 
-    // Dispatch via Brevo REST API (Signed with verified DKIM & SPF)
+    // Dispatch via Brevo (Signed with verified DKIM & SPF)
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {

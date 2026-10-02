@@ -1,6 +1,6 @@
 class CertificateCanvasElement {
   final String id;
-  final String elementType; // 'text', 'textbox', 'placeholder', 'title', 'header', 'qr', 'signatory', 'parish_seal', 'diocese_seal'
+  final String elementType; // 'text', 'textbox', 'placeholder', 'title', 'header', 'qr', 'signatory', 'parish_seal', 'diocese_seal', 'signature_line'
   final String text; // Static wording or placeholder tag like '{Full Name}', '{Amount in Words}'
   final double x; // Normalized horizontal coordinate (0.0 to 1.0)
   final double y; // Normalized vertical coordinate (0.0 to 1.0)
@@ -11,6 +11,7 @@ class CertificateCanvasElement {
   final String fontFamily; // 'serif', 'sans', 'courier', 'cinzel', etc.
   final String colorHex; // e.g. '#164E87', '#D49B18', '#1E293B'
   final String textAlign; // 'center', 'left', 'right', 'justify'
+  final String verticalAlign; // 'top', 'center', 'bottom'
 
   const CertificateCanvasElement({
     required this.id,
@@ -25,6 +26,7 @@ class CertificateCanvasElement {
     this.fontFamily = 'serif',
     this.colorHex = '#1E293B',
     this.textAlign = 'center',
+    this.verticalAlign = 'top',
   });
 
   bool get isBold => fontWeight == 'bold';
@@ -42,6 +44,7 @@ class CertificateCanvasElement {
     String? fontFamily,
     String? colorHex,
     String? textAlign,
+    String? verticalAlign,
   }) {
     return CertificateCanvasElement(
       id: id ?? this.id,
@@ -56,6 +59,7 @@ class CertificateCanvasElement {
       fontFamily: fontFamily ?? this.fontFamily,
       colorHex: colorHex ?? this.colorHex,
       textAlign: textAlign ?? this.textAlign,
+      verticalAlign: verticalAlign ?? this.verticalAlign,
     );
   }
 
@@ -73,6 +77,7 @@ class CertificateCanvasElement {
       fontFamily: map['fontFamily']?.toString() ?? 'serif',
       colorHex: map['colorHex']?.toString() ?? '#1E293B',
       textAlign: map['textAlign']?.toString() ?? 'center',
+      verticalAlign: map['verticalAlign']?.toString() ?? 'top',
     );
   }
 
@@ -90,6 +95,7 @@ class CertificateCanvasElement {
       'fontFamily': fontFamily,
       'colorHex': colorHex,
       'textAlign': textAlign,
+      'verticalAlign': verticalAlign,
     };
   }
 }
