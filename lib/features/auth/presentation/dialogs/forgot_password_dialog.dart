@@ -59,6 +59,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   Timer? _cooldownTimer;
   int _cooldownSeconds = 0;
 
+  /// Tracks if the user was already logged in when opening this dialog (e.g. from ProfileView)
+  late final bool _isLoggedInUser;
+
   static const List<String> _predictableSequences = [
     '123', '234', '345', '456', '567', '678', '789',
     'abc', 'bcd', 'cde', 'def', 'qwe', 'wer', 'ert', 'rty',
@@ -69,6 +72,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   @override
   void initState() {
     super.initState();
+    _isLoggedInUser = AuthService.currentUser != null;
 
     if (widget.initialIdentifier != null && widget.initialIdentifier!.isNotEmpty) {
       _identifierController.text = widget.initialIdentifier!;
@@ -101,8 +105,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
 
-    // If dialog was closed before completing recovery, clean up the quarantined session
-    AuthService.cancelPasswordRecovery();
+    // Clean up recovery quarantine flag safely without logging out active users
+    AuthService.cancelPasswordRecovery(isFromLoggedInSession: _isLoggedInUser);
 
     super.dispose();
   }
@@ -283,10 +287,10 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     setState(() => _isLoading = true);
 
     try {
-      // Verifies OTP and locks session in quarantine (AuthGate will NOT route to dashboard)
       await AuthService.verifyRecoveryOtp(
         email: _resolvedEmail,
         token: _otpController.text.trim(),
+        isFromLoggedInSession: _isLoggedInUser,
       );
 
       if (!mounted) return;
@@ -305,7 +309,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   }
 
   // ===========================================================================
-  // Step 3: Complete Password Reset (Terminates Session & Returns to Login)
+  // Step 3: Complete Password Reset
   // ===========================================================================
 
   Future<void> _handleCompleteReset() async {
@@ -315,10 +319,10 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     setState(() => _isLoading = true);
 
     try {
-      // Updates password in auth.users and public.users, signs out, and resets quarantine
       await AuthService.completePasswordReset(
         email: _resolvedEmail,
         newPassword: _newPasswordController.text,
+        keepSessionAlive: _isLoggedInUser,
       );
 
       if (!mounted) return;
@@ -326,10 +330,12 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       Navigator.pop(context); // Close recovery dialog
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password successfully changed! Please log in with your new password.'),
+        SnackBar(
+          content: Text(_isLoggedInUser
+              ? 'Password successfully changed! Your profile has been updated.'
+              : 'Password successfully changed! Please log in with your new password.'),
           backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
         ),
       );
     } catch (e) {
@@ -575,12 +581,14 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Trouble signing in?',
+            _isLoggedInUser ? 'Update Account Password' : 'Trouble signing in?',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
           ),
           const SizedBox(height: 6),
           Text(
-            'Enter your username or registered parish email below. If an active recovery code was already requested, you will automatically proceed to the code verification screen.',
+            _isLoggedInUser
+                ? 'Confirm your username or registered parish email below to receive a secure 6-digit recovery code before setting your new password.'
+                : 'Enter your username or registered parish email below. If an active recovery code was already requested, you will automatically proceed to the code verification screen.',
             style: TextStyle(fontSize: 13, color: ParishColors.textMuted, height: 1.4),
           ),
           const SizedBox(height: 20),

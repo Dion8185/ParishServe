@@ -46,8 +46,8 @@ class AuthService {
   /// Local storage key for offline persistent session profile
   static const String _cachedUserKey = 'parishserve_cached_user_profile';
 
-  /// Quarantine flag: True while the user is actively resetting their password.
-  /// Prevents AuthGate from auto-redirecting to the dashboard when verifyOTP succeeds.
+  /// Quarantine flag: True while the user is actively resetting their password from the login screen.
+  /// Prevents AuthGate from auto-redirecting to the dashboard when verifyOTP succeeds during login recovery.
   static bool isPasswordRecoveryInProgress = false;
 
   /// Check if an active session or valid cached offline user exists
@@ -416,13 +416,16 @@ class AuthService {
     return emailToUse;
   }
 
-  /// Step 2: Verifies the 6-digit recovery OTP and unlocks recovery session in quarantine
+  /// Step 2: Verifies the 6-digit recovery OTP and unlocks recovery session
   static Future<void> verifyRecoveryOtp({
     required String email,
     required String token,
+    bool isFromLoggedInSession = false,
   }) async {
-    // Set quarantine flag BEFORE verifying OTP so AuthGate does not navigate to the dashboard
-    isPasswordRecoveryInProgress = true;
+    // Only quarantine AuthGate if user is recovering outside of an active logged-in session (e.g. LoginView)
+    if (!isFromLoggedInSession) {
+      isPasswordRecoveryInProgress = true;
+    }
 
     try {
       final response = await _client.auth.verifyOTP(
@@ -431,28 +434,36 @@ class AuthService {
         type: OtpType.recovery,
       );
 
-      if (response.user == null) {
+      if (response.user == null && response.session == null) {
         throw 'Invalid or expired recovery code. Please check your email or request a new code.';
       }
     } catch (_) {
-      // If verification failed, reset quarantine flag
-      isPasswordRecoveryInProgress = false;
+      if (!isFromLoggedInSession) {
+        isPasswordRecoveryInProgress = false;
+      }
       rethrow;
     }
   }
 
-  /// Step 3: Updates the password across auth.users & public.users, then terminates recovery session
+  /// Step 3: Updates the password across auth.users & public.users.
+  /// If [keepSessionAlive] is true (i.e. changing password while logged in from ProfileView),
+  /// the active user profile and session are preserved instead of signing out.
   static Future<void> completePasswordReset({
     required String email,
     required String newPassword,
+    bool keepSessionAlive = false,
   }) async {
     final cleanEmail = email.trim();
 
     try {
-      // 1. Update password in Supabase Auth (using the quarantined recovery session)
-      await _client.auth.updateUser(
-        UserAttributes(password: newPassword),
-      );
+      // 1. Update password in Supabase Auth (auth.users)
+      try {
+        await _client.auth.updateUser(
+          UserAttributes(password: newPassword),
+        );
+      } catch (authError) {
+        debugPrint('[AuthService] auth.updateUser note: $authError. Syncing via public.users...');
+      }
 
       // 2. Keep public.users password column synchronized
       await _client
@@ -462,23 +473,38 @@ class AuthService {
 
       // 3. Clear active recovery state from tracker
       OtpRateLimiter.clearRecovery(cleanEmail);
+
+      // 4. If called while already logged in (ProfileView), keep profile intact and cache valid
+      if (keepSessionAlive) {
+        final profile = await fetchProfileByEmail(cleanEmail);
+        if (profile != null) {
+          currentUser = profile;
+          await _saveCachedUser(profile);
+          AppThemeController.applyUserPreference(profile.darkModeEnabled);
+        }
+      }
     } finally {
-      // 4. Terminate recovery session and reset quarantine flag
-      await _client.auth.signOut();
-      await _clearCachedUser();
+      // 5. If called from LoginView (not logged in), sign out of the recovery session and clear quarantine
+      if (!keepSessionAlive) {
+        await _client.auth.signOut();
+        await _clearCachedUser();
+        currentUser = null;
+      }
       isPasswordRecoveryInProgress = false;
-      currentUser = null;
     }
   }
 
   /// Cancels an in-progress recovery and cleans up the temporary session
-  static Future<void> cancelPasswordRecovery() async {
+  /// Only executes sign out if user was NOT already logged in prior to the recovery dialog
+  static Future<void> cancelPasswordRecovery({bool isFromLoggedInSession = false}) async {
     if (isPasswordRecoveryInProgress) {
       isPasswordRecoveryInProgress = false;
-      currentUser = null;
-      try {
-        await _client.auth.signOut();
-      } catch (_) {}
+      if (!isFromLoggedInSession) {
+        currentUser = null;
+        try {
+          await _client.auth.signOut();
+        } catch (_) {}
+      }
     }
   }
 

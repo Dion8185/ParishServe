@@ -4,6 +4,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/theme/theme_controller.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/presentation/dialogs/forgot_password_dialog.dart';
+import '../../auth/presentation/dialogs/terms_conditions_dialog.dart';
 import '../../auth/services/auth_service.dart';
 
 class ProfileView extends StatefulWidget {
@@ -145,6 +146,8 @@ class _ProfileViewState extends State<ProfileView> {
                                 _buildPreferencesCard(user),
                                 const SizedBox(height: 20),
                                 _buildSecurityCard(context, email),
+                                const SizedBox(height: 20),
+                                _buildLegalGovernanceCard(context),
                               ],
                             ),
                           ),
@@ -160,6 +163,8 @@ class _ProfileViewState extends State<ProfileView> {
                           _buildPreferencesCard(user),
                           const SizedBox(height: 20),
                           _buildSecurityCard(context, email),
+                          const SizedBox(height: 20),
+                          _buildLegalGovernanceCard(context),
                           const SizedBox(height: 24),
                           _buildLogoutButton(context),
                         ],
@@ -545,6 +550,44 @@ class _ProfileViewState extends State<ProfileView> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Legal & Canonical Governance Card
+  // ===========================================================================
+
+  Widget _buildLegalGovernanceCard(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.policy_outlined, color: ParishColors.marianBlue, size: 22),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Legal & Canonical Governance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text('Review Terms of Service & RA 10173 Privacy Policy', style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
+                ],
+              ),
+            ],
+          ),
+          TextButton(
+            onPressed: () => showTermsAndConditionsModal(context, isReadOnly: true),
+            child: const Text('View Terms', style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
           ),
         ],
       ),

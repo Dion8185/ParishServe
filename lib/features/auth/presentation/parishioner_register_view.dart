@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
 import '../services/auth_service.dart';
+import 'dialogs/terms_conditions_dialog.dart';
 import 'otp_verification_view.dart';
 
 class ParishionerRegisterView extends StatefulWidget {
@@ -40,6 +41,8 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
   bool _hasAttemptedSubmit = false;
+  bool _acceptedTerms = false;
+  bool _showTermsError = false;
   String? _errorMessage;
 
   // QWERTY keyboard sequences used for anti-gibberish detection
@@ -311,9 +314,10 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
     setState(() {
       _hasAttemptedSubmit = true;
       _errorMessage = null;
+      _showTermsError = !_acceptedTerms;
     });
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || !_acceptedTerms) return;
 
     setState(() => _isLoading = true);
 
@@ -622,7 +626,6 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                               }
                             },
                             validator: (v) {
-                              // Only show if user has interacted with confirm password or tried submitting
                               if (!_hasAttemptedSubmit && !_confirmPasswordBlurred && (_confirmPasswordController.text.isEmpty)) {
                                 return null;
                               }
@@ -642,6 +645,59 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                               ),
                             ),
                           ),
+                          const SizedBox(height: 16),
+
+                          // 6. Terms and Conditions Acceptance Checkbox
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: _acceptedTerms,
+                                activeColor: ParishColors.marianBlue,
+                                onChanged: (val) {
+                                  setState(() {
+                                    _acceptedTerms = val ?? false;
+                                    if (_acceptedTerms) _showTermsError = false;
+                                  });
+                                },
+                              ),
+                              Expanded(
+                                child: Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    const Text('I agree to the ', style: TextStyle(fontSize: 12.5)),
+                                    InkWell(
+                                      onTap: () => showTermsAndConditionsModal(
+                                        context,
+                                        isReadOnly: false,
+                                        onAccepted: () => setState(() {
+                                          _acceptedTerms = true;
+                                          _showTermsError = false;
+                                        }),
+                                      ),
+                                      child: const Text(
+                                        'Terms and Data Privacy Policy',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.marianBlue,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_showTermsError) ...[
+                            const Padding(
+                              padding: EdgeInsets.only(left: 12, top: 2),
+                              child: Text(
+                                'You must accept the Terms and Conditions to register.',
+                                style: TextStyle(color: ParishColors.mercyRed, fontSize: 11.5, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 16),
 
                           Container(
