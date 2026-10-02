@@ -201,13 +201,13 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           crossAxisCount: isDesktop ? 3 : 1,
-          mainAxisSpacing: 14,
-          crossAxisSpacing: 14,
-          childAspectRatio: isDesktop ? 2.3 : 3.8,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: isDesktop ? 1.65 : 3.2,
           children: [
             _buildActionCard(
               title: 'Schedule Sacrament',
-              subtitle: 'Baptisms, Weddings & Blessings',
+              subtitle: 'Weddings, Baptisms & Blessings',
               icon: Icons.edit_calendar,
               color: ParishColors.marianBlue,
               onTap: () => showScheduleAppointmentModal(context, onAppointmentSaved: _loadDashboardData),
@@ -220,7 +220,7 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
               onTap: () => showMassIntentionModal(context, onIntentionSaved: _loadDashboardData),
             ),
             _buildActionCard(
-              title: 'Request Record (Pabuklat)',
+              title: 'Request Record',
               subtitle: 'Baptismal & Marriage Certificates',
               icon: Icons.folder_shared,
               color: ParishColors.oliveGreen,
@@ -243,7 +243,7 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: ParishColors.cardWhite,
           borderRadius: BorderRadius.circular(16),
@@ -257,16 +257,17 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
           ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(9),
               decoration: BoxDecoration(
                 color: color.withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 24),
+              child: Icon(icon, color: color, size: 20),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,23 +276,29 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
                   Text(
                     title,
                     style: TextStyle(
-                      fontSize: 14.5,
+                      fontSize: 13.5,
                       fontWeight: FontWeight.bold,
                       color: ParishColors.textDark,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       color: ParishColors.textMuted,
+                      height: 1.25,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: ParishColors.borderGrey),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: 18, color: ParishColors.borderGrey),
           ],
         ),
       ),
@@ -359,7 +366,14 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
         final appointment = AppointmentModel.fromMap(rawMap);
         final status = appointment.appointmentStatus.toLowerCase();
         final isConfirmed = status == 'confirmed' || status == 'completed';
-        final statusColor = isConfirmed ? ParishColors.oliveGreen : ParishColors.goldAccent;
+        final isCancelled = status == 'cancelled';
+
+        Color statusColor = ParishColors.goldAccent;
+        if (isConfirmed) {
+          statusColor = ParishColors.oliveGreen;
+        } else if (isCancelled) {
+          statusColor = ParishColors.mercyRed;
+        }
 
         return InkWell(
           onTap: () => showParishionerAppointmentDetailModal(
@@ -394,14 +408,19 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            appointment.serviceType,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: ParishColors.textDark,
+                          Expanded(
+                            child: Text(
+                              appointment.serviceType,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.textDark,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
@@ -423,11 +442,15 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
                       Text(
                         'Scheduled: ${appointment.formattedDate} • ${appointment.formattedTimeRange}',
                         style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         'Venue: ${appointment.venue}',
                         style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -499,6 +522,8 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
                     Text(
                       service.toString(),
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       'Issued: $dateDisplay',
@@ -683,7 +708,7 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '• Tuesday – Sunday: 8:00 AM – 12:00 PM | 1:30 PM – 5:00 PM\n• Monday: Closed (Clergy Rest Day)',
+                  '• Wednesday – Sunday: 9:00 AM – 12:00 PM | 2:00 PM – 4:00 PM\n• Monday & Tuesday: Closed (Clergy Rest Day)',
                   style: TextStyle(fontSize: 12, color: ParishColors.textMuted, height: 1.4),
                 ),
               ],

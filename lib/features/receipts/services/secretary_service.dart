@@ -1,10 +1,13 @@
+// =============================================================================
+// FILE: lib/features/receipts/services/secretary_service.dart
+// =============================================================================
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 
 class SecretaryService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  // Cached verified enum string from database to optimize subsequent inserts
   static String? _cachedValidTransactionType;
   static String? _cachedValidVoidStatus;
 
@@ -18,8 +21,43 @@ class SecretaryService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Register a new transaction with automatic enum resolution, custom date support,
-  /// linked issuance reference, and varchar(100) bound guard
+  /// Fetch all service requests (Pabuklat record requests) for Secretary review
+  static Future<List<Map<String, dynamic>>> getServiceRequests() async {
+    final response = await _client
+        .from('service_requests')
+        .select()
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// Update service request status (Secretary approval/rejection and pickup date assignment)
+  static Future<void> updateServiceRequestStatus({
+    required String serviceRequestId,
+    required String requestStatus,
+    DateTime? pickupDate,
+    String? rejectionReason,
+  }) async {
+    final secretaryId = AuthService.currentUser?.userId;
+
+    final updateMap = {
+      'request_status': requestStatus,
+      'reviewed_by': secretaryId,
+    };
+
+    if (pickupDate != null) {
+      updateMap['pickup_date'] = pickupDate.toIso8601String().substring(0, 10);
+    }
+    if (rejectionReason != null && rejectionReason.trim().isNotEmpty) {
+      updateMap['rejection_reason'] = rejectionReason.trim();
+    }
+
+    await _client
+        .from('service_requests')
+        .update(updateMap)
+        .eq('service_request_id', serviceRequestId);
+  }
+
+  /// Register a new transaction with automatic enum resolution
   static Future<Map<String, dynamic>> createTransaction({
     required String payorName,
     String? payorContact,
@@ -37,13 +75,11 @@ class SecretaryService {
     final userId = AuthService.currentUser?.userId ?? 'S26-0003';
     final effectiveDate = (transactionDate ?? DateTime.now()).toIso8601String();
 
-    // Strictly enforce varchar(100) limit on related_service to prevent Postgres 22001 exception
     final cleanService = relatedService.trim();
     final safeService = cleanService.length > 90
         ? '${cleanService.substring(0, 87)}...'
         : cleanService;
 
-    // 1. If not yet cached, attempt to discover the exact enum value from an existing row in public.parish_transactions
     if (_cachedValidTransactionType == null) {
       try {
         final existing = await _client
@@ -61,11 +97,9 @@ class SecretaryService {
       } catch (_) {}
     }
 
-    // 2. Build candidate pool to match against PostgreSQL's enum transaction_type
     final List<String> candidatePool = [
       if (_cachedValidTransactionType != null) _cachedValidTransactionType!,
       if (transactionType != null && transactionType.isNotEmpty) transactionType,
-      // Canonical and standard parish transaction_type enum members:
       'certificate',
       'Certificate',
       'donation',
@@ -96,7 +130,6 @@ class SecretaryService {
     final uniqueCandidates = candidatePool.toSet().toList();
     PostgrestException? lastEnumError;
 
-    // 3. Test candidates against the database enum constraint
     for (final candidate in uniqueCandidates) {
       final data = {
         'transaction_id': transactionId,
@@ -126,27 +159,25 @@ class SecretaryService {
             .select()
             .single();
 
-        // Successful insert! Cache the accepted enum value for fast subsequent inserts.
         _cachedValidTransactionType = candidate;
         return response;
       } on PostgrestException catch (e) {
         if (e.code == '22P02' && e.message.contains('transaction_type')) {
           lastEnumError = e;
-          continue; // Try next candidate in the pool
+          continue;
         }
         rethrow;
       }
     }
 
     if (lastEnumError != null) {
-      throw 'Invalid transaction_type enum value in database. You can check the exact enum definition in Supabase SQL editor using: SELECT enum_range(NULL::transaction_type);';
+      throw 'Invalid transaction_type enum value in database.';
     }
 
     throw 'Failed to record transaction in parish ledger.';
   }
 
-  /// Voids an existing ecclesiastical receipt, updates transaction status, appends reason audit log,
-  /// and registers a pastoral audit entry.
+  /// Voids an existing ecclesiastical receipt
   static Future<Map<String, dynamic>> voidTransaction({
     required String transactionId,
     required String reason,
@@ -162,7 +193,6 @@ class SecretaryService {
     final dateStamp =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    // 1. Retrieve the existing transaction details to preserve historical items
     final existing = await _client
         .from('parish_transactions')
         .select()
@@ -176,7 +206,6 @@ class SecretaryService {
         ? voidAuditLog
         : '$currentDetails\n$voidAuditLog';
 
-    // 2. Candidate enum pool for transaction_status ('cancelled', 'voided', 'void')
     final candidateStatuses = [
       if (_cachedValidVoidStatus != null) _cachedValidVoidStatus!,
       'cancelled',
@@ -203,7 +232,6 @@ class SecretaryService {
 
         _cachedValidVoidStatus = status;
 
-        // 3. Pastoral audit record logging (best effort)
         try {
           await _client.from('pastoral_audit_logs').insert({
             'log_id': 'LOG-${now.millisecondsSinceEpoch}',
@@ -226,13 +254,12 @@ class SecretaryService {
     }
 
     if (lastError != null) {
-      throw 'Could not void receipt due to database enum mismatch. Allowed transaction_status values required.';
+      throw 'Could not void receipt due to database enum mismatch.';
     }
 
     throw 'Failed to void transaction.';
   }
 
-  /// Helper to generate sequential receipt numbers: REC-YYYY-XXXXX
   static Future<String> _generateReceiptNumber() async {
     final year = DateTime.now().year;
     try {

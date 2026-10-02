@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/auth/services/user_service.dart
+// =============================================================================
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_service.dart';
 
@@ -14,7 +18,6 @@ class UserService {
     final cleanName = user.fullName.trim();
 
     try {
-      // 1. Primary Direct Relational Query: Search by created_by foreign key
       final idMatches = await _client
           .from('appointments')
           .select()
@@ -25,7 +28,6 @@ class UserService {
         return List<Map<String, dynamic>>.from(idMatches);
       }
 
-      // 2. Fallback for legacy appointments created before the migration: match by email
       if (cleanEmail.isNotEmpty) {
         final emailMatches = await _client
             .from('appointments')
@@ -38,7 +40,6 @@ class UserService {
         }
       }
 
-      // 3. Fallback: match by requester_name
       if (cleanName.isNotEmpty) {
         final nameMatches = await _client
             .from('appointments')
@@ -65,11 +66,28 @@ class UserService {
     final cleanName = user.fullName.trim();
 
     try {
-      // Matches payor_name in public.parish_transactions schema
       final response = await _client
           .from('parish_transactions')
           .select()
           .ilike('payor_name', '%$cleanName%')
+          .order('created_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Fetch Pabuklat / certificate requests submitted by the current parishioner
+  static Future<List<Map<String, dynamic>>> getMyServiceRequests() async {
+    final user = AuthService.currentUser;
+    if (user == null) return [];
+
+    try {
+      final response = await _client
+          .from('service_requests')
+          .select()
+          .eq('created_by', user.userId)
           .order('created_at', ascending: false);
 
       return List<Map<String, dynamic>>.from(response);
@@ -95,7 +113,7 @@ class UserService {
       'email': AuthService.currentUser?.email,
       'service_type': serviceType,
       'service_request_details': details.trim(),
-      'request_status': 'pending',
+      'request_status': 'submitted',
       'created_by': userId,
       'created_at': DateTime.now().toIso8601String(),
     };

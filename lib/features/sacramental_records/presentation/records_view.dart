@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/records_view.dart
+// =============================================================================
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,6 +13,7 @@ import '../models/death_record_model.dart';
 import '../models/first_communion_record_model.dart';
 import '../models/matrimony_record_model.dart';
 import 'dialogs/ocr_scan_dialog.dart';
+import 'dialogs/pabuklat_requests_modal.dart';
 import 'pages/baptism_manual_entry_page.dart';
 import 'pages/certificate_template_management_page.dart';
 import 'pages/confirmation_manual_entry_page.dart';
@@ -352,7 +357,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
     );
   }
 
-  /// Displays modal selector to choose which canonical register to encode into
   void _showNewRecordSelector(BuildContext context) {
     showDialog(
       context: context,
@@ -532,17 +536,41 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Page Title & Header
-          Text(
-            'Sacramental Records',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textDarkColor),
-          ),
-          Text(
-            'Select a sacramental register or search canonical entries across all books',
-            style: TextStyle(color: textMutedColor),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sacramental Records',
+                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textDarkColor),
+                    ),
+                    Text(
+                      'Select a sacramental register or search canonical entries across all books',
+                      style: TextStyle(color: textMutedColor),
+                    ),
+                  ],
+                ),
+              ),
+              // Secretary Shortcut to Review Pabuklat Requests
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.oliveGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => showPabuklatRequestsModal(context),
+                icon: const Icon(Icons.folder_shared, size: 18),
+                label: const Text('Pabuklat Requests', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
 
-          // QUICK ACTION BUTTONS (Matching Appointments, Receipts & Assets pattern)
+          // QUICK ACTION BUTTONS
           LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth > 700;
@@ -683,7 +711,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
           ),
           const SizedBox(height: 18),
 
-          // Universal Search Bar with Live Suggestion Triggers
+          // Universal Search Bar
           Container(
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -724,7 +752,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
                   const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: ParishColors.marianBlue),
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: ParishColors.marianBlue),
                   )
                 else if (isSearchActive)
                   IconButton(
@@ -743,7 +771,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
           ),
           const SizedBox(height: 20),
 
-          // RENDER EITHER: Universal Search Suggestions Panel OR Canonical Ledgers
           if (isSearchActive) ...[
             _buildUniversalSearchResultsPanel(textDarkColor, textMutedColor, cardWhiteColor)
           ] else ...[
@@ -754,9 +781,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
     );
   }
 
-  // ===========================================================================
-  // Universal Search Live Suggestions Panel
-  // ===========================================================================
   Widget _buildUniversalSearchResultsPanel(Color textDark, Color textMuted, Color cardWhite) {
     final results = _filteredSuggestions;
     final totalCount = _suggestions.length;
@@ -764,7 +788,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Category Filter Chips
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -969,9 +992,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
     );
   }
 
-  // ===========================================================================
-  // Standard Canonical Ledger Selection Grid
-  // ===========================================================================
   Widget _buildCanonicalLedgersGrid(BuildContext context, Color textDarkColor, Color textMutedColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -982,7 +1002,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
         ),
         const SizedBox(height: 14),
 
-        // 1. Baptism Card (Water Blue)
         _buildSacramentSelectionCard(
           context: context,
           title: 'Baptism Records',
@@ -993,8 +1012,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
           sacramentName: 'Baptism',
           ledgerSubtitle: 'Liber Baptismorum • Canonical Books',
         ),
-
-        // 2. Confirmation Card (Pentecost Red)
         _buildSacramentSelectionCard(
           context: context,
           title: 'Confirmation Records',
@@ -1005,8 +1022,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
           sacramentName: 'Confirmation',
           ledgerSubtitle: 'Liber Confirmatorum • Canonical Books',
         ),
-
-        // 3. First Communion Card (Eucharistic Gold)
         _buildSacramentSelectionCard(
           context: context,
           title: 'First Communion Records',
@@ -1017,8 +1032,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
           sacramentName: 'First Communion',
           ledgerSubtitle: 'Liber Primae Communionis • Canonical Books',
         ),
-
-        // 4. Matrimony Card (Royal Burgundy)
         _buildSacramentSelectionCard(
           context: context,
           title: 'Matrimony Records',
@@ -1029,8 +1042,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
           sacramentName: 'Matrimony',
           ledgerSubtitle: 'Liber Matrimoniorum • Canonical Books',
         ),
-
-        // 5. Death / Burial Card (Solemn Violet)
         _buildSacramentSelectionCard(
           context: context,
           title: 'Death & Burial Records',
@@ -1041,8 +1052,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
           sacramentName: 'Death',
           ledgerSubtitle: 'Liber Defunctorum • Canonical Books',
         ),
-
-        // 6. Conversion Card (Olive Green)
         _buildSacramentSelectionCard(
           context: context,
           title: 'Conversion Records',
