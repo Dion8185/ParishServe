@@ -1,84 +1,233 @@
 ================================================================================
-PARISHSERVE SYSTEM CONTEXT DOCUMENTATION
+PARISHSERVE DETAILED SYSTEM CONTEXT DOCUMENTATION
 ================================================================================
 Application Name: ParishServe
-Description: Enterprise Ecclesiastical Administration Platform - Integrated Canonical
-             Sacramental Records Digitization, Service Appointments, POS Cashiering,
-             Receipt Management, Diocesan Asset Inventory & Watermarking,
-             Asset Label Printing, Daily Liturgical Readings, and ESP32 Smart Archive
+Subtitle: Enterprise Ecclesiastical Administration & Diocesan Stewardship Platform
+Description: Integrated Canonical Sacramental Records Digitization (Canon 535),
+             Service Appointments & Mass Intention Scheduling with LitCal Integration,
+             POS Cashiering & Particulars Catalog Management, Official Receipts,
+             Diocesan Asset Inventory & Watermarking (CustodiaIMS), Asset Label Printing,
+             ESP32 Smart Archive Environmental Telemetry, Daily Liturgical Mass Readings,
+             and Multi-Tier Role-Based Access Control (RBAC) Governance.
 Parish Jurisdiction: St. John Paul II Parish (Parochia Sancti Ioannis Pauli II)
 Diocese: Diocese of San Pablo
 Location: Brgy. Labuin, Santa Cruz, Laguna, Philippines
 Ecclesiastical Motto: TOTUS TUUS
 Version: 1.0.0+1
 Framework: Flutter (Dart SDK ^3.12.2)
-Backend Platform: Supabase (PostgreSQL Database, Auth, Storage, Edge Functions)
+Backend Platform: Supabase (PostgreSQL Database, Auth, Storage, Realtime, Edge Functions)
 Supabase URL: https://wdosrvmkgdrkcotlkzgi.supabase.co
 Web / Production Domain: https://parishserve.web.app
 
 ================================================================================
-1. EXECUTIVE SUMMARY & SYSTEM PURPOSE
+1. EXECUTIVE SUMMARY & CANONICAL PURPOSE
 ================================================================================
-ParishServe is a comprehensive, enterprise-grade ecclesiastical administration
-and parish management platform designed specifically for Catholic parishes in the
-Philippines under Canon Law (Code of Canon Law / Codex Iuris Canonici).
+ParishServe is an enterprise-grade ecclesiastical administration and pastoral stewardship
+platform engineered specifically for Roman Catholic parishes under the jurisdiction of the
+Diocese of San Pablo, Philippines, in strict adherence to the Code of Canon Law
+(Codex Iuris Canonici).
 
-The system seamlessly unifies seven core operational pillars:
-1. Canonical Sacramental Records Digitization (Canon 535) & Dynamic PDF/QR Certificate Generation
-2. Parish Service Appointments, Mass Intention Scheduling & LitCal Calendar Integration
-3. POS Cashiering, Official Receipts, & Particulars Catalog Management
-4. Diocesan Asset Inventory, Reference Data Management, Security Watermarking & Asset Label Printing (CustodiaIMS)
-5. Smart Archive Environmental Telemetry (ESP32 IoT Temperature & Relative Humidity Conservation)
-6. Daily Catholic Mass Readings & Roman Catholic Lectionary Integration
-7. Multi-Tier Role-Based Access Control (RBAC) Governance & Security Auditing
+The platform digitizes, automates, and connects seven operational pillars:
+1. Canonical Sacramental Register Digitization (Canon 535) & Dynamic PDF/QR Certificate Generation.
+2. Parish Service Appointments, Mass Intention Scheduling & LitCal Calendar Integration.
+3. POS Cashiering, Financial Transactions Ledger, & Particulars Catalog Management.
+4. Diocesan Asset Inventory, Reference Catalog, Security Watermarking & Sticker Label Printing (CustodiaIMS).
+5. Smart Archive Environmental Telemetry (ESP32 IoT Conservation Monitoring for Vaults & Reliquaries).
+6. Daily Catholic Mass Readings & Roman Catholic Lectionary Integration.
+7. Multi-Tier Role-Based Access Control (RBAC) Governance & Pastoral Audit Logging.
 
 ================================================================================
-2. ROLE-BASED ACCESS CONTROL (RBAC) GOVERNANCE
+2. DETAILED USER ROLES & RBAC GOVERNANCE
 ================================================================================
-ParishServe enforces strict role-based access control across all screens,
-database queries (RLS), and API endpoints:
+ParishServe enforces granular Role-Based Access Control across all UI navigation shells,
+business logic services, database queries (Row-Level Security / RLS), and API endpoints:
 
 1. Super Administrator ('superadmin' / S)
-   - Unrestricted root access across all modules, database tables, and settings.
-   - User account provisioning, role reassignment, account archiving, and hard deletion.
-   - Global parish branding, certificate templates, and receipt configurations.
+   - Unrestricted root system authority across all modules, database tables, and settings.
+   - User account provisioning, role reassignment, account archiving (`AdminArchivedUsersPage`), and hard account deletion.
+   - Global parish branding, certificate templates (`CertificateTemplateManagementPage`), and receipt layout configurations.
 
 2. Administrator ('admin' / A)
-   - Comprehensive administrative access to user accounts, asset inventory, and IoT archive telemetry.
-   - Restricted from executing superadmin-only database overrides.
+   - System administrator managing user governance, asset inventory, smart archive thresholds, and operational diagnostics.
+   - Excluded from superadmin-level database override privileges.
 
 3. Parish Priest ('parishpriest' / P)
-   - Supreme ecclesiastical authority and canonical overseer.
-   - Full access to all Sacramental Registers (Canon 535), Tuesday appointment approvals, mass intentions, pastoral audit logs, and official certificate signatory approvals.
+   - Supreme canonical authority and pastor of St. John Paul II Parish.
+   - Full access to all 6 Sacramental Registers (Canon 535), Tuesday appointment approvals, mass intention approvals, official certificate signatory approvals, marginal notation authorizations, and immutable pastoral audit logs (`pastoral_audit_logs`).
 
 4. Parish Secretary ('secretary' / Sc)
    - Primary operational user for day-to-day parish administration.
-   - Manages POS cashiering, official receipt issuance, appointment bookings, sacramental record entry, asset audits, asset label printing, and certificate generation.
+   - Manages POS cashiering (`PosCashierPage`), official receipt issuance, particulars catalog management (`ParticularsService`), appointment bookings, sacramental record entry, asset label batch printing, and certificate issuance.
 
 5. Records Encoder ('encoder' / E)
-   - Data entry specialist focused on field digitization of physical ledger books (Liber Baptismorum, etc.) and physical asset inventory tagging.
+   - Data entry specialist focused on field digitization of physical ledger books (Liber Baptismorum, Liber Confirmatorum, etc.), OCR scan verification, and physical asset inventory tagging.
 
 6. Parish Finance Council Auditor ('pfc' / PFC)
-   - Financial auditor access for financial receipt reviews, particulars catalog oversight, cashiering reports, and diocesan asset valuation.
+   - Financial auditor access for financial receipt reviews, particulars catalog oversight, cashiering reports, remittance exports (`RemittanceReportService`), and diocesan asset valuation.
 
 7. Parishioner / Client ('user' / U)
-   - Self-service portal access for parishioners to book parish appointments, request mass intentions, view personal receipt transaction histories, read daily Catholic mass scriptures, and verify official certificate authenticity via QR code tokens.
+   - Self-service portal access for parishioners to book parish appointments, request mass intentions, track personal transaction receipts, read daily Catholic mass scriptures, verify official certificate authenticity via QR tokens, and submit Pabuklat requests.
 
 ================================================================================
-3. SYSTEM ARCHITECTURE & DATABASE SCHEMA
+3. EXTERNAL APIS, THIRD-PARTY SERVICES & TECHNICAL STACK
 ================================================================================
-The backend is powered by Supabase PostgreSQL, utilizing realtime listeners,
-storage buckets, and Deno Edge Functions.
+ParishServe integrates a robust suite of cloud services, hardware telemetry APIs, and libraries:
 
-Database Schema Overview:
+1. Supabase Backend Platform (`supabase_flutter` ^2.17.2)
+   - Supabase Auth: Secure user authentication, password reset, and session management.
+   - Supabase PostgreSQL Database: Relational database hosting 21 core tables with Row-Level Security (RLS) policies.
+   - Supabase Storage Buckets (`certificate-assets`):
+     * `issued_pdfs/`: Stores generated official certificate PDF documents.
+     * `asset_photos/`: Stores watermarked diocesan property photos.
+     * `receipt_logos/`: Stores parish seal and diocesan emblem logos.
+   - Supabase Realtime: WebSocket listeners for live in-app notifications (`in_app_notification_service.dart`), smart archive telemetry (`smart_archive_view.dart`), and cashiering updates.
+   - Supabase Edge Functions: Deno-based serverless functions (`send-booking-confirmation`).
+
+2. OneSignal Mobile Push Notifications (`onesignal_flutter` ^5.7.0)
+   - Delivers real-time push notifications to Android and iOS devices.
+   - Synchronizes external user IDs with Supabase Auth UUIDs.
+   - Supports role-targeted broadcasts and foreground notification banners.
+
+3. LitCal Liturgical Calendar API (`https://litcal.johnromanodorazio.com/api/dev/calendar/nation/PH`)
+   - `LiturgicalCalendarService`: Dynamically queries the LitCal API for Catholic liturgical feast days, liturgical colors, solemnities, and Philippine National Liturgical Calendar events.
+
+4. Roman Catholic Lectionary Daily Mass Readings API
+   - `DailyReadingsService` (`DailyReadingModel`): Fetches scripture texts (First Reading, Responsorial Psalm, Second Reading for Sundays/Solemnities, Gospel) with daily liturgical color codes and saint/feast commemorations.
+
+5. Brevo (formerly Sendinblue) Email SMTP API
+   - Invoked by Supabase Edge Function `send-booking-confirmation` to send styled HTML email confirmations attached with document submission checklists.
+
+6. ESP32 IoT Micro-Climate Telemetry Protocol
+   - Hardware DHT22 sensor telemetry transmitted via HTTP REST / Supabase client from ESP32 microcontrollers into `storage_nodes` and `sensor_telemetry_logs`.
+
+7. PDF Generation & Multi-Format Printing Engine (`pdf` ^3.13.1, `printing` ^5.15.1)
+   - Generates vector PDF documents with `pdf_google_fonts` (Arimo, Cousine, Cinzel, EB Garamond, Caveat, Tinos) for TrueType Unicode support of special characters (Ñ, ñ, diacritics) and currency symbols.
+
+8. Public Verification Web Portal & QR Deep-Linking
+   - Public verification endpoints:
+     * `https://parishserve.web.app/verify?v=<VERIFICATION_TOKEN>` (Certificate verification)
+     * `https://parishserve.web.app/verify-receipt?rec=<RECEIPT_NO>` (Receipt transaction verification)
+
+================================================================================
+4. CORE OPERATIONAL MODULES & SYSTEM FUNCTIONS
+================================================================================
+
+--------------------------------------------------------------------------------
+MODULE 1: CANONICAL SACRAMENTAL RECORDS DIGITIZATION & CERTIFICATE GENERATION
+--------------------------------------------------------------------------------
+Digitizes physical ledger books in full compliance with Canon 535 of the Code of Canon Law:
+- Liber Baptismorum (Baptisms)
+- Liber Confirmatorum (Confirmations)
+- Liber Primae Communionis (First Holy Communions)
+- Liber Matrimoniorum (Matrimonies)
+- Liber Defunctorum (Deaths & Burials)
+- Liber Conversorum (Conversions & Receptions into Full Communion)
+
+Key Features & Business Rules:
+1. Physical Coordinates Validation (`SacramentalValidators`):
+   - Book Number: Integer 1 - 200
+   - Page Number: Integer 1 - 100
+   - Line Number: Integer 1 - 10
+   - Enforces unique coordinate constraints to prevent duplicate entries.
+2. Canon 877 §2 Unwed Paternity Compliance:
+   - Safely handles unacknowledged paternity ("Not Indicated" checkbox populates canonical placeholder texts and displays "—" on certificates).
+3. Certificate Generation Engine:
+   - Supports Simple Mode (structured form flow) and Canva-style Visual Canvas Designer Mode (`CertificateCanvasDesignerPage`) with resizable text, font choices, color pickers, background modes (Full-Page, Border, Plain), and seal/signature placements.
+4. Cryptographic QR Verification Tokenization:
+   - Generates a non-sequential UUID v4 token (`verification_id`) embedded as a QR code on issued certificates.
+   - Public scan resolves recipient name, sacrament type, issue date, canonical book coordinates, and validity status ('Valid' vs 'Revoked').
+
+--------------------------------------------------------------------------------
+MODULE 2: PARISH SERVICE APPOINTMENTS & PASTORAL SCHEDULING
+--------------------------------------------------------------------------------
+Manages bookings for sacraments, pastoral blessings, and mass intentions (`AppointmentService`, `MassIntentionService`).
+
+Service Presets & Durations:
+- Nuptial Mass (Wedding): 90 minutes
+- Community Baptism: 60 minutes
+- Private Baptism: 45 minutes
+- Funeral Mass & Blessing: 60 minutes
+- Anointing of the Sick & Viaticum: 45 minutes
+- House / Business Blessing: 45 minutes
+- Thanksgiving Mass Intention: 60 minutes
+- Canonical Interview / Pre-Cana: 45 minutes
+- Confession & Spiritual Direction: 30 minutes
+
+Canonical Rules & Automated Validation:
+1. Monday Prohibition (Clergy Rest Day):
+   - Mondays are strictly designated as Canonical Clergy Rest Days and Parish Office closure. Appointments cannot be booked on Mondays.
+2. Tuesday Parish Priest Approval Requirement:
+   - Tuesday bookings are submitted in 'pending' status and require explicit Parish Priest approval before confirmation.
+3. Liturgical Law Blocking (Solemnities & Holy Days):
+   - Automatically blocks appointment bookings on Catholic Solemnities, Paschal Triduum, Easter Sunday, Ash Wednesday, All Saints Day (Nov 1), All Souls Day (Nov 2), Christmas Day (Dec 25), Mary Mother of God (Jan 1), Feast of Santo Niño, Immaculate Conception (Dec 8), and Parish Titular Solemnity (St. John Paul II, Oct 22).
+4. Operating Window:
+   - Service appointments must be scheduled between 06:00 AM and 07:00 PM.
+5. Presider & Venue Collision Resolution:
+   - Prevents overlapping bookings for the same venue or presider.
+6. Automated Email Confirmation:
+   - Triggers `send-booking-confirmation` Edge Function to send confirmation emails attached with service document checklists.
+
+--------------------------------------------------------------------------------
+MODULE 3: POS CASHIERING, RECEIPTS & FINANCIAL MANAGEMENT
+--------------------------------------------------------------------------------
+Handles parish cashiering, mass intention offerings, and official receipt management:
+- Particulars Catalog (`ParticularsService`): Service items and stipend amounts across Sacraments, Mass Intentions, Certificates, Devotionals, and Others.
+- POS Cashiering Interface (`PosCashierPage`): Shopping cart UI supporting Cash (with tendered & change calculation), GCash/E-Wallet (with reference validation), and Gratis (canonically exempt).
+- Sequential Receipt Numbering: Format `REC-YYYY-XXXXX`.
+- Canvas Receipt Template Designer (`ReceiptCanvasDesignerPage`): Design support for Ecclesiastical Voucher Slips (8.5 x 4.125 in), A4, Letter, Legal (8.5 x 13 in), and 80mm Thermal Receipt Rolls.
+- Multi-Format Printing & Financial Reports: PDF issuance with amount-in-words conversion, itemized lines, QR tokens, and remittance export reports (`RemittanceReportService`).
+
+--------------------------------------------------------------------------------
+MODULE 4: DIOCESAN ASSET INVENTORY (CustodiaIMS)
+--------------------------------------------------------------------------------
+Provides diocesan property tracking, reference catalog management, security watermarking, sticker label printing, and mobile field auditing:
+- Diocesan Control Number System: Continuous control format `Location-Classification Year-Sequence` (e.g. `C-SI-2026-001`).
+- Book of Inventory Section Classification:
+  * Section 1: Acquisition price per unit ≥ ₱10,000.00
+  * Section 2: Acquisition price per unit < ₱10,000.00
+- Reference Management (`AssetReferenceService`): Dynamic locations (Church, Sacristy, Office, Pastoral Office, PEAC, Multi-Purpose Hall, Others) and classifications (Sacred Image, Sacred Vessel, Musical Instrument, Liturgical Book, Furniture, Office Equipment, Electrical, Hand Tools, Others).
+- Automated Security Watermarking (`AssetImageWatermarkUtil`): Embeds native canvas security watermark onto uploaded asset photos containing parish name, timestamp, and Diocesan Control #.
+- Asset Label PDF Generation (`AssetLabelPdfService`): Generates 70mm x 38mm sticker labels and batch A4 sheets (3x8 grid = 24 labels/page) with QR code tokens.
+- RFID / NFC Tag Integration: Native 13.56 MHz RFID/NFC UID reading for sacred metal vessels and high-value furnishings.
+- Mobile Field Audit Scanner (`_AuditScanDialog`): Continuous field audit workflow using live camera scanner, NFC reader, or manual barcode lookup.
+
+--------------------------------------------------------------------------------
+MODULE 5: SMART ARCHIVE ENVIRONMENTAL TELEMETRY (ESP32 IoT)
+--------------------------------------------------------------------------------
+Real-time micro-climate monitoring for sacramental record vaults and sacred artifact conservation:
+- Conservation Standards:
+  * Temperature Range: Ideal 18.0 °C – 24.0 °C (Warning > 26.0 °C)
+  * Relative Humidity (RH) Range: Ideal 45% – 55% RH (Warning > 60% RH to prevent mold growth and paper degradation)
+- Node Telemetry Ingestion: ESP32 DHT22 sensors transmit readings into `storage_nodes` and `sensor_telemetry_logs` with real-time warning indicators.
+
+--------------------------------------------------------------------------------
+MODULE 6: DAILY CATHOLIC MASS READINGS & LECTIONARY
+--------------------------------------------------------------------------------
+Integrates Roman Catholic Lectionary scripture texts (`DailyReadingsService` / `DailyReadingsCard`):
+- Displays daily First Reading, Responsorial Psalm, Second Reading (Sundays/Solemnities), and Gospel text.
+- Indicates daily liturgical color (White, Gold, Red, Green, Violet, Rose) and Saint/Feast commemorations.
+
+--------------------------------------------------------------------------------
+MODULE 7: DASHBOARDS, USER GOVERNANCE & AUDIT LOGGING
+--------------------------------------------------------------------------------
+Specialized navigation shells (`AdminNavigationShell`, `MainNavigationShell`, `ParishionerNavigationShell`) and dashboards:
+- Admin & Staff Dashboard: High-level overview of appointments, revenue, asset counts, archive alerts, and pending approvals.
+- Parishioner Dashboard: Personal appointment status, mass intention history, receipt ledger, and daily readings.
+- Immutable Audit Logs: `pastoral_audit_logs` for canonical priest overrides and `asset_audit_logs` for physical property inspections.
+
+================================================================================
+5. DATABASE SCHEMA & STORAGE ARCHITECTURE
+================================================================================
+The database consists of 21 PostgreSQL tables hosted on Supabase:
 
 1. `users`
-   - Primary user directory for staff and registered parishioners.
-   - Columns: user_id (PK), username, email, first_name, last_name, user_role,
+   - Primary user directory.
+   - Columns: user_id (PK), username, email, first_name, last_name, user_role
+     ('superadmin', 'admin', 'secretary', 'encoder', 'parishpriest', 'pfc', 'user'),
      password, account_status, is_archived, archived_at, archive_reason.
 
 2. `appointments`
-   - Manages parish service bookings (weddings, baptisms, funerals, blessings, etc.).
+   - Parish service bookings.
    - Columns: appointment_id (PK, format: APT-YY-XXXX), schedule_id, service_request_id,
      requester_name, contact_number, email, service_type, requested_date,
      requested_time, end_time, venue, officiant_name, appointment_status
@@ -86,7 +235,7 @@ Database Schema Overview:
      appointment_remarks, created_at, updated_at.
 
 3. `mass_intentions`
-   - Manages mass intentions submitted by parishioners.
+   - Submitted mass intentions.
    - Columns: intention_id (PK, format: INT-YY-XXXX), offering_type ('Thanksgiving',
      'Soul / Deceased', 'Healing / Recovery', 'Special Intention'), intention_date,
      mass_time, requested_by, contact_number, intention_details, offering_amount,
@@ -97,17 +246,16 @@ Database Schema Overview:
    - Canonical baptismal register under Canon 877.
    - Columns: record_id (PK, format: BAP-YY-XXXX), book_number, page_number,
      line_number, child_first_name, child_middle_name, child_last_name, child_suffix,
-     date_of_birth, age, place_of_birth, gender, legitimacy ('Catholic (Cath.)',
-     'Natural (Nat.)', etc.), father_first_name, father_middle_name, father_last_name,
-     father_place_of_birth, mother_first_name, mother_middle_name,
-     mother_maiden_last_name, mother_place_of_birth, parents_contact_number,
-     parents_residence, parents_marriage_type, sponsor_1_first_name,
-     sponsor_1_middle_name, sponsor_1_last_name, sponsor_1_residence,
-     sponsor_2_first_name, sponsor_2_middle_name, sponsor_2_last_name,
-     sponsor_2_residence, other_godparents, parish_name, minister_first_name,
-     minister_middle_name, minister_last_name, date_of_baptism, place_of_baptism,
-     stipend, remarks, scanned_image_url, ocr_raw_text, is_verified, encoded_by,
-     date_encoded, created_at.
+     date_of_birth, age, place_of_birth, gender, legitimacy, father_first_name,
+     father_middle_name, father_last_name, father_place_of_birth, mother_first_name,
+     mother_middle_name, mother_maiden_last_name, mother_place_of_birth,
+     parents_contact_number, parents_residence, parents_marriage_type,
+     sponsor_1_first_name, sponsor_1_middle_name, sponsor_1_last_name,
+     sponsor_1_residence, sponsor_2_first_name, sponsor_2_middle_name,
+     sponsor_2_last_name, sponsor_2_residence, other_godparents, parish_name,
+     minister_first_name, minister_middle_name, minister_last_name,
+     date_of_baptism, place_of_baptism, stipend, remarks, scanned_image_url,
+     ocr_raw_text, is_verified, encoded_by, date_encoded, created_at.
 
 5. `confirmation_records` (Liber Confirmatorum)
    - Canonical confirmation register.
@@ -124,7 +272,7 @@ Database Schema Overview:
      scanned_image_url, ocr_raw_text, is_verified, encoded_by, date_encoded, created_at.
 
 6. `first_communion_records` (Liber Primae Communionis)
-   - Batch and individual first holy communion register.
+   - First Holy Communion register.
    - Columns: record_id (PK), year, control_number (format: FCM-YYYY-XXXX),
      communicant_first_name, communicant_middle_name, communicant_last_name,
      date_of_communion, baptism_parish, baptism_date, father_first_name,
@@ -148,29 +296,27 @@ Database Schema Overview:
      sponsor_1_first_name, sponsor_1_middle_name, sponsor_1_last_name,
      sponsor_1_origin_address, sponsor_2_first_name, sponsor_2_middle_name,
      sponsor_2_last_name, sponsor_2_origin_address, other_sponsors,
-     date_of_marriage, marriage_type ('Between Catholics', 'Mixed Marriage',
-     'Disparity of Cults'), is_filipino_foreigner, marriage_license_no,
+     date_of_marriage, marriage_type, is_filipino_foreigner, marriage_license_no,
      license_date_registered, license_place_issued, solemnizer_first_name,
      solemnizer_middle_name, solemnizer_last_name, crasm_number,
      crasm_validity_date, stipend, remarks, parish_name, scanned_image_url,
      ocr_raw_text, is_verified, encoded_by, created_at.
 
-8. `death_records` (Liber Defunctorum / Libro de Entierros)
-   - Canonical burial and death register.
+8. `death_records` (Liber Defunctorum)
+   - Burial and death register.
    - Columns: record_id (PK, format: DTH-YY-XXXX), book_number, page_number,
      line_number, deceased_first_name, deceased_middle_name, deceased_last_name,
      deceased_suffix, gender, age, civil_status, residence, spouse_first_name,
      spouse_middle_name, spouse_last_name, father_first_name, father_middle_name,
      father_last_name, mother_first_name, mother_middle_name,
      mother_maiden_last_name, date_of_death, date_of_burial, place_of_burial,
-     cause_of_death, sacraments_received, sacraments_notes, liturgical_service
-     ('Funeral Mass', 'Funeral Blessing'), stipend, minister_first_name,
-     minister_middle_name, minister_last_name, remarks, parish_name,
-     scanned_image_url, ocr_raw_text, is_verified, encoded_by, date_encoded,
-     created_at.
+     cause_of_death, sacraments_received, sacraments_notes, liturgical_service,
+     stipend, minister_first_name, minister_middle_name, minister_last_name,
+     remarks, parish_name, scanned_image_url, ocr_raw_text, is_verified,
+     encoded_by, date_encoded, created_at.
 
 9. `conversion_records` (Liber Conversorum)
-   - Reception into full communion of the Catholic Church register.
+   - Conversion register.
    - Columns: record_id (PK, format: CNV-YY-XXXX), book_number, page_number,
      line_number, date_of_reception, convert_first_name, convert_middle_name,
      convert_last_name, convert_suffix, date_of_birth, place_of_birth,
@@ -185,18 +331,17 @@ Database Schema Overview:
      created_at.
 
 10. `certificate_templates`
-    - Dynamic certificate template configurations.
+    - Certificate template layouts & styling JSON.
     - Columns: template_id (PK), sacrament_type, template_name, certificate_title,
       header_text, diocese_logo_url, parish_seal_url, show_diocese_logo,
-      show_parish_seal, body_wording, default_purpose, paper_size ('A4', 'Letter', 'Legal'),
-      orientation ('Portrait', 'Landscape'), background_image_url, background_mode
-      ('Border', 'Full-Page', 'None'), signatory_name, signatory_title,
+      show_parish_seal, body_wording, default_purpose, paper_size, orientation,
+      background_image_url, background_mode, signatory_name, signatory_title,
       signature_image_url, style_config (JSON), enable_qr_verification, is_active,
       is_default, version, created_by, created_at, updated_at.
 
 11. `certificate_issuances`
-    - Audit log and snapshot of issued official certificates.
-    - Columns: issuance_id (PK, format: ISS-YYYY-XXXX), verification_id (PK/Unique UUID v4),
+    - Audit log of issued certificates with verification tokens.
+    - Columns: issuance_id (PK, format: ISS-YYYY-XXXX), verification_id (Unique UUID v4),
       record_id, sacrament_type, recipient_name, purpose, template_id,
       template_version, rendered_wording, signatory_name, signatory_title,
       book_number, page_number, line_number, registry_reference, qr_verification_url,
@@ -205,244 +350,106 @@ Database Schema Overview:
       last_scanned_at.
 
 12. `parish_certificate_settings`
-    - Centralized global parish and diocesan emblem settings.
+    - Centralized parish logo, seal, and header settings.
     - Columns: id (PK, 'global'), diocese_logo_url, parish_seal_url,
       show_diocese_logo, show_parish_seal, updated_at.
 
 13. `parish_transactions`
-    - Financial receipt transactions for cashiering, POS, and offerings.
-    - Columns: transaction_id (PK, format: TXN-timestamp), receipt_number (format: REC-YYYY-XXXXX),
-      payor_name, payor_contact, transaction_date, transaction_type ('donation', 'stipend',
-      'mass_intention', 'certificate', 'sacrament', 'service', 'offering', 'fee'),
+    - Financial receipt transactions.
+    - Columns: transaction_id (PK), receipt_number (format: REC-YYYY-XXXXX),
+      payor_name, payor_contact, transaction_date, transaction_type,
       related_service, transaction_details, transaction_amount, payment_required_status,
       transaction_status ('paid', 'pending', 'cancelled'), related_appointment_id,
       related_request_id, encoded_by, created_at.
 
 14. `parish_particulars`
-    - Catalog of offerings, stipends, and services.
-    - Columns: particular_id (PK, format: PRT-timestamp), title, category ('Sacraments',
-      'Mass Intentions', 'Certificates', 'Devotionals', 'Others'), default_price,
-      description, icon_name, allows_custom_price, is_active, created_at, updated_at.
+    - Catalog of stipends, offerings, and services.
+    - Columns: particular_id (PK), title, category ('Sacraments', 'Mass Intentions',
+      'Certificates', 'Devotionals', 'Others'), default_price, description, icon_name,
+      allows_custom_price, is_active, created_at, updated_at.
 
 15. `receipt_templates`
-    - Receipt template styling and layout options.
+    - Receipt template configurations & visual canvas JSON.
     - Columns: template_id (PK, format: TPL-REC-XXXXX), template_name, receipt_title,
-      header_text, paper_size ('Ecclesiastical' [8.5x4.125 in], 'A4', 'Letter', 'Legal' [8.5x13 in]),
-      orientation ('Landscape', 'Portrait'), background_image_url, background_mode
-      ('None' [Plain], 'Border', 'Full-Page'), diocese_logo_url, parish_seal_url,
-      show_diocese_logo, show_parish_seal, cashier_title, parish_priest_name,
-      signature_image_url, enable_qr_verification, style_config (JSON with Canva visual canvas support),
+      header_text, paper_size ('Ecclesiastical', 'A4', 'Letter', 'Legal'),
+      orientation, background_image_url, background_mode, diocese_logo_url,
+      parish_seal_url, show_diocese_logo, show_parish_seal, cashier_title,
+      parish_priest_name, signature_image_url, enable_qr_verification, style_config,
       is_default, is_active, version, created_by, created_at, updated_at.
 
 16. `parish_assets`
-    - Registered diocesan and parish property register.
-    - Columns: asset_id (PK, format: AST-hex), control_number (Format: Location-Classification Year-Sequence,
-      e.g. C-SI-2026-001), item_name, classification_id, classification_acronym,
-      classification_name, location_id, location_acronym, location_name, dimensions,
-      color, model, others, remarks, photo_url (Security Watermarked), date_of_acquisition,
-      acquisition_year, mode_of_acquisition ('Purchase', 'Donation', 'Transfer',
-      'Diocesan Grant', 'Inherited / Legacy', 'Found / Recovered'), quantity, unit_price,
-      total_cost, rfid_tag (13.56 MHz RFID/NFC UID), qr_code_token, condition_status
-      ('VERIFIED / GOOD', 'REQUIRES REPAIR', 'DAMAGED', 'MISSING', 'UNUSABLE'),
-      operational_status ('Active', 'In Storage', 'Under Maintenance', 'Decommissioned'),
-      is_archived, archived_at, archived_by, archive_reason, bulk_batch_id,
-      item_sequence_in_batch, last_audited_at, audited_by, created_by, registration_date,
-      created_at, updated_at.
+    - Registered diocesan assets.
+    - Columns: asset_id (PK), control_number (Location-Classification Year-Sequence),
+      item_name, classification_id, classification_acronym, classification_name,
+      location_id, location_acronym, location_name, dimensions, color, model,
+      others, remarks, photo_url (Watermarked), date_of_acquisition, acquisition_year,
+      mode_of_acquisition, quantity, unit_price, total_cost, rfid_tag,
+      qr_code_token, condition_status ('VERIFIED / GOOD', 'REQUIRES REPAIR',
+      'DAMAGED', 'MISSING', 'UNUSABLE'), operational_status ('Active', 'In Storage',
+      'Under Maintenance', 'Decommissioned'), is_archived, archived_at, archived_by,
+      archive_reason, bulk_batch_id, item_sequence_in_batch, last_audited_at,
+      audited_by, created_by, registration_date, created_at, updated_at.
 
 17. `asset_locations` & `asset_classifications`
-    - Diocesan reference data catalogs.
-    - Locations: Church (C), Sacristy (S), Office (O), Pastoral Office (PO), Parish Eucharistic Adoration Chapel (PEAC), Multi-Purpose Hall (MH), Others (OTH).
-    - Classifications: Sacred Image (SI), Sacred Vessel (SV), Musical Instrument (MI), Liturgical Book (LB), Furniture and Fixtures (FF), Office Equipment (OE), Electrical Equipment (EE), Hand Tools (HT), Others (OTH).
+    - Reference catalogs for asset locations and item classifications.
 
 18. `asset_audit_logs`
-    - Physical field audit logs for parish property.
-    - Columns: audit_id (PK, format: AUD-timestamp), asset_id, control_number,
-      audited_by, previous_condition, new_condition, previous_status, new_status,
+    - Audit inspection history for physical assets.
+    - Columns: audit_id (PK), asset_id, control_number, audited_by,
+      previous_condition, new_condition, previous_status, new_status,
       previous_location, new_location, audit_method ('QR_SCAN', 'RFID_NFC', 'MANUAL'),
       audit_notes, audited_at.
 
 19. `storage_nodes`
-    - ESP32 IoT micro-climate archive monitoring nodes.
+    - ESP32 IoT environmental monitoring nodes.
     - Columns: node_id (PK, e.g. 'ESP32-NODE-01'), room_title, storage_type,
       location_description, ideal_temp_min, ideal_temp_max, ideal_humidity_min,
       ideal_humidity_max, current_temp, current_humidity, node_status ('SAFE',
       'WARNING', 'CRITICAL', 'OFFLINE'), last_telemetry_at, created_at.
 
 20. `sensor_telemetry_logs`
-    - Environmental sensor reading logs.
+    - Historical sensor temperature & relative humidity readings log.
     - Columns: telemetry_id (PK), node_id, temperature, humidity, is_warning,
       alert_type, recorded_at.
 
 21. `pastoral_audit_logs`
     - Immutable security and canonical audit trail.
-    - Columns: log_id (PK, format: LOG-timestamp), priest_id, action_type,
-      target_reference_id, justification, created_at.
+    - Columns: log_id (PK), priest_id, action_type, target_reference_id,
+      justification, created_at.
 
 Supabase Storage Buckets:
-- `certificate-assets`: Stores uploaded border backgrounds, signatures, logos, watermarked asset photos, and generated PDF certificates (`issued_pdfs/`, `asset_photos/`).
+- `certificate-assets`: Houses generated certificate PDFs (`issued_pdfs/`), watermarked asset photos (`asset_photos/`), and receipt/seal logos (`receipt_logos/`).
 
 ================================================================================
-4. CANONICAL SACRAMENTAL RECORDS & CERTIFICATE GENERATION MODULE
+6. BRAND PALETTE & UI DESIGN SYSTEM
 ================================================================================
-The Sacramental Records Module digitizes physical ledger books in accordance with
-Canon 535 of the Code of Canon Law:
-- Liber Baptismorum (Baptisms)
-- Liber Confirmatorum (Confirmations)
-- Liber Primae Communionis (First Holy Communions)
-- Liber Matrimoniorum (Matrimonies)
-- Liber Defunctorum (Deaths & Burials)
-- Liber Conversorum (Conversions & Receptions into Full Communion)
+ParishServe features a theme engine with adaptive light/dark mode support:
 
-Key Features & Rules:
-1. Physical Coordinates Bound Validation:
-   - Book Number: Integer 1 - 200
-   - Page Number: Integer 1 - 100
-   - Line Number: Integer 1 - 10
-   - Prevents duplicate book/page/line registration entries.
-
-2. Canon 877 §2 Compliance:
-   - Handles unwed / unacknowledged paternity safely ("Not Indicated" checkbox fills canonical placeholders and displays "—" on certificates).
-
-3. Certificate Generation Engine:
-   - Supports Simple Mode (Structured word-processor flow with safe margins) and Canva-Style Visual Designer Mode (drag-and-drop element positioning, resizable text boxes, font selector, and color swatches).
-   - Generates PDF documents using `pdf` and `printing` packages with TrueType Unicode fonts (via `pdf_google_fonts` - Arimo, Cousine, Cinzel, EB Garamond, Caveat, Tinos) to eliminate missing glyph errors for Special Characters (Ñ, ñ, diacritics) and currency symbols.
-
-4. Dynamic Verification QR Tokenization:
-   - Every issued certificate embeds a non-sequential, cryptographically random UUID v4 Verification Token (`verification_id`).
-   - The embedded QR code points to the public verification web portal (`https://parishserve.web.app/verify?v=<TOKEN>`).
-   - Anyone scanning the QR code can verify the recipient name, sacrament type, issue date, book reference, and status ('Valid' vs 'Revoked').
-
-================================================================================
-5. PARISH APPOINTMENTS & SCHEDULING MODULE
-================================================================================
-The Appointments Module manages scheduling for weddings, baptisms, funeral masses,
-sick calls/anointing, house blessings, and thanksgiving mass intentions.
-
-Service Presets & Durations:
-- Nuptial Mass (Wedding): 90 minutes (1 hr 30 mins)
-- Community Baptism: 60 minutes (1 hour)
-- Private Baptism: 45 minutes
-- Funeral Mass & Blessing: 60 minutes (1 hour)
-- Anointing of the Sick & Viaticum: 45 minutes
-- House / Business Blessing: 45 minutes
-- Thanksgiving Mass Intention: 60 minutes
-- Canonical Interview / Pre-Cana: 45 minutes
-- Confession & Spiritual Direction: 30 minutes
-
-Paramount Canonical Rules & Automated Validation:
-1. Monday Prohibition (Clergy Rest Day):
-   - Mondays are strictly designated as Canonical Clergy Rest Days and Parish Office closure. No routine appointments or office services can be booked on Mondays.
-
-2. Tuesday Parish Priest Approval Rule:
-   - Appointments booked on Tuesdays are automatically assigned a 'pending' status and require explicit approval from the Parish Priest before confirmation.
-
-3. Liturgical Law Prohibition (Solemnity Blocking):
-   - Automated blocking prevents scheduling appointments on Catholic Solemnities, Paschal Triduum (Holy Thursday, Good Friday, Holy Saturday), Easter Sunday, Ash Wednesday, All Saints Day (Nov 1), All Souls Day (Nov 2), Christmas Day (Dec 25), Mary Mother of God (Jan 1), Feast of Santo Niño, Immaculate Conception (Dec 8), and Parish Titular Solemnities (St. John Paul II, Oct 22).
-   - Integrates with the LitCal Philippine National Liturgical Calendar API (`https://litcal.johnromanodorazio.com/api/dev/calendar/nation/PH`) with built-in Philippine National defaults.
-
-4. Operating Hours:
-   - Parish services must be scheduled between 06:00 AM and 07:00 PM.
-
-5. Collision Detection:
-   - Prevents overlapping bookings for the same venue or same presider/priest.
-
-6. Automated Email Confirmation (Supabase Edge Function & Brevo):
-   - Invokes `send-booking-confirmation` Deno Edge Function via Brevo SMTP API.
-   - Automatically attaches canonical document submission checklists based on the service type.
-
-================================================================================
-6. CASHIERING, RECEIPTS & FINANCIAL MANAGEMENT MODULE
-================================================================================
-The Receipts Module handles financial cashiering, mass intention offerings,
-and official receipt issuance.
-
-Key Features:
-- Particulars Catalog (`ParticularsService`): Configurable list of services and standard fee amounts (Sacraments, Mass Intentions, Certificates, Devotionals, Others).
-- POS Cashiering Interface (`PosCashierPage`): Point-of-Sale shopping cart UI supporting Cash (with cash tendered & change calculation), GCash / E-Wallet (with reference number validation), and Gratis (canonically exempt).
-- Sequential Receipt Numbering (`SecretaryService`): Sequential format `REC-YYYY-XXXXX`.
-- Customizable Receipt Templates (`ReceiptTemplateService` & `ReceiptCanvasDesignerPage`): Supports Ecclesiastical Voucher Slip (8.5 × 4.125 in), A4, Letter, Legal (8.5 × 13 in) Folio, and 80mm Thermal Receipt Rolls.
-- Multi-Format Printing Engine (`ReceiptPdfGenerator`): Generates PDF slips with amount-in-words conversion, itemized line items, TrueType fonts, and QR verification tokens (`https://parishserve.web.app/verify-receipt?rec=<REC_NO>`).
-
-================================================================================
-7. DIOCESAN ASSET INVENTORY MODULE (CustodiaIMS)
-================================================================================
-The Asset Inventory Module provides diocesan property tracking, reference data management, asset valuation, security watermarking, QR label printing, and mobile field auditing.
-
-Key Features:
-- Diocesan Control Number System: Automatically generated continuous control numbers `Location-Classification Year-Sequence` (e.g. `C-SI-2026-001`).
-- Book of Inventory Section Classification:
-  * Section 1: Acquisition price per unit ≥ ₱10,000.00
-  * Section 2: Acquisition price per unit < ₱10,000.00
-- Reference Management (`AssetReferenceService`): Dynamic locations and classifications (Sacred Image, Sacred Vessel, Musical Instrument, Liturgical Book, Furniture, Office Equipment, Electrical, Hand Tools, Others).
-- Automated Security Watermarking (`AssetImageWatermarkUtil`): Embeds native canvas security watermark onto uploaded asset photos containing parish name, timestamp, and Diocesan Control #.
-- Asset Label PDF Generation (`AssetLabelPdfService`): Generates printable 70mm × 38mm sticker labels and batch A4 sheets (3×8 grid = 24 labels/page) with QR code tokens.
-- RFID / NFC Support: Native 13.56 MHz RFID/NFC tag UID association for sacred metal vessels and high-value furnishings.
-- Mobile Field Audit Scanner (`_AuditScanDialog`): Continuous audit workflow using live camera scanner, NFC reader, or manual/USB barcode lookup with autocomplete suggestions.
-- Archive Quarantine: Decommissioned assets are soft-archived while preserving historical audit inspection logs (`AssetAuditLogModel`).
-
-================================================================================
-8. SMART ARCHIVE ENVIRONMENTAL TELEMETRY (ESP32 IoT)
-================================================================================
-The Smart Archive Module provides real-time micro-climate monitoring for sacramental
-record vaults, vessel storage, and reliquaries to prevent deterioration of historic ledgers
-and sacred artifacts.
-
-Conservation Standards & Thresholds:
-- Temperature Range: Ideal 18.0 °C – 24.0 °C (Warning above 26.0 °C)
-- Relative Humidity (RH) Range: Ideal 45% – 55% RH (Warning above 60% RH to prevent mold growth and paper degradation)
-
-Hardware Nodes & Monitoring:
-- Nodes (e.g. `ESP32-NODE-01` in Sacramental Archive Room) transmit real-time DHT22 sensor telemetry to Supabase.
-- Visual warning indicators highlight environmental threshold breaches.
-
-================================================================================
-9. DAILY CATHOLIC MASS READINGS & LITURGICAL CALENDAR MODULE
-================================================================================
-ParishServe provides built-in daily scripture readings for Catholic liturgies (`DailyReadingsService` / `DailyReadingsCard`):
-- Fetches First Reading, Responsorial Psalm, Second Reading (for Sundays & Solemnities), and Gospel scripture text based on the Roman Catholic Lectionary.
-- Displays daily liturgical color (White, Gold, Red, Green, Violet, Rose) and Saint/Feast commemoration.
-
-================================================================================
-10. BRAND PALETTE & UI DESIGN SYSTEM
-================================================================================
-ParishServe features an adaptive theme supporting clean parchment light mode
-and nocturnal Marian slate dark mode.
-
-Brand Colors (ParishColors):
+Brand Colors (`ParishColors`):
 - Marian Blue: `#164E87` (Primary brand accent, Coat of Arms)
 - Marian Blue Light: `#246EB9`
 - Eucharistic Gold / Gold Accent: `#D49B18`
 - Mercy Red: `#B91C1C`
 - Olive Green: `#2D6A4F`
-- Royal Violet (Rescheduled / Solemn): `#7C3AED`
+- Royal Violet: `#7C3AED`
 
-Theme-Adaptive Colors:
-- Light Background: `#F8FAFC` | Dark Background: `#0F172A`
-- Light Card Surface: `#FFFFFF` | Dark Card Surface: `#1E293B`
-- Light Text Primary: `#1E293B` | Dark Text Primary: `#F8FAFC`
-- Light Text Muted: `#475569` | Dark Text Muted: `#94A3B8`
-- Light Border: `#CBD5E1` | Dark Border: `#334155`
+Adaptive Theme Properties:
+- Parchment Light Mode (`#F8FAFC` background)
+- Nocturnal Slate Dark Mode (`#0F172A` background)
+- WCAG AAA contrast ratio compliance across text and interactive surfaces.
 
 ================================================================================
-11. BUNDLED CODEBASE TEXT FILES DIRECTORY
+7. CODEBASE TEXT BUNDLES DIRECTORY
 ================================================================================
 The project root (`C:\Users\Admin\AndroidStudioProjects\parishserve`) maintains
 6 synchronized codebase text bundle files for offline review and module inspection:
 
-1. `receipts_codebase.txt` & `Receipt-Codebase.txt`
-   - All 14 Dart files belonging to the Receipt Management System (`lib/features/receipts/`).
-
-2. `assets_codebase.txt`
-   - All 12 Dart files belonging to the Diocesan Asset Inventory System (`lib/features/asset_inventory/`).
-
-3. `sacramental_records_code.txt`
-   - All 39 Dart files belonging to the Sacramental Records Digitization System (`lib/features/sacramental_records/`).
-
-4. `parishserve_appointments_bundle.txt`
-   - All 22 Dart files belonging to the Appointments & Pastoral Scheduling Bundle (`lib/features/appointments/` + dependencies).
-
-5. `parishserve_codebase.txt`
-   - The complete Dart source tree across all modules and features in `lib/` (116 files / 63,537 lines).
+1. `parishserve_codebase.txt`: All 128 Dart files in `lib/`.
+2. `receipts_codebase.txt` & `Receipt-Codebase.txt`: All 14 receipt module files.
+3. `assets_codebase.txt`: All 14 asset inventory files.
+4. `sacramental_records_code.txt`: All 39 sacramental records files.
+5. `parishserve_appointments_bundle.txt`: All 22 appointment module files.
+6. `parishserve_system_context.txt`: Complete detailed system context reference.
 
 ================================================================================
 DOCUMENT END
