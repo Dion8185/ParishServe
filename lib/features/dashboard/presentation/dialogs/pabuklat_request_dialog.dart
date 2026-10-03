@@ -137,8 +137,24 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     'Sibling',
     'Authorized Representative',
   ];
+
+  // Purpose Selection Dropdown & Custom Field
+  String _selectedPurpose = 'For Personal Records';
+  final List<String> _purposeOptions = const [
+    'For Personal Records',
+    'For School Requirements',
+    'For Employment',
+    'For Marriage Requirements',
+    'For Legal Requirements',
+    'For Government Requirements',
+    'For Baptismal Sponsorship (Godparent)',
+    'For Confirmation Sponsorship',
+    'For SSS / GSIS / Passport Application',
+    'Other / Custom Purpose',
+  ];
+  final _customPurposeController = TextEditingController();
+
   final _contactNumberController = TextEditingController();
-  final _purposeController = TextEditingController();
 
   // Temporary Valid ID Document
   Uint8List? _attachedIdBytes;
@@ -151,6 +167,13 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   bool _isSearching = false;
   bool _isSubmitting = false;
   String? _errorMessage;
+
+  static const List<String> _keyboardSequences = [
+    'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
+    'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
+    'zxcv', 'xcvb', 'cvbn', 'vbnm',
+    'fdsa', 'gfds', 'hgfd', 'jhgf', 'kjhg', 'lkjh',
+  ];
 
   @override
   void initState() {
@@ -190,8 +213,16 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
 
     _requestorFullNameController.dispose();
     _contactNumberController.dispose();
-    _purposeController.dispose();
+    _customPurposeController.dispose();
     super.dispose();
+  }
+
+  String get _effectivePurposeText {
+    if (_selectedPurpose == 'Other / Custom Purpose') {
+      final custom = _customPurposeController.text.trim();
+      return custom.isNotEmpty ? custom : 'Custom / Unspecified Purpose';
+    }
+    return _selectedPurpose;
   }
 
   // ===========================================================================
@@ -232,8 +263,9 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         'marriageDate': _marriageDate?.toIso8601String(),
         'requestorFullName': _requestorFullNameController.text,
         'relationship': _relationshipToRecipient,
+        'selectedPurpose': _selectedPurpose,
+        'customPurpose': _customPurposeController.text,
         'contact': _contactNumberController.text,
-        'purpose': _purposeController.text,
         'hasMatch': _matchedRecord != null,
         'matchedRecordId': _matchedRecord?.recordId,
         'matchedSacrament': _matchedRecord?.sacramentType,
@@ -287,8 +319,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
             _requestorFullNameController.text = d['requestorFullName'];
           }
           if (d['relationship'] != null) _relationshipToRecipient = d['relationship'];
+          if (d['selectedPurpose'] != null && _purposeOptions.contains(d['selectedPurpose'])) {
+            _selectedPurpose = d['selectedPurpose'];
+          }
+          _customPurposeController.text = d['customPurpose'] ?? '';
           _contactNumberController.text = d['contact'] ?? '';
-          _purposeController.text = d['purpose'] ?? '';
 
           if (d['hasMatch'] == true && d['matchedRecordId'] != null) {
             _matchedRecord = SacramentMatchResult(
@@ -313,39 +348,85 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   }
 
   // ===========================================================================
-  // Strict Anti-Bruteforce & Input Sanitation Validation
+  // Live Input Validation & Anti-Gibberish Engine
   // ===========================================================================
 
-  static const List<String> _keyboardSequences = [
-    'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
-    'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
-    'zxcv', 'xcvb', 'cvbn', 'vbnm',
-    'fdsa', 'gfds', 'hgfd', 'jhgf', 'kjhg', 'lkjh',
-  ];
-
-  String? _validateNameField(String? value, String label, {bool isRequired = true, int min = 2, int max = 60}) {
+  String? _validateNameField(String? value, String label, {bool isRequired = true, int min = 2, int max = 60, bool isFullName = false}) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) {
       if (isRequired) return '$label is required.';
       return null;
     }
 
+    if (value!.startsWith(' ') || value.endsWith(' ')) {
+      return '$label cannot start or end with a space.';
+    }
+
+    if (value.contains(RegExp(r'\s{2,}'))) {
+      return '$label cannot contain consecutive spaces.';
+    }
+
     if (text.length < min) return '$label must be at least $min characters.';
     if (text.length > max) return '$label cannot exceed $max characters.';
 
-    if (RegExp(r'''[<>{};'"%\\=]''').hasMatch(text)) {
-      return '$label contains invalid special characters.';
+    // Allowed letters, accents, periods, apostrophes, and spaces
+    final namePattern = RegExp(r"^[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]+$");
+    if (!namePattern.hasMatch(text)) {
+      return '$label contains invalid characters.';
     }
 
+    // For Full Names, require at least First Name and Last Name
+    if (isFullName && !text.contains(' ')) {
+      return 'Please enter both first and last name.';
+    }
+
+    // Reject 3+ repetitive identical characters (e.g. aaaaa, bbb)
     if (RegExp(r'(.)\1{2,}', caseSensitive: false).hasMatch(text)) {
-      return '$label contains an invalid repetitive sequence.';
+      return '$label cannot contain repetitive characters.';
     }
 
+    // Reject repetitive syllable mashing (e.g. asdasdasd, hahahaha)
     final lower = text.toLowerCase();
+    if (RegExp(r'(.{2,4})\1{2,}', caseSensitive: false).hasMatch(lower)) {
+      return 'Please enter a valid $label.';
+    }
+
+    // Reject keyboard sequence walks
     for (final seq in _keyboardSequences) {
       if (lower.contains(seq)) {
         return '$label cannot contain keyboard sequence "$seq".';
       }
+    }
+
+    // Pronounceability & Vowel presence for names with 3+ characters
+    final words = lower.split(' ').where((w) => w.length >= 3);
+    for (final word in words) {
+      final onlyLetters = word.replaceAll(RegExp(r'[^a-zà-ÿñ]'), '');
+      if (onlyLetters.length >= 3) {
+        final hasVowel = RegExp(r'[aeiouyà-ÿ]').hasMatch(onlyLetters);
+        if (!hasVowel) {
+          return 'Each name must contain at least one vowel.';
+        }
+        if (RegExp(r'[bcdfghjklmnpqrstvwxz]{5,}').hasMatch(onlyLetters)) {
+          return '$label contains too many consecutive consonants.';
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String? _validatePhilippineMobile(String? value) {
+    final raw = value?.trim() ?? '';
+    if (raw.isEmpty) return 'Contact number is required.';
+
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length != 11) {
+      return 'Must be an 11-digit mobile number (09XX-XXX-XXXX).';
+    }
+
+    if (!digits.startsWith('09')) {
+      return 'Mobile number must begin with 09.';
     }
 
     return null;
@@ -362,7 +443,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
 
     final isMarriage = _selectedSacrament == 'Matrimony';
 
-    // Birthdate is strictly required for matching
     if (!isMarriage && _birthDate == null) {
       setState(() => _errorMessage = 'Birthdate is required for record matching.');
       return;
@@ -418,13 +498,13 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         setState(() {
           _matchedRecord = match;
           _isSearching = false;
-          _currentStep = 1; // Transition directly to "Record Found State"
+          _currentStep = 1; // Transitions to Record Found State
         });
         _saveDraftState();
       } else {
         setState(() {
           _isSearching = false;
-          _errorMessage = 'No matching sacramental record found matching at least 2 pieces of your submitted information. Please verify spelling of names and dates.';
+          _errorMessage = 'No matching sacramental record found matching at least 2 pieces of your submitted information. Please check the spelling of names and dates.';
         });
       }
     } catch (e) {
@@ -490,6 +570,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
 
     if (!_formKey.currentState!.validate()) return;
 
+    if (_selectedPurpose == 'Other / Custom Purpose' && _customPurposeController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please specify your custom purpose.');
+      return;
+    }
+
     if (_attachedIdBytes == null || _attachedIdFileName == null) {
       setState(() => _errorMessage = 'Please upload a valid government or official ID for verification.');
       return;
@@ -505,25 +590,22 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     try {
       final tempReqId = 'REQ-${DateTime.now().millisecondsSinceEpoch}';
 
-      // 1. Upload temporary valid ID strictly to private bucket
       final idPath = await PabuklatService.uploadRequestorIdDocument(
         requestId: tempReqId,
         fileBytes: _attachedIdBytes!,
         fileName: _attachedIdFileName!,
       );
 
-      // 2. Submit to service_requests and notify Secretary
       await PabuklatService.submitPabuklatRequest(
         sacramentType: _matchedRecord!.sacramentType,
         recordId: _matchedRecord!.recordId,
         requesterFullName: _requestorFullNameController.text.trim(),
         relationshipToRecipient: _relationshipToRecipient,
         contactNumber: _contactNumberController.text.trim(),
-        purpose: _purposeController.text.trim(),
+        purpose: _effectivePurposeText,
         idDocumentUrl: idPath,
       );
 
-      // 3. Clear draft upon successful submission
       await _clearDraftState();
 
       if (!mounted) return;
@@ -582,7 +664,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        // Closing via hardware back, ESC, or barrier click automatically preserves the draft!
         _saveDraftAndClose();
       },
       child: Dialog(
@@ -623,10 +704,10 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                           ),
                           Text(
                             _currentStep == 0
-                                ? 'Step 1: Request Information'
+                                ? 'Step 1: Record Identification'
                                 : (_currentStep == 1
                                 ? 'Step 2: Record Found Confirmation'
-                                : 'Step 3: Requestor Information & Verification ID'),
+                                : 'Step 3: Requestor Details & Official ID'),
                             style: TextStyle(fontSize: 11.5, color: textMuted),
                           ),
                         ],
@@ -641,12 +722,13 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 ),
               ),
 
-              // Scrollable Body
+              // Scrollable Body with Live Validation
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(22),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -703,7 +785,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                           ),
                           const SizedBox(height: 18),
 
-                          // Dynamic Layout: Marriage vs Single Recipient
                           if (isMarriage) ...[
                             _buildMarriageFormSection(),
                           ] else ...[
@@ -730,7 +811,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 ),
               ),
 
-              // Bottom Action Bar
+              // Bottom Action Controls
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
                 decoration: BoxDecoration(
@@ -796,11 +877,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                               : Icon(_currentStep == 2 ? Icons.check_circle : Icons.arrow_forward, size: 18),
                           label: Text(
                             _isSearching
-                                ? 'Matching...'
+                                ? 'Matching Record...'
                                 : (_isSubmitting
                                 ? 'Submitting...'
                                 : (_currentStep == 0
-                                ? 'Match Record'
+                                ? 'Verify & Match Record'
                                 : (_currentStep == 1 ? 'Proceed to Requestor Details' : 'Submit Request'))),
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                           ),
@@ -818,7 +899,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   }
 
   // ===========================================================================
-  // UI Builder: Single Recipient Form (Baptism, Confirmation, Death, etc.)
+  // UI Section: Single Recipient Form (Baptism, Confirmation, Death, etc.)
   // ===========================================================================
   Widget _buildSingleRecipientFormSection() {
     return Column(
@@ -831,17 +912,25 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
           maxLength: 80,
           buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
           inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿÑñ\s\.\-\'’]")),
+            FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
             _TitleCaseInputFormatter(),
           ],
-          validator: (v) => _validateNameField(v, 'Recipient full name', isRequired: true, min: 2, max: 80),
-          onChanged: (_) => _saveDraftState(),
+          validator: (v) => _validateNameField(v, 'Recipient full name', isRequired: true, min: 3, max: 80, isFullName: true),
+          onChanged: (_) {
+            setState(() {});
+            _saveDraftState();
+          },
           style: const TextStyle(fontSize: 14),
-          decoration: _inputDecoration(hint: 'e.g. Juan Mendoza Dela Cruz'),
+          decoration: _inputDecoration(
+            hint: 'e.g. Juan Mendoza Dela Cruz',
+            suffixIcon: _recipientFullNameController.text.trim().length >= 3 && _recipientFullNameController.text.contains(' ')
+                ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 18)
+                : null,
+          ),
         ),
         const SizedBox(height: 14),
 
-        // Birthdate (Visually and strictly marked as Required)
+        // Birthdate (Strictly Required for Matching)
         _buildFieldLabel('Birthdate', isRequired: true),
         InkWell(
           onTap: () async {
@@ -939,9 +1028,15 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _motherFirstNameController,
                 maxLength: 50,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
                 validator: (v) => _validateNameField(v, "Mother's first name", isRequired: false),
-                onChanged: (_) => _saveDraftState(),
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(labelText: "Mother's First Name"),
               ),
             ),
@@ -951,8 +1046,14 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _motherMiddleNameController,
                 maxLength: 50,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
-                onChanged: (_) => _saveDraftState(),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(labelText: 'Middle Name'),
               ),
             ),
@@ -962,9 +1063,15 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _motherLastNameController,
                 maxLength: 50,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
                 validator: (v) => _validateNameField(v, "Mother's maiden last name", isRequired: false),
-                onChanged: (_) => _saveDraftState(),
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(labelText: 'Maiden Last Name'),
               ),
             ),
@@ -985,9 +1092,15 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _fatherFirstNameController,
                 maxLength: 50,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
                 validator: (v) => _validateNameField(v, "Father's first name", isRequired: false),
-                onChanged: (_) => _saveDraftState(),
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(labelText: "Father's First Name"),
               ),
             ),
@@ -997,8 +1110,14 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _fatherMiddleNameController,
                 maxLength: 50,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
-                onChanged: (_) => _saveDraftState(),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(labelText: 'Middle Name'),
               ),
             ),
@@ -1008,9 +1127,15 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _fatherLastNameController,
                 maxLength: 50,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
                 validator: (v) => _validateNameField(v, "Father's last name", isRequired: false),
-                onChanged: (_) => _saveDraftState(),
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(labelText: "Father's Last Name"),
               ),
             ),
@@ -1021,7 +1146,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   }
 
   // ===========================================================================
-  // UI Builder: Clearly Separated Marriage Form (Bride vs Groom)
+  // UI Section: Clearly Separated Marriage Form (Bride vs Groom)
   // ===========================================================================
   Widget _buildMarriageFormSection() {
     final borderGrey = ParishColors.borderGrey;
@@ -1029,7 +1154,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Groom Container
+        // Groom Section
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1057,9 +1182,17 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _groomFullNameController,
                 maxLength: 80,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
-                validator: (v) => _selectedSacrament == 'Matrimony' ? _validateNameField(v, "Groom's full name", isRequired: true) : null,
-                onChanged: (_) => _saveDraftState(),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
+                validator: (v) => _selectedSacrament == 'Matrimony'
+                    ? _validateNameField(v, "Groom's full name", isRequired: true, isFullName: true)
+                    : null,
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(hint: 'First Name, Middle Name, Last Name'),
               ),
               const SizedBox(height: 12),
@@ -1102,11 +1235,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _groomMotherFirstNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
+                  Expanded(child: TextFormField(controller: _groomMotherFirstNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _groomMotherMiddleNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
+                  Expanded(child: TextFormField(controller: _groomMotherMiddleNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _groomMotherLastNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Maiden Last'))),
+                  Expanded(child: TextFormField(controller: _groomMotherLastNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Maiden Last'))),
                 ],
               ),
               const SizedBox(height: 12),
@@ -1114,11 +1247,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _groomFatherFirstNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
+                  Expanded(child: TextFormField(controller: _groomFatherFirstNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _groomFatherMiddleNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
+                  Expanded(child: TextFormField(controller: _groomFatherMiddleNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _groomFatherLastNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Last Name'))),
+                  Expanded(child: TextFormField(controller: _groomFatherLastNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Last Name'))),
                 ],
               ),
             ],
@@ -1126,7 +1259,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 16),
 
-        // Bride Container
+        // Bride Section
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1154,9 +1287,17 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 controller: _brideFullNameController,
                 maxLength: 80,
                 buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                inputFormatters: [_TitleCaseInputFormatter()],
-                validator: (v) => _selectedSacrament == 'Matrimony' ? _validateNameField(v, "Bride's full name", isRequired: true) : null,
-                onChanged: (_) => _saveDraftState(),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+                  _TitleCaseInputFormatter(),
+                ],
+                validator: (v) => _selectedSacrament == 'Matrimony'
+                    ? _validateNameField(v, "Bride's full name", isRequired: true, isFullName: true)
+                    : null,
+                onChanged: (_) {
+                  setState(() {});
+                  _saveDraftState();
+                },
                 decoration: _inputDecoration(hint: 'First Name, Middle Name, Maiden Last Name'),
               ),
               const SizedBox(height: 12),
@@ -1199,11 +1340,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _brideMotherFirstNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
+                  Expanded(child: TextFormField(controller: _brideMotherFirstNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _brideMotherMiddleNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
+                  Expanded(child: TextFormField(controller: _brideMotherMiddleNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _brideMotherLastNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Maiden Last'))),
+                  Expanded(child: TextFormField(controller: _brideMotherLastNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Maiden Last'))),
                 ],
               ),
               const SizedBox(height: 12),
@@ -1211,11 +1352,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _brideFatherFirstNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
+                  Expanded(child: TextFormField(controller: _brideFatherFirstNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'First Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _brideFatherMiddleNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
+                  Expanded(child: TextFormField(controller: _brideFatherMiddleNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Middle Name'))),
                   const SizedBox(width: 6),
-                  Expanded(child: TextFormField(controller: _brideFatherLastNameController, onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Last Name'))),
+                  Expanded(child: TextFormField(controller: _brideFatherLastNameController, inputFormatters: [_TitleCaseInputFormatter()], onChanged: (_) => _saveDraftState(), decoration: _inputDecoration(labelText: 'Last Name'))),
                 ],
               ),
             ],
@@ -1223,7 +1364,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 16),
 
-        // Date of Marriage (Optional)
         _buildFieldLabel('Possible Date of Marriage (Optional)', isRequired: false),
         InkWell(
           onTap: () async {
@@ -1263,7 +1403,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   }
 
   // ===========================================================================
-  // UI Builder: Step 1 - Affirmative Record Found State
+  // UI Section: Step 1 - Affirmative Record Found State (No Internal Coordinates Exposed)
   // ===========================================================================
   Widget _buildRecordFoundState() {
     final textDark = ParishColors.textDark;
@@ -1292,7 +1432,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Your submitted details successfully match an official $_selectedSacrament entry in the parish registry.',
+            'Your submitted details successfully correspond to an existing $_selectedSacrament entry in the official parish records.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: textMuted, height: 1.4),
           ),
@@ -1310,22 +1450,22 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.check, size: 16, color: ParishColors.oliveGreen),
+                    const Icon(Icons.check_circle, size: 16, color: ParishColors.oliveGreen),
                     const SizedBox(width: 6),
-                    Text('Certificate: $_selectedSacrament Certificate', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text('Certificate Type: $_selectedSacrament Certificate', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Subject: ${_matchedRecord?.recipientName ?? _recipientFullNameController.text}',
-                  style: TextStyle(fontSize: 12.5, color: textDark),
+                  'Record Subject: ${_matchedRecord?.recipientName ?? _recipientFullNameController.text}',
+                  style: TextStyle(fontSize: 12.5, color: textDark, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            'Click below to proceed to the Requestor Information and ID verification section.',
+            'Click "Proceed to Requestor Details" below to provide your official ID and purpose for release clearance.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: textMuted),
           ),
@@ -1335,7 +1475,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   }
 
   // ===========================================================================
-  // UI Builder: Step 2 - Requestor Information & Valid ID Upload
+  // UI Section: Step 2 - Requestor Information with Purpose Dropdown & ID Upload
   // ===========================================================================
   Widget _buildRequestorInfoSection() {
     final textDark = ParishColors.textDark;
@@ -1350,11 +1490,22 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
           controller: _requestorFullNameController,
           maxLength: 80,
           buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-          inputFormatters: [_TitleCaseInputFormatter()],
-          validator: (v) => _validateNameField(v, "Requestor's full name", isRequired: true, min: 2, max: 80),
-          onChanged: (_) => _saveDraftState(),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r"[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]")),
+            _TitleCaseInputFormatter(),
+          ],
+          validator: (v) => _validateNameField(v, "Requestor's full name", isRequired: true, min: 3, max: 80, isFullName: true),
+          onChanged: (_) {
+            setState(() {});
+            _saveDraftState();
+          },
           style: const TextStyle(fontSize: 14),
-          decoration: _inputDecoration(hint: 'First Name, Middle Name, Last Name'),
+          decoration: _inputDecoration(
+            hint: 'First Name, Middle Name, Last Name',
+            suffixIcon: _requestorFullNameController.text.trim().length >= 3 && _requestorFullNameController.text.contains(' ')
+                ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 18)
+                : null,
+          ),
         ),
         const SizedBox(height: 14),
 
@@ -1375,7 +1526,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 14),
 
-        _buildFieldLabel('Contact Number for Office Updates', isRequired: true),
+        _buildFieldLabel('Contact Number for Office Updates (11 Digits)', isRequired: true),
         TextFormField(
           controller: _contactNumberController,
           keyboardType: TextInputType.phone,
@@ -1385,28 +1536,66 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
             FilteringTextInputFormatter.digitsOnly,
             _PhilippinePhoneInputFormatter(),
           ],
-          validator: (v) {
-            final t = v?.replaceAll(RegExp(r'\D'), '') ?? '';
-            if (t.isEmpty) return 'Contact number is required.';
-            if (t.length != 11) return 'Must be a valid 11-digit mobile number (e.g. 0917-123-4567).';
-            return null;
+          validator: _validatePhilippineMobile,
+          onChanged: (_) {
+            setState(() {});
+            _saveDraftState();
           },
-          onChanged: (_) => _saveDraftState(),
           style: const TextStyle(fontSize: 14),
-          decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
+          decoration: _inputDecoration(
+            hint: '09XX-XXX-XXXX',
+            suffixIcon: _contactNumberController.text.replaceAll(RegExp(r'\D'), '').length == 11 &&
+                _contactNumberController.text.replaceAll(RegExp(r'\D'), '').startsWith('09')
+                ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 18)
+                : null,
+          ),
         ),
         const SizedBox(height: 14),
 
-        _buildFieldLabel('Purpose of Request', isRequired: true),
-        TextFormField(
-          controller: _purposeController,
-          maxLines: 2,
-          maxLength: 200,
-          validator: (v) => (v == null || v.trim().isEmpty) ? 'Please specify the purpose.' : null,
-          onChanged: (_) => _saveDraftState(),
-          style: const TextStyle(fontSize: 13),
-          decoration: _inputDecoration(hint: 'e.g. Marriage banns, School enrollment, Passport, Legal records'),
+        // Purpose Selection Dropdown
+        _buildFieldLabel('Purpose of Certificate Request', isRequired: true),
+        DropdownButtonFormField<String>(
+          value: _selectedPurpose,
+          isExpanded: true,
+          decoration: _inputDecoration(),
+          items: _purposeOptions.map((p) {
+            return DropdownMenuItem(
+              value: p,
+              child: Text(p, style: const TextStyle(fontSize: 13.5)),
+            );
+          }).toList(),
+          onChanged: (val) {
+            if (val != null) {
+              setState(() => _selectedPurpose = val);
+              _saveDraftState();
+            }
+          },
         ),
+
+        // Custom Purpose Input Field when 'Other / Custom Purpose' is selected
+        if (_selectedPurpose == 'Other / Custom Purpose') ...[
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _customPurposeController,
+            maxLength: 150,
+            buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+            validator: (v) {
+              if (_selectedPurpose == 'Other / Custom Purpose' && (v == null || v.trim().length < 3)) {
+                return 'Please specify your custom purpose (min. 3 characters).';
+              }
+              return null;
+            },
+            onChanged: (_) {
+              setState(() {});
+              _saveDraftState();
+            },
+            style: const TextStyle(fontSize: 13.5),
+            decoration: _inputDecoration(
+              labelText: 'Specify Custom Purpose *',
+              hint: 'e.g. Scholarship Application, Diocesan Clearance',
+            ),
+          ),
+        ],
         const SizedBox(height: 18),
 
         // Valid Government ID Upload Box
@@ -1459,7 +1648,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
               const SizedBox(height: 6),
               if (_attachedIdBytes == null) ...[
                 Text(
-                  'Upload a clear photo or copy of your valid government ID (Passport, UMID, PhilID, Driver\'s License). Max size: 5MB.',
+                  'Upload a clear photo or document of your valid ID (Passport, UMID, PhilID, Driver\'s License, Senior ID). Max size: 5MB.',
                   style: TextStyle(fontSize: 11.5, color: textMuted, height: 1.35),
                 ),
                 const SizedBox(height: 10),
@@ -1467,7 +1656,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                   height: 40,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: ParishColors.marianBlue),
+                      side: const BorderSide(color: ParishColors.marianBlue),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: _pickIdDocument,
@@ -1498,7 +1687,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   }
 
   // ===========================================================================
-  // Helpers
+  // UI Helpers
   // ===========================================================================
 
   Widget _buildFieldLabel(String label, {bool isRequired = false}) {
@@ -1520,10 +1709,11 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     );
   }
 
-  InputDecoration _inputDecoration({String? hint, String? labelText}) {
+  InputDecoration _inputDecoration({String? hint, String? labelText, Widget? suffixIcon}) {
     return InputDecoration(
       hintText: hint,
       labelText: labelText,
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: ParishColors.backgroundLight,
       isDense: true,
@@ -1536,10 +1726,19 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: ParishColors.borderGrey),
       ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+      focusedBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+        borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8),
       ),
+      errorBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+        borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+      ),
+      focusedErrorBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+        borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+      ),
+      errorStyle: const TextStyle(color: ParishColors.mercyRed, fontSize: 11.5, fontWeight: FontWeight.w500),
     );
   }
 }
