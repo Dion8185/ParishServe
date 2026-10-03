@@ -1,15 +1,21 @@
+// =============================================================================
+// FILE: lib/core/services/notification_service.dart
+// =============================================================================
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/appointments/presentation/dialogs/appointment_detail_dialog.dart';
 import '../../features/auth/models/user_model.dart';
 import '../../features/auth/services/auth_service.dart';
+import '../../features/sacramental_records/presentation/dialogs/pabuklat_requests_modal.dart';
 import '../../features/smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
 
 class NotificationService {
   NotificationService._();
 
-  // Replace with your OneSignal App ID from your OneSignal Dashboard
+  // OneSignal Public App ID
   static const String _oneSignalAppId = "54bdc4cd-8445-4c44-883c-068487b04ca7";
 
   static bool _isInitialized = false;
@@ -108,6 +114,36 @@ class NotificationService {
     }
   }
 
+  /// Dispatches an immediate push notification to all devices tagged with [targetRole] (e.g. 'secretary')
+  /// by invoking the Supabase Edge Function 'dispatch-alert'.
+  static Future<void> sendRolePushNotification({
+    required String targetRole,
+    required String title,
+    required String message,
+    required Map<String, dynamic> data,
+    String alertType = 'pabuklat_request',
+  }) async {
+    try {
+      final client = Supabase.instance.client;
+
+      // Invoke Supabase Edge Function 'dispatch-alert'
+      await client.functions.invoke(
+        'dispatch-alert',
+        body: {
+          'alertType': alertType,
+          'title': title,
+          'message': message,
+          'targetRoles': [targetRole.toLowerCase()],
+          'additionalData': data,
+        },
+      );
+
+      debugPrint('[NotificationService] OneSignal push dispatched via dispatch-alert Edge Function to role: $targetRole');
+    } catch (e) {
+      debugPrint('[NotificationService] Notice: Supabase Edge Function dispatch-alert invocation notice: $e');
+    }
+  }
+
   /// Consumes and executes any pending notification payload once the app is authenticated and mounted
   static void consumePendingNotification(BuildContext context) {
     if (pendingNotificationData != null) {
@@ -133,8 +169,8 @@ class NotificationService {
       return;
     }
 
-    final type = (additionalData['type'] ?? additionalData['alertType'])?.toString().toLowerCase() ?? '';
-    final refId = (additionalData['appointment_id'] ?? additionalData['reference_id'] ?? additionalData['node_id'])?.toString();
+    final type = (additionalData['type'] ?? additionalData['alertType'] ?? additionalData['notification_type'])?.toString().toLowerCase() ?? '';
+    final refId = (additionalData['appointment_id'] ?? additionalData['reference_id'] ?? additionalData['node_id'] ?? additionalData['service_request_id'])?.toString();
 
     try {
       // 1. Appointments, Tuesday Approvals, and 24h/12h Reminders
@@ -159,6 +195,11 @@ class NotificationService {
           humidity: humStr,
           isWarning: true,
         );
+      }
+      // 3. Pabuklat / Sacramental Record Requests (Secretary Only)
+      else if (type.contains('pabuklat') || type.contains('certificate_request') || type.contains('service_request')) {
+        debugPrint('[NotificationService] Deep-linking to Secretary Pabuklat Review Modal: $refId');
+        showPabuklatRequestsModal(context);
       }
     } catch (e) {
       debugPrint('[NotificationService] Error executing deep-link action: $e');

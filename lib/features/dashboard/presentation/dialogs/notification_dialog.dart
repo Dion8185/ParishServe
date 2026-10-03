@@ -1,8 +1,13 @@
+// =============================================================================
+// FILE: lib/features/dashboard/presentation/dialogs/notification_dialog.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../appointments/presentation/dialogs/appointment_detail_dialog.dart';
 import '../../../notifications/models/notification_model.dart';
 import '../../../notifications/services/in_app_notification_service.dart';
+import '../../../sacramental_records/presentation/dialogs/pabuklat_requests_modal.dart';
 import '../../../smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
 
 void showNotificationModal(BuildContext context) {
@@ -84,6 +89,9 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
         humidity: '68.2 %',
         isWarning: true,
       );
+    } else if (type.contains('pabuklat') || type.contains('request')) {
+      // Deep-link to Secretary's Pabuklat review modal
+      showPabuklatRequestsModal(context);
     }
   }
 

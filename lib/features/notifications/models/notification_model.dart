@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/notifications/models/notification_model.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 
@@ -8,8 +12,8 @@ class NotificationModel {
   final String title;
   final String message;
   final String notificationType;
-  // 'new_appointment', 'tuesday_approval', 'iot_breach', 'reminder_24h', 'reminder_12h', 'pabuklat_ready', 'general'
-  final String? referenceId; // appointment_id, node_id, record_id
+  // 'new_appointment', 'tuesday_approval', 'iot_breach', 'reminder_24h', 'reminder_12h', 'pabuklat_ready', 'pabuklat_request', 'general'
+  final String? referenceId; // appointment_id, node_id, record_id, service_request_id
   final bool isRead;
   final bool isCleared;
   final DateTime createdAt;
@@ -64,6 +68,8 @@ class NotificationModel {
       case 'pabuklat_ready':
       case 'certificate_ready':
         return Icons.verified_outlined;
+      case 'pabuklat_request':
+        return Icons.folder_shared;
       default:
         return Icons.notifications_active_outlined;
     }
@@ -83,6 +89,8 @@ class NotificationModel {
       case 'pabuklat_ready':
       case 'certificate_ready':
         return ParishColors.oliveGreen;
+      case 'pabuklat_request':
+        return ParishColors.marianBlue;
       case 'new_appointment':
       default:
         return ParishColors.marianBlue;
