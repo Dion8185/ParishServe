@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: supabase/functions/dispatch-alert/index.ts
+// =============================================================================
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const ONESIGNAL_APP_ID = Deno.env.get("ONESIGNAL_APP_ID") ?? "";
@@ -9,7 +13,7 @@ const corsHeaders = {
 };
 
 interface AlertPayload {
-  alertType: "iot_breach" | "new_appointment" | "tuesday_approval" | "pabuklat_ready" | "general";
+  alertType: "iot_breach" | "new_appointment" | "tuesday_approval" | "pabuklat_ready" | "pabuklat_request" | "general";
   title: string;
   message: string;
   targetRoles?: string[];
