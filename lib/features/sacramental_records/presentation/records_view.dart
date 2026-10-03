@@ -547,10 +547,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView> {
                       'Sacramental Records',
                       style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textDarkColor),
                     ),
-                    Text(
-                      'Select a sacramental register or search canonical entries across all books',
-                      style: TextStyle(color: textMutedColor),
-                    ),
                   ],
                 ),
               ),

@@ -1,5 +1,5 @@
 // =============================================================================
-// FILE: lib/features/asset_inventory/presentation/asset_inventory_view.dart
+// FILE: lib/features/asset_inventory/presentation/asset_inventory_view.dart (PART 1 OF 2)
 // =============================================================================
 
 import 'dart:math';
@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../models/asset_model.dart';
 import '../models/asset_reference_models.dart';
-import '../services/asset_label_pdf_service.dart';
 import '../services/asset_reference_service.dart';
 import '../services/asset_service.dart';
 import 'dialogs/asset_detail_dialog.dart';
@@ -27,9 +26,11 @@ class AssetInventoryView extends StatefulWidget {
 }
 
 class _AssetInventoryViewState extends State<AssetInventoryView>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   late TabController _sectionTabController;
+  late AnimationController _skeletonAnimController;
+  late Animation<double> _skeletonOpacityAnimation;
 
   List<AssetModel> _assets = [];
   List<AssetLocationModel> _locations = [];
@@ -42,7 +43,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   String _selectedCategory = 'All'; // Classification filter
   String _selectedLocation = 'All';
   String _selectedCondition = 'All';
-  String _statusTab = 'Active'; // 'Active' or 'Archived'
+  String _selectedOperationalStatus = 'All';
 
   // Sorting State
   String _sortBy = 'Control Number';
@@ -57,6 +58,22 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     'Registration Date',
   ];
 
+  final List<String> _conditionOptions = [
+    'All',
+    'VERIFIED / GOOD',
+    'REQUIRES REPAIR',
+    'DAMAGED',
+    'MISSING',
+    'UNUSABLE',
+  ];
+
+  final List<String> _operationalStatusOptions = [
+    'All',
+    'Active',
+    'In Storage',
+    'Under Maintenance',
+  ];
+
   AssetViewMode _viewMode = AssetViewMode.cards;
   int _currentPage = 0;
   int _rowsPerPage = 10;
@@ -64,7 +81,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   @override
   void initState() {
     super.initState();
-    _sectionTabController = TabController(length: 3, vsync: this);
+    // 4 Tabs: All Active, Section 1 (>=10k), Section 2 (<10k), Archived & Decom
+    _sectionTabController = TabController(length: 4, vsync: this);
     _sectionTabController.addListener(() {
       if (!_sectionTabController.indexIsChanging) {
         setState(() {
@@ -72,6 +90,16 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         });
       }
     });
+
+    _skeletonAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    _skeletonOpacityAnimation = Tween<double>(begin: 0.35, end: 0.85).animate(
+      CurvedAnimation(parent: _skeletonAnimController, curve: Curves.easeInOut),
+    );
+
     _loadAllData();
   }
 
@@ -79,6 +107,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   void dispose() {
     _searchController.dispose();
     _sectionTabController.dispose();
+    _skeletonAnimController.dispose();
     super.dispose();
   }
 
@@ -133,24 +162,37 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     return a.compareTo(b);
   }
 
+  void _onSortChanged(String field) {
+    setState(() {
+      if (_sortBy == field) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortBy = field;
+        _sortAscending = true;
+      }
+      _currentPage = 0;
+    });
+  }
+
   List<AssetModel> get _filteredAssets {
     var list = _assets;
 
-    // 1. Active vs Archived
-    if (_statusTab == 'Active') {
-      list = list.where((a) => !_isAssetArchived(a)).toList();
-    } else {
+    // 1. Tab Bar Segregation (Active Sections vs Dedicated Archive Tab)
+    if (_sectionTabController.index == 3) {
+      // Tab 3: Dedicated Archived & Decommissioned Quarantine
       list = list.where((a) => _isAssetArchived(a)).toList();
+    } else {
+      // Tabs 0, 1, 2: Active Inventory Only (Strictly Excludes Archived/Decom)
+      list = list.where((a) => !_isAssetArchived(a)).toList();
+
+      if (_sectionTabController.index == 1) {
+        list = list.where((a) => a.unitPrice >= 10000.0).toList();
+      } else if (_sectionTabController.index == 2) {
+        list = list.where((a) => a.unitPrice < 10000.0).toList();
+      }
     }
 
-    // 2. Canonical Book Section Tabs
-    if (_sectionTabController.index == 1) {
-      list = list.where((a) => a.unitPrice >= 10000.0).toList();
-    } else if (_sectionTabController.index == 2) {
-      list = list.where((a) => a.unitPrice < 10000.0).toList();
-    }
-
-    // 3. Category / Classification Filter
+    // 2. Category / Classification Filter
     if (_selectedCategory != 'All') {
       list = list
           .where((a) =>
@@ -159,7 +201,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           .toList();
     }
 
-    // 4. Location Filter
+    // 3. Location Filter
     if (_selectedLocation != 'All') {
       list = list
           .where((a) =>
@@ -168,12 +210,21 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           .toList();
     }
 
-    // 5. Condition Filter
+    // 4. Condition Filter
     if (_selectedCondition != 'All') {
       list = list
           .where((a) =>
       a.conditionStatus.toUpperCase() ==
           _selectedCondition.toUpperCase())
+          .toList();
+    }
+
+    // 5. Operational Status Filter (Active Tab only)
+    if (_sectionTabController.index != 3 && _selectedOperationalStatus != 'All') {
+      list = list
+          .where((a) =>
+      a.operationalStatus.toLowerCase() ==
+          _selectedOperationalStatus.toLowerCase())
           .toList();
     }
 
@@ -229,18 +280,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     return list;
   }
 
-  void _onSortChanged(String field) {
-    setState(() {
-      if (_sortBy == field) {
-        _sortAscending = !_sortAscending;
-      } else {
-        _sortBy = field;
-        _sortAscending = true;
-      }
-      _currentPage = 0;
-    });
-  }
-
   int get _activeCount => _assets.where((a) => !_isAssetArchived(a)).length;
   int get _archivedCount => _assets.where((a) => _isAssetArchived(a)).length;
 
@@ -255,7 +294,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (_selectedCategory != 'All') count++;
     if (_selectedLocation != 'All') count++;
     if (_selectedCondition != 'All') count++;
-    if (_statusTab != 'Active') count++;
+    if (_selectedOperationalStatus != 'All' && _sectionTabController.index != 3) count++;
     if (_sortBy != 'Control Number' || !_sortAscending) count++;
     return count;
   }
@@ -267,7 +306,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       _selectedCategory = 'All';
       _selectedLocation = 'All';
       _selectedCondition = 'All';
-      _statusTab = 'Active';
+      _selectedOperationalStatus = 'All';
       _sortBy = 'Control Number';
       _sortAscending = true;
       _currentPage = 0;
@@ -299,6 +338,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
+  // ===========================================================================
+  // Filter & Sort Bottom Sheet (All-in-One Engine)
+  // ===========================================================================
   void _openFilterAndSortBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -359,6 +401,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ],
                   ),
                   const Divider(height: 14),
+
+                  // 1. Sort Sequence
                   Text('Sort Sequence',
                       style: TextStyle(
                           fontSize: 12.5,
@@ -413,54 +457,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Text('Registry Status',
-                      style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.textDark)),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ChoiceChip(
-                          label: const Center(child: Text('Active Inventory')),
-                          selected: _statusTab == 'Active',
-                          selectedColor: ParishColors.marianBlue,
-                          labelStyle: TextStyle(
-                            color: _statusTab == 'Active'
-                                ? Colors.white
-                                : ParishColors.textDark,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                          onSelected: (val) {
-                            setState(() => _statusTab = 'Active');
-                            setSheetState(() {});
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ChoiceChip(
-                          label: const Center(child: Text('Archived / Decom')),
-                          selected: _statusTab == 'Archived',
-                          selectedColor: ParishColors.marianBlue,
-                          labelStyle: TextStyle(
-                            color: _statusTab == 'Archived'
-                                ? Colors.white
-                                : ParishColors.textDark,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                          onSelected: (val) {
-                            setState(() => _statusTab = 'Archived');
-                            setSheetState(() {});
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
+
+                  // 2. Classification Filter
                   Text('Property Classification',
                       style: TextStyle(
                           fontSize: 12.5,
@@ -491,6 +489,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     },
                   ),
                   const SizedBox(height: 14),
+
+                  // 3. Storage Location Filter
                   Text('Storage Location',
                       style: TextStyle(
                           fontSize: 12.5,
@@ -520,7 +520,81 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       }
                     },
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
+
+                  // 4. Physical Condition Filter
+                  Text('Physical Condition',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark)),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _conditionOptions.map((cond) {
+                        final isSelected = _selectedCondition == cond;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6.0),
+                          child: ChoiceChip(
+                            label: Text(cond),
+                            selected: isSelected,
+                            selectedColor: ParishColors.marianBlue,
+                            backgroundColor: ParishColors.backgroundLight,
+                            labelStyle: TextStyle(
+                              color: isSelected ? Colors.white : ParishColors.textDark,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11.5,
+                            ),
+                            onSelected: (_) {
+                              setState(() => _selectedCondition = cond);
+                              setSheetState(() {});
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 5. Operational Status Filter (Only when in active tabs)
+                  if (_sectionTabController.index != 3) ...[
+                    Text('Operational Status',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.textDark)),
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _operationalStatusOptions.map((st) {
+                          final isSelected = _selectedOperationalStatus == st;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6.0),
+                            child: ChoiceChip(
+                              label: Text(st),
+                              selected: isSelected,
+                              selectedColor: ParishColors.marianBlue,
+                              backgroundColor: ParishColors.backgroundLight,
+                              labelStyle: TextStyle(
+                                color: isSelected ? Colors.white : ParishColors.textDark,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11.5,
+                              ),
+                              onSelected: (_) {
+                                setState(() => _selectedOperationalStatus = st);
+                                setSheetState(() {});
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+
+                  // Apply & Close
                   SizedBox(
                     width: double.infinity,
                     height: 46,
@@ -547,6 +621,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
+  // ===========================================================================
+  // Build Method (Anchored to Top on Desktop)
+  // ===========================================================================
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
@@ -571,27 +649,37 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     return LayoutBuilder(
       builder: (context, constraints) {
         final bool isMobile = constraints.maxWidth < 650;
+        final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
 
-        return RefreshIndicator(
-          onRefresh: _loadAllData,
-          color: ParishColors.marianBlue,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 14 : 20,
-              vertical: isMobile ? 12 : 18,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // Container explicitly claims available height on desktop and anchors child to topCenter
+        return Container(
+          width: double.infinity,
+          height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
+          alignment: Alignment.topCenter,
+          child: RefreshIndicator(
+            onRefresh: _loadAllData,
+            color: ParishColors.marianBlue,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 14 : 20,
+                vertical: isMobile ? 12 : 18,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: max(0.0, viewportHeight - (isMobile ? 24 : 36)),
+                  minWidth: double.infinity,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
+                    // 1. Header Title & Actions
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
                             'Parish Asset Inventory',
                             style: TextStyle(
                               fontSize: isMobile ? 18 : 22,
@@ -599,339 +687,307 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                               color: textDark,
                             ),
                           ),
-                          Text(
-                            'Manages parish assets, property groups, and inventory records.',
-                            style: TextStyle(color: textMuted, fontSize: 11.5),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.print_outlined,
-                          color: ParishColors.goldAccent, size: 20),
-                      tooltip: 'Select & Print Tags (Batch)',
-                      onPressed: _openBatchPrintSelectionModal,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.settings_suggest_outlined,
-                          color: ParishColors.marianBlue, size: 20),
-                      tooltip: 'Manage Locations & Classifications',
-                      onPressed: _openManageReferences,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh,
-                          color: ParishColors.marianBlue, size: 20),
-                      tooltip: 'Reload Records',
-                      onPressed: _loadAllData,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 5,
-                      child: SizedBox(
-                        height: 44,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: ParishColors.oliveGreen,
-                            foregroundColor: Colors.white,
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                          ),
-                          onPressed: () => showRegisterAssetModal(context,
-                              onAssetSaved: _loadAllData),
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text(
-                            'Register Asset / Group',
-                            style: TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 5,
-                      child: SizedBox(
-                        height: 44,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                                color: ParishColors.marianBlue, width: 1.5),
-                            foregroundColor: ParishColors.marianBlue,
-                            backgroundColor: ParishColors.marianBlueSurface,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                          ),
-                          onPressed: () => showAuditScanModal(context,
-                              onScanCompleted: _loadAllData),
-                          icon: const Icon(Icons.qr_code_scanner, size: 18),
-                          label: const Text(
-                            'Field Audit',
-                            style: TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildCompactStatsRow(),
-                const SizedBox(height: 14),
-                Container(
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: cardWhite,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: borderGrey),
-                  ),
-                  child: TabBar(
-                    controller: _sectionTabController,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: textMuted,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      color: ParishColors.marianBlue,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    tabs: [
-                      Tab(
-                        child: Text(
-                          'All (${_statusTab == "Active" ? _activeCount : _archivedCount})',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: isMobile ? 11 : 12),
-                        ),
-                      ),
-                      Tab(
-                        child: Text(
-                          isMobile ? 'Sec 1 (≥₱10k)' : 'Section 1 (≥₱10,000.00)',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: isMobile ? 11 : 12),
-                        ),
-                      ),
-                      Tab(
-                        child: Text(
-                          isMobile ? 'Sec 2 (<₱10k)' : 'Section 2 (<₱10,000.00)',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: isMobile ? 11 : 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: cardWhite,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: borderGrey),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.search,
-                          size: 20, color: ParishColors.marianBlue),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (val) => setState(() {
-                            _searchQuery = val;
-                            _currentPage = 0;
-                          }),
-                          style: TextStyle(fontSize: 13, color: textDark),
-                          decoration: InputDecoration(
-                            hintText: 'Search by Control #, group name, RFID...',
-                            hintStyle:
-                            TextStyle(fontSize: 12, color: textMuted),
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                      ),
-                      if (_searchQuery.isNotEmpty)
                         IconButton(
-                          icon: const Icon(Icons.clear, size: 16),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {
-                              _searchQuery = '';
-                              _currentPage = 0;
-                            });
-                          },
+                          icon: const Icon(Icons.print_outlined,
+                              color: ParishColors.goldAccent, size: 20),
+                          tooltip: 'Select & Print Tags (Batch)',
+                          onPressed: _openBatchPrintSelectionModal,
                         ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    InkWell(
-                      onTap: _openFilterAndSortBottomSheet,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        height: 36,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: _hasActiveFilters
-                              ? ParishColors.marianBlueSurface
-                              : cardWhite,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _hasActiveFilters
-                                ? ParishColors.marianBlue
-                                : borderGrey,
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.settings_suggest_outlined,
+                              color: ParishColors.marianBlue, size: 20),
+                          tooltip: 'Manage Locations & Classifications',
+                          onPressed: _openManageReferences,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.tune,
-                              size: 15,
-                              color: _hasActiveFilters
-                                  ? ParishColors.marianBlue
-                                  : textMuted,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              _hasActiveFilters
-                                  ? 'Filter & Sort ($_activeFilterCount)'
-                                  : 'Filter & Sort',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: _hasActiveFilters
-                                    ? ParishColors.marianBlue
-                                    : textDark,
-                              ),
-                            ),
-                          ],
+                        IconButton(
+                          icon: const Icon(Icons.refresh,
+                              color: ParishColors.marianBlue, size: 20),
+                          tooltip: 'Reload Records',
+                          onPressed: _loadAllData,
                         ),
-                      ),
+                      ],
                     ),
-                    const Spacer(),
-                    Text(
-                      '$totalCount items',
-                      style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: textMuted),
-                    ),
-                    const SizedBox(width: 10),
+                    const SizedBox(height: 12),
+
+                    // 2. Primary Action Buttons
+                    _buildActionButtons(isMobile),
+                    const SizedBox(height: 12),
+
+                    // 3. Compact Stats Bar
+                    _buildCompactStatsRow(),
+                    const SizedBox(height: 14),
+
+                    // 4. TabBar (All Active, Sec I, Sec II, Archived/Decom)
                     Container(
-                      height: 32,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: cardWhite,
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: borderGrey),
                       ),
-                      child: ToggleButtons(
-                        isSelected: [
-                          _viewMode == AssetViewMode.cards,
-                          _viewMode == AssetViewMode.table
-                        ],
-                        onPressed: (idx) => setState(() => _viewMode =
-                        idx == 0 ? AssetViewMode.cards : AssetViewMode.table),
-                        borderRadius: BorderRadius.circular(6),
-                        selectedColor: Colors.white,
-                        fillColor: ParishColors.marianBlue,
-                        color: textMuted,
-                        constraints:
-                        const BoxConstraints(minHeight: 28, minWidth: 32),
-                        children: const [
-                          Tooltip(
-                              message: 'Card View',
-                              child: Icon(Icons.grid_view, size: 14)),
-                          Tooltip(
-                              message: 'Table View',
-                              child: Icon(Icons.table_chart, size: 14)),
+                      child: TabBar(
+                        controller: _sectionTabController,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: textMuted,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicator: BoxDecoration(
+                          color: _sectionTabController.index == 3
+                              ? ParishColors.mercyRed
+                              : ParishColors.marianBlue,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        tabs: [
+                          Tab(
+                            child: Text(
+                              isMobile ? 'Active ($_activeCount)' : 'All Active ($_activeCount)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Tab(
+                            child: Text(
+                              isMobile ? 'Sec I ($_section1Count)' : 'Sec 1 (≥₱10k) ($_section1Count)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Tab(
+                            child: Text(
+                              isMobile ? 'Sec II ($_section2Count)' : 'Sec 2 (<₱10k) ($_section2Count)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Tab(
+                            child: Text(
+                              isMobile ? 'Archived ($_archivedCount)' : 'Archived & Decom ($_archivedCount)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-                if (_hasActiveFilters) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (_statusTab != 'Active')
-                        _buildActiveFilterChip('Status: $_statusTab', () {
-                          setState(() => _statusTab = 'Active');
-                        }),
-                      if (_selectedCategory != 'All')
-                        _buildActiveFilterChip('Cat: $_selectedCategory', () {
-                          setState(() => _selectedCategory = 'All');
-                        }),
-                      if (_selectedLocation != 'All')
-                        _buildActiveFilterChip('Loc: $_selectedLocation', () {
-                          setState(() => _selectedLocation = 'All');
-                        }),
-                      if (_selectedCondition != 'All')
-                        _buildActiveFilterChip('Cond: $_selectedCondition', () {
-                          setState(() => _selectedCondition = 'All');
-                        }),
-                      ActionChip(
-                        label: const Text('Clear',
-                            style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
-                                color: ParishColors.mercyRed)),
-                        backgroundColor: ParishColors.mercyRedSurface,
-                        side: BorderSide(
-                            color: ParishColors.mercyRed.withValues(alpha: 0.3)),
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _resetFilters,
+                    const SizedBox(height: 10),
+
+                    // 5. Search Bar (Compact 44dp height)
+                    Container(
+                      width: double.infinity,
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: cardWhite,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: borderGrey),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.search,
+                              size: 20, color: ParishColors.marianBlue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: (val) => setState(() {
+                                _searchQuery = val;
+                                _currentPage = 0;
+                              }),
+                              style: TextStyle(fontSize: 13, color: textDark),
+                              decoration: InputDecoration(
+                                hintText: 'Search by Control #, group name, RFID...',
+                                hintStyle:
+                                TextStyle(fontSize: 12, color: textMuted),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 16),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                  _currentPage = 0;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // 6. Filter & Sort Bar with View Mode Switcher
+                    Row(
+                      children: [
+                        InkWell(
+                          onTap: _openFilterAndSortBottomSheet,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: _hasActiveFilters
+                                  ? ParishColors.marianBlueSurface
+                                  : cardWhite,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _hasActiveFilters
+                                    ? ParishColors.marianBlue
+                                    : borderGrey,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.tune,
+                                  size: 15,
+                                  color: _hasActiveFilters
+                                      ? ParishColors.marianBlue
+                                      : textMuted,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  _hasActiveFilters
+                                      ? 'Filter & Sort ($_activeFilterCount)'
+                                      : 'Filter & Sort',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _hasActiveFilters
+                                        ? ParishColors.marianBlue
+                                        : textDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '$totalCount items',
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: textMuted),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: cardWhite,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: borderGrey),
+                          ),
+                          child: ToggleButtons(
+                            isSelected: [
+                              _viewMode == AssetViewMode.cards,
+                              _viewMode == AssetViewMode.table
+                            ],
+                            onPressed: (idx) => setState(() => _viewMode =
+                            idx == 0 ? AssetViewMode.cards : AssetViewMode.table),
+                            borderRadius: BorderRadius.circular(6),
+                            selectedColor: Colors.white,
+                            fillColor: ParishColors.marianBlue,
+                            color: textMuted,
+                            constraints:
+                            const BoxConstraints(minHeight: 28, minWidth: 32),
+                            children: const [
+                              Tooltip(
+                                  message: 'Card View',
+                                  child: Icon(Icons.grid_view, size: 14)),
+                              Tooltip(
+                                  message: 'Table View',
+                                  child: Icon(Icons.table_chart, size: 14)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // 7. Active Filter Chips Row
+                    if (_hasActiveFilters) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (_selectedCategory != 'All')
+                            _buildActiveFilterChip('Cat: $_selectedCategory', () {
+                              setState(() => _selectedCategory = 'All');
+                            }),
+                          if (_selectedLocation != 'All')
+                            _buildActiveFilterChip('Loc: $_selectedLocation', () {
+                              setState(() => _selectedLocation = 'All');
+                            }),
+                          if (_selectedCondition != 'All')
+                            _buildActiveFilterChip('Cond: $_selectedCondition', () {
+                              setState(() => _selectedCondition = 'All');
+                            }),
+                          if (_selectedOperationalStatus != 'All' && _sectionTabController.index != 3)
+                            _buildActiveFilterChip('Status: $_selectedOperationalStatus', () {
+                              setState(() => _selectedOperationalStatus = 'All');
+                            }),
+                          if (_sortBy != 'Control Number' || !_sortAscending)
+                            _buildActiveFilterChip('Sorted: $_sortBy', () {
+                              setState(() {
+                                _sortBy = 'Control Number';
+                                _sortAscending = true;
+                              });
+                            }),
+                          ActionChip(
+                            label: const Text('Clear',
+                                style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.mercyRed)),
+                            backgroundColor: ParishColors.mercyRedSurface,
+                            side: BorderSide(
+                                color: ParishColors.mercyRed.withOpacity(0.3)),
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _resetFilters,
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ],
-                const SizedBox(height: 12),
-                if (_isLoading)
-                  const Center(
-                      child: Padding(
-                          padding: EdgeInsets.all(40),
-                          child: CircularProgressIndicator()))
-                else if (_errorMessage != null)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                        color: ParishColors.mercyRedSurface,
-                        borderRadius: BorderRadius.circular(10)),
-                    child: Text('Error: $_errorMessage',
-                        style: const TextStyle(color: ParishColors.mercyRed)),
-                  )
-                else if (totalCount == 0)
-                    _buildEmptyState()
-                  else if (_viewMode == AssetViewMode.cards)
-                      ...paged.map(
-                              (a) => AssetItemCard(asset: a, onRefresh: _loadAllData))
-                    else
-                      _buildFullWidthResponsiveTable(paged, constraints.maxWidth),
+                    const SizedBox(height: 12),
 
-                const SizedBox(height: 14),
-                if (totalCount > 0)
-                  _buildPaginationFooter(
-                      totalCount, totalPages, startIndex, endIndex),
-              ],
+                    // 8. Main Content View / Anti-Shift Skeleton Loader
+                    if (_isLoading)
+                      _buildSkeletonLoading(constraints.maxWidth)
+                    else if (_errorMessage != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                            color: ParishColors.mercyRedSurface,
+                            borderRadius: BorderRadius.circular(10)),
+                        child: Text('Error: $_errorMessage',
+                            style: const TextStyle(color: ParishColors.mercyRed)),
+                      )
+                    else if (totalCount == 0)
+                        _buildEmptyState()
+                      else if (_viewMode == AssetViewMode.cards)
+                          ...paged.map(
+                                  (a) => AssetItemCard(asset: a, onRefresh: _loadAllData))
+                        else
+                          _buildFullWidthResponsiveTable(paged, constraints.maxWidth),
+
+                    const SizedBox(height: 14),
+                    if (totalCount > 0 && !_isLoading)
+                      _buildPaginationFooter(
+                          totalCount, totalPages, startIndex, endIndex),
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -939,6 +995,108 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
+// --- END OF PART 1 ---
+
+// =============================================================================
+// FILE: lib/features/asset_inventory/presentation/asset_inventory_view.dart (PART 2 OF 2)
+// =============================================================================
+
+  // ===========================================================================
+  // Top Action Buttons
+  // ===========================================================================
+  Widget _buildActionButtons(bool isMobile) {
+    return isMobile
+        ? Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+              elevation: 1,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => showRegisterAssetModal(context, onAssetSaved: _loadAllData),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text(
+              '+ Register Asset / Group',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+              foregroundColor: ParishColors.marianBlue,
+              backgroundColor: ParishColors.marianBlueSurface,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => showAuditScanModal(context, onScanCompleted: _loadAllData),
+            icon: const Icon(Icons.qr_code_scanner, size: 18),
+            label: const Text(
+              'Field Audit Scanner',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ],
+    )
+        : Row(
+      children: [
+        Expanded(
+          flex: 5,
+          child: SizedBox(
+            height: 44,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.oliveGreen,
+                foregroundColor: Colors.white,
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => showRegisterAssetModal(context, onAssetSaved: _loadAllData),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text(
+                'Register Asset / Group',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 5,
+          child: SizedBox(
+            height: 44,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+                foregroundColor: ParishColors.marianBlue,
+                backgroundColor: ParishColors.marianBlueSurface,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => showAuditScanModal(context, onScanCompleted: _loadAllData),
+              icon: const Icon(Icons.qr_code_scanner, size: 18),
+              label: const Text(
+                'Field Audit',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Compact Stats Row (Matching Appointments & Receipts Modules)
+  // ===========================================================================
   Widget _buildCompactStatsRow() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -951,7 +1109,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         children: [
           Expanded(
             child: _buildCompactStatItem(
-              'Total',
+              'Total Active',
               '$_activeCount',
               ParishColors.marianBlue,
             ),
@@ -959,7 +1117,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
           Expanded(
             child: _buildCompactStatItem(
-              'Sec I',
+              'Sec I (≥₱10k)',
               '$_section1Count',
               ParishColors.goldAccent,
             ),
@@ -967,7 +1125,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
           Expanded(
             child: _buildCompactStatItem(
-              'Sec II',
+              'Sec II (<₱10k)',
               '$_section2Count',
               ParishColors.oliveGreen,
             ),
@@ -977,7 +1135,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             child: _buildCompactStatItem(
               'Archived',
               '$_archivedCount',
-              const Color(0xFF64748B),
+              ParishColors.mercyRed,
             ),
           ),
         ],
@@ -1024,6 +1182,84 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
+  // ===========================================================================
+  // Anti-Layout-Shift Skeleton Loader
+  // ===========================================================================
+  Widget _buildSkeletonLoading(double availableWidth) {
+    return AnimatedBuilder(
+      animation: _skeletonOpacityAnimation,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _skeletonOpacityAnimation.value,
+          child: Column(
+            children: List.generate(4, (index) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                height: 96,
+                decoration: BoxDecoration(
+                  color: ParishColors.cardWhite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: ParishColors.borderGrey.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            height: 14,
+                            width: 160,
+                            decoration: BoxDecoration(
+                              color: ParishColors.borderGrey.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 16,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: ParishColors.borderGrey.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 12,
+                            width: 200,
+                            decoration: BoxDecoration(
+                              color: ParishColors.borderGrey.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // Responsive DataTable View (Full Width with Horizontal Scroll)
+  // ===========================================================================
   Widget _buildFullWidthResponsiveTable(
       List<AssetModel> assets, double availableWidth) {
     return Container(
@@ -1067,13 +1303,15 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 const DataColumn(label: Text('Action')),
               ],
               rows: assets.map((a) {
+                final bool isDecom = a.operationalStatus == 'Decommissioned' || a.isArchived;
+
                 return DataRow(cells: [
                   DataCell(
                     Text(
                       a.controlNumber,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: ParishColors.marianBlue,
+                        color: isDecom ? ParishColors.mercyRed : ParishColors.marianBlue,
                       ),
                     ),
                   ),
@@ -1128,17 +1366,17 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: a.operationalStatus == 'Decommissioned'
+                        color: isDecom
                             ? ParishColors.mercyRedSurface
                             : ParishColors.backgroundLight,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        a.operationalStatus,
+                        isDecom ? 'DECOMMISSIONED' : a.operationalStatus,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 10.5,
-                          color: a.operationalStatus == 'Decommissioned'
+                          color: isDecom
                               ? ParishColors.mercyRed
                               : ParishColors.textDark,
                         ),
@@ -1166,19 +1404,22 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
   Widget _buildSortableColumnLabel(String label, String field) {
     final bool isSorted = _sortBy == field;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label),
-        if (isSorted) ...[
-          const SizedBox(width: 4),
-          Icon(
-            _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-            size: 14,
-            color: ParishColors.marianBlue,
-          ),
+    return InkWell(
+      onTap: () => _onSortChanged(field),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          if (isSorted) ...[
+            const SizedBox(width: 4),
+            Icon(
+              _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+              size: 14,
+              color: ParishColors.marianBlue,
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 

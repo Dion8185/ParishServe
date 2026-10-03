@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/features/profile/presentation/profile_view.dart
+// =============================================================================
+
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
@@ -17,9 +22,6 @@ class ProfileView extends StatefulWidget {
 }
 
 class _ProfileViewState extends State<ProfileView> {
-  bool _largeFontEnabled = true;
-  bool _audioAlertsEnabled = true;
-
   void _copyToClipboard(String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -81,123 +83,129 @@ class _ProfileViewState extends State<ProfileView> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isDesktop = constraints.maxWidth >= 850;
+        final bool isDesktop = constraints.maxWidth >= 900;
+        final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
 
-        return Scaffold(
-          backgroundColor: ParishColors.backgroundLight,
-          body: SingleChildScrollView(
+        return Container(
+          width: double.infinity,
+          height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
+          alignment: Alignment.topCenter,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.all(isDesktop ? 28.0 : 20.0),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Top Section Breadcrumb Header
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: max(0.0, viewportHeight - 56.0),
+                maxWidth: 1100,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  // Top Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isDesktop ? 'User Profile & System Preferences' : 'My Profile',
+                            style: TextStyle(
+                              fontSize: isDesktop ? 22 : 19,
+                              fontWeight: FontWeight.bold,
+                              color: ParishColors.textDark,
+                            ),
+                          ),
+                          Text(
+                            'Manage account credentials, appearance theme, and security access',
+                            style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Responsive Grid Layout
+                  if (isDesktop)
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              isDesktop ? 'User Profile & System Preferences' : 'My Profile',
-                              style: TextStyle(
-                                fontSize: isDesktop ? 22 : 19,
-                                fontWeight: FontWeight.bold,
-                                color: ParishColors.textDark,
-                              ),
-                            ),
-                            Text(
-                              'Manage account credentials, display preferences, and security access',
-                              style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
-                            ),
-                          ],
+                        // Left Column: Profile Hero Card
+                        Expanded(
+                          flex: 4,
+                          child: Column(
+                            children: [
+                              _buildProfileHeroCard(fullName, role, userId, username, isStaff),
+                              const SizedBox(height: 20),
+                              _buildLogoutButton(context),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+
+                        // Right Column: Credentials, Preferences, Security & Legal
+                        Expanded(
+                          flex: 6,
+                          child: Column(
+                            children: [
+                              _buildCredentialsCard(fullName, username, email, userId, role, isStaff),
+                              const SizedBox(height: 20),
+                              _buildPreferencesCard(user),
+                              const SizedBox(height: 20),
+                              _buildSecurityCard(context, email),
+                              const SizedBox(height: 20),
+                              _buildLegalGovernanceCard(context),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Column(
+                      children: [
+                        _buildProfileHeroCard(fullName, role, userId, username, isStaff),
+                        const SizedBox(height: 20),
+                        _buildCredentialsCard(fullName, username, email, userId, role, isStaff),
+                        const SizedBox(height: 20),
+                        _buildPreferencesCard(user),
+                        const SizedBox(height: 20),
+                        _buildSecurityCard(context, email),
+                        const SizedBox(height: 20),
+                        _buildLegalGovernanceCard(context),
+                        const SizedBox(height: 24),
+                        _buildLogoutButton(context),
+                      ],
+                    ),
+
+                  const SizedBox(height: 32),
+
+                  // Footer Institutional Branding
+                  Center(
+                    child: Column(
+                      children: [
+                        const Text(
+                          'TOTUS TUUS',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            fontStyle: FontStyle.italic,
+                            color: ParishColors.goldAccent,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'ParishServe v1.0.0 • St. John Paul II Parish, Diocese of San Pablo',
+                          style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
-
-                    // Multi-Column Layout on Desktop vs Stacked on Mobile
-                    if (isDesktop)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Left Column: Profile Hero & Sign Out
-                          Expanded(
-                            flex: 4,
-                            child: Column(
-                              children: [
-                                _buildProfileHeroCard(fullName, role, userId, username, isStaff),
-                                const SizedBox(height: 20),
-                                _buildLogoutButton(context),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 24),
-
-                          // Right Column: Details, Preferences & Security
-                          Expanded(
-                            flex: 6,
-                            child: Column(
-                              children: [
-                                _buildCredentialsCard(fullName, username, email, userId, role, isStaff),
-                                const SizedBox(height: 20),
-                                _buildPreferencesCard(user),
-                                const SizedBox(height: 20),
-                                _buildSecurityCard(context, email),
-                                const SizedBox(height: 20),
-                                _buildLegalGovernanceCard(context),
-                              ],
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      Column(
-                        children: [
-                          _buildProfileHeroCard(fullName, role, userId, username, isStaff),
-                          const SizedBox(height: 20),
-                          _buildCredentialsCard(fullName, username, email, userId, role, isStaff),
-                          const SizedBox(height: 20),
-                          _buildPreferencesCard(user),
-                          const SizedBox(height: 20),
-                          _buildSecurityCard(context, email),
-                          const SizedBox(height: 20),
-                          _buildLegalGovernanceCard(context),
-                          const SizedBox(height: 24),
-                          _buildLogoutButton(context),
-                        ],
-                      ),
-
-                    const SizedBox(height: 28),
-
-                    // Footer Institutional Branding
-                    Center(
-                      child: Column(
-                        children: [
-                          const Text(
-                            'TOTUS TUUS',
-                            style: TextStyle(
-                              fontFamily: 'serif',
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              fontStyle: FontStyle.italic,
-                              color: ParishColors.goldAccent,
-                              letterSpacing: 2.0,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'ParishServe v1.0.0 • St. John Paul II Parish, Diocese of San Pablo',
-                            style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
               ),
             ),
           ),
@@ -228,7 +236,6 @@ class _ProfileViewState extends State<ProfileView> {
       ),
       child: Column(
         children: [
-          // Avatar with Papal Gold Ring
           Container(
             width: 88,
             height: 88,
@@ -250,7 +257,6 @@ class _ProfileViewState extends State<ProfileView> {
           ),
           const SizedBox(height: 14),
 
-          // Full Name
           Text(
             fullName,
             textAlign: TextAlign.center,
@@ -263,7 +269,6 @@ class _ProfileViewState extends State<ProfileView> {
           ),
           const SizedBox(height: 10),
 
-          // Role Badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
@@ -279,7 +284,6 @@ class _ProfileViewState extends State<ProfileView> {
           ),
           const SizedBox(height: 12),
 
-          // ID Pill with Copy Action
           InkWell(
             onTap: () => _copyToClipboard(userId, isStaff ? 'Staff ID' : 'Parishioner ID'),
             borderRadius: BorderRadius.circular(8),
@@ -307,7 +311,6 @@ class _ProfileViewState extends State<ProfileView> {
           const Divider(),
           const SizedBox(height: 6),
 
-          // Status Indicator
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -399,7 +402,7 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   // ===========================================================================
-  // Appearance & Accessibility Preferences Card (With DB Sync)
+  // Theme Preferences Card
   // ===========================================================================
 
   Widget _buildPreferencesCard(UserModel? user) {
@@ -416,10 +419,10 @@ class _ProfileViewState extends State<ProfileView> {
         children: [
           Row(
             children: [
-              Icon(Icons.tune, color: ParishColors.marianBlueAdaptive, size: 20),
+              Icon(Icons.palette_outlined, color: ParishColors.marianBlueAdaptive, size: 20),
               const SizedBox(width: 8),
               Text(
-                'Display & Accessibility Preferences',
+                'Appearance & Theme Settings',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
               ),
             ],
@@ -441,30 +444,6 @@ class _ProfileViewState extends State<ProfileView> {
               AppThemeController.toggleTheme(val, userId: user?.userId);
               setState(() {});
             },
-          ),
-          const Divider(height: 16),
-
-          // Large Font Switch
-          SwitchListTile(
-            activeColor: ParishColors.marianBlueAdaptive,
-            contentPadding: EdgeInsets.zero,
-            secondary: Icon(Icons.format_size, color: ParishColors.marianBlueAdaptive),
-            title: const Text('High Readability Typography', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            subtitle: const Text('Enlarges text labels conforming to senior accessibility standards', style: TextStyle(fontSize: 12)),
-            value: _largeFontEnabled,
-            onChanged: (val) => setState(() => _largeFontEnabled = val),
-          ),
-          const Divider(height: 16),
-
-          // ESP32 Audio Alerts Switch
-          SwitchListTile(
-            activeColor: ParishColors.marianBlueAdaptive,
-            contentPadding: EdgeInsets.zero,
-            secondary: const Icon(Icons.volume_up_outlined, color: ParishColors.oliveGreen),
-            title: const Text('Smart Archive Environmental Audio Alerts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            subtitle: const Text('Triggers tone notification on archive relative humidity breaches (>60% RH)', style: TextStyle(fontSize: 12)),
-            value: _audioAlertsEnabled,
-            onChanged: (val) => setState(() => _audioAlertsEnabled = val),
           ),
         ],
       ),
@@ -499,7 +478,6 @@ class _ProfileViewState extends State<ProfileView> {
           ),
           const Divider(height: 24),
 
-          // Change Password Action
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -528,7 +506,6 @@ class _ProfileViewState extends State<ProfileView> {
           ),
           const SizedBox(height: 14),
 
-          // Data Privacy Law / Canon 535 Notice Box
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),

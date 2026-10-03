@@ -726,7 +726,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
   }
 
   // ===========================================================================
-  // Build Method
+  // Build Method (Anchored to Top on Desktop)
   // ===========================================================================
 
   @override
@@ -740,311 +740,325 @@ class _AppointmentsViewState extends State<AppointmentsView>
     return LayoutBuilder(
       builder: (context, constraints) {
         final bool isMobile = constraints.maxWidth < 650;
+        final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
 
-        return RefreshIndicator(
-          onRefresh: _loadAllData,
-          color: ParishColors.marianBlue,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 14 : 20,
-              vertical: isMobile ? 12 : 18,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. Header (Subtext Removed completely per prompt instruction)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // Container explicitly claims available height on desktop and anchors child to topCenter
+        return Container(
+          width: double.infinity,
+          height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
+          alignment: Alignment.topCenter,
+          child: RefreshIndicator(
+            onRefresh: _loadAllData,
+            color: ParishColors.marianBlue,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 14 : 20,
+                vertical: isMobile ? 12 : 18,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: max(0.0, viewportHeight - (isMobile ? 24 : 36)),
+                  minWidth: double.infinity,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Parish Scheduling & Liturgy Desk',
-                        style: TextStyle(
-                          fontSize: isMobile ? 18 : 22,
-                          fontWeight: FontWeight.bold,
-                          color: textDarkColor,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.refresh, color: ParishColors.marianBlueAdaptive, size: 20),
-                      onPressed: _loadAllData,
-                      tooltip: 'Reload Database Records',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // 2. Primary Action Buttons
-                _buildActionButtons(isMobile),
-                const SizedBox(height: 12),
-
-                // 3. Compact Stats Row (Matching Assets Module)
-                _buildCompactStatsRow(),
-                const SizedBox(height: 14),
-
-                // 4. Main Module Switcher (With Completed Logs & Cancelled Archive tabs)
-                Container(
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: cardWhiteColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: borderGreyColor),
-                  ),
-                  child: TabBar(
-                    controller: _mainTabController,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: ParishColors.textMuted,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      color: _mainTabController.index == 3
-                          ? ParishColors.mercyRed
-                          : (_mainTabController.index == 2
-                          ? const Color(0xFF0F766E)
-                          : ParishColors.marianBlue),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    tabs: [
-                      Tab(
-                        child: Text(
-                          isMobile
-                              ? 'Sacraments (${_processedAppointments.length})'
-                              : 'Sacraments (${_processedAppointments.length})',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Tab(
-                        child: Text(
-                          isMobile
-                              ? 'Intentions (${_processedMassIntentions.length})'
-                              : 'Mass Intentions (${_processedMassIntentions.length})',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Tab(
-                        child: Text(
-                          isMobile
-                              ? 'Completed (${_completedAppointments.length})'
-                              : 'Completed Logs (${_completedAppointments.length})',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Tab(
-                        child: Text(
-                          isMobile
-                              ? 'Cancelled (${_cancelledAppointments.length})'
-                              : 'Cancelled Archive (${_cancelledAppointments.length})',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // 5. Search Bar (Compact 44dp height)
-                Container(
-                  width: double.infinity,
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: cardWhiteColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: borderGreyColor),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.search, size: 20, color: ParishColors.marianBlueAdaptive),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (val) {
-                            setState(() {
-                              _searchQuery = val;
-                              _currentPage = 1;
-                            });
-                          },
-                          style: TextStyle(fontSize: 13, color: textDarkColor),
-                          decoration: InputDecoration(
-                            hintText: 'Search by requester, sacrament, phone, ID...',
-                            hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.zero,
+                    // 1. Header (Subtext Removed completely per prompt instruction)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Parish Scheduling & Liturgy Desk',
+                            style: TextStyle(
+                              fontSize: isMobile ? 18 : 22,
+                              fontWeight: FontWeight.bold,
+                              color: textDarkColor,
+                            ),
                           ),
                         ),
-                      ),
-                      if (_searchQuery.isNotEmpty)
                         IconButton(
-                          icon: const Icon(Icons.clear, size: 16),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {
-                              _searchQuery = '';
-                              _currentPage = 1;
-                            });
-                          },
+                          icon: Icon(Icons.refresh, color: ParishColors.marianBlueAdaptive, size: 20),
+                          onPressed: _loadAllData,
+                          tooltip: 'Reload Database Records',
                         ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
 
-                // 6. Filter & Sort Toolbar with Card / Table View Toggle
-                Row(
-                  children: [
-                    InkWell(
-                      onTap: _openFilterAndSortBottomSheet,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        height: 36,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: _hasActiveFilters ? ParishColors.marianBlueSurface : cardWhiteColor,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _hasActiveFilters ? ParishColors.marianBlue : borderGreyColor,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.tune,
-                              size: 15,
-                              color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              _hasActiveFilters
-                                  ? 'Filter & Sort ($_activeFilterCount)'
-                                  : 'Filter & Sort',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: _hasActiveFilters ? ParishColors.marianBlue : textDarkColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${_getCurrentTabItemsCount()} items',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: ParishColors.textMuted,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
+                    // 2. Primary Action Buttons
+                    _buildActionButtons(isMobile),
+                    const SizedBox(height: 12),
+
+                    // 3. Compact Stats Row (Matching Assets Module)
+                    _buildCompactStatsRow(),
+                    const SizedBox(height: 14),
+
+                    // 4. Main Module Switcher (With Completed Logs & Cancelled Archive tabs)
                     Container(
-                      height: 32,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: cardWhiteColor,
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: borderGreyColor),
                       ),
-                      child: ToggleButtons(
-                        isSelected: [
-                          _viewMode == AppointmentViewMode.cards,
-                          _viewMode == AppointmentViewMode.table,
-                        ],
-                        onPressed: (idx) => setState(() {
-                          _viewMode = idx == 0 ? AppointmentViewMode.cards : AppointmentViewMode.table;
-                        }),
-                        borderRadius: BorderRadius.circular(6),
-                        selectedColor: Colors.white,
-                        fillColor: ParishColors.marianBlue,
-                        color: ParishColors.textMuted,
-                        constraints: const BoxConstraints(minHeight: 28, minWidth: 32),
-                        children: const [
-                          Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 14)),
-                          Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 14)),
+                      child: TabBar(
+                        controller: _mainTabController,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: ParishColors.textMuted,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicator: BoxDecoration(
+                          color: _mainTabController.index == 3
+                              ? ParishColors.mercyRed
+                              : (_mainTabController.index == 2
+                              ? const Color(0xFF0F766E)
+                              : ParishColors.marianBlue),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        tabs: [
+                          Tab(
+                            child: Text(
+                              isMobile
+                                  ? 'Sacraments (${_processedAppointments.length})'
+                                  : 'Sacraments (${_processedAppointments.length})',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Tab(
+                            child: Text(
+                              isMobile
+                                  ? 'Intentions (${_processedMassIntentions.length})'
+                                  : 'Mass Intentions (${_processedMassIntentions.length})',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Tab(
+                            child: Text(
+                              isMobile
+                                  ? 'Completed (${_completedAppointments.length})'
+                                  : 'Completed Logs (${_completedAppointments.length})',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Tab(
+                            child: Text(
+                              isMobile
+                                  ? 'Cancelled (${_cancelledAppointments.length})'
+                                  : 'Cancelled Archive (${_cancelledAppointments.length})',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 10.5 : 11.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                    const SizedBox(height: 10),
 
-                // 7. Active Filter Chips Row
-                if (_hasActiveFilters) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (_selectedDateRangeFilter != 'All Dates')
-                        _buildActiveFilterChip('Range: $_selectedDateRangeFilter', () {
-                          setState(() {
-                            _selectedDateRangeFilter = 'All Dates';
-                            _customDateRange = null;
-                            _currentPage = 1;
-                          });
-                        }),
-                      if (_selectedStatusFilter != 'All' && _mainTabController.index == 0)
-                        _buildActiveFilterChip('Status: $_selectedStatusFilter', () {
-                          setState(() {
-                            _selectedStatusFilter = 'All';
-                            _currentPage = 1;
-                          });
-                        }),
-                      if (_selectedServiceFilter != 'All')
-                        _buildActiveFilterChip('Service: $_selectedServiceFilter', () {
-                          setState(() {
-                            _selectedServiceFilter = 'All';
-                            _currentPage = 1;
-                          });
-                        }),
-                      if (_sortBy != 'Date: Earliest First' || !_sortAscending)
-                        _buildActiveFilterChip('Sorted: $_sortBy', () {
-                          setState(() {
-                            _sortBy = 'Date: Earliest First';
-                            _sortAscending = true;
-                          });
-                        }),
-                      ActionChip(
-                        label: const Text(
-                          'Clear',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: ParishColors.mercyRed,
+                    // 5. Search Bar (Compact 44dp height)
+                    Container(
+                      width: double.infinity,
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: cardWhiteColor,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: borderGreyColor),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search, size: 20, color: ParishColors.marianBlueAdaptive),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: (val) {
+                                setState(() {
+                                  _searchQuery = val;
+                                  _currentPage = 1;
+                                });
+                              },
+                              style: TextStyle(fontSize: 13, color: textDarkColor),
+                              decoration: InputDecoration(
+                                hintText: 'Search by requester, sacrament, phone, ID...',
+                                hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 16),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                  _currentPage = 1;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // 6. Filter & Sort Toolbar with Card / Table View Toggle
+                    Row(
+                      children: [
+                        InkWell(
+                          onTap: _openFilterAndSortBottomSheet,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: _hasActiveFilters ? ParishColors.marianBlueSurface : cardWhiteColor,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _hasActiveFilters ? ParishColors.marianBlue : borderGreyColor,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.tune,
+                                  size: 15,
+                                  color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  _hasActiveFilters
+                                      ? 'Filter & Sort ($_activeFilterCount)'
+                                      : 'Filter & Sort',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _hasActiveFilters ? ParishColors.marianBlue : textDarkColor,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        backgroundColor: ParishColors.mercyRedSurface,
-                        side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _resetFilters,
+                        const Spacer(),
+                        Text(
+                          '${_getCurrentTabItemsCount()} items',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: ParishColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: cardWhiteColor,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: borderGreyColor),
+                          ),
+                          child: ToggleButtons(
+                            isSelected: [
+                              _viewMode == AppointmentViewMode.cards,
+                              _viewMode == AppointmentViewMode.table,
+                            ],
+                            onPressed: (idx) => setState(() {
+                              _viewMode = idx == 0 ? AppointmentViewMode.cards : AppointmentViewMode.table;
+                            }),
+                            borderRadius: BorderRadius.circular(6),
+                            selectedColor: Colors.white,
+                            fillColor: ParishColors.marianBlue,
+                            color: ParishColors.textMuted,
+                            constraints: const BoxConstraints(minHeight: 28, minWidth: 32),
+                            children: const [
+                              Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 14)),
+                              Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 14)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // 7. Active Filter Chips Row
+                    if (_hasActiveFilters) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (_selectedDateRangeFilter != 'All Dates')
+                            _buildActiveFilterChip('Range: $_selectedDateRangeFilter', () {
+                              setState(() {
+                                _selectedDateRangeFilter = 'All Dates';
+                                _customDateRange = null;
+                                _currentPage = 1;
+                              });
+                            }),
+                          if (_selectedStatusFilter != 'All' && _mainTabController.index == 0)
+                            _buildActiveFilterChip('Status: $_selectedStatusFilter', () {
+                              setState(() {
+                                _selectedStatusFilter = 'All';
+                                _currentPage = 1;
+                              });
+                            }),
+                          if (_selectedServiceFilter != 'All')
+                            _buildActiveFilterChip('Service: $_selectedServiceFilter', () {
+                              setState(() {
+                                _selectedServiceFilter = 'All';
+                                _currentPage = 1;
+                              });
+                            }),
+                          if (_sortBy != 'Date: Earliest First' || !_sortAscending)
+                            _buildActiveFilterChip('Sorted: $_sortBy', () {
+                              setState(() {
+                                _sortBy = 'Date: Earliest First';
+                                _sortAscending = true;
+                              });
+                            }),
+                          ActionChip(
+                            label: const Text(
+                              'Clear',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.mercyRed,
+                              ),
+                            ),
+                            backgroundColor: ParishColors.mercyRedSurface,
+                            side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _resetFilters,
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ],
-                const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                // 8. Tab Content / Anti-Shift Skeleton Loader
-                if (isAllDataLoading)
-                  _buildSkeletonLoading(constraints.maxWidth)
-                else if (_mainTabController.index == 0)
-                  _buildSacramentalAppointmentsTab(constraints.maxWidth)
-                else if (_mainTabController.index == 1)
-                    _buildMassIntentionsTab(constraints.maxWidth)
-                  else if (_mainTabController.index == 2)
-                      _buildCompletedLogsTab(constraints.maxWidth)
-                    else
-                      _buildCancelledArchiveTab(constraints.maxWidth),
-              ],
+                    // 8. Tab Content / Anti-Shift Skeleton Loader
+                    if (isAllDataLoading)
+                      _buildSkeletonLoading(constraints.maxWidth)
+                    else if (_mainTabController.index == 0)
+                      _buildSacramentalAppointmentsTab(constraints.maxWidth)
+                    else if (_mainTabController.index == 1)
+                        _buildMassIntentionsTab(constraints.maxWidth)
+                      else if (_mainTabController.index == 2)
+                          _buildCompletedLogsTab(constraints.maxWidth)
+                        else
+                          _buildCancelledArchiveTab(constraints.maxWidth),
+                  ],
+                ),
+              ),
             ),
           ),
         );
