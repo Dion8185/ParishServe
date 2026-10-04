@@ -39,7 +39,6 @@ class PabuklatRateLimiter {
     final attempts = _searchAttempts[identifier] ?? [];
     if (attempts.isEmpty) return 0;
 
-    // Filter attempts in current window
     final recent = attempts.where((t) => now.difference(t) < windowDuration).toList();
     _searchAttempts[identifier] = recent;
 
@@ -103,7 +102,6 @@ class PabuklatService {
       return '$label contains an invalid repetitive character sequence.';
     }
 
-    // Check keyboard walk patterns
     final lower = clean.toLowerCase();
     for (final seq in _keyboardSequences) {
       if (lower.contains(seq)) {
@@ -114,12 +112,12 @@ class PabuklatService {
     return null;
   }
 
-  /// Searches sacramental tables using separate First, Middle, Last names, Parents,
-  /// Birthdate, and Sacrament date, requiring at least 2 matching information points.
-  /// Protected by PabuklatRateLimiter to block brute-force scraping attempts.
+  // ===========================================================================
+  // 1. Accurate Database Record Matching (Strictly >= 2 Criteria Match)
+  // ===========================================================================
+
   static Future<SacramentMatchResult?> findMatchingRecord({
     required String sacramentType,
-    // General / Single Recipient (Baptism, Confirmation, Death, Conversion, First Communion)
     String? recipientFullName,
     String? motherFirstName,
     String? motherMiddleName,
@@ -129,7 +127,6 @@ class PabuklatService {
     String? fatherLastName,
     DateTime? birthDate,
     DateTime? sacramentDate,
-    // Marriage / Matrimony Specific
     String? brideFullName,
     DateTime? brideBirthDate,
     String? brideMotherFirstName,
@@ -148,11 +145,9 @@ class PabuklatService {
     String? groomFatherLastName,
     DateTime? marriageDate,
   }) async {
-    // 1. Enforce Anti-Brute-Force Rate Limiting (per user account / session)
     final userKey = AuthService.currentUser?.userId ?? 'anonymous_client';
     PabuklatRateLimiter.recordSearchAttempt(userKey);
 
-    // 2. Validate input lengths and bounds
     final err1 = validateSearchString(recipientFullName, 'Recipient Name', min: 2, max: 80);
     if (err1 != null) throw err1;
 
@@ -162,7 +157,6 @@ class PabuklatService {
     final err3 = validateSearchString(brideFullName, 'Bride Name', min: 2, max: 80);
     if (err3 != null) throw err3;
 
-    // 3. Automated background purge on expired IDs
     purgeExpiredRequestIds();
 
     try {
@@ -246,10 +240,6 @@ class PabuklatService {
     return null;
   }
 
-  // ---------------------------------------------------------------------------
-  // Internal Table Matchers (Requiring Score >= 2)
-  // ---------------------------------------------------------------------------
-
   static Future<SacramentMatchResult?> _matchBaptismRecord({
     String? recipientFullName,
     String? motherFirstName,
@@ -283,7 +273,6 @@ class PabuklatService {
       final storedDob = r['date_of_birth']?.toString();
       final storedDap = r['date_of_baptism']?.toString();
 
-      // Criterion 1: Recipient Full Name
       if (recipientFullName != null && recipientFullName.trim().isNotEmpty) {
         final queryFull = recipientFullName.trim().toLowerCase();
         if (storedFull == queryFull ||
@@ -293,19 +282,16 @@ class PabuklatService {
         }
       }
 
-      // Criterion 2: Birthdate
       if (birthDate != null && storedDob != null) {
         final dobStr = birthDate.toIso8601String().substring(0, 10);
         if (storedDob.startsWith(dobStr)) score++;
       }
 
-      // Criterion 3: Sacrament Date
       if (sacramentDate != null && storedDap != null) {
         final dapStr = sacramentDate.toIso8601String().substring(0, 10);
         if (storedDap.startsWith(dapStr)) score++;
       }
 
-      // Criterion 4: Father's Name
       if (fatherLastName != null && fatherLastName.trim().isNotEmpty) {
         final fLast = fatherLastName.trim().toLowerCase();
         if (storedFatLast.isNotEmpty && storedFatLast == fLast) {
@@ -318,7 +304,6 @@ class PabuklatService {
         }
       }
 
-      // Criterion 5: Mother's Name
       if (motherLastName != null && motherLastName.trim().isNotEmpty) {
         final mLast = motherLastName.trim().toLowerCase();
         if (storedMotLast.isNotEmpty && storedMotLast == mLast) {
@@ -462,7 +447,6 @@ class PabuklatService {
       final storedGroomFatherLast = (r['groom_father_last_name'] ?? '').toString().trim().toLowerCase();
       final storedBrideFatherLast = (r['bride_father_last_name'] ?? '').toString().trim().toLowerCase();
 
-      // Criterion: Groom Name Match
       if (groomFullName != null && groomFullName.trim().isNotEmpty) {
         final gQuery = groomFullName.trim().toLowerCase();
         if (storedGroomFull == gQuery ||
@@ -472,7 +456,6 @@ class PabuklatService {
         }
       }
 
-      // Criterion: Bride Name Match
       if (brideFullName != null && brideFullName.trim().isNotEmpty) {
         final bQuery = brideFullName.trim().toLowerCase();
         if (storedBrideFull == bQuery ||
@@ -482,28 +465,23 @@ class PabuklatService {
         }
       }
 
-      // Criterion: Marriage Date Match
       if (marriageDate != null && storedDom != null) {
         final domStr = marriageDate.toIso8601String().substring(0, 10);
         if (storedDom.startsWith(domStr)) score++;
       }
 
-      // Criterion: Groom Birthdate
       if (groomBirthDate != null && storedGroomDob != null) {
         if (storedGroomDob.startsWith(groomBirthDate.toIso8601String().substring(0, 10))) score++;
       }
 
-      // Criterion: Bride Birthdate
       if (brideBirthDate != null && storedBrideDob != null) {
         if (storedBrideDob.startsWith(brideBirthDate.toIso8601String().substring(0, 10))) score++;
       }
 
-      // Criterion: Groom Father
       if (groomFatherLastName != null && groomFatherLastName.trim().isNotEmpty && storedGroomFatherLast.isNotEmpty) {
         if (storedGroomFatherLast == groomFatherLastName.trim().toLowerCase()) score++;
       }
 
-      // Criterion: Bride Father
       if (brideFatherLastName != null && brideFatherLastName.trim().isNotEmpty && storedBrideFatherLast.isNotEmpty) {
         if (storedBrideFatherLast == brideFatherLastName.trim().toLowerCase()) score++;
       }
@@ -550,8 +528,8 @@ class PabuklatService {
       if (deceasedFullName != null && deceasedFullName.trim().isNotEmpty) {
         final queryFull = deceasedFullName.trim().toLowerCase();
         if (storedFull == queryFull ||
-            (storedFirst.isNotEmpty && queryFull.contains(storedFirst) &&
-                storedLast.isNotEmpty && queryFull.contains(storedLast))) {
+            (storedFirst.isNotEmpty && queryFull.contains(storedFirst)) &&
+                (storedLast.isNotEmpty && queryFull.contains(storedLast))) {
           score++;
         }
       }
@@ -614,8 +592,8 @@ class PabuklatService {
       if (communicantFullName != null && communicantFullName.trim().isNotEmpty) {
         final queryFull = communicantFullName.trim().toLowerCase();
         if (storedFull == queryFull ||
-            (storedFirst.isNotEmpty && queryFull.contains(storedFirst) &&
-                storedLast.isNotEmpty && queryFull.contains(storedLast))) {
+            (storedFirst.isNotEmpty && queryFull.contains(storedFirst)) &&
+                (storedLast.isNotEmpty && queryFull.contains(storedLast))) {
           score++;
         }
       }
@@ -676,8 +654,8 @@ class PabuklatService {
       if (convertFullName != null && convertFullName.trim().isNotEmpty) {
         final queryFull = convertFullName.trim().toLowerCase();
         if (storedFull == queryFull ||
-            (storedFirst.isNotEmpty && queryFull.contains(storedFirst) &&
-                storedLast.isNotEmpty && queryFull.contains(storedLast))) {
+            (storedFirst.isNotEmpty && queryFull.contains(storedFirst)) &&
+                (storedLast.isNotEmpty && queryFull.contains(storedLast))) {
           score++;
         }
       }
@@ -710,8 +688,6 @@ class PabuklatService {
   // 2. Requestor ID Upload & Verification Storage
   // ===========================================================================
 
-  /// Uploads temporary valid government/official ID to secure private storage.
-  /// Strictly restricted to Secretary inspection.
   static Future<String?> uploadRequestorIdDocument({
     required String requestId,
     required Uint8List fileBytes,
@@ -737,7 +713,6 @@ class PabuklatService {
     }
   }
 
-  /// Generates temporary signed URL strictly for Secretary inspection
   static Future<String?> getSignedIdUrl(String filePath) async {
     try {
       var cleanPath = filePath.trim();
@@ -760,9 +735,6 @@ class PabuklatService {
   // 3. Request Submission & Instant Secretary Push Notification
   // ===========================================================================
 
-  /// Submits the completed Pabuklat request, inserts in-app notification,
-  /// and immediately dispatches a real-time OneSignal mobile push notification
-  /// to the Secretary's phone (mirroring user appointments).
   static Future<void> submitPabuklatRequest({
     required String sacramentType,
     required String recordId,
@@ -785,13 +757,14 @@ class PabuklatService {
       'record_id': recordId,
       'relationship_to_recipient': relationshipToRecipient.trim(),
       'id_document_url': idDocumentUrl,
-      'service_request_details': 'Purpose: $purpose\nRelationship: $relationshipToRecipient\nMatched Record ID: $recordId',
+      'service_request_details': purpose.trim(),
       'request_status': 'submitted',
+      'signature_method': 'physical',
+      'signature_status': 'pending',
       'created_by': user?.userId,
       'created_at': DateTime.now().toIso8601String(),
     };
 
-    // 1. Insert record request into database
     await _client.from('service_requests').insert(payload);
 
     final notificationTitle = 'New Pabuklat Request ($sacramentType)';
@@ -804,7 +777,6 @@ class PabuklatService {
       'sacrament_type': sacramentType,
     };
 
-    // 2. Insert into in-app notifications table (triggers Supabase Realtime listeners)
     try {
       await _client.from('notifications').insert({
         'target_role': 'secretary',
@@ -816,7 +788,6 @@ class PabuklatService {
       });
     } catch (_) {}
 
-    // 3. Immediately dispatch OneSignal Mobile Push Notification to the Secretary's device
     try {
       await NotificationService.sendRolePushNotification(
         targetRole: 'secretary',
@@ -830,49 +801,324 @@ class PabuklatService {
   }
 
   // ===========================================================================
-  // 4. Secretary Review & Final Status Management
+  // 4. Secretary Review, Signature Workflow & Printing Validation
   // ===========================================================================
 
-  /// Secretary Action: Approves or rejects a request. Assigns pickup date on approval.
-  /// Sets `finalized_at` timestamp which governs the automated 72-hour ID deletion.
-  static Future<void> updateRequestStatus({
+  static Future<void> approveRequestBySecretary({
     required String serviceRequestId,
-    required String newStatus, // 'submitted', 'record_verification', 'pending_secretary_approval', 'approved', 'ready_for_pickup', 'released', 'rejected'
-    DateTime? pickupDate,
-    String? rejectionReason,
+    required DateTime pickupDate,
+    required String signatureMethod, // 'physical' or 'remote_esignature'
   }) async {
     final secretaryId = AuthService.currentUser?.userId;
-    final now = DateTime.now();
+
+    final isRemote = signatureMethod == 'remote_esignature';
+    final targetStatus = isRemote ? 'forwarded_to_priest' : 'approved';
+    final signatureStatus = isRemote ? 'forwarded' : 'pending_physical';
+    final String pickupDateStr = pickupDate.toIso8601String().substring(0, 10);
 
     final updateMap = <String, dynamic>{
-      'request_status': newStatus.toLowerCase(),
+      'request_status': targetStatus,
+      'signature_method': signatureMethod,
+      'signature_status': signatureStatus,
+      'pickup_date': pickupDateStr,
       'reviewed_by': secretaryId,
+      if (isRemote) 'forwarded_to_priest_at': DateTime.now().toIso8601String(),
     };
-
-    if (pickupDate != null) {
-      updateMap['pickup_date'] = pickupDate.toIso8601String().substring(0, 10);
-    }
-    if (rejectionReason != null && rejectionReason.trim().isNotEmpty) {
-      updateMap['rejection_reason'] = rejectionReason.trim();
-    }
-
-    final s = newStatus.toLowerCase();
-    if (s == 'approved' || s == 'rejected' || s == 'cancelled' || s == 'released') {
-      updateMap['finalized_at'] = now.toIso8601String();
-    }
 
     await _client
         .from('service_requests')
         .update(updateMap)
         .eq('service_request_id', serviceRequestId);
+
+    // 1. Notify Requester Account of Approved Request & Assigned Pickup Date
+    try {
+      final req = await _client
+          .from('service_requests')
+          .select('created_by, requester_name, sacrament_type')
+          .eq('service_request_id', serviceRequestId)
+          .maybeSingle();
+
+      final requesterUserId = req?['created_by']?.toString();
+      final sacramentType = req?['sacrament_type']?.toString() ?? 'Sacrament';
+
+      if (requesterUserId != null && requesterUserId.isNotEmpty) {
+        final title = 'Certificate Pickup Scheduled';
+        final message = 'Your $sacramentType certificate request has been approved. Scheduled pickup date: $pickupDateStr at the Parish Office.';
+
+        await _client.from('notifications').insert({
+          'user_id': requesterUserId,
+          'title': title,
+          'message': message,
+          'notification_type': 'pabuklat_ready',
+          'reference_id': serviceRequestId,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        await NotificationService.sendUserPushNotification(
+          targetUserId: requesterUserId,
+          title: title,
+          message: message,
+          data: {
+            'type': 'pabuklat_ready',
+            'service_request_id': serviceRequestId,
+            'pickup_date': pickupDateStr,
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint('[PabuklatService] Non-blocking requester alert error: $e');
+    }
+
+    // 2. If remote signature workflow, notify Parish Priest
+    if (isRemote) {
+      try {
+        final notifTitle = 'Certificate Approval Required';
+        final notifMsg = 'A certificate request has been forwarded for your remote e-signature approval.';
+
+        await _client.from('notifications').insert({
+          'target_role': 'parishpriest',
+          'title': notifTitle,
+          'message': notifMsg,
+          'notification_type': 'tuesday_approval',
+          'reference_id': serviceRequestId,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        await NotificationService.sendRolePushNotification(
+          targetRole: 'parishpriest',
+          title: notifTitle,
+          message: notifMsg,
+          data: {'type': 'tuesday_approval', 'reference_id': serviceRequestId},
+        );
+      } catch (_) {}
+    }
+  }
+
+  static Future<void> signAndApproveByPriest({
+    required String serviceRequestId,
+    required String priestSignatureUrl,
+  }) async {
+    final now = DateTime.now();
+
+    await _client.from('service_requests').update({
+      'request_status': 'signature_completed',
+      'signature_status': 'signed',
+      'priest_signed_at': now.toIso8601String(),
+      'priest_signature_url': priestSignatureUrl,
+    }).eq('service_request_id', serviceRequestId);
+
+    try {
+      final title = 'Certificate Signed by Priest';
+      final msg = 'The Parish Priest has signed request $serviceRequestId. Certificate is now ready for printing.';
+
+      await _client.from('notifications').insert({
+        'target_role': 'secretary',
+        'title': title,
+        'message': msg,
+        'notification_type': 'pabuklat_ready',
+        'reference_id': serviceRequestId,
+        'created_at': now.toIso8601String(),
+      });
+
+      await NotificationService.sendRolePushNotification(
+        targetRole: 'secretary',
+        title: title,
+        message: msg,
+        data: {'type': 'pabuklat_ready', 'reference_id': serviceRequestId},
+      );
+    } catch (_) {}
+  }
+
+  static bool validatePrintReadiness(Map<String, dynamic> request) {
+    final status = (request['request_status'] ?? '').toString().toLowerCase();
+    final method = (request['signature_method'] ?? 'physical').toString().toLowerCase();
+    final signatureStatus = (request['signature_status'] ?? '').toString().toLowerCase();
+    final pickupDate = request['pickup_date']?.toString();
+
+    if (pickupDate == null || pickupDate.isEmpty) return false;
+
+    if (status == 'rejected' || status == 'submitted' || status == 'record_verification') {
+      return false;
+    }
+
+    if (method == 'remote_esignature') {
+      return status == 'signature_completed' ||
+          status == 'ready_for_pickup' ||
+          status == 'released' ||
+          signatureStatus == 'signed';
+    }
+
+    return status == 'approved' ||
+        status == 'ready_for_pickup' ||
+        status == 'released' ||
+        status == 'signature_completed';
+  }
+
+  static Future<void> markCertificatePrinted(String serviceRequestId) async {
+    final currentUserId = AuthService.currentUser?.userId;
+    final now = DateTime.now();
+
+    await _client.from('service_requests').update({
+      'request_status': 'ready_for_pickup',
+      'printed_at': now.toIso8601String(),
+      'printed_by': currentUserId,
+    }).eq('service_request_id', serviceRequestId);
+
+    // Alert the requester that their certificate is printed and ready for pickup
+    try {
+      final req = await _client
+          .from('service_requests')
+          .select('created_by, requester_name, sacrament_type, pickup_date')
+          .eq('service_request_id', serviceRequestId)
+          .maybeSingle();
+
+      final requesterUserId = req?['created_by']?.toString();
+      final sacramentType = req?['sacrament_type']?.toString() ?? 'Sacrament';
+      final pickupDateStr = req?['pickup_date']?.toString() ?? 'the scheduled date';
+
+      if (requesterUserId != null && requesterUserId.isNotEmpty) {
+        final title = 'Certificate Ready for Pickup!';
+        final message = 'Your official $sacramentType certificate is ready for pickup at the Parish Office (Pickup Date: $pickupDateStr).';
+
+        await _client.from('notifications').insert({
+          'user_id': requesterUserId,
+          'title': title,
+          'message': message,
+          'notification_type': 'pabuklat_ready',
+          'reference_id': serviceRequestId,
+          'created_at': now.toIso8601String(),
+        });
+
+        await NotificationService.sendUserPushNotification(
+          targetUserId: requesterUserId,
+          title: title,
+          message: message,
+          data: {
+            'type': 'pabuklat_ready',
+            'service_request_id': serviceRequestId,
+            'pickup_date': pickupDateStr,
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint('[PabuklatService] Non-blocking printed notification notice: $e');
+    }
+  }
+
+  static Future<void> markCertificateReleased(String serviceRequestId) async {
+    final now = DateTime.now();
+
+    await _client.from('service_requests').update({
+      'request_status': 'released',
+      'finalized_at': now.toIso8601String(),
+    }).eq('service_request_id', serviceRequestId);
+  }
+
+  static Future<void> rejectRequest({
+    required String serviceRequestId,
+    required String reason,
+  }) async {
+    final secretaryId = AuthService.currentUser?.userId;
+    final now = DateTime.now();
+
+    await _client.from('service_requests').update({
+      'request_status': 'rejected',
+      'rejection_reason': reason.trim(),
+      'reviewed_by': secretaryId,
+      'finalized_at': now.toIso8601String(),
+    }).eq('service_request_id', serviceRequestId);
+
+    // Notify requester account of rejection reason
+    try {
+      final req = await _client
+          .from('service_requests')
+          .select('created_by, sacrament_type')
+          .eq('service_request_id', serviceRequestId)
+          .maybeSingle();
+
+      final requesterUserId = req?['created_by']?.toString();
+      final sacramentType = req?['sacrament_type']?.toString() ?? 'Sacrament';
+
+      if (requesterUserId != null && requesterUserId.isNotEmpty) {
+        final title = 'Certificate Request Rejected';
+        final message = 'Your $sacramentType certificate request could not be approved. Reason: $reason';
+
+        await _client.from('notifications').insert({
+          'user_id': requesterUserId,
+          'title': title,
+          'message': message,
+          'notification_type': 'pabuklat_ready',
+          'reference_id': serviceRequestId,
+          'created_at': now.toIso8601String(),
+        });
+
+        await NotificationService.sendUserPushNotification(
+          targetUserId: requesterUserId,
+          title: title,
+          message: message,
+          data: {
+            'type': 'pabuklat_ready',
+            'service_request_id': serviceRequestId,
+          },
+        );
+      }
+    } catch (_) {}
   }
 
   // ===========================================================================
-  // 5. Backend 72-Hour Automatic ID Deletion Engine
+  // 5. Parish Priest Reusable E-Signature Management
   // ===========================================================================
 
-  /// Checks for requests that reached a final status over 72 hours ago
-  /// and permanently deletes their stored ID files from storage and database.
+  static Future<String?> getPriestReusableSignature() async {
+    try {
+      final res = await _client
+          .from('users')
+          .select('signature_image_url')
+          .eq('user_role', 'parishpriest')
+          .eq('account_status', true)
+          .not('signature_image_url', 'is', null)
+          .limit(1)
+          .maybeSingle();
+
+      return res?['signature_image_url']?.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<String?> updatePriestReusableSignature({
+    required String priestUserId,
+    required Uint8List fileBytes,
+    required String fileName,
+  }) async {
+    try {
+      final cleanExt = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'png';
+      final storagePath = 'signatures/priest_esignature_$priestUserId.$cleanExt';
+
+      await _client.storage.from('certificate-assets').uploadBinary(
+        storagePath,
+        fileBytes,
+        fileOptions: FileOptions(contentType: 'image/$cleanExt', upsert: true),
+      );
+
+      final publicUrl = _client.storage.from('certificate-assets').getPublicUrl(storagePath);
+
+      await _client
+          .from('users')
+          .update({'signature_image_url': publicUrl})
+          .eq('user_id', priestUserId);
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint('[PabuklatService] Error saving priest e-signature: $e');
+      return null;
+    }
+  }
+
+  // ===========================================================================
+  // 6. Backend 72-Hour Automatic ID Deletion Engine
+  // ===========================================================================
+
   static Future<void> purgeExpiredRequestIds() async {
     try {
       final cutoff = DateTime.now().subtract(const Duration(hours: 72)).toIso8601String();

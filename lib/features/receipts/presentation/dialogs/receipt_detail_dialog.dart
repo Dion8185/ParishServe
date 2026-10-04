@@ -1,8 +1,13 @@
+// =============================================================================
+// FILE: lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
 import '../../models/receipt_template_model.dart';
 import '../../services/receipt_pdf_generator.dart';
 import '../../services/receipt_template_service.dart';
@@ -96,13 +101,24 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
   List<ReceiptTemplateModel> _templates = [];
   ReceiptTemplateModel? _selectedTemplate;
 
+  bool get _isStaff {
+    final role = AuthService.currentUser?.userRole.toLowerCase() ?? '';
+    return role == 'secretary' ||
+        role == 'admin' ||
+        role == 'superadmin' ||
+        role == 'pfc' ||
+        role == 'parishpriest';
+  }
+
   @override
   void initState() {
     super.initState();
     _currentTransactionDetails = widget.transactionDetails;
     _currentStatus = (widget.status ?? 'paid').toUpperCase();
     _isVoided = _checkIfVoided(_currentStatus, _currentTransactionDetails);
-    _loadTemplates();
+    if (_isStaff) {
+      _loadTemplates();
+    }
   }
 
   bool _checkIfVoided(String status, String? details) {
@@ -183,7 +199,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
     final text = _currentTransactionDetails;
     if (text == null || text.trim().isEmpty) {
       return (
-      [_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'P ${_numericAmount.toStringAsFixed(2)}')],
+      [_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: '₱ ${_numericAmount.toStringAsFixed(2)}')],
       null
       );
     }
@@ -204,7 +220,9 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
         final title = atParts[0].trim();
         final rate = atParts.length > 1 ? '@ ${atParts[1].trim()}' : '';
 
-        final formattedAmt = rightAmount.startsWith('P') ? rightAmount : 'P $rightAmount';
+        final formattedAmt = rightAmount.startsWith('₱') || rightAmount.startsWith('P')
+            ? rightAmount
+            : '₱ $rightAmount';
         items.add(_ItemizedLine(title: title, rateInfo: rate, itemAmount: formattedAmt));
       } else if (clean.startsWith('Remarks:') || clean.startsWith('GCash Ref:') || clean.startsWith('Tender:')) {
         notes.add(clean);
@@ -214,7 +232,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
     }
 
     if (items.isEmpty) {
-      items.add(_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'P ${_numericAmount.toStringAsFixed(2)}'));
+      items.add(_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: '₱ ${_numericAmount.toStringAsFixed(2)}'));
     }
 
     final combinedNotes = notes.isNotEmpty ? notes.join(' | ') : null;
@@ -296,7 +314,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               isVoided: _isVoided,
               voidReason: _voidAuditNotice,
             ),
-            allowPrinting: true,
+            allowPrinting: _isStaff,
             allowSharing: false,
             canChangePageFormat: false,
           ),
@@ -636,13 +654,36 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('ITEMIZED PARTICULARS & OFFERINGS:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColorMuted)),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                    onPressed: () => _openPdfPreviewModal(isThermal: false),
-                    icon: const Icon(Icons.picture_as_pdf, size: 15, color: ParishColors.marianBlue),
-                    label: const Text('View PDF Layout', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                  Text(
+                    'ITEMIZED PARTICULARS & OFFERINGS:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: textColorMuted,
+                    ),
                   ),
+
+                  // Staff-only: PDF Layout Preview
+                  if (_isStaff)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _openPdfPreviewModal(isThermal: false),
+                      icon: const Icon(
+                        Icons.picture_as_pdf,
+                        size: 15,
+                        color: ParishColors.marianBlue,
+                      ),
+                      label: const Text(
+                        'View PDF Layout',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.marianBlue,
+                        ),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -737,7 +778,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _isVoided ? ParishColors.mercyRed : textDark),
                     ),
                     Text(
-                      'P ${_numericAmount.toStringAsFixed(2)}',
+                      '₱ ${_numericAmount.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -750,106 +791,122 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               ),
               const SizedBox(height: 14),
 
-              // Template Selection
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Print Template Configuration:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
-                  TextButton(
-                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
-                      ).then((_) => _loadTemplates());
-                    },
-                    child: const Text('Manage Templates', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-                  ),
-                ],
-              ),
-              if (_templates.isNotEmpty)
-                DropdownButtonFormField<ReceiptTemplateModel>(
-                  value: _selectedTemplate,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _templates.map((tpl) {
-                    return DropdownMenuItem(
-                      value: tpl,
-                      child: Text(
-                        '${tpl.templateName} (${tpl.paperSize})',
-                        style: const TextStyle(fontSize: 12.5),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedTemplate = val);
-                  },
+              // Staff-Only Template Management
+              if (_isStaff) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Print Template Configuration:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
+                    TextButton(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
+                        ).then((_) => _loadTemplates());
+                      },
+                      child: const Text('Manage Templates', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                    ),
+                  ],
                 ),
+                if (_templates.isNotEmpty)
+                  DropdownButtonFormField<ReceiptTemplateModel>(
+                    value: _selectedTemplate,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _templates.map((tpl) {
+                      return DropdownMenuItem(
+                        value: tpl,
+                        child: Text(
+                          '${tpl.templateName} (${tpl.paperSize})',
+                          style: const TextStyle(fontSize: 12.5),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedTemplate = val);
+                    },
+                  ),
+              ],
             ],
           ),
         ),
       ),
       actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       actions: [
-        // 1. Void Receipt Action (Hidden if already voided)
-        if (!_isVoided)
+        if (_isStaff) ...[
+          // 1. Staff-Only: Void Receipt Action (Hidden if already voided)
+          if (!_isVoided)
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: ParishColors.mercyRed),
+                foregroundColor: ParishColors.mercyRed,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onPressed: _isVoiding ? null : _handleVoidReceipt,
+              icon: _isVoiding
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.mercyRed, strokeWidth: 2))
+                  : const Icon(Icons.block, size: 16),
+              label: Text(_isVoiding ? 'Voiding...' : 'Void Receipt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+            ),
+
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: TextStyle(color: textColorMuted)),
+          ),
+
+          // 2. Staff-Only: 80mm Thermal Slip Print Option
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: ParishColors.mercyRed),
-              foregroundColor: ParishColors.mercyRed,
+              side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
+              foregroundColor: ParishColors.goldAccent,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             ),
-            onPressed: _isVoiding ? null : _handleVoidReceipt,
-            icon: _isVoiding
-                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.mercyRed, strokeWidth: 2))
-                : const Icon(Icons.block, size: 16),
-            label: Text(_isVoiding ? 'Voiding...' : 'Void Receipt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+            onPressed: _isPrintingThermal || _isPrinting ? null : () => _handlePrint(isThermal: true),
+            icon: _isPrintingThermal
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.goldAccent, strokeWidth: 2))
+                : const Icon(Icons.receipt, size: 16),
+            label: Text(_isVoided ? 'Print Void Slip' : '80mm Slip', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
           ),
 
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Close', style: TextStyle(color: textColorMuted)),
-        ),
-
-        // 2. 80mm Thermal Slip Print Option
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
-            foregroundColor: ParishColors.goldAccent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          // 3. Staff-Only: Standard Official Voucher / Document Print Option
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            onPressed: _isPrinting || _isPrintingThermal ? null : () => _handlePrint(isThermal: false),
+            icon: _isPrinting
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.print, size: 17),
+            label: Text(
+              _isPrinting
+                  ? 'Printing...'
+                  : (_isVoided ? 'Print Void Voucher' : 'Print Voucher'),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
           ),
-          onPressed: _isPrintingThermal || _isPrinting ? null : () => _handlePrint(isThermal: true),
-          icon: _isPrintingThermal
-              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.goldAccent, strokeWidth: 2))
-              : const Icon(Icons.receipt, size: 16),
-          label: Text(_isVoided ? 'Print Void Slip' : '80mm Slip', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
-        ),
-
-        // 3. Standard Official Voucher / Document Print Option
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        ] else ...[
+          // Client / Parishioner side: Clean Close Button ONLY (Staff buttons removed)
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           ),
-          onPressed: _isPrinting || _isPrintingThermal ? null : () => _handlePrint(isThermal: false),
-          icon: _isPrinting
-              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Icon(Icons.print, size: 17),
-          label: Text(
-            _isPrinting
-                ? 'Printing...'
-                : (_isVoided ? 'Print Void Voucher' : 'Print Voucher'),
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-          ),
-        ),
+        ],
       ],
     );
   }

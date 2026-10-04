@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/dashboard/presentation/pages/parish_calendar_page.dart (PART 1 OF 2)
+// =============================================================================
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
@@ -9,6 +13,7 @@ import '../../../appointments/presentation/dialogs/schedule_appointment_dialog.d
 import '../../../appointments/services/appointment_service.dart';
 import '../../../appointments/services/liturgical_calendar_service.dart';
 import '../../../auth/services/auth_service.dart';
+import '../../../auth/services/user_service.dart';
 
 enum CalendarViewMode { month, week, day }
 
@@ -25,13 +30,15 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   String _selectedCategory = 'All';
 
   List<AppointmentModel> _appointments = [];
+  List<Map<String, dynamic>> _serviceRequests = [];
   bool _isLoading = false;
   String? _errorMessage;
 
   // Strict Color-Code Scheme
   static const Color colorGlobalLiturgical = Color(0xFFDC2626);   // RED: Universal Roman Rite
   static const Color colorPhilippineSpecific = Color(0xFF2563EB); // BLUE: Philippine Proper Feasts
-  static const Color colorAppointments = Color(0xFFF59E0B);       // AMBER: Appointments
+  static const Color colorAppointments = Color(0xFFF59E0B);       // AMBER: Sacramental Bookings
+  static const Color colorCertificatePickup = Color(0xFF059669);  // EMERALD GREEN: Ready for Pickup
 
   bool get _isParishioner =>
       AuthService.currentUser?.userRole.toLowerCase() == 'user';
@@ -41,6 +48,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     'Global Liturgical',
     'Philippine Proper',
     _isParishioner ? 'My Bookings' : 'Appointments',
+    if (_isParishioner) 'Certificate Pickups',
   ];
 
   @override
@@ -56,11 +64,17 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     });
 
     try {
-      List<AppointmentModel> appointmentsData;
+      List<AppointmentModel> appointmentsData = [];
+      List<Map<String, dynamic>> requestsData = [];
 
-      // RBAC PRIVACY ISOLATION: Parishioners only fetch their own bookings
       if (_isParishioner) {
-        appointmentsData = await AppointmentService.getMyAppointments();
+        // Load bookings and certificate requests for the current parishioner
+        final results = await Future.wait([
+          AppointmentService.getMyAppointments(),
+          UserService.getMyServiceRequests(),
+        ]);
+        appointmentsData = results[0] as List<AppointmentModel>;
+        requestsData = results[1] as List<Map<String, dynamic>>;
       } else {
         appointmentsData = await AppointmentService.getAppointments();
       }
@@ -70,6 +84,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       if (!mounted) return;
       setState(() {
         _appointments = appointmentsData;
+        _serviceRequests = requestsData;
       });
     } catch (e) {
       if (!mounted) return;
@@ -82,7 +97,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   List<AppointmentModel> _appointmentsForDate(DateTime date) {
-    if (_selectedCategory == 'Global Liturgical' || _selectedCategory == 'Philippine Proper') {
+    if (_selectedCategory == 'Global Liturgical' ||
+        _selectedCategory == 'Philippine Proper' ||
+        _selectedCategory == 'Certificate Pickups') {
       return [];
     }
     return _appointments.where((a) {
@@ -94,7 +111,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
   List<LiturgicalEvent> _liturgicalFeastsForDate(DateTime date) {
     final allFeasts = LiturgicalCalendarService.getCelebrationsForDateSync(date);
-    if (_selectedCategory == 'Appointments' || _selectedCategory == 'My Bookings') {
+    if (_selectedCategory == 'Appointments' ||
+        _selectedCategory == 'My Bookings' ||
+        _selectedCategory == 'Certificate Pickups') {
       return [];
     }
     if (_selectedCategory == 'Global Liturgical') {
@@ -104,6 +123,28 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       return allFeasts.where((f) => f.isPhilippineSpecific).toList();
     }
     return allFeasts;
+  }
+
+  /// Extracts certificate pickup events scheduled for this specific date
+  List<Map<String, dynamic>> _certificatePickupsForDate(DateTime date) {
+    if (!_isParishioner) return [];
+    if (_selectedCategory == 'Global Liturgical' ||
+        _selectedCategory == 'Philippine Proper' ||
+        _selectedCategory == 'Appointments' ||
+        _selectedCategory == 'My Bookings') {
+      return [];
+    }
+
+    final targetDateStr =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+    return _serviceRequests.where((req) {
+      final pickup = req['pickup_date']?.toString();
+      final status = (req['request_status'] ?? '').toString().toLowerCase();
+      return pickup != null &&
+          pickup == targetDateStr &&
+          (status == 'approved' || status == 'ready_for_pickup' || status == 'signature_completed');
+    }).toList();
   }
 
   void _navigateDate(int delta) {
@@ -123,7 +164,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   void _openAppointmentDetail(AppointmentModel apt) {
-    // RBAC MODAL ROUTING: Parishioners open personal modal; Staff open administrative approval modal
     if (_isParishioner) {
       showParishionerAppointmentDetailModal(
         context,
@@ -137,6 +177,95 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
         onStatusUpdated: _loadData,
       );
     }
+  }
+
+  void _showPickupDetailsDialog(Map<String, dynamic> request) {
+    final sacrament = request['sacrament_type'] ?? 'Sacrament';
+    final pickupDate = request['pickup_date']?.toString() ?? 'Scheduled Date';
+    final status = (request['request_status'] ?? '').toString().toLowerCase();
+    final bool isReady = status == 'ready_for_pickup';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isReady ? ParishColors.oliveGreenSurface : ParishColors.goldLight,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isReady ? Icons.verified : Icons.event_available,
+                color: isReady ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                isReady ? 'Certificate Ready for Pickup!' : 'Certificate Pickup Scheduled',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your official $sacrament Certificate has been approved.',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Scheduled Pickup Date: $pickupDate',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ParishColors.backgroundLight,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ParishColors.borderGrey),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Parish Office Claiming Instructions:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '• Claim location: Parish Secretariat, St. John Paul II Parish (Brgy. Labuin, Sta. Cruz, Laguna).\n'
+                        '• Office Hours: Tuesday to Sunday: 8:00 AM – 12:00 PM | 1:30 PM – 5:00 PM\n'
+                        '• Monday: Closed (Clergy Rest Day)',
+                    style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Understood'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -167,7 +296,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 ),
                 Text(
                   _isParishioner
-                      ? 'Your Booked Sacraments & Catholic Liturgical Feasts'
+                      ? 'Your Bookings, Certificate Pickups & Catholic Feasts'
                       : 'Diocese of San Pablo • Liturgical & Appointment Engine',
                   style: TextStyle(fontSize: 12, color: textColorMuted),
                 ),
@@ -177,7 +306,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
               IconButton(
                 icon: Icon(Icons.refresh, color: ParishColors.marianBlueAdaptive),
                 onPressed: _loadData,
-                tooltip: 'Sync Liturgy & Appointments',
+                tooltip: 'Sync Calendar Data',
               ),
               Padding(
                 padding: const EdgeInsets.only(right: 12.0),
@@ -255,7 +384,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           ? Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // View Switcher (Desktop Left)
           SizedBox(
             width: 380,
             height: 42,
@@ -274,8 +402,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
               ),
             ),
           ),
-
-          // Month Navigator (Desktop Center/Right)
           Row(
             children: [
               IconButton(
@@ -397,7 +523,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
         crossAxisAlignment: WrapCrossAlignment.center,
         alignment: WrapAlignment.spaceBetween,
         children: [
-          // Filter Chips
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -408,18 +533,26 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                   child: FilterChip(
                     label: Text(cat),
                     selected: isSelected,
-                    selectedColor: ParishColors.marianBlueSurface,
+                    selectedColor: cat == 'Certificate Pickups'
+                        ? ParishColors.oliveGreenSurface
+                        : ParishColors.marianBlueSurface,
                     backgroundColor: ParishColors.backgroundLight,
-                    checkmarkColor: ParishColors.marianBlueAdaptive,
+                    checkmarkColor: cat == 'Certificate Pickups'
+                        ? ParishColors.oliveGreen
+                        : ParishColors.marianBlueAdaptive,
                     labelStyle: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
-                      color: isSelected ? ParishColors.marianBlueAdaptive : ParishColors.textMuted,
+                      color: isSelected
+                          ? (cat == 'Certificate Pickups' ? ParishColors.oliveGreen : ParishColors.marianBlueAdaptive)
+                          : ParishColors.textMuted,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                       side: BorderSide(
-                        color: isSelected ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
+                        color: isSelected
+                            ? (cat == 'Certificate Pickups' ? ParishColors.oliveGreen : ParishColors.marianBlueAdaptive)
+                            : ParishColors.borderGrey,
                       ),
                     ),
                     onSelected: (_) => setState(() => _selectedCategory = cat),
@@ -428,17 +561,19 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
               }).toList(),
             ),
           ),
-
-          // Legend Bar
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildLegendItem(colorGlobalLiturgical, 'Global Feasts'),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               _buildLegendItem(colorPhilippineSpecific, 'Philippine Proper'),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               _buildLegendItem(colorAppointments, _isParishioner ? 'My Bookings' : 'Bookings'),
-              const SizedBox(width: 12),
+              if (_isParishioner) ...[
+                const SizedBox(width: 10),
+                _buildLegendItem(colorCertificatePickup, 'Certificate Pickup'),
+              ],
+              const SizedBox(width: 10),
               _buildLegendItem(const Color(0xFF94A3B8), 'Monday Rest', isGray: true),
             ],
           ),
@@ -468,6 +603,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       ],
     );
   }
+// =============================================================================
+// FILE: lib/features/dashboard/presentation/pages/parish_calendar_page.dart (PART 2 OF 2)
+// =============================================================================
 
   // ---------------------------------------------------------------------------
   // Master View Switcher
@@ -484,11 +622,12 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 1. DESKTOP MONTH VIEW: Side-by-Side Split Screen
+  // 1. DESKTOP MONTH VIEW: Side-by-Side Split Screen with Pickup Events
   // ===========================================================================
   Widget _buildDesktopSplitMonthView() {
     final selectedDayEvents = _appointmentsForDate(_selectedDate);
     final selectedDayFeasts = _liturgicalFeastsForDate(_selectedDate);
+    final selectedDayPickups = _certificatePickupsForDate(_selectedDate);
     final isSelectedMonday = _selectedDate.weekday == DateTime.monday;
     final isSelectedTuesday = _selectedDate.weekday == DateTime.tuesday;
 
@@ -497,7 +636,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // LEFT PANEL (58% Width): Constrained Month Calendar Grid
+          // LEFT PANEL (58% Width): Month Grid
           Expanded(
             flex: 58,
             child: Container(
@@ -545,7 +684,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Date Header
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -566,16 +704,34 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                             ),
                           ],
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: colorAppointments.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${selectedDayEvents.length} Booked',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colorAppointments),
-                          ),
+                        Row(
+                          children: [
+                            if (selectedDayPickups.isNotEmpty) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: colorCertificatePickup.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '${selectedDayPickups.length} Pickup',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colorCertificatePickup),
+                                ),
+                              ),
+                            ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: colorAppointments.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${selectedDayEvents.length} Booked',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colorAppointments),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -590,6 +746,17 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                       const SizedBox(height: 12),
                     ],
 
+                    // Certificate Pickup Events
+                    if (selectedDayPickups.isNotEmpty) ...[
+                      Text(
+                        'Certificate Pickups for Today',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      ),
+                      const SizedBox(height: 8),
+                      ...selectedDayPickups.map((req) => _buildCertificatePickupCard(req)),
+                      const SizedBox(height: 14),
+                    ],
+
                     // Liturgical Feasts for this date
                     ...selectedDayFeasts.map((f) => _buildLiturgicalEventCard(f)),
 
@@ -600,7 +767,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     ),
                     const SizedBox(height: 10),
 
-                    if (selectedDayEvents.isEmpty)
+                    if (selectedDayEvents.isEmpty && selectedDayPickups.isEmpty)
                       _buildEmptyDayCard(isMonday: isSelectedMonday)
                     else
                       ...selectedDayEvents.map((a) => _buildAppointmentCard(a)),
@@ -618,6 +785,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   Widget _buildMobileMonthView() {
     final selectedDayEvents = _appointmentsForDate(_selectedDate);
     final selectedDayFeasts = _liturgicalFeastsForDate(_selectedDate);
+    final selectedDayPickups = _certificatePickupsForDate(_selectedDate);
     final isSelectedMonday = _selectedDate.weekday == DateTime.monday;
     final isSelectedTuesday = _selectedDate.weekday == DateTime.tuesday;
 
@@ -650,6 +818,17 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             const SizedBox(height: 12),
           ],
 
+          // Certificate Pickups for Mobile
+          if (selectedDayPickups.isNotEmpty) ...[
+            Text(
+              'Certificate Pickups on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
+              style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+            ),
+            const SizedBox(height: 8),
+            ...selectedDayPickups.map((req) => _buildCertificatePickupCard(req)),
+            const SizedBox(height: 14),
+          ],
+
           ...selectedDayFeasts.map((f) => _buildLiturgicalEventCard(f)),
 
           Row(
@@ -676,7 +855,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           ),
           const SizedBox(height: 10),
 
-          if (selectedDayEvents.isEmpty)
+          if (selectedDayEvents.isEmpty && selectedDayPickups.isEmpty)
             _buildEmptyDayCard(isMonday: isSelectedMonday)
           else
             ...selectedDayEvents.map((a) => _buildAppointmentCard(a)),
@@ -745,10 +924,12 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
           final dayAppointments = _appointmentsForDate(thisDate);
           final dayFeasts = _liturgicalFeastsForDate(thisDate);
+          final dayPickups = _certificatePickupsForDate(thisDate);
 
           final hasGlobal = dayFeasts.any((f) => !f.isPhilippineSpecific);
           final hasPh = dayFeasts.any((f) => f.isPhilippineSpecific);
           final hasAppointments = dayAppointments.isNotEmpty;
+          final hasPickup = dayPickups.isNotEmpty;
 
           Color cellBackground = Colors.transparent;
           Color borderColor = ParishColors.borderGrey.withOpacity(0.4);
@@ -782,7 +963,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                         '$dayNum',
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight: (isSelected || hasGlobal || hasPh || hasAppointments)
+                          fontWeight: (isSelected || hasGlobal || hasPh || hasAppointments || hasPickup)
                               ? FontWeight.bold
                               : FontWeight.normal,
                           color: isSelected
@@ -803,6 +984,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                       if (hasGlobal) _buildIndicatorDot(isSelected ? Colors.white : colorGlobalLiturgical),
                       if (hasPh) _buildIndicatorDot(isSelected ? Colors.white : colorPhilippineSpecific),
                       if (hasAppointments) _buildIndicatorDot(isSelected ? Colors.white : colorAppointments),
+                      if (hasPickup) _buildIndicatorDot(isSelected ? Colors.white : colorCertificatePickup),
                     ],
                   ),
                 ],
@@ -833,6 +1015,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
           final dayAppointments = _appointmentsForDate(day);
           final dayFeasts = _liturgicalFeastsForDate(day);
+          final dayPickups = _certificatePickupsForDate(day);
 
           return Expanded(
             child: Container(
@@ -885,13 +1068,44 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     ),
                   ),
 
-                  // Feasts Strip
+                  // Feasts, Pickups & Appointments
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          ...dayPickups.map((p) => InkWell(
+                            onTap: () => _showPickupDetailsDialog(p),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: colorCertificatePickup.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: colorCertificatePickup.withOpacity(0.5)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.verified, size: 12, color: colorCertificatePickup),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      'Pickup: ${p["sacrament_type"] ?? "Cert"}',
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: colorCertificatePickup,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )),
+
                           ...dayFeasts.map((f) => Container(
                             margin: const EdgeInsets.only(bottom: 6),
                             padding: const EdgeInsets.all(6),
@@ -912,8 +1126,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                             ),
                           )),
 
-                          // Appointments
-                          if (dayAppointments.isEmpty && dayFeasts.isEmpty)
+                          if (dayAppointments.isEmpty && dayFeasts.isEmpty && dayPickups.isEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: 12.0),
                               child: Text(
@@ -977,6 +1190,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
         final dayAppointments = _appointmentsForDate(day);
         final dayFeasts = _liturgicalFeastsForDate(day);
+        final dayPickups = _certificatePickupsForDate(day);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -1031,10 +1245,18 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                         ],
                       ],
                     ),
-                    Text('${dayAppointments.length} bookings', style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
+                    Text(
+                      '${dayAppointments.length} bookings${dayPickups.isNotEmpty ? " • ${dayPickups.length} pickup" : ""}',
+                      style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                    ),
                   ],
                 ),
               ),
+
+              ...dayPickups.map((p) => Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+                child: _buildCertificatePickupCard(p),
+              )),
 
               ...dayFeasts.map((f) => Padding(
                 padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
@@ -1063,7 +1285,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 ),
               )),
 
-              if (dayAppointments.isEmpty && dayFeasts.isEmpty)
+              if (dayAppointments.isEmpty && dayFeasts.isEmpty && dayPickups.isEmpty)
                 Padding(
                   padding: const EdgeInsets.all(12.0),
                   child: Text(
@@ -1084,14 +1306,15 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 3. DAY VIEW: Desktop 2-Column Split, Mobile Stack
+  // 3. DAY VIEW: Desktop Split vs Mobile Stack with Pickup Schedule
   // ===========================================================================
   Widget _buildDayView(bool isDesktop) {
     final isMonday = _selectedDate.weekday == DateTime.monday;
     final isTuesday = _selectedDate.weekday == DateTime.tuesday;
     final dayAppointments = _appointmentsForDate(_selectedDate);
     final dayFeasts = _liturgicalFeastsForDate(_selectedDate);
-    final hours = [9, 11, 13, 15, 17]; // Formatted within 9:00 AM – 5:00 PM operating window
+    final dayPickups = _certificatePickupsForDate(_selectedDate);
+    final hours = [9, 11, 13, 15, 17];
 
     if (isDesktop) {
       return Padding(
@@ -1099,7 +1322,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Left Column: Day Overview & Feasts
             Expanded(
               flex: 4,
               child: SingleChildScrollView(
@@ -1119,14 +1341,19 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     if (isMonday) _buildMondayBanner(),
                     if (isTuesday) _buildTuesdayBanner(),
 
+                    if (dayPickups.isNotEmpty) ...[
+                      Text('Certificate Pickups Scheduled Today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                      const SizedBox(height: 8),
+                      ...dayPickups.map((p) => _buildCertificatePickupCard(p)),
+                      const SizedBox(height: 14),
+                    ],
+
                     ...dayFeasts.map((f) => _buildLiturgicalEventCard(f)),
                   ],
                 ),
               ),
             ),
             const SizedBox(width: 24),
-
-            // Right Column: Hourly Timeline
             Expanded(
               flex: 6,
               child: ListView(
@@ -1138,12 +1365,17 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       );
     }
 
-    // Mobile Day View
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         if (isMonday) _buildMondayBanner(),
         if (isTuesday) _buildTuesdayBanner(),
+        if (dayPickups.isNotEmpty) ...[
+          Text('Certificate Pickups Scheduled Today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 8),
+          ...dayPickups.map((p) => _buildCertificatePickupCard(p)),
+          const SizedBox(height: 14),
+        ],
         ...dayFeasts.map((f) => _buildLiturgicalEventCard(f)),
         const SizedBox(height: 10),
         ...hours.map((hour) => _buildHourSlot(hour, dayAppointments, isMonday)),
@@ -1226,6 +1458,67 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   // ---------------------------------------------------------------------------
   // Cards & Notices
   // ---------------------------------------------------------------------------
+
+  Widget _buildCertificatePickupCard(Map<String, dynamic> req) {
+    final sacrament = req['sacrament_type'] ?? 'Sacrament';
+    final status = (req['request_status'] ?? '').toString().toLowerCase();
+    final bool isReady = status == 'ready_for_pickup';
+
+    return InkWell(
+      onTap: () => _showPickupDetailsDialog(req),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isReady ? ParishColors.oliveGreenSurface : ParishColors.goldLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isReady ? ParishColors.oliveGreen : ParishColors.goldAccent,
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isReady ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isReady ? Icons.verified : Icons.event_available,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isReady ? 'Certificate Ready for Pickup!' : 'Certificate Pickup Scheduled',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isReady ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                    ),
+                  ),
+                  Text(
+                    '$sacrament Certificate • Claim at Parish Secretariat Office',
+                    style: TextStyle(fontSize: 11, color: ParishColors.textDark),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 12, color: ParishColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMondayBanner() {
     return Container(
       width: double.infinity,

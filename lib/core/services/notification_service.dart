@@ -62,13 +62,14 @@ class NotificationService {
       });
 
       _isInitialized = true;
-      debugPrint('[NotificationService] OneSignal successfully initialized for Staff Mobile.');
+      debugPrint('[NotificationService] OneSignal successfully initialized.');
     } catch (e) {
       debugPrint('[NotificationService] Error initializing OneSignal: $e');
     }
   }
 
-  /// Associates the logged-in staff member with OneSignal and sets 1 clean tag
+  /// Associates the logged-in user (Staff or Parishioner) with OneSignal
+  /// and links their user_id as External ID to enable targeted push notifications.
   static Future<void> syncStaffUser(UserModel user) async {
     if (kIsWeb) return;
 
@@ -78,43 +79,37 @@ class NotificationService {
 
     final role = user.userRole.toLowerCase();
 
-    // Parishioners on web do not receive staff push alerts
-    if (role == 'user') {
-      debugPrint('[NotificationService] User is a Parishioner. Push registration skipped.');
-      return;
-    }
-
     try {
       // 1. Opt-in the device push channel
       OneSignal.User.pushSubscription.optIn();
 
-      // 2. Link OneSignal External ID to Supabase user_id (Uses 0 tag quota)
+      // 2. Link OneSignal External ID to Supabase user_id for targeted alerts
       await OneSignal.login(user.userId);
 
-      // 3. Set exactly 1 clean tag (Complies with OneSignal Free Tier quota)
+      // 3. Set clean role tag (staff roles or 'user')
       await OneSignal.User.addTagWithKey("role", role);
 
-      debugPrint('[NotificationService] OneSignal tag successfully set: role=$role');
+      debugPrint('[NotificationService] OneSignal user synced: userId=${user.userId}, role=$role');
       debugPrint('[NotificationService] Device Subscription ID: ${OneSignal.User.pushSubscription.id}');
     } catch (e) {
-      debugPrint('[NotificationService] Error syncing staff user tags: $e');
+      debugPrint('[NotificationService] Error syncing user with OneSignal: $e');
     }
   }
 
-  /// Unlinks staff user from OneSignal on logout to prevent receiving other users' notifications
+  /// Unlinks user from OneSignal on logout to prevent receiving other users' notifications
   static Future<void> clearStaffUser() async {
     if (kIsWeb || !_isInitialized) return;
 
     try {
       await OneSignal.User.removeTag("role");
       await OneSignal.logout();
-      debugPrint('[NotificationService] OneSignal staff session detached.');
+      debugPrint('[NotificationService] OneSignal session detached.');
     } catch (e) {
       debugPrint('[NotificationService] Error logging out of OneSignal: $e');
     }
   }
 
-  /// Dispatches an immediate push notification to all devices tagged with [targetRole] (e.g. 'secretary')
+  /// Dispatches a push notification to all devices tagged with [targetRole] (e.g. 'secretary', 'parishpriest')
   /// by invoking the Supabase Edge Function 'dispatch-alert'.
   static Future<void> sendRolePushNotification({
     required String targetRole,
@@ -126,7 +121,6 @@ class NotificationService {
     try {
       final client = Supabase.instance.client;
 
-      // Invoke Supabase Edge Function 'dispatch-alert'
       await client.functions.invoke(
         'dispatch-alert',
         body: {
@@ -138,9 +132,38 @@ class NotificationService {
         },
       );
 
-      debugPrint('[NotificationService] OneSignal push dispatched via dispatch-alert Edge Function to role: $targetRole');
+      debugPrint('[NotificationService] Push dispatched to role: $targetRole');
     } catch (e) {
-      debugPrint('[NotificationService] Notice: Supabase Edge Function dispatch-alert invocation notice: $e');
+      debugPrint('[NotificationService] Role push invocation notice: $e');
+    }
+  }
+
+  /// Dispatches a direct push notification to a specific requester account [targetUserId]
+  /// via the Supabase Edge Function 'dispatch-alert'.
+  static Future<void> sendUserPushNotification({
+    required String targetUserId,
+    required String title,
+    required String message,
+    required Map<String, dynamic> data,
+    String alertType = 'pabuklat_ready',
+  }) async {
+    try {
+      final client = Supabase.instance.client;
+
+      await client.functions.invoke(
+        'dispatch-alert',
+        body: {
+          'alertType': alertType,
+          'title': title,
+          'message': message,
+          'targetUserIds': [targetUserId],
+          'additionalData': data,
+        },
+      );
+
+      debugPrint('[NotificationService] User push dispatched to external_id: $targetUserId');
+    } catch (e) {
+      debugPrint('[NotificationService] User push invocation notice: $e');
     }
   }
 
@@ -156,13 +179,12 @@ class NotificationService {
     }
   }
 
-  /// Routes the staff user to the appropriate screen or modal depending on the alert payload
+  /// Routes the user to the appropriate screen or modal depending on the alert payload
   static void _handleNotificationClick(Map<String, dynamic>? additionalData) {
     if (additionalData == null) return;
 
     final context = navigatorKey.currentContext;
 
-    // If context is unmounted or user session is not yet loaded, cache and defer execution
     if (context == null || AuthService.currentUser == null) {
       debugPrint('[NotificationService] Context or session not yet ready. Caching notification payload.');
       pendingNotificationData = additionalData;
@@ -196,8 +218,8 @@ class NotificationService {
           isWarning: true,
         );
       }
-      // 3. Pabuklat / Sacramental Record Requests (Secretary Only)
-      else if (type.contains('pabuklat') || type.contains('certificate_request') || type.contains('service_request')) {
+      // 3. Pabuklat Requests (Secretary view)
+      else if (type.contains('pabuklat_request')) {
         debugPrint('[NotificationService] Deep-linking to Secretary Pabuklat Review Modal: $refId');
         showPabuklatRequestsModal(context);
       }
