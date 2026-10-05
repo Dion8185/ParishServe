@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/models/matrimony_record_model.dart
+// =============================================================================
+
 class MatrimonyRecordModel {
   final String recordId;
   final String bookNumber;
@@ -51,7 +55,7 @@ class MatrimonyRecordModel {
   final String sponsor2LastName;
   final String? sponsor2OriginAddress;
 
-  final List<String> otherSponsors; // Dynamic list (not comma separated)
+  final List<String> otherSponsors;
 
   // Ceremony Details
   final DateTime dateOfMarriage;
@@ -173,77 +177,91 @@ class MatrimonyRecordModel {
   factory MatrimonyRecordModel.fromMap(Map<String, dynamic> map) {
     List<String> parsedOtherSponsors = [];
     final rawOther = map['other_sponsors'];
-    if (rawOther is String && rawOther.trim().isNotEmpty) {
-      // Reconstitute from stored newline-separated text or comma-separated legacy format
+    if (rawOther is List) {
+      parsedOtherSponsors = rawOther.map((e) => e.toString().trim()).where((s) => s.isNotEmpty).toList();
+    } else if (rawOther is String && rawOther.trim().isNotEmpty) {
       parsedOtherSponsors = rawOther.contains('\n')
-          ? rawOther.split('\n').where((s) => s.trim().isNotEmpty).toList()
+          ? rawOther.split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
           : rawOther.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
     }
 
+    // Robust boolean parsing for both Supabase bool and SQLite int (1/0)
+    final rawVerified = map['is_verified'];
+    final bool isVerifiedParsed = rawVerified == true ||
+        rawVerified == 1 ||
+        rawVerified == 'true' ||
+        rawVerified == '1';
+
+    final rawForeigner = map['is_filipino_foreigner'];
+    final bool isForeignerParsed = rawForeigner == true ||
+        rawForeigner == 1 ||
+        rawForeigner == 'true' ||
+        rawForeigner == '1';
+
     return MatrimonyRecordModel(
-      recordId: map['record_id'] ?? '',
-      bookNumber: map['book_number'] ?? '',
-      pageNumber: map['page_number'] ?? '',
-      lineNumber: map['line_number'] ?? '',
+      recordId: map['record_id']?.toString() ?? '',
+      bookNumber: map['book_number']?.toString() ?? '',
+      pageNumber: map['page_number']?.toString() ?? '',
+      lineNumber: map['line_number']?.toString() ?? '',
       registryDate: DateTime.tryParse(map['registry_date']?.toString() ?? '') ?? DateTime.now(),
-      entryStatus: map['entry_status'] ?? 'ORIGINAL',
-      groomFirstName: map['groom_first_name'] ?? '',
-      groomMiddleName: map['groom_middle_name'],
-      groomLastName: map['groom_last_name'] ?? '',
-      groomSuffix: map['groom_suffix'],
-      groomCivilStatus: map['groom_civil_status'] ?? 'Single',
+      entryStatus: map['entry_status']?.toString() ?? 'ORIGINAL',
+      groomFirstName: map['groom_first_name']?.toString() ?? '',
+      groomMiddleName: map['groom_middle_name']?.toString(),
+      groomLastName: map['groom_last_name']?.toString() ?? '',
+      groomSuffix: map['groom_suffix']?.toString(),
+      groomCivilStatus: map['groom_civil_status']?.toString() ?? 'Single',
       groomAge: int.tryParse(map['groom_age']?.toString() ?? '0') ?? 0,
       groomDateOfBirth: map['groom_date_of_birth'] != null ? DateTime.tryParse(map['groom_date_of_birth'].toString()) : null,
-      groomPlaceOfBirth: map['groom_place_of_birth'],
-      groomAddress: map['groom_address'] ?? '',
-      groomFatherFirstName: map['groom_father_first_name'] ?? '',
-      groomFatherMiddleName: map['groom_father_middle_name'],
-      groomFatherLastName: map['groom_father_last_name'] ?? '',
-      groomMotherFirstName: map['groom_mother_first_name'] ?? '',
-      groomMotherMiddleName: map['groom_mother_middle_name'],
-      groomMotherMaidenLast: map['groom_mother_maiden_last'] ?? '',
-      brideFirstName: map['bride_first_name'] ?? '',
-      brideMiddleName: map['bride_middle_name'],
-      brideLastName: map['bride_last_name'] ?? '',
-      brideSuffix: map['bride_suffix'],
-      brideCivilStatus: map['bride_civil_status'] ?? 'Single',
+      groomPlaceOfBirth: map['groom_place_of_birth']?.toString(),
+      groomAddress: map['groom_address']?.toString() ?? '',
+      groomFatherFirstName: map['groom_father_first_name']?.toString() ?? '',
+      groomFatherMiddleName: map['groom_father_middle_name']?.toString(),
+      groomFatherLastName: map['groom_father_last_name']?.toString() ?? '',
+      groomMotherFirstName: map['groom_mother_first_name']?.toString() ?? '',
+      groomMotherMiddleName: map['groom_mother_middle_name']?.toString(),
+      groomMotherMaidenLast: map['groom_mother_maiden_last']?.toString() ?? '',
+      brideFirstName: map['bride_first_name']?.toString() ?? '',
+      brideMiddleName: map['bride_middle_name']?.toString(),
+      brideLastName: map['bride_last_name']?.toString() ?? '',
+      brideSuffix: map['bride_suffix']?.toString(),
+      brideCivilStatus: map['bride_civil_status']?.toString() ?? 'Single',
       brideAge: int.tryParse(map['bride_age']?.toString() ?? '0') ?? 0,
       brideDateOfBirth: map['bride_date_of_birth'] != null ? DateTime.tryParse(map['bride_date_of_birth'].toString()) : null,
-      bridePlaceOfBirth: map['bride_place_of_birth'],
-      brideAddress: map['bride_address'] ?? '',
-      brideFatherFirstName: map['bride_father_first_name'] ?? '',
-      brideFatherMiddleName: map['bride_father_middle_name'],
-      brideFatherLastName: map['bride_father_last_name'] ?? '',
-      brideMotherFirstName: map['bride_mother_first_name'] ?? '',
-      brideMotherMiddleName: map['bride_mother_middle_name'],
-      brideMotherMaidenLast: map['bride_mother_maiden_last'] ?? '',
-      sponsor1FirstName: map['sponsor_1_first_name'] ?? '',
-      sponsor1MiddleName: map['sponsor_1_middle_name'],
-      sponsor1LastName: map['sponsor_1_last_name'] ?? '',
-      sponsor1OriginAddress: map['sponsor_1_origin_address'],
-      sponsor2FirstName: map['sponsor_2_first_name'] ?? '',
-      sponsor2MiddleName: map['sponsor_2_middle_name'],
-      sponsor2LastName: map['sponsor_2_last_name'] ?? '',
-      sponsor2OriginAddress: map['sponsor_2_origin_address'],
+      bridePlaceOfBirth: map['bride_place_of_birth']?.toString(),
+      brideAddress: map['bride_address']?.toString() ?? '',
+      brideFatherFirstName: map['bride_father_first_name']?.toString() ?? '',
+      brideFatherMiddleName: map['bride_father_middle_name']?.toString(),
+      brideFatherLastName: map['bride_father_last_name']?.toString() ?? '',
+      brideMotherFirstName: map['bride_mother_first_name']?.toString() ?? '',
+      brideMotherMiddleName: map['bride_mother_middle_name']?.toString(),
+      brideMotherMaidenLast: map['bride_mother_maiden_last']?.toString() ?? '',
+      sponsor1FirstName: map['sponsor_1_first_name']?.toString() ?? '',
+      sponsor1MiddleName: map['sponsor_1_middle_name']?.toString(),
+      sponsor1LastName: map['sponsor_1_last_name']?.toString() ?? '',
+      sponsor1OriginAddress: map['sponsor_1_origin_address']?.toString(),
+      sponsor2FirstName: map['sponsor_2_first_name']?.toString() ?? '',
+      sponsor2MiddleName: map['sponsor_2_middle_name']?.toString(),
+      sponsor2LastName: map['sponsor_2_last_name']?.toString() ?? '',
+      sponsor2OriginAddress: map['sponsor_2_origin_address']?.toString(),
       otherSponsors: parsedOtherSponsors,
       dateOfMarriage: DateTime.tryParse(map['date_of_marriage']?.toString() ?? '') ?? DateTime.now(),
-      marriageType: map['marriage_type'] ?? 'Between Catholics',
-      isFilipinoForeigner: map['is_filipino_foreigner'] ?? false,
-      marriageLicenseNo: map['marriage_license_no'],
+      marriageType: map['marriage_type']?.toString() ?? 'Between Catholics',
+      isFilipinoForeigner: isForeignerParsed,
+      marriageLicenseNo: map['marriage_license_no']?.toString(),
       licenseDateRegistered: map['license_date_registered'] != null ? DateTime.tryParse(map['license_date_registered'].toString()) : null,
-      licensePlaceIssued: map['license_place_issued'],
-      solemnizerFirstName: map['solemnizer_first_name'] ?? '',
-      solemnizerMiddleName: map['solemnizer_middle_name'],
-      solemnizerLastName: map['solemnizer_last_name'] ?? '',
-      crasmNumber: map['crasm_number'],
+      licensePlaceIssued: map['license_place_issued']?.toString(),
+      solemnizerFirstName: map['solemnizer_first_name']?.toString() ?? '',
+      solemnizerMiddleName: map['solemnizer_middle_name']?.toString(),
+      solemnizerLastName: map['solemnizer_last_name']?.toString() ?? '',
+      crasmNumber: map['crasm_number']?.toString(),
       crasmValidityDate: map['crasm_validity_date'] != null ? DateTime.tryParse(map['crasm_validity_date'].toString()) : null,
       stipend: double.tryParse(map['stipend']?.toString() ?? '0.00') ?? 0.00,
-      remarks: map['remarks'],
-      parishName: map['parish_name'] ?? 'St. John Paul II Parish',
-      scannedImageUrl: map['scanned_image_url'],
-      ocrRawText: map['ocr_raw_text'],
-      isVerified: map['is_verified'] ?? false,
-      encodedBy: map['encoded_by'],
+      remarks: map['remarks']?.toString(),
+      parishName: map['parish_name']?.toString() ?? 'St. John Paul II Parish',
+      scannedImageUrl: map['scanned_image_url']?.toString(),
+      ocrRawText: map['ocr_raw_text']?.toString(),
+      isVerified: isVerifiedParsed,
+      encodedBy: map['encoded_by']?.toString(),
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
     );
   }
@@ -294,7 +312,7 @@ class MatrimonyRecordModel {
       'sponsor_2_middle_name': sponsor2MiddleName,
       'sponsor_2_last_name': sponsor2LastName,
       'sponsor_2_origin_address': sponsor2OriginAddress,
-      'other_sponsors': otherSponsors.join('\n'), // Stored cleanly newline-separated
+      'other_sponsors': otherSponsors.join('\n'),
       'date_of_marriage': dateOfMarriage.toIso8601String().substring(0, 10),
       'marriage_type': marriageType,
       'is_filipino_foreigner': isFilipinoForeigner,

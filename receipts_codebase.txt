@@ -1067,7 +1067,7 @@ class _ManageParticularsDialogState extends State<ManageParticularsDialog> {
                 Row(
                   children: [
                     Text(
-                      '₱ ${item.defaultPrice.toStringAsFixed(2)}',
+                      'â‚± ${item.defaultPrice.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -1351,7 +1351,7 @@ class _ParticularFormDialogState extends State<_ParticularFormDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Default Price (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                Text('Default Price (â‚±) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                 const SizedBox(height: 6),
                                 TextFormField(
                                   controller: _priceController,
@@ -1695,7 +1695,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
       final serviceTitle = _selectedParticular?.title ?? 'Parish Offering';
       final notes = _detailsController.text.trim();
 
-      final lineDetails = '• $serviceTitle x1\n  @ ₱${parsedAmount.toStringAsFixed(2)} = ₱${parsedAmount.toStringAsFixed(2)}';
+      final lineDetails = 'â€¢ $serviceTitle x1\n  @ â‚±${parsedAmount.toStringAsFixed(2)} = â‚±${parsedAmount.toStringAsFixed(2)}';
       final details = notes.isNotEmpty ? '$lineDetails\nRemarks: $notes' : lineDetails;
 
       final record = await SecretaryService.createTransaction(
@@ -1717,7 +1717,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
         receiptNo: record['receipt_number'] ?? 'REC-XXXX',
         payer: record['payor_name'] ?? _payorNameController.text.trim(),
         purpose: record['related_service'] ?? serviceTitle,
-        amount: '₱ ${(record['transaction_amount'] as num?)?.toStringAsFixed(2) ?? parsedAmount.toStringAsFixed(2)}',
+        amount: 'â‚± ${(record['transaction_amount'] as num?)?.toStringAsFixed(2) ?? parsedAmount.toStringAsFixed(2)}',
         date: _transactionDate.toIso8601String().substring(0, 10),
         payorContact: record['payor_contact'],
         transactionDetails: record['transaction_details'],
@@ -1889,7 +1889,7 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                '${item.title} (₱ ${item.defaultPrice.toStringAsFixed(0)})',
+                                '${item.title} (â‚± ${item.defaultPrice.toStringAsFixed(0)})',
                                 style: const TextStyle(fontSize: 13),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -1969,11 +1969,16 @@ class _NewTransactionDialogState extends State<_NewTransactionDialog> {
 lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart
 =====================================
 
+// =============================================================================
+// FILE: lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
 import '../../models/receipt_template_model.dart';
 import '../../services/receipt_pdf_generator.dart';
 import '../../services/receipt_template_service.dart';
@@ -2067,13 +2072,24 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
   List<ReceiptTemplateModel> _templates = [];
   ReceiptTemplateModel? _selectedTemplate;
 
+  bool get _isStaff {
+    final role = AuthService.currentUser?.userRole.toLowerCase() ?? '';
+    return role == 'secretary' ||
+        role == 'admin' ||
+        role == 'superadmin' ||
+        role == 'pfc' ||
+        role == 'parishpriest';
+  }
+
   @override
   void initState() {
     super.initState();
     _currentTransactionDetails = widget.transactionDetails;
     _currentStatus = (widget.status ?? 'paid').toUpperCase();
     _isVoided = _checkIfVoided(_currentStatus, _currentTransactionDetails);
-    _loadTemplates();
+    if (_isStaff) {
+      _loadTemplates();
+    }
   }
 
   bool _checkIfVoided(String status, String? details) {
@@ -2154,7 +2170,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
     final text = _currentTransactionDetails;
     if (text == null || text.trim().isEmpty) {
       return (
-      [_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'P ${_numericAmount.toStringAsFixed(2)}')],
+      [_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'â‚± ${_numericAmount.toStringAsFixed(2)}')],
       null
       );
     }
@@ -2164,7 +2180,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
     final List<String> notes = [];
 
     for (final raw in rawLines) {
-      final clean = raw.replaceAll('•', '').replaceAll('-', '').trim();
+      final clean = raw.replaceAll('â€¢', '').replaceAll('-', '').trim();
 
       if (clean.contains('@') && clean.contains('=')) {
         final parts = clean.split('=');
@@ -2175,7 +2191,9 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
         final title = atParts[0].trim();
         final rate = atParts.length > 1 ? '@ ${atParts[1].trim()}' : '';
 
-        final formattedAmt = rightAmount.startsWith('P') ? rightAmount : 'P $rightAmount';
+        final formattedAmt = rightAmount.startsWith('â‚±') || rightAmount.startsWith('P')
+            ? rightAmount
+            : 'â‚± $rightAmount';
         items.add(_ItemizedLine(title: title, rateInfo: rate, itemAmount: formattedAmt));
       } else if (clean.startsWith('Remarks:') || clean.startsWith('GCash Ref:') || clean.startsWith('Tender:')) {
         notes.add(clean);
@@ -2185,7 +2203,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
     }
 
     if (items.isEmpty) {
-      items.add(_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'P ${_numericAmount.toStringAsFixed(2)}'));
+      items.add(_ItemizedLine(title: widget.purpose, rateInfo: '', itemAmount: 'â‚± ${_numericAmount.toStringAsFixed(2)}'));
     }
 
     final combinedNotes = notes.isNotEmpty ? notes.join(' | ') : null;
@@ -2267,7 +2285,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               isVoided: _isVoided,
               voidReason: _voidAuditNotice,
             ),
-            allowPrinting: true,
+            allowPrinting: _isStaff,
             allowSharing: false,
             canChangePageFormat: false,
           ),
@@ -2607,13 +2625,36 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('ITEMIZED PARTICULARS & OFFERINGS:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColorMuted)),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                    onPressed: () => _openPdfPreviewModal(isThermal: false),
-                    icon: const Icon(Icons.picture_as_pdf, size: 15, color: ParishColors.marianBlue),
-                    label: const Text('View PDF Layout', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                  Text(
+                    'ITEMIZED PARTICULARS & OFFERINGS:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: textColorMuted,
+                    ),
                   ),
+
+                  // Staff-only: PDF Layout Preview
+                  if (_isStaff)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _openPdfPreviewModal(isThermal: false),
+                      icon: const Icon(
+                        Icons.picture_as_pdf,
+                        size: 15,
+                        color: ParishColors.marianBlue,
+                      ),
+                      label: const Text(
+                        'View PDF Layout',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.marianBlue,
+                        ),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -2708,7 +2749,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _isVoided ? ParishColors.mercyRed : textDark),
                     ),
                     Text(
-                      'P ${_numericAmount.toStringAsFixed(2)}',
+                      'â‚± ${_numericAmount.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -2721,106 +2762,122 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               ),
               const SizedBox(height: 14),
 
-              // Template Selection
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Print Template Configuration:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
-                  TextButton(
-                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
-                      ).then((_) => _loadTemplates());
-                    },
-                    child: const Text('Manage Templates', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-                  ),
-                ],
-              ),
-              if (_templates.isNotEmpty)
-                DropdownButtonFormField<ReceiptTemplateModel>(
-                  value: _selectedTemplate,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _templates.map((tpl) {
-                    return DropdownMenuItem(
-                      value: tpl,
-                      child: Text(
-                        '${tpl.templateName} (${tpl.paperSize})',
-                        style: const TextStyle(fontSize: 12.5),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedTemplate = val);
-                  },
+              // Staff-Only Template Management
+              if (_isStaff) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Print Template Configuration:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
+                    TextButton(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
+                        ).then((_) => _loadTemplates());
+                      },
+                      child: const Text('Manage Templates', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                    ),
+                  ],
                 ),
+                if (_templates.isNotEmpty)
+                  DropdownButtonFormField<ReceiptTemplateModel>(
+                    value: _selectedTemplate,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _templates.map((tpl) {
+                      return DropdownMenuItem(
+                        value: tpl,
+                        child: Text(
+                          '${tpl.templateName} (${tpl.paperSize})',
+                          style: const TextStyle(fontSize: 12.5),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedTemplate = val);
+                    },
+                  ),
+              ],
             ],
           ),
         ),
       ),
       actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       actions: [
-        // 1. Void Receipt Action (Hidden if already voided)
-        if (!_isVoided)
+        if (_isStaff) ...[
+          // 1. Staff-Only: Void Receipt Action (Hidden if already voided)
+          if (!_isVoided)
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: ParishColors.mercyRed),
+                foregroundColor: ParishColors.mercyRed,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onPressed: _isVoiding ? null : _handleVoidReceipt,
+              icon: _isVoiding
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.mercyRed, strokeWidth: 2))
+                  : const Icon(Icons.block, size: 16),
+              label: Text(_isVoiding ? 'Voiding...' : 'Void Receipt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+            ),
+
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: TextStyle(color: textColorMuted)),
+          ),
+
+          // 2. Staff-Only: 80mm Thermal Slip Print Option
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: ParishColors.mercyRed),
-              foregroundColor: ParishColors.mercyRed,
+              side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
+              foregroundColor: ParishColors.goldAccent,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             ),
-            onPressed: _isVoiding ? null : _handleVoidReceipt,
-            icon: _isVoiding
-                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.mercyRed, strokeWidth: 2))
-                : const Icon(Icons.block, size: 16),
-            label: Text(_isVoiding ? 'Voiding...' : 'Void Receipt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+            onPressed: _isPrintingThermal || _isPrinting ? null : () => _handlePrint(isThermal: true),
+            icon: _isPrintingThermal
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.goldAccent, strokeWidth: 2))
+                : const Icon(Icons.receipt, size: 16),
+            label: Text(_isVoided ? 'Print Void Slip' : '80mm Slip', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
           ),
 
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Close', style: TextStyle(color: textColorMuted)),
-        ),
-
-        // 2. 80mm Thermal Slip Print Option
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
-            foregroundColor: ParishColors.goldAccent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          // 3. Staff-Only: Standard Official Voucher / Document Print Option
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            onPressed: _isPrinting || _isPrintingThermal ? null : () => _handlePrint(isThermal: false),
+            icon: _isPrinting
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.print, size: 17),
+            label: Text(
+              _isPrinting
+                  ? 'Printing...'
+                  : (_isVoided ? 'Print Void Voucher' : 'Print Voucher'),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
           ),
-          onPressed: _isPrintingThermal || _isPrinting ? null : () => _handlePrint(isThermal: true),
-          icon: _isPrintingThermal
-              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.goldAccent, strokeWidth: 2))
-              : const Icon(Icons.receipt, size: 16),
-          label: Text(_isVoided ? 'Print Void Slip' : '80mm Slip', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
-        ),
-
-        // 3. Standard Official Voucher / Document Print Option
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        ] else ...[
+          // Client / Parishioner side: Clean Close Button ONLY (Staff buttons removed)
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           ),
-          onPressed: _isPrinting || _isPrintingThermal ? null : () => _handlePrint(isThermal: false),
-          icon: _isPrinting
-              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Icon(Icons.print, size: 17),
-          label: Text(
-            _isPrinting
-                ? 'Printing...'
-                : (_isVoided ? 'Print Void Voucher' : 'Print Voucher'),
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-          ),
-        ),
+        ],
       ],
     );
   }
@@ -3297,9 +3354,9 @@ class _RemittanceReportDialogState extends State<RemittanceReportDialog> {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _buildKpiBlock('Included Receipts', '${data.totalCount} slips', ParishColors.textDark),
-          _buildKpiBlock('Cash Remittance', '₱ ${data.totalCash.toStringAsFixed(2)}', ParishColors.oliveGreen),
-          _buildKpiBlock('GCash Remittance', '₱ ${data.totalGCash.toStringAsFixed(2)}', const Color(0xFF005CEE)),
-          _buildKpiBlock('TOTAL REMITTANCE', '₱ ${data.totalRemittance.toStringAsFixed(2)}', ParishColors.marianBlue, isBig: true),
+          _buildKpiBlock('Cash Remittance', 'â‚± ${data.totalCash.toStringAsFixed(2)}', ParishColors.oliveGreen),
+          _buildKpiBlock('GCash Remittance', 'â‚± ${data.totalGCash.toStringAsFixed(2)}', const Color(0xFF005CEE)),
+          _buildKpiBlock('TOTAL REMITTANCE', 'â‚± ${data.totalRemittance.toStringAsFixed(2)}', ParishColors.marianBlue, isBig: true),
         ],
       ),
     );
@@ -3396,7 +3453,7 @@ class _RemittanceReportDialogState extends State<RemittanceReportDialog> {
                         ),
                       ),
                     )),
-                    DataCell(Text('₱ ${r.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataCell(Text('â‚± ${r.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                   ],
                 );
               }),
@@ -3582,7 +3639,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
               autofocus: true,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               decoration: const InputDecoration(
-                prefixText: '₱ ',
+                prefixText: 'â‚± ',
                 labelText: 'Amount (PHP)',
                 border: OutlineInputBorder(),
               ),
@@ -3664,7 +3721,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
         ? rawAmount.toDouble()
         : (double.tryParse(rawAmount?.toString() ?? '0') ?? _subtotal);
 
-    final amount = '₱ ${amountVal.toStringAsFixed(2)}';
+    final amount = 'â‚± ${amountVal.toStringAsFixed(2)}';
     final date = record['transaction_date']?.toString().substring(0, 10) ?? 'Today';
 
     showReceiptDetailModal(
@@ -3704,7 +3761,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
             ),
             Text(
-              'St. John Paul II Parish • On-site Transaction Terminal',
+              'St. John Paul II Parish â€¢ On-site Transaction Terminal',
               style: TextStyle(fontSize: 12, color: textMuted),
             ),
           ],
@@ -3967,7 +4024,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    item.allowsCustomPrice ? 'Custom / Tithe' : '₱ ${item.defaultPrice.toStringAsFixed(0)}',
+                    item.allowsCustomPrice ? 'Custom / Tithe' : 'â‚± ${item.defaultPrice.toStringAsFixed(0)}',
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
@@ -4103,7 +4160,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                           ),
                           Text(
-                            '₱ ${cartItem.customPrice.toStringAsFixed(2)} each',
+                            'â‚± ${cartItem.customPrice.toStringAsFixed(2)} each',
                             style: TextStyle(fontSize: 11, color: textMuted),
                           ),
                         ],
@@ -4132,7 +4189,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '₱ ${cartItem.total.toStringAsFixed(2)}',
+                      'â‚± ${cartItem.total.toStringAsFixed(2)}',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
                     ),
                   ],
@@ -4150,7 +4207,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Subtotal:', style: TextStyle(fontSize: 13, color: textMuted)),
-                  Text('₱ ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
+                  Text('â‚± ${_subtotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, color: textDark)),
                 ],
               ),
               const SizedBox(height: 6),
@@ -4159,7 +4216,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 children: [
                   Text('Total Amount Due:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
                   Text(
-                    '₱ ${_subtotal.toStringAsFixed(2)}',
+                    'â‚± ${_subtotal.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                   ),
                 ],
@@ -4204,7 +4261,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
             children: [
               Text('$_totalItemCount items in slip', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
               Text(
-                '₱ ${_subtotal.toStringAsFixed(2)}',
+                'â‚± ${_subtotal.toStringAsFixed(2)}',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
               ),
             ],
@@ -4310,7 +4367,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
 
       // Line items formatted cleanly for receipt printing
       final lineDetails = widget.cartItems
-          .map((c) => '• ${c.item.title} x${c.quantity}\n  @ ₱${c.customPrice.toStringAsFixed(2)} = ₱${c.total.toStringAsFixed(2)}')
+          .map((c) => 'â€¢ ${c.item.title} x${c.quantity}\n  @ â‚±${c.customPrice.toStringAsFixed(2)} = â‚±${c.total.toStringAsFixed(2)}')
           .join('\n');
 
       // Only include user remarks if provided (tender mode is kept for modal computation only, omitted from receipt text)
@@ -4423,7 +4480,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('Total Amount Payable:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark)),
-                            Text('₱ ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+                            Text('â‚± ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
                           ],
                         ),
                       ),
@@ -4487,7 +4544,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Cash Tendered (â‚±) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   TextFormField(
                                     controller: _tenderedController,
@@ -4503,7 +4560,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                  Text('Change Due (â‚±)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                                   const SizedBox(height: 6),
                                   Container(
                                     height: 48,
@@ -4515,7 +4572,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                                       border: Border.all(color: borderGrey),
                                     ),
                                     child: Text(
-                                      '₱ ${_changeAmount.toStringAsFixed(2)}',
+                                      'â‚± ${_changeAmount.toStringAsFixed(2)}',
                                       style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.bold,
@@ -5287,7 +5344,7 @@ class _ReceiptCanvasDesignerPageState extends State<ReceiptCanvasDesignerPage> {
                   ],
                 ),
                 Text(
-                  '${widget.template.paperSize} (${widget.template.orientation}) • ${pageSize.width.toStringAsFixed(0)} × ${pageSize.height.toStringAsFixed(0)} pt',
+                  '${widget.template.paperSize} (${widget.template.orientation}) â€¢ ${pageSize.width.toStringAsFixed(0)} Ã— ${pageSize.height.toStringAsFixed(0)} pt',
                   style: TextStyle(fontSize: 11, color: textMuted),
                 ),
               ],
@@ -5567,7 +5624,7 @@ class _ReceiptCanvasDesignerPageState extends State<ReceiptCanvasDesignerPage> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(color: ParishColors.marianBlueSurface, borderRadius: BorderRadius.circular(4)),
               child: Text(
-                'W: ${currentW.toInt()}pt • H: ${currentH.toInt()}pt',
+                'W: ${currentW.toInt()}pt â€¢ H: ${currentH.toInt()}pt',
                 style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
               ),
             ),
@@ -6363,7 +6420,7 @@ class _ReceiptTemplateManagementPageState
               payorName: 'Justin Dion Salaveria',
               payorContact: '0917-882-9912',
               relatedService: 'Baptism Registration & Mass Intention',
-              transactionDetails: '• Baptism Registration Stipend @ ₱300.00\n• Thanksgiving Mass Intention @ ₱100.00\n• Sanctuary Lamp Offering @ ₱150.00',
+              transactionDetails: 'â€¢ Baptism Registration Stipend @ â‚±300.00\nâ€¢ Thanksgiving Mass Intention @ â‚±100.00\nâ€¢ Sanctuary Lamp Offering @ â‚±150.00',
               amount: 550.00,
               paymentMode: 'Cash',
               template: template,
@@ -6416,7 +6473,7 @@ class _ReceiptTemplateManagementPageState
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
                 ),
                 Text(
-                  'Configure layouts for Ecclesiastical (8.5×4.125 in), A4, Letter, and Legal (8.5×13 in)',
+                  'Configure layouts for Ecclesiastical (8.5Ã—4.125 in), A4, Letter, and Legal (8.5Ã—13 in)',
                   style: TextStyle(fontSize: 12, color: textMuted),
                 ),
               ],
@@ -6546,12 +6603,12 @@ class _ReceiptTemplateManagementPageState
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Paper: ${item.paperSize} (${item.orientation}) • ${isPlain ? "Plain (No Border)" : item.backgroundMode} • Font: ${item.styleConfig.fontFamily.toUpperCase()} • Version ${item.version}',
+                              'Paper: ${item.paperSize} (${item.orientation}) â€¢ ${isPlain ? "Plain (No Border)" : item.backgroundMode} â€¢ Font: ${item.styleConfig.fontFamily.toUpperCase()} â€¢ Version ${item.version}',
                               style: TextStyle(fontSize: 12.0, color: textMuted),
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              'Title: ${item.receiptTitle} • Cashier: ${item.cashierTitle}',
+                              'Title: ${item.receiptTitle} â€¢ Cashier: ${item.cashierTitle}',
                               style: TextStyle(fontSize: 11.5, color: textDark, fontStyle: FontStyle.italic),
                             ),
                           ],
@@ -6971,10 +7028,10 @@ class _ReceiptTemplateEditorDialogState extends State<_ReceiptTemplateEditorDial
                               decoration: const InputDecoration(labelText: 'Paper Size *', border: OutlineInputBorder()),
                               items: _paperSizeOptions.map((s) {
                                 String label = s;
-                                if (s == 'Ecclesiastical') label = 'Ecclesiastical Receipt (8.5 × 4.125 in)';
-                                if (s == 'Legal') label = 'Legal (8.5 × 13 in) Folio';
-                                if (s == 'Letter') label = 'Letter (8.5 × 11 in)';
-                                if (s == 'A4') label = 'A4 (210 × 297 mm)';
+                                if (s == 'Ecclesiastical') label = 'Ecclesiastical Receipt (8.5 Ã— 4.125 in)';
+                                if (s == 'Legal') label = 'Legal (8.5 Ã— 13 in) Folio';
+                                if (s == 'Letter') label = 'Letter (8.5 Ã— 11 in)';
+                                if (s == 'A4') label = 'A4 (210 Ã— 297 mm)';
 
                                 return DropdownMenuItem(value: s, child: Text(label, style: const TextStyle(fontSize: 13)));
                               }).toList(),
@@ -7253,6 +7310,10 @@ class _ReceiptTemplateEditorDialogState extends State<_ReceiptTemplateEditorDial
 lib/features/receipts/presentation/receipts_view.dart
 =====================================
 
+// =============================================================================
+// FILE: lib/features/receipts/presentation/receipts_view.dart (PART 1 OF 2)
+// =============================================================================
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
@@ -7265,6 +7326,8 @@ import 'pages/pos_cashier_page.dart';
 import 'pages/receipt_template_management_page.dart';
 import 'widgets/receipt_card.dart';
 
+enum ReceiptViewMode { cards, table }
+
 class ReceiptManagementView extends StatefulWidget {
   const ReceiptManagementView({super.key});
 
@@ -7272,18 +7335,27 @@ class ReceiptManagementView extends StatefulWidget {
   State<ReceiptManagementView> createState() => _ReceiptManagementViewState();
 }
 
-class _ReceiptManagementViewState extends State<ReceiptManagementView> {
+class _ReceiptManagementViewState extends State<ReceiptManagementView>
+    with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
+  late TabController _mainTabController;
+  late AnimationController _skeletonAnimController;
+  late Animation<double> _skeletonOpacityAnimation;
+
   List<Map<String, dynamic>> _transactions = [];
   bool _isLoading = true;
   String? _errorMessage;
 
-  // Search & Filtering State
+  // View Mode: Cards vs Table
+  ReceiptViewMode _viewMode = ReceiptViewMode.cards;
+
+  // Search, Filter & Sort State (Matching Assets & Appointments)
   String _searchQuery = '';
   String _selectedPaymentMode = 'All';
   String _selectedDateRangeFilter = 'All Dates';
   DateTimeRange? _customDateRange;
   String _sortBy = 'Date: Latest First';
+  bool _sortAscending = false;
 
   // Pagination State
   int _currentPage = 1;
@@ -7294,7 +7366,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     'Cash',
     'GCash',
     'Gratis',
-    'Voided',
   ];
 
   final List<String> _dateRangeOptions = [
@@ -7317,12 +7388,33 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
   @override
   void initState() {
     super.initState();
+    // 2 Tabs: Active Receipts (Legitimate Ledger) & Voided Archive
+    _mainTabController = TabController(length: 2, vsync: this);
+    _mainTabController.addListener(() {
+      if (!_mainTabController.indexIsChanging) {
+        setState(() {
+          _currentPage = 1;
+        });
+      }
+    });
+
+    _skeletonAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    _skeletonOpacityAnimation = Tween<double>(begin: 0.35, end: 0.85).animate(
+      CurvedAnimation(parent: _skeletonAnimController, curve: Curves.easeInOut),
+    );
+
     _loadTransactions();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _mainTabController.dispose();
+    _skeletonAnimController.dispose();
     super.dispose();
   }
 
@@ -7375,24 +7467,39 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
   }
 
   // ===========================================================================
-  // Data Filtering & Sorting Logic
+  // Data Filtering & Segregation
   // ===========================================================================
 
-  List<Map<String, dynamic>> get _filteredTransactions {
-    var list = List<Map<String, dynamic>>.from(_transactions);
+  // 1. Legitimate Active Transactions (Strictly Excludes Voided)
+  List<Map<String, dynamic>> get _activeTransactions {
+    var list = _transactions.where((t) => !_isTransactionVoided(t)).toList();
 
-    // 1. Payment Tender Mode & Voided Filter
-    if (_selectedPaymentMode == 'Voided') {
-      list = list.where((t) => _isTransactionVoided(t)).toList();
-    } else if (_selectedPaymentMode != 'All') {
+    if (_selectedPaymentMode != 'All') {
       list = list.where((t) {
-        if (_isTransactionVoided(t)) return false;
         final mode = _getTenderMode(t);
         return mode.toLowerCase() == _selectedPaymentMode.toLowerCase();
       }).toList();
     }
 
-    // 2. Date Range Filter
+    list = _applyDateRangeAndSearch(list);
+    _applySorting(list);
+    return list;
+  }
+
+  // 2. Voided Archive Slips (Strictly Isolated to Prevent Ledger Clutter)
+  List<Map<String, dynamic>> get _voidedTransactions {
+    var list = _transactions.where((t) => _isTransactionVoided(t)).toList();
+
+    list = _applyDateRangeAndSearch(list);
+    _applySorting(list);
+    return list;
+  }
+
+  List<Map<String, dynamic>> get _currentTabTransactions {
+    return _mainTabController.index == 0 ? _activeTransactions : _voidedTransactions;
+  }
+
+  List<Map<String, dynamic>> _applyDateRangeAndSearch(List<Map<String, dynamic>> list) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -7426,7 +7533,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
       }).toList();
     }
 
-    // 3. Search Query
     if (_searchQuery.trim().isNotEmpty) {
       final q = _searchQuery.toLowerCase().trim();
       list = list.where((t) {
@@ -7443,31 +7549,44 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
       }).toList();
     }
 
-    // 4. Sorting
-    if (_sortBy == 'Date: Latest First') {
-      list.sort((a, b) {
-        final da = DateTime.tryParse(a['transaction_date']?.toString() ?? a['created_at']?.toString() ?? '') ?? DateTime(1970);
-        final db = DateTime.tryParse(b['transaction_date']?.toString() ?? b['created_at']?.toString() ?? '') ?? DateTime(1970);
-        return db.compareTo(da);
-      });
-    } else if (_sortBy == 'Date: Earliest First') {
-      list.sort((a, b) {
-        final da = DateTime.tryParse(a['transaction_date']?.toString() ?? a['created_at']?.toString() ?? '') ?? DateTime(1970);
-        final db = DateTime.tryParse(b['transaction_date']?.toString() ?? b['created_at']?.toString() ?? '') ?? DateTime(1970);
-        return da.compareTo(db);
-      });
-    } else if (_sortBy == 'Amount: Highest First') {
-      list.sort((a, b) => _getAmount(b).compareTo(_getAmount(a)));
-    } else if (_sortBy == 'Amount: Lowest First') {
-      list.sort((a, b) => _getAmount(a).compareTo(_getAmount(b)));
-    } else if (_sortBy == 'Payor Name (A-Z)') {
-      list.sort((a, b) => (a['payor_name'] ?? '').toString().compareTo((b['payor_name'] ?? '').toString()));
-    } else if (_sortBy == 'Receipt Number') {
-      list.sort((a, b) => (b['receipt_number'] ?? '').toString().compareTo((a['receipt_number'] ?? '').toString()));
-    }
-
     return list;
   }
+
+  void _applySorting(List<Map<String, dynamic>> list) {
+    list.sort((a, b) {
+      int comparison = 0;
+      switch (_sortBy) {
+        case 'Date: Latest First':
+          final da = DateTime.tryParse(a['transaction_date']?.toString() ?? a['created_at']?.toString() ?? '') ?? DateTime(1970);
+          final db = DateTime.tryParse(b['transaction_date']?.toString() ?? b['created_at']?.toString() ?? '') ?? DateTime(1970);
+          comparison = db.compareTo(da);
+          break;
+        case 'Date: Earliest First':
+          final da = DateTime.tryParse(a['transaction_date']?.toString() ?? a['created_at']?.toString() ?? '') ?? DateTime(1970);
+          final db = DateTime.tryParse(b['transaction_date']?.toString() ?? b['created_at']?.toString() ?? '') ?? DateTime(1970);
+          comparison = da.compareTo(db);
+          break;
+        case 'Amount: Highest First':
+          comparison = _getAmount(b).compareTo(_getAmount(a));
+          break;
+        case 'Amount: Lowest First':
+          comparison = _getAmount(a).compareTo(_getAmount(b));
+          break;
+        case 'Payor Name (A-Z)':
+          comparison = (a['payor_name'] ?? '').toString().toLowerCase().compareTo((b['payor_name'] ?? '').toString().toLowerCase());
+          break;
+        case 'Receipt Number':
+        default:
+          comparison = (b['receipt_number'] ?? '').toString().compareTo((a['receipt_number'] ?? '').toString());
+          break;
+      }
+      return _sortAscending ? -comparison : comparison;
+    });
+  }
+
+  // ===========================================================================
+  // Summary Stats & Metrics
+  // ===========================================================================
 
   double get _totalCollectedToday {
     final today = DateTime.now().toIso8601String().substring(0, 10);
@@ -7478,25 +7597,45 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     }).fold(0.0, (sum, t) => sum + _getAmount(t));
   }
 
-  double get _totalFilteredAmount {
-    if (_selectedPaymentMode == 'Voided') {
-      return _filteredTransactions.fold(0.0, (sum, t) => sum + _getAmount(t));
-    }
-    return _filteredTransactions
+  double get _totalValidIntake {
+    return _transactions
         .where((t) => !_isTransactionVoided(t))
+        .fold(0.0, (sum, t) => sum + _getAmount(t));
+  }
+
+  double get _totalGCashIntake {
+    return _transactions
+        .where((t) => !_isTransactionVoided(t) && _getTenderMode(t) == 'GCash')
         .fold(0.0, (sum, t) => sum + _getAmount(t));
   }
 
   int get _voidedCount => _transactions.where((t) => _isTransactionVoided(t)).length;
 
   int get _totalPages {
-    final total = _filteredTransactions.length;
+    final total = _currentTabTransactions.length;
     if (total == 0) return 1;
     return (total / _itemsPerPage).ceil();
   }
 
-  void _onFilterChanged() {
-    setState(() => _currentPage = 1);
+  int get _activeFilterCount {
+    int count = 0;
+    if (_selectedPaymentMode != 'All') count++;
+    if (_selectedDateRangeFilter != 'All Dates') count++;
+    if (_sortBy != 'Date: Latest First' || _sortAscending) count++;
+    return count;
+  }
+
+  bool get _hasActiveFilters => _activeFilterCount > 0;
+
+  void _resetFilters() {
+    setState(() {
+      _selectedPaymentMode = 'All';
+      _selectedDateRangeFilter = 'All Dates';
+      _customDateRange = null;
+      _sortBy = 'Date: Latest First';
+      _sortAscending = false;
+      _currentPage = 1;
+    });
   }
 
   Future<void> _pickCustomDateRange() async {
@@ -7504,7 +7643,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2020),
-      lastDate: DateTime(now.year + 1),
+      lastDate: DateTime(now.year + 2),
       initialDateRange: _customDateRange ??
           DateTimeRange(
             start: now.subtract(const Duration(days: 7)),
@@ -7529,7 +7668,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
       setState(() {
         _customDateRange = picked;
         _selectedDateRangeFilter = 'Custom Date Range';
-        _onFilterChanged();
+        _currentPage = 1;
       });
     }
   }
@@ -7563,460 +7702,880 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
     showRemittanceReportModal(context);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
-    final cardWhite = ParishColors.cardWhite;
-    final borderGrey = ParishColors.borderGrey;
-
-    final filtered = _filteredTransactions;
-    final totalItems = filtered.length;
-    final start = (_currentPage - 1) * _itemsPerPage;
-    final end = min(start + _itemsPerPage, totalItems);
-    final pagedTransactions = (start >= totalItems) ? <Map<String, dynamic>>[] : filtered.sublist(start, end);
-
-    return RefreshIndicator(
-      onRefresh: _loadTransactions,
-      color: ParishColors.marianBlue,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Page Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+  // ===========================================================================
+  // Filter & Sort Bottom Sheet (Matching Assets Module)
+  // ===========================================================================
+  void _openFilterAndSortBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ParishColors.cardWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 14,
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: ParishColors.borderGrey,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Parish Cashier & Receipts Desk',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textDark),
+                        'Filter & Sort Receipts',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark,
+                        ),
                       ),
-                      Text(
-                        'Issue ecclesiastical receipts, oversee voided records, and manage parish ledgers',
-                        style: TextStyle(color: textMuted, fontSize: 13),
-                      ),
+                      if (_hasActiveFilters)
+                        TextButton(
+                          onPressed: () {
+                            _resetFilters();
+                            setSheetState(() {});
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text(
+                            'Reset All',
+                            style: TextStyle(
+                              color: ParishColors.mercyRed,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.assessment_outlined, color: ParishColors.marianBlue),
-                      onPressed: _openRemittanceReports,
-                      tooltip: 'Remittance & Financial Reports',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.style_outlined, color: ParishColors.marianBlue),
-                      onPressed: _openTemplateManager,
-                      tooltip: 'Receipt Templates & Canvas Studio',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.tune, color: ParishColors.marianBlue),
-                      onPressed: _openManageParticulars,
-                      tooltip: 'Manage Catalog Particulars (CRUD)',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh, color: ParishColors.marianBlue),
-                      onPressed: _loadTransactions,
-                      tooltip: 'Reload Ledger',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
+                  const Divider(height: 14),
 
-            // Top Action Primary Buttons
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 800;
-                return isWide
-                    ? Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: SizedBox(
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: ParishColors.oliveGreen,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: _launchPos,
-                          icon: const Icon(Icons.point_of_sale, size: 22),
-                          label: const Text(
-                            'Launch POS Cashier Terminal',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
+                  // 1. Sort Sequence
+                  Text(
+                    'Sort Sequence',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 3,
-                      child: SizedBox(
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-                            foregroundColor: ParishColors.marianBlue,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () => showNewTransactionModal(context, onTransactionSaved: _loadTransactions),
-                          icon: const Icon(Icons.receipt_long, size: 18),
-                          label: const Text(
-                            'Single Record Entry',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 3,
-                      child: SizedBox(
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: ParishColors.marianBlue,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: _openRemittanceReports,
-                          icon: const Icon(Icons.assessment_outlined, size: 18),
-                          label: const Text(
-                            'Remittance Reports',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-                    : Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: ParishColors.oliveGreen,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: _launchPos,
-                        icon: const Icon(Icons.point_of_sale, size: 20),
-                        label: const Text(
-                          'Launch POS Cashier Terminal',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 44,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-                                foregroundColor: ParishColors.marianBlue,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              onPressed: () => showNewTransactionModal(context, onTransactionSaved: _loadTransactions),
-                              icon: const Icon(Icons.receipt_long, size: 16),
-                              label: const Text('Single Entry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: SizedBox(
-                            height: 44,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: ParishColors.marianBlue,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              onPressed: _openRemittanceReports,
-                              icon: const Icon(Icons.assessment_outlined, size: 16),
-                              label: const Text('Reports', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-
-            // Live KPI Summary Metric Cards
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 700;
-                return Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: cardWhite,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: borderGrey),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Today's Valid Intake", style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Text(
-                              '₱ ${_totalCollectedToday.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: cardWhite,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: borderGrey),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _selectedPaymentMode == 'Voided'
-                                  ? 'Total Voided Amount'
-                                  : (_selectedDateRangeFilter == 'All Dates' ? 'Total Valid Intake' : '$_selectedDateRangeFilter Intake'),
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: _selectedPaymentMode == 'Voided' ? ParishColors.mercyRed : textMuted,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '₱ ${_totalFilteredAmount.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.bold,
-                                color: _selectedPaymentMode == 'Voided' ? ParishColors.mercyRed : ParishColors.goldAccent,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (isWide) ...[
-                      const SizedBox(width: 10),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
                       Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: cardWhite,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: borderGrey),
+                        child: DropdownButtonFormField<String>(
+                          value: _sortBy,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Active / Voided Ratio', style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${_transactions.length - _voidedCount} Valid • $_voidedCount Voided',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
+                          items: _sortOptions
+                              .map((opt) => DropdownMenuItem(value: opt, child: Text(opt, style: const TextStyle(fontSize: 13))))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _sortBy = val);
+                              setSheetState(() {});
+                            }
+                          },
                         ),
                       ),
-                    ],
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 18),
-
-            // Search Bar
-            Container(
-              height: 50,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: cardWhite,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: borderGrey),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, size: 22, color: ParishColors.marianBlue),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (val) {
-                        setState(() => _searchQuery = val);
-                        _onFilterChanged();
-                      },
-                      style: TextStyle(fontSize: 13.5, color: textDark),
-                      decoration: InputDecoration(
-                        hintText: 'Search receipts by payor, receipt #, service, notes, phone...',
-                        hintStyle: TextStyle(fontSize: 12.5, color: textMuted),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
+                      const SizedBox(width: 8),
+                      IconButton(
+                        style: IconButton.styleFrom(
+                          backgroundColor: ParishColors.marianBlueSurface,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: Icon(
+                          _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                          size: 18,
+                          color: ParishColors.marianBlue,
+                        ),
+                        onPressed: () {
+                          setState(() => _sortAscending = !_sortAscending);
+                          setSheetState(() {});
+                        },
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 2. Date Range Filter
+                  Text(
+                    'Date Range Filter',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
                     ),
                   ),
-                  if (_searchQuery.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(Icons.clear, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                        _onFilterChanged();
-                      },
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    value: _selectedDateRangeFilter,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     ),
+                    items: _dateRangeOptions.map((opt) {
+                      String label = opt;
+                      if (opt == 'Custom Date Range' && _customDateRange != null) {
+                        label =
+                        'Custom: ${_customDateRange!.start.month}/${_customDateRange!.start.day} - ${_customDateRange!.end.month}/${_customDateRange!.end.day}';
+                      }
+                      return DropdownMenuItem(value: opt, child: Text(label, style: const TextStyle(fontSize: 13)));
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        if (val == 'Custom Date Range') {
+                          _pickCustomDateRange().then((_) {
+                            setSheetState(() {});
+                          });
+                        } else {
+                          setState(() {
+                            _selectedDateRangeFilter = val;
+                            _customDateRange = null;
+                            _currentPage = 1;
+                          });
+                          setSheetState(() {});
+                        }
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 3. Payment Mode Filter (For Active Tab)
+                  if (_mainTabController.index == 0) ...[
+                    Text(
+                      'Payment Tender Mode',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _paymentModeOptions.map((mode) {
+                          final isSelected = _selectedPaymentMode == mode;
+                          Color activeColor = ParishColors.marianBlue;
+                          if (mode == 'Cash') activeColor = ParishColors.oliveGreen;
+                          if (mode == 'GCash') activeColor = const Color(0xFF005CEE);
+                          if (mode == 'Gratis') activeColor = ParishColors.goldAccent;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6.0),
+                            child: ChoiceChip(
+                              label: Text(mode),
+                              selected: isSelected,
+                              selectedColor: activeColor,
+                              backgroundColor: ParishColors.backgroundLight,
+                              labelStyle: TextStyle(
+                                color: isSelected ? Colors.white : ParishColors.textDark,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11.5,
+                              ),
+                              onSelected: (_) {
+                                setState(() {
+                                  _selectedPaymentMode = mode;
+                                  _currentPage = 1;
+                                });
+                                setSheetState(() {});
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+
+                  // Apply & Close Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.marianBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Apply & Close', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-
-            // Filters & Sorters
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 650;
-                return isWide
-                    ? Row(
-                  children: [
-                    Expanded(child: _buildDateRangeDropdown()),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildSortDropdown()),
-                  ],
-                )
-                    : Column(
-                  children: [
-                    _buildDateRangeDropdown(),
-                    const SizedBox(height: 10),
-                    _buildSortDropdown(),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-
-            // Payment Tender & Voided Filter Tabs
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: _paymentModeOptions.map((mode) {
-                  final isSelected = _selectedPaymentMode == mode;
-                  Color activeColor = ParishColors.marianBlue;
-                  if (mode == 'Cash') activeColor = ParishColors.oliveGreen;
-                  if (mode == 'GCash') activeColor = const Color(0xFF005CEE);
-                  if (mode == 'Gratis') activeColor = ParishColors.goldAccent;
-                  if (mode == 'Voided') activeColor = ParishColors.mercyRed;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: InkWell(
-                      onTap: () {
-                        setState(() => _selectedPaymentMode = mode);
-                        _onFilterChanged();
-                      },
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: isSelected ? activeColor : cardWhite,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: isSelected ? activeColor : borderGrey),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (mode == 'Cash') Icon(Icons.payments_outlined, size: 14, color: isSelected ? Colors.white : activeColor),
-                            if (mode == 'GCash') Icon(Icons.qr_code_2, size: 14, color: isSelected ? Colors.white : activeColor),
-                            if (mode == 'Gratis') Icon(Icons.volunteer_activism, size: 14, color: isSelected ? Colors.white : activeColor),
-                            if (mode == 'Voided') Icon(Icons.block, size: 14, color: isSelected ? Colors.white : activeColor),
-                            if (mode != 'All') const SizedBox(width: 5),
-                            Text(
-                              mode == 'All' ? 'All Tenders' : (mode == 'Voided' ? 'Voided ($_voidedCount)' : mode),
-                              style: TextStyle(
-                                color: isSelected ? Colors.white : textDark,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // Receipts Heading & Active Counts
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _selectedPaymentMode == 'Voided'
-                      ? 'Voided / Cancelled Slips ($totalItems)'
-                      : 'Ecclesiastical Receipts ($totalItems)',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
-                ),
-                Text(
-                  'Page $_currentPage of $_totalPages',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textMuted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Receipts Listing Content
-            _buildReceiptsList(pagedTransactions, totalItems),
-          ],
+          ),
         ),
       ),
     );
   }
 
   // ===========================================================================
-  // Receipts List Builder
+  // Build Main Shell (Anchored to Top on Desktop)
   // ===========================================================================
 
-  Widget _buildReceiptsList(List<Map<String, dynamic>> pagedTransactions, int totalItems) {
-    final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
-    final cardWhite = ParishColors.cardWhite;
-    final borderGrey = ParishColors.borderGrey;
+  @override
+  Widget build(BuildContext context) {
+    final textDarkColor = ParishColors.textDark;
+    final cardWhiteColor = ParishColors.cardWhite;
+    final borderGreyColor = ParishColors.borderGrey;
 
-    if (_isLoading) {
-      return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()));
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool isMobile = constraints.maxWidth < 650;
+        final currentItems = _currentTabTransactions;
+        final totalCount = currentItems.length;
+        final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
+
+        // Container explicitly claims available height on desktop and anchors child to topCenter
+        return Container(
+          width: double.infinity,
+          height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
+          alignment: Alignment.topCenter,
+          child: RefreshIndicator(
+            onRefresh: _loadTransactions,
+            color: ParishColors.marianBlue,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 14 : 20,
+                vertical: isMobile ? 12 : 18,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: max(0.0, viewportHeight - (isMobile ? 24 : 36)),
+                  minWidth: double.infinity,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    // 1. Header (Clean title, subtext removed for clean presentation)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Parish Cashier & Receipts Desk',
+                            style: TextStyle(
+                              fontSize: isMobile ? 18 : 22,
+                              fontWeight: FontWeight.bold,
+                              color: textDarkColor,
+                            ),
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.assessment_outlined, color: ParishColors.marianBlue, size: 20),
+                              onPressed: _openRemittanceReports,
+                              tooltip: 'Remittance & Financial Reports',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.style_outlined, color: ParishColors.marianBlue, size: 20),
+                              onPressed: _openTemplateManager,
+                              tooltip: 'Receipt Templates & Canvas Studio',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.tune, color: ParishColors.marianBlue, size: 20),
+                              onPressed: _openManageParticulars,
+                              tooltip: 'Manage Catalog Particulars (CRUD)',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.refresh, color: ParishColors.marianBlue, size: 20),
+                              onPressed: _loadTransactions,
+                              tooltip: 'Reload Ledger',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 2. Primary Action Buttons
+                    _buildActionButtons(isMobile),
+                    const SizedBox(height: 12),
+
+                    // 3. Compact Stats Row (Matching Assets Module)
+                    _buildCompactStatsRow(),
+                    const SizedBox(height: 14),
+
+                    // 4. Main Module Switcher (Active Receipts vs Voided Archive)
+                    Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: cardWhiteColor,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: borderGreyColor),
+                      ),
+                      child: TabBar(
+                        controller: _mainTabController,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: ParishColors.textMuted,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicator: BoxDecoration(
+                          color: _mainTabController.index == 1
+                              ? ParishColors.mercyRed
+                              : ParishColors.marianBlue,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        tabs: [
+                          Tab(
+                            child: Text(
+                              isMobile
+                                  ? 'Active (${_transactions.length - _voidedCount})'
+                                  : 'Active Receipts (${_transactions.length - _voidedCount})',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Tab(
+                            child: Text(
+                              isMobile
+                                  ? 'Voided ($_voidedCount)'
+                                  : 'Voided Archive ($_voidedCount)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // 5. Search Bar (Compact 44dp height)
+                    Container(
+                      width: double.infinity,
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: cardWhiteColor,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: borderGreyColor),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.search, size: 20, color: ParishColors.marianBlue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: (val) {
+                                setState(() {
+                                  _searchQuery = val;
+                                  _currentPage = 1;
+                                });
+                              },
+                              style: TextStyle(fontSize: 13, color: textDarkColor),
+                              decoration: InputDecoration(
+                                hintText: 'Search by payor, receipt #, service, notes...',
+                                hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 16),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                  _currentPage = 1;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // 6. Filter & Sort Toolbar with Card / Table View Toggle
+                    Row(
+                      children: [
+                        InkWell(
+                          onTap: _openFilterAndSortBottomSheet,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: _hasActiveFilters ? ParishColors.marianBlueSurface : cardWhiteColor,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _hasActiveFilters ? ParishColors.marianBlue : borderGreyColor,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.tune,
+                                  size: 15,
+                                  color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  _hasActiveFilters
+                                      ? 'Filter & Sort ($_activeFilterCount)'
+                                      : 'Filter & Sort',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _hasActiveFilters ? ParishColors.marianBlue : textDarkColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '$totalCount items',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: ParishColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: cardWhiteColor,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: borderGreyColor),
+                          ),
+                          child: ToggleButtons(
+                            isSelected: [
+                              _viewMode == ReceiptViewMode.cards,
+                              _viewMode == ReceiptViewMode.table,
+                            ],
+                            onPressed: (idx) => setState(() {
+                              _viewMode = idx == 0 ? ReceiptViewMode.cards : ReceiptViewMode.table;
+                            }),
+                            borderRadius: BorderRadius.circular(6),
+                            selectedColor: Colors.white,
+                            fillColor: ParishColors.marianBlue,
+                            color: ParishColors.textMuted,
+                            constraints: const BoxConstraints(minHeight: 28, minWidth: 32),
+                            children: const [
+                              Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 14)),
+                              Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 14)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // 7. Active Filter Chips Row
+                    if (_hasActiveFilters) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (_selectedDateRangeFilter != 'All Dates')
+                            _buildActiveFilterChip('Range: $_selectedDateRangeFilter', () {
+                              setState(() {
+                                _selectedDateRangeFilter = 'All Dates';
+                                _customDateRange = null;
+                                _currentPage = 1;
+                              });
+                            }),
+                          if (_selectedPaymentMode != 'All' && _mainTabController.index == 0)
+                            _buildActiveFilterChip('Tender: $_selectedPaymentMode', () {
+                              setState(() {
+                                _selectedPaymentMode = 'All';
+                                _currentPage = 1;
+                              });
+                            }),
+                          if (_sortBy != 'Date: Latest First' || _sortAscending)
+                            _buildActiveFilterChip('Sorted: $_sortBy', () {
+                              setState(() {
+                                _sortBy = 'Date: Latest First';
+                                _sortAscending = false;
+                              });
+                            }),
+                          ActionChip(
+                            label: const Text(
+                              'Clear',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.mercyRed,
+                              ),
+                            ),
+                            backgroundColor: ParishColors.mercyRedSurface,
+                            side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _resetFilters,
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+
+                    // 8. Tab Content / Anti-Shift Skeleton Loader
+                    if (_isLoading)
+                      _buildSkeletonLoading(constraints.maxWidth)
+                    else if (_mainTabController.index == 0)
+                      _buildActiveReceiptsTab(constraints.maxWidth)
+                    else
+                      _buildVoidedReceiptsTab(constraints.maxWidth),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+// --- END OF PART 1 ---
+
+// =============================================================================
+// FILE: lib/features/receipts/presentation/receipts_view.dart (PART 2 OF 2)
+// =============================================================================
+
+  // ===========================================================================
+  // Top Action Buttons
+  // ===========================================================================
+  Widget _buildActionButtons(bool isMobile) {
+    return isMobile
+        ? Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+              elevation: 1,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: _launchPos,
+            icon: const Icon(Icons.point_of_sale, size: 18),
+            label: const Text(
+              'Launch POS Cashier Terminal',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 42,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+                    foregroundColor: ParishColors.marianBlue,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => showNewTransactionModal(context, onTransactionSaved: _loadTransactions),
+                  icon: const Icon(Icons.receipt_long, size: 16),
+                  label: const Text('Single Entry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 42,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: _openRemittanceReports,
+                  icon: const Icon(Icons.assessment_outlined, size: 16),
+                  label: const Text('Reports', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    )
+        : Row(
+      children: [
+        Expanded(
+          flex: 4,
+          child: SizedBox(
+            height: 44,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.oliveGreen,
+                foregroundColor: Colors.white,
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _launchPos,
+              icon: const Icon(Icons.point_of_sale, size: 18),
+              label: const Text(
+                'Launch POS Cashier Terminal',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 3,
+          child: SizedBox(
+            height: 44,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+                foregroundColor: ParishColors.marianBlue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => showNewTransactionModal(context, onTransactionSaved: _loadTransactions),
+              icon: const Icon(Icons.receipt_long, size: 16),
+              label: const Text(
+                'Single Entry',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 3,
+          child: SizedBox(
+            height: 44,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _openRemittanceReports,
+              icon: const Icon(Icons.assessment_outlined, size: 16),
+              label: const Text(
+                'Remittance Reports',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Compact Stats Row (Matching Assets & Appointments Modules)
+  // ===========================================================================
+  Widget _buildCompactStatsRow() {
+    final validSlipsCount = _transactions.length - _voidedCount;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildCompactStatItem(
+              'Valid Slips',
+              '$validSlipsCount',
+              ParishColors.marianBlue,
+            ),
+          ),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(
+            child: _buildCompactStatItem(
+              "Today's Intake",
+              'â‚±${_totalCollectedToday.toStringAsFixed(0)}',
+              ParishColors.oliveGreen,
+            ),
+          ),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(
+            child: _buildCompactStatItem(
+              'Total Intake',
+              'â‚±${_totalValidIntake.toStringAsFixed(0)}',
+              ParishColors.goldAccent,
+            ),
+          ),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(
+            child: _buildCompactStatItem(
+              'GCash Intake',
+              'â‚±${_totalGCashIntake.toStringAsFixed(0)}',
+              const Color(0xFF005CEE),
+            ),
+          ),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(
+            child: _buildCompactStatItem(
+              'Voided Slips',
+              '$_voidedCount',
+              ParishColors.mercyRed,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactStatItem(String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: color),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActiveFilterChip(String label, VoidCallback onDeleted) {
+    return Chip(
+      label: Text(label, style: TextStyle(fontSize: 10, color: ParishColors.textDark)),
+      backgroundColor: ParishColors.marianBlueSurface,
+      deleteIcon: const Icon(Icons.close, size: 12),
+      onDeleted: onDeleted,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  // ===========================================================================
+  // Anti-Layout-Shift Skeleton Loader
+  // ===========================================================================
+  Widget _buildSkeletonLoading(double availableWidth) {
+    return AnimatedBuilder(
+      animation: _skeletonOpacityAnimation,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _skeletonOpacityAnimation.value,
+          child: Column(
+            children: List.generate(4, (index) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                height: 96,
+                decoration: BoxDecoration(
+                  color: ParishColors.cardWhite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: ParishColors.borderGrey.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            height: 14,
+                            width: 150,
+                            decoration: BoxDecoration(
+                              color: ParishColors.borderGrey.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 16,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: ParishColors.borderGrey.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 12,
+                            width: 170,
+                            decoration: BoxDecoration(
+                              color: ParishColors.borderGrey.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // TAB 1: ACTIVE RECEIPTS LEDGER (Strictly Excludes Voided Records)
+  // ===========================================================================
+  Widget _buildActiveReceiptsTab(double availableWidth) {
+    final list = _activeTransactions;
+    final totalItems = list.length;
+    final start = (_currentPage - 1) * _itemsPerPage;
+    final end = min(start + _itemsPerPage, totalItems);
+    final paged = (start >= totalItems) ? <Map<String, dynamic>>[] : list.sublist(start, end);
 
     if (_errorMessage != null) {
       return Container(
@@ -8026,81 +8585,16 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
       );
     }
 
-    if (_filteredTransactions.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: cardWhite,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderGrey),
-        ),
-        child: Column(
-          children: [
-            Icon(Icons.receipt_long, size: 44, color: textMuted),
-            const SizedBox(height: 10),
-            Text(
-              _selectedPaymentMode == 'Voided'
-                  ? 'No voided transactions found.'
-                  : 'No receipt transactions match your criteria.',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textDark),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Adjust filters or search keywords above.',
-              style: TextStyle(fontSize: 12, color: textMuted),
-            ),
-          ],
-        ),
-      );
+    if (list.isEmpty) {
+      return _buildEmptyState('No active ecclesiastical receipts match your criteria.');
     }
 
     return Column(
       children: [
-        ...pagedTransactions.map((t) {
-          final String rNo = (t['receipt_number'] ?? 'REC-XXXX').toString();
-          final String payor = (t['payor_name'] ?? 'Parishioner').toString();
-          final String service = (t['related_service'] ?? t['transaction_type'] ?? 'Parish Service').toString();
-          final double amountVal = _getAmount(t);
-          final String amount = '₱ ${amountVal.toStringAsFixed(2)}';
-          final String dateRaw = (t['transaction_date'] ?? t['created_at'] ?? '').toString();
-          final String date = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
-          final String status = (t['transaction_status'] ?? 'paid').toString().toUpperCase();
-          final String mode = _getTenderMode(t);
-          final String? contact = t['payor_contact']?.toString();
-          final String? details = t['transaction_details']?.toString();
-          final bool isVoided = _isTransactionVoided(t);
-
-          return ReceiptCard(
-            receiptNo: rNo,
-            payer: payor,
-            purpose: service,
-            amount: amount,
-            date: date,
-            status: status,
-            payorContact: contact,
-            transactionDetails: details,
-            paymentMode: mode,
-            isVoided: isVoided,
-            transactionId: t['transaction_id']?.toString(),
-            onTap: () {
-              showReceiptDetailModal(
-                context,
-                receiptNo: rNo,
-                payer: payor,
-                purpose: service,
-                amount: amount,
-                date: date,
-                payorContact: contact,
-                transactionDetails: details,
-                paymentMode: mode,
-                transactionId: t['transaction_id']?.toString(),
-                status: status,
-                onTransactionUpdated: _loadTransactions,
-              );
-            },
-          );
-        }),
+        if (_viewMode == ReceiptViewMode.cards)
+          ...paged.map((t) => _buildReceiptCardItem(t))
+        else
+          _buildReceiptsTableView(paged, availableWidth, isVoidTab: false),
         const SizedBox(height: 14),
         _buildPaginationToolbar(totalItems),
       ],
@@ -8108,102 +8602,280 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
   }
 
   // ===========================================================================
-  // Dropdown Builders & Toolbar
+  // TAB 2: VOIDED ARCHIVE (Strictly Isolated to Protect Legitimate Ledgers)
   // ===========================================================================
+  Widget _buildVoidedReceiptsTab(double availableWidth) {
+    final list = _voidedTransactions;
+    final totalItems = list.length;
+    final start = (_currentPage - 1) * _itemsPerPage;
+    final end = min(start + _itemsPerPage, totalItems);
+    final paged = (start >= totalItems) ? <Map<String, dynamic>>[] : list.sublist(start, end);
 
-  Widget _buildDateRangeDropdown() {
-    String displayLabel = _selectedDateRangeFilter;
-    if (_selectedDateRangeFilter == 'Custom Date Range' && _customDateRange != null) {
-      final s = _customDateRange!.start;
-      final e = _customDateRange!.end;
-      displayLabel = '${s.month}/${s.day} – ${e.month}/${e.day}';
-    }
-
-    return InkWell(
-      onTap: () {
-        if (_selectedDateRangeFilter == 'Custom Date Range') {
-          _pickCustomDateRange();
-        }
-      },
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-        decoration: BoxDecoration(
-          color: ParishColors.cardWhite,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: ParishColors.borderGrey),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.date_range, size: 18, color: ParishColors.marianBlue),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedDateRangeFilter,
-                  isExpanded: true,
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-                  items: _dateRangeOptions.map((opt) {
-                    return DropdownMenuItem(
-                      value: opt,
-                      child: Text(opt == 'Custom Date Range' && _customDateRange != null ? 'Custom: $displayLabel' : opt),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      if (val == 'Custom Date Range') {
-                        _pickCustomDateRange();
-                      } else {
-                        setState(() {
-                          _selectedDateRangeFilter = val;
-                          _customDateRange = null;
-                        });
-                        _onFilterChanged();
-                      }
-                    }
-                  },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Isolation Info Banner
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: ParishColors.mercyRedSurface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: ParishColors.mercyRed.withOpacity(0.4)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.block, color: ParishColors.mercyRed, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'ISOLATED VOIDED & CANCELLED RECEIPTS',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
+                    ),
+                    Text(
+                      'Nullified and cancelled receipts are preserved here for financial transparency. Amounts are excluded from canonical remittance summaries.',
+                      style: TextStyle(fontSize: 11, color: ParishColors.textDark),
+                    ),
+                  ],
                 ),
               ),
-            ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        if (list.isEmpty)
+          _buildEmptyState('No voided receipt slips found on record.')
+        else if (_viewMode == ReceiptViewMode.table)
+          ...[
+            _buildReceiptsTableView(paged, availableWidth, isVoidTab: true),
+            const SizedBox(height: 14),
+            _buildPaginationToolbar(totalItems),
+          ]
+        else
+          ...[
+            ...paged.map((t) => _buildReceiptCardItem(t)),
+            const SizedBox(height: 14),
+            _buildPaginationToolbar(totalItems),
           ],
+      ],
+    );
+  }
+
+  Widget _buildReceiptCardItem(Map<String, dynamic> t) {
+    final String rNo = (t['receipt_number'] ?? 'REC-XXXX').toString();
+    final String payor = (t['payor_name'] ?? 'Parishioner').toString();
+    final String service = (t['related_service'] ?? t['transaction_type'] ?? 'Parish Service').toString();
+    final double amountVal = _getAmount(t);
+    final String amount = 'â‚± ${amountVal.toStringAsFixed(2)}';
+    final String dateRaw = (t['transaction_date'] ?? t['created_at'] ?? '').toString();
+    final String date = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
+    final String status = (t['transaction_status'] ?? 'paid').toString().toUpperCase();
+    final String mode = _getTenderMode(t);
+    final String? contact = t['payor_contact']?.toString();
+    final String? details = t['transaction_details']?.toString();
+    final bool isVoided = _isTransactionVoided(t);
+
+    return ReceiptCard(
+      receiptNo: rNo,
+      payer: payor,
+      purpose: service,
+      amount: amount,
+      date: date,
+      status: status,
+      payorContact: contact,
+      transactionDetails: details,
+      paymentMode: mode,
+      isVoided: isVoided,
+      transactionId: t['transaction_id']?.toString(),
+      onTap: () {
+        showReceiptDetailModal(
+          context,
+          receiptNo: rNo,
+          payer: payor,
+          purpose: service,
+          amount: amount,
+          date: date,
+          payorContact: contact,
+          transactionDetails: details,
+          paymentMode: mode,
+          transactionId: t['transaction_id']?.toString(),
+          status: status,
+          onTransactionUpdated: _loadTransactions,
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // Responsive DataTable View (Full Width with Horizontal Scroll)
+  // ===========================================================================
+  Widget _buildReceiptsTableView(List<Map<String, dynamic>> items, double availableWidth, {required bool isVoidTab}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: max(availableWidth, 980)),
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(
+                isVoidTab ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
+              ),
+              headingTextStyle: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isVoidTab ? ParishColors.mercyRed : ParishColors.marianBlue,
+                fontSize: 12.5,
+              ),
+              dataTextStyle: TextStyle(fontSize: 12.5, color: ParishColors.textDark),
+              columnSpacing: 16,
+              horizontalMargin: 14,
+              columns: const [
+                DataColumn(label: Text('Receipt #')),
+                DataColumn(label: Text('Date & Time')),
+                DataColumn(label: Text('Payor Name')),
+                DataColumn(label: Text('Particulars / Service')),
+                DataColumn(label: Text('Tender')),
+                DataColumn(label: Text('Amount')),
+                DataColumn(label: Text('Status')),
+                DataColumn(label: Text('Action')),
+              ],
+              rows: items.map((t) {
+                final String rNo = (t['receipt_number'] ?? 'REC-XXXX').toString();
+                final String payor = (t['payor_name'] ?? 'Parishioner').toString();
+                final String service = (t['related_service'] ?? t['transaction_type'] ?? 'Parish Service').toString();
+                final double amountVal = _getAmount(t);
+                final String dateRaw = (t['transaction_date'] ?? t['created_at'] ?? '').toString();
+                final String date = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
+                final String status = (t['transaction_status'] ?? 'paid').toString().toUpperCase();
+                final String mode = _getTenderMode(t);
+                final String? contact = t['payor_contact']?.toString();
+                final String? details = t['transaction_details']?.toString();
+                final bool isVoided = _isTransactionVoided(t);
+
+                Color tenderColor = ParishColors.oliveGreen;
+                if (mode == 'GCash') tenderColor = const Color(0xFF005CEE);
+                if (mode == 'Gratis') tenderColor = ParishColors.goldAccent;
+
+                return DataRow(cells: [
+                  DataCell(Text(
+                    rNo,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
+                    ),
+                  )),
+                  DataCell(Text(date)),
+                  DataCell(Text(payor, style: const TextStyle(fontWeight: FontWeight.w600))),
+                  DataCell(ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 220),
+                    child: Text(service, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  )),
+                  DataCell(Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isVoided ? ParishColors.mercyRedSurface : tenderColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      isVoided ? 'VOIDED' : mode.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: isVoided ? ParishColors.mercyRed : tenderColor,
+                      ),
+                    ),
+                  )),
+                  DataCell(Text(
+                    'â‚± ${amountVal.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                      decoration: isVoided ? TextDecoration.lineThrough : null,
+                    ),
+                  )),
+                  DataCell(Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isVoided ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      isVoided ? 'VOID' : status,
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                      ),
+                    ),
+                  )),
+                  DataCell(
+                    TextButton.icon(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      onPressed: () {
+                        showReceiptDetailModal(
+                          context,
+                          receiptNo: rNo,
+                          payer: payor,
+                          purpose: service,
+                          amount: 'â‚± ${amountVal.toStringAsFixed(2)}',
+                          date: date,
+                          payorContact: contact,
+                          transactionDetails: details,
+                          paymentMode: mode,
+                          transactionId: t['transaction_id']?.toString(),
+                          status: status,
+                          onTransactionUpdated: _loadTransactions,
+                        );
+                      },
+                      icon: const Icon(Icons.visibility, size: 14),
+                      label: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ]);
+              }).toList(),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildSortDropdown() {
+  Widget _buildEmptyState(String message) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: ParishColors.borderGrey),
       ),
-      child: Row(
+      child: Column(
         children: [
-          const Icon(Icons.sort, size: 18, color: ParishColors.marianBlue),
-          const SizedBox(width: 8),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _sortBy,
-                isExpanded: true,
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-                items: _sortOptions.map((opt) => DropdownMenuItem(value: opt, child: Text(opt))).toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _sortBy = val);
-                    _onFilterChanged();
-                  }
-                },
-              ),
-            ),
+          Icon(Icons.receipt_long_outlined, size: 40, color: ParishColors.textMuted),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
           ),
         ],
       ),
     );
   }
 
+  // ===========================================================================
+  // Pagination Toolbar (Kept Intact)
+  // ===========================================================================
   Widget _buildPaginationToolbar(int totalItems) {
     final totalPages = _totalPages;
 
@@ -8224,7 +8896,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                 value: _itemsPerPage,
                 isDense: true,
                 underline: const SizedBox.shrink(),
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
                 items: const [
                   DropdownMenuItem(value: 10, child: Text('10')),
                   DropdownMenuItem(value: 25, child: Text('25')),
@@ -8247,7 +8919,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                 icon: const Icon(Icons.chevron_left, size: 22),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                color: _currentPage > 1 ? ParishColors.marianBlue : ParishColors.borderGrey,
+                color: _currentPage > 1 ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
                 onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
               ),
               const SizedBox(width: 8),
@@ -8259,10 +8931,10 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                 ),
                 child: Text(
                   'Page $_currentPage of $totalPages',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.bold,
-                    color: ParishColors.marianBlue,
+                    color: ParishColors.marianBlueAdaptive,
                   ),
                 ),
               ),
@@ -8271,7 +8943,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView> {
                 icon: const Icon(Icons.chevron_right, size: 22),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                color: _currentPage < totalPages ? ParishColors.marianBlue : ParishColors.borderGrey,
+                color: _currentPage < totalPages ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
                 onPressed: _currentPage < totalPages ? () => setState(() => _currentPage++) : null,
               ),
             ],
@@ -8761,16 +9433,16 @@ class ReceiptPdfGenerator {
   // ===========================================================================
   static String sanitizePdfText(String text) {
     return text
-        .replaceAll('•', '-')
+        .replaceAll('â€¢', '-')
         .replaceAll('\u2022', '-')
-        .replaceAll('₱', 'P ')
+        .replaceAll('â‚±', 'P ')
         .replaceAll('\u20B1', 'P ')
-        .replaceAll('–', '-')
-        .replaceAll('—', '-')
-        .replaceAll('“', '"')
-        .replaceAll('”', '"')
-        .replaceAll('‘', "'")
-        .replaceAll('’', "'");
+        .replaceAll('â€“', '-')
+        .replaceAll('â€”', '-')
+        .replaceAll('â€œ', '"')
+        .replaceAll('â€', '"')
+        .replaceAll('â€˜', "'")
+        .replaceAll('â€™', "'");
   }
 
   // ===========================================================================
@@ -10572,13 +11244,16 @@ class RemittanceReportService {
 lib/features/receipts/services/secretary_service.dart
 =====================================
 
+// =============================================================================
+// FILE: lib/features/receipts/services/secretary_service.dart
+// =============================================================================
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 
 class SecretaryService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  // Cached verified enum string from database to optimize subsequent inserts
   static String? _cachedValidTransactionType;
   static String? _cachedValidVoidStatus;
 
@@ -10592,8 +11267,43 @@ class SecretaryService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Register a new transaction with automatic enum resolution, custom date support,
-  /// linked issuance reference, and varchar(100) bound guard
+  /// Fetch all service requests (Pabuklat record requests) for Secretary review
+  static Future<List<Map<String, dynamic>>> getServiceRequests() async {
+    final response = await _client
+        .from('service_requests')
+        .select()
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// Update service request status (Secretary approval/rejection and pickup date assignment)
+  static Future<void> updateServiceRequestStatus({
+    required String serviceRequestId,
+    required String requestStatus,
+    DateTime? pickupDate,
+    String? rejectionReason,
+  }) async {
+    final secretaryId = AuthService.currentUser?.userId;
+
+    final updateMap = {
+      'request_status': requestStatus,
+      'reviewed_by': secretaryId,
+    };
+
+    if (pickupDate != null) {
+      updateMap['pickup_date'] = pickupDate.toIso8601String().substring(0, 10);
+    }
+    if (rejectionReason != null && rejectionReason.trim().isNotEmpty) {
+      updateMap['rejection_reason'] = rejectionReason.trim();
+    }
+
+    await _client
+        .from('service_requests')
+        .update(updateMap)
+        .eq('service_request_id', serviceRequestId);
+  }
+
+  /// Register a new transaction with automatic enum resolution
   static Future<Map<String, dynamic>> createTransaction({
     required String payorName,
     String? payorContact,
@@ -10611,13 +11321,11 @@ class SecretaryService {
     final userId = AuthService.currentUser?.userId ?? 'S26-0003';
     final effectiveDate = (transactionDate ?? DateTime.now()).toIso8601String();
 
-    // Strictly enforce varchar(100) limit on related_service to prevent Postgres 22001 exception
     final cleanService = relatedService.trim();
     final safeService = cleanService.length > 90
         ? '${cleanService.substring(0, 87)}...'
         : cleanService;
 
-    // 1. If not yet cached, attempt to discover the exact enum value from an existing row in public.parish_transactions
     if (_cachedValidTransactionType == null) {
       try {
         final existing = await _client
@@ -10635,11 +11343,9 @@ class SecretaryService {
       } catch (_) {}
     }
 
-    // 2. Build candidate pool to match against PostgreSQL's enum transaction_type
     final List<String> candidatePool = [
       if (_cachedValidTransactionType != null) _cachedValidTransactionType!,
       if (transactionType != null && transactionType.isNotEmpty) transactionType,
-      // Canonical and standard parish transaction_type enum members:
       'certificate',
       'Certificate',
       'donation',
@@ -10670,7 +11376,6 @@ class SecretaryService {
     final uniqueCandidates = candidatePool.toSet().toList();
     PostgrestException? lastEnumError;
 
-    // 3. Test candidates against the database enum constraint
     for (final candidate in uniqueCandidates) {
       final data = {
         'transaction_id': transactionId,
@@ -10700,27 +11405,25 @@ class SecretaryService {
             .select()
             .single();
 
-        // Successful insert! Cache the accepted enum value for fast subsequent inserts.
         _cachedValidTransactionType = candidate;
         return response;
       } on PostgrestException catch (e) {
         if (e.code == '22P02' && e.message.contains('transaction_type')) {
           lastEnumError = e;
-          continue; // Try next candidate in the pool
+          continue;
         }
         rethrow;
       }
     }
 
     if (lastEnumError != null) {
-      throw 'Invalid transaction_type enum value in database. You can check the exact enum definition in Supabase SQL editor using: SELECT enum_range(NULL::transaction_type);';
+      throw 'Invalid transaction_type enum value in database.';
     }
 
     throw 'Failed to record transaction in parish ledger.';
   }
 
-  /// Voids an existing ecclesiastical receipt, updates transaction status, appends reason audit log,
-  /// and registers a pastoral audit entry.
+  /// Voids an existing ecclesiastical receipt
   static Future<Map<String, dynamic>> voidTransaction({
     required String transactionId,
     required String reason,
@@ -10736,7 +11439,6 @@ class SecretaryService {
     final dateStamp =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    // 1. Retrieve the existing transaction details to preserve historical items
     final existing = await _client
         .from('parish_transactions')
         .select()
@@ -10750,7 +11452,6 @@ class SecretaryService {
         ? voidAuditLog
         : '$currentDetails\n$voidAuditLog';
 
-    // 2. Candidate enum pool for transaction_status ('cancelled', 'voided', 'void')
     final candidateStatuses = [
       if (_cachedValidVoidStatus != null) _cachedValidVoidStatus!,
       'cancelled',
@@ -10777,7 +11478,6 @@ class SecretaryService {
 
         _cachedValidVoidStatus = status;
 
-        // 3. Pastoral audit record logging (best effort)
         try {
           await _client.from('pastoral_audit_logs').insert({
             'log_id': 'LOG-${now.millisecondsSinceEpoch}',
@@ -10800,13 +11500,12 @@ class SecretaryService {
     }
 
     if (lastError != null) {
-      throw 'Could not void receipt due to database enum mismatch. Allowed transaction_status values required.';
+      throw 'Could not void receipt due to database enum mismatch.';
     }
 
     throw 'Failed to void transaction.';
   }
 
-  /// Helper to generate sequential receipt numbers: REC-YYYY-XXXXX
   static Future<String> _generateReceiptNumber() async {
     final year = DateTime.now().year;
     try {
@@ -10838,5 +11537,4 @@ class SecretaryService {
     }
   }
 }
-
 

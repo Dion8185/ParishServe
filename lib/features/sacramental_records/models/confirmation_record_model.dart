@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/models/confirmation_record_model.dart
+// =============================================================================
+
 class ConfirmationRecordModel {
   final String recordId;
   final String bookNumber;
@@ -12,7 +16,7 @@ class ConfirmationRecordModel {
   final String? confirmandSuffix;
   final DateTime? dateOfBirth;
   final int age;
-  final DateTime dateOfBaptism; // Required canonical date
+  final DateTime dateOfBaptism;
   final String churchBaptized;
   final String? address;
 
@@ -164,49 +168,56 @@ class ConfirmationRecordModel {
   String get bookReference => 'Book $bookNumber, Page $pageNumber, Line $lineNumber';
 
   factory ConfirmationRecordModel.fromMap(Map<String, dynamic> map) {
+    // Robust boolean parsing for both Supabase bool and SQLite int (1/0)
+    final rawVerified = map['is_verified'];
+    final bool isVerifiedParsed = rawVerified == true ||
+        rawVerified == 1 ||
+        rawVerified == 'true' ||
+        rawVerified == '1';
+
     return ConfirmationRecordModel(
-      recordId: map['record_id'] ?? '',
-      bookNumber: map['book_number'] ?? '',
-      pageNumber: map['page_number'] ?? '',
-      lineNumber: map['line_number'] ?? '',
+      recordId: map['record_id']?.toString() ?? '',
+      bookNumber: map['book_number']?.toString() ?? '',
+      pageNumber: map['page_number']?.toString() ?? '',
+      lineNumber: map['line_number']?.toString() ?? '',
       registryDate: DateTime.tryParse(map['registry_date']?.toString() ?? '') ?? DateTime.now(),
-      entryStatus: map['entry_status'] ?? 'ORIGINAL',
-      confirmandFirstName: map['confirmand_first_name'] ?? '',
-      confirmandMiddleName: map['confirmand_middle_name'],
-      confirmandLastName: map['confirmand_last_name'] ?? '',
-      confirmandSuffix: map['confirmand_suffix'],
+      entryStatus: map['entry_status']?.toString() ?? 'ORIGINAL',
+      confirmandFirstName: map['confirmand_first_name']?.toString() ?? '',
+      confirmandMiddleName: map['confirmand_middle_name']?.toString(),
+      confirmandLastName: map['confirmand_last_name']?.toString() ?? '',
+      confirmandSuffix: map['confirmand_suffix']?.toString(),
       dateOfBirth: map['date_of_birth'] != null ? DateTime.tryParse(map['date_of_birth'].toString()) : null,
       age: int.tryParse(map['age']?.toString() ?? '0') ?? 0,
       dateOfBaptism: DateTime.tryParse(map['date_of_baptism']?.toString() ?? '') ?? DateTime.now(),
-      churchBaptized: map['church_baptized'] ?? '',
-      address: map['address'],
-      fatherFirstName: map['father_first_name'] ?? '',
-      fatherMiddleName: map['father_middle_name'],
-      fatherLastName: map['father_last_name'] ?? '',
-      fatherOrigin: map['father_origin'],
-      motherFirstName: map['mother_first_name'] ?? '',
-      motherMiddleName: map['mother_middle_name'],
-      motherMaidenLastName: map['mother_maiden_last_name'] ?? '',
-      motherOrigin: map['mother_origin'],
-      sponsor1FirstName: map['sponsor_1_first_name'] ?? '',
-      sponsor1MiddleName: map['sponsor_1_middle_name'],
-      sponsor1LastName: map['sponsor_1_last_name'] ?? '',
-      sponsor1OriginAddress: map['sponsor_1_origin_address'],
-      sponsor2FirstName: map['sponsor_2_first_name'],
-      sponsor2MiddleName: map['sponsor_2_middle_name'],
-      sponsor2LastName: map['sponsor_2_last_name'],
-      sponsor2OriginAddress: map['sponsor_2_origin_address'],
+      churchBaptized: map['church_baptized']?.toString() ?? '',
+      address: map['address']?.toString(),
+      fatherFirstName: map['father_first_name']?.toString() ?? '',
+      fatherMiddleName: map['father_middle_name']?.toString(),
+      fatherLastName: map['father_last_name']?.toString() ?? '',
+      fatherOrigin: map['father_origin']?.toString(),
+      motherFirstName: map['mother_first_name']?.toString() ?? '',
+      motherMiddleName: map['mother_middle_name']?.toString(),
+      motherMaidenLastName: map['mother_maiden_last_name']?.toString() ?? '',
+      motherOrigin: map['mother_origin']?.toString(),
+      sponsor1FirstName: map['sponsor_1_first_name']?.toString() ?? '',
+      sponsor1MiddleName: map['sponsor_1_middle_name']?.toString(),
+      sponsor1LastName: map['sponsor_1_last_name']?.toString() ?? '',
+      sponsor1OriginAddress: map['sponsor_1_origin_address']?.toString(),
+      sponsor2FirstName: map['sponsor_2_first_name']?.toString(),
+      sponsor2MiddleName: map['sponsor_2_middle_name']?.toString(),
+      sponsor2LastName: map['sponsor_2_last_name']?.toString(),
+      sponsor2OriginAddress: map['sponsor_2_origin_address']?.toString(),
       dateOfConfirmation: DateTime.tryParse(map['date_of_confirmation']?.toString() ?? '') ?? DateTime.now(),
       stipend: double.tryParse(map['stipend']?.toString() ?? '0.00') ?? 0.00,
-      ministerFirstName: map['minister_first_name'] ?? '',
-      ministerMiddleName: map['minister_middle_name'],
-      ministerLastName: map['minister_last_name'] ?? '',
-      parishName: map['parish_name'] ?? 'St. John Paul II Parish',
-      remarks: map['remarks'],
-      scannedImageUrl: map['scanned_image_url'],
-      ocrRawText: map['ocr_raw_text'],
-      isVerified: map['is_verified'] ?? false,
-      encodedBy: map['encoded_by'],
+      ministerFirstName: map['minister_first_name']?.toString() ?? '',
+      ministerMiddleName: map['minister_middle_name']?.toString(),
+      ministerLastName: map['minister_last_name']?.toString() ?? '',
+      parishName: map['parish_name']?.toString() ?? 'St. John Paul II Parish',
+      remarks: map['remarks']?.toString(),
+      scannedImageUrl: map['scanned_image_url']?.toString(),
+      ocrRawText: map['ocr_raw_text']?.toString(),
+      isVerified: isVerifiedParsed,
+      encodedBy: map['encoded_by']?.toString(),
       dateEncoded: map['date_encoded'] != null ? DateTime.tryParse(map['date_encoded'].toString()) : null,
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
     );

@@ -1,7 +1,14 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/services/certificate_service.dart
+// =============================================================================
+
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/database/local_database_service.dart';
+import '../../../core/services/records_sync_service.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/certificate_issuance_model.dart';
 import '../models/certificate_template_model.dart';
@@ -16,7 +23,7 @@ class CertificateService {
   /// Dynamically resolves the base verification endpoint from the hosting environment.
   static String get verificationBaseUrl {
     if (kIsWeb) {
-      final origin = Uri.base.origin; // Dynamically retrieves e.g. https://parishserve.web.app
+      final origin = Uri.base.origin;
       return '$origin/verify';
     }
     return '$_defaultProductionDomain/verify';
@@ -32,18 +39,44 @@ class CertificateService {
   // ===========================================================================
 
   /// Fetches the centralized Diocese Logo and Parish Seal configuration.
+  /// On Web or Online: Queries Supabase and caches settings locally in SQLite.
+  /// Offline: Reads from local SQLite without failing.
   static Future<Map<String, dynamic>> getGlobalEmblemSettings() async {
-    try {
-      final response = await _client
-          .from('parish_certificate_settings')
-          .select()
-          .eq('id', 'global')
-          .maybeSingle();
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-      if (response != null) {
-        return response;
-      }
-    } catch (_) {}
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('parish_certificate_settings')
+            .select()
+            .eq('id', 'global')
+            .maybeSingle();
+
+        if (response != null) {
+          final resMap = Map<String, dynamic>.from(response);
+          if (!kIsWeb) {
+            RecordsSyncService.instance.cacheRemoteRecordsLocally(
+              'parish_certificate_settings',
+              [resMap],
+            );
+          }
+          return resMap;
+        }
+      } catch (_) {}
+    }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final rows = await db.query(
+          'parish_certificate_settings',
+          where: 'id = ?',
+          whereArgs: ['global'],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) return rows.first;
+      } catch (_) {}
+    }
 
     return {
       'diocese_logo_url': null,
@@ -62,91 +95,173 @@ class CertificateService {
   }) async {
     final now = DateTime.now().toIso8601String();
 
-    // 1. Update the centralized settings table
-    await _client.from('parish_certificate_settings').upsert({
+    final data = {
       'id': 'global',
       'diocese_logo_url': dioceseLogoUrl,
       'parish_seal_url': parishSealUrl,
       'show_diocese_logo': showDioceseLogo,
       'show_parish_seal': showParishSeal,
       'updated_at': now,
-    });
-
-    // 2. Cascade update to all existing certificate templates in the database
-    final Map<String, dynamic> templateUpdate = {
-      'show_diocese_logo': showDioceseLogo,
-      'show_parish_seal': showParishSeal,
-      'updated_at': now,
     };
-    if (dioceseLogoUrl != null) templateUpdate['diocese_logo_url'] = dioceseLogoUrl;
-    if (parishSealUrl != null) templateUpdate['parish_seal_url'] = parishSealUrl;
 
-    await _client.from('certificate_templates').update(templateUpdate).neq('template_id', '');
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        // 1. Update the centralized settings table
+        await _client.from('parish_certificate_settings').upsert(data);
+
+        // 2. Cascade update to all existing certificate templates in Supabase
+        final Map<String, dynamic> templateUpdate = {
+          'show_diocese_logo': showDioceseLogo,
+          'show_parish_seal': showParishSeal,
+          'updated_at': now,
+        };
+        if (dioceseLogoUrl != null) templateUpdate['diocese_logo_url'] = dioceseLogoUrl;
+        if (parishSealUrl != null) templateUpdate['parish_seal_url'] = parishSealUrl;
+
+        await _client
+            .from('certificate_templates')
+            .update(templateUpdate)
+            .neq('template_id', '');
+
+        if (!kIsWeb) {
+          RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'parish_certificate_settings',
+            [data],
+          );
+        }
+        return;
+      } catch (_) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    // Offline fallback for Native
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'parish_certificate_settings',
+      recordId: 'global',
+      operation: 'UPDATE',
+      data: data,
+    );
   }
 
   // ===========================================================================
-  // 2. Template Management CRUD
+  // 2. Template Management CRUD (Default & User-Created Custom Templates)
   // ===========================================================================
 
   /// Fetches active templates for a given sacrament, prioritizing the default template.
-  static Future<List<CertificateTemplateModel>> getTemplatesForSacrament(String sacramentType) async {
-    final response = await _client
-        .from('certificate_templates')
-        .select()
-        .eq('sacrament_type', sacramentType)
-        .eq('is_active', true)
-        .order('is_default', ascending: false)
-        .order('created_at', ascending: false);
+  /// Works 100% offline from SQLite, returning all custom user templates.
+  static Future<List<CertificateTemplateModel>> getTemplatesForSacrament(
+      String sacramentType,
+      ) async {
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    return (response as List)
-        .map((row) => CertificateTemplateModel.fromMap(row as Map<String, dynamic>))
-        .toList();
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('certificate_templates')
+            .select()
+            .eq('sacrament_type', sacramentType)
+            .eq('is_active', true)
+            .order('is_default', ascending: false)
+            .order('created_at', ascending: false);
+
+        final list = (response as List)
+            .map((r) => Map<String, dynamic>.from(r as Map))
+            .toList();
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'certificate_templates',
+            list,
+          );
+        }
+
+        return list.map((row) => CertificateTemplateModel.fromMap(row)).toList();
+      } catch (_) {
+        if (kIsWeb) return [];
+      }
+    }
+
+    // Direct SQLite Query
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final rows = await db.query(
+          'certificate_templates',
+          where: 'sacrament_type = ? AND (is_active = 1 OR is_active = "true")',
+          orderBy: 'is_default DESC, created_at DESC',
+        );
+        return rows.map((r) => CertificateTemplateModel.fromMap(r)).toList();
+      } catch (_) {}
+    }
+
+    return [];
   }
 
-  /// Fetches all templates across all sacraments (including inactive) for administrative management.
+  /// Fetches all templates across all sacraments for administrative management.
+  /// Supports both online live sync and offline SQLite cache retrieval.
   static Future<List<CertificateTemplateModel>> getAllTemplates() async {
-    final response = await _client
-        .from('certificate_templates')
-        .select()
-        .order('sacrament_type', ascending: true)
-        .order('is_default', ascending: false)
-        .order('created_at', ascending: false);
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    return (response as List)
-        .map((row) => CertificateTemplateModel.fromMap(row as Map<String, dynamic>))
-        .toList();
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('certificate_templates')
+            .select()
+            .order('sacrament_type', ascending: true)
+            .order('is_default', ascending: false)
+            .order('created_at', ascending: false);
+
+        final list = (response as List)
+            .map((r) => Map<String, dynamic>.from(r as Map))
+            .toList();
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'certificate_templates',
+            list,
+          );
+        }
+
+        return list.map((row) => CertificateTemplateModel.fromMap(row)).toList();
+      } catch (_) {
+        if (kIsWeb) return [];
+      }
+    }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final rows = await db.query(
+          'certificate_templates',
+          orderBy: 'sacrament_type ASC, is_default DESC, created_at DESC',
+        );
+        return rows.map((r) => CertificateTemplateModel.fromMap(r)).toList();
+      } catch (_) {}
+    }
+
+    return [];
   }
 
   /// Retrieves the default template for a specific sacrament.
-  static Future<CertificateTemplateModel?> getDefaultTemplate(String sacramentType) async {
-    final response = await _client
-        .from('certificate_templates')
-        .select()
-        .eq('sacrament_type', sacramentType)
-        .eq('is_active', true)
-        .eq('is_default', true)
-        .maybeSingle();
+  static Future<CertificateTemplateModel?> getDefaultTemplate(
+      String sacramentType,
+      ) async {
+    final templates = await getTemplatesForSacrament(sacramentType);
+    if (templates.isEmpty) return null;
 
-    if (response != null) {
-      return CertificateTemplateModel.fromMap(response);
+    try {
+      return templates.firstWhere((t) => t.isDefault);
+    } catch (_) {
+      return templates.first;
     }
-
-    final fallback = await _client
-        .from('certificate_templates')
-        .select()
-        .eq('sacrament_type', sacramentType)
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle();
-
-    if (fallback != null) {
-      return CertificateTemplateModel.fromMap(fallback);
-    }
-    return null;
   }
 
-  /// Saves a new certificate template, inheriting the global emblems if not explicitly set.
-  static Future<CertificateTemplateModel> createTemplate(CertificateTemplateModel template) async {
+  /// Saves a new certificate template, inheriting global emblems if not explicitly set.
+  static Future<CertificateTemplateModel> createTemplate(
+      CertificateTemplateModel template,
+      ) async {
     final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
     final globalEmblems = await getGlobalEmblemSettings();
 
@@ -155,7 +270,6 @@ class CertificateService {
     map['created_at'] = DateTime.now().toIso8601String();
     map['updated_at'] = DateTime.now().toIso8601String();
 
-    // Inherit global emblems
     map['diocese_logo_url'] ??= globalEmblems['diocese_logo_url'];
     map['parish_seal_url'] ??= globalEmblems['parish_seal_url'];
     map['show_diocese_logo'] = globalEmblems['show_diocese_logo'] ?? true;
@@ -165,17 +279,42 @@ class CertificateService {
       await _unsetDefaultTemplates(template.sacramentType);
     }
 
-    final response = await _client
-        .from('certificate_templates')
-        .insert(map)
-        .select()
-        .single();
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('certificate_templates')
+            .insert(map)
+            .select()
+            .single();
 
-    return CertificateTemplateModel.fromMap(response);
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'certificate_templates',
+            [response],
+          );
+        }
+
+        return CertificateTemplateModel.fromMap(response);
+      } catch (_) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'certificate_templates',
+      recordId: template.templateId,
+      operation: 'INSERT',
+      data: map,
+    );
+
+    return CertificateTemplateModel.fromMap(map);
   }
 
   /// Updates an existing template and increments its version number to preserve snapshot history.
-  static Future<CertificateTemplateModel> updateTemplate(CertificateTemplateModel template) async {
+  static Future<CertificateTemplateModel> updateTemplate(
+      CertificateTemplateModel template,
+      ) async {
     final map = template.toMap();
     map['version'] = template.version + 1;
     map['updated_at'] = DateTime.now().toIso8601String();
@@ -185,14 +324,37 @@ class CertificateService {
       await _unsetDefaultTemplates(template.sacramentType, excludeId: template.templateId);
     }
 
-    final response = await _client
-        .from('certificate_templates')
-        .update(map)
-        .eq('template_id', template.templateId)
-        .select()
-        .single();
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('certificate_templates')
+            .update(map)
+            .eq('template_id', template.templateId)
+            .select()
+            .single();
 
-    return CertificateTemplateModel.fromMap(response);
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'certificate_templates',
+            [response],
+          );
+        }
+
+        return CertificateTemplateModel.fromMap(response);
+      } catch (_) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'certificate_templates',
+      recordId: template.templateId,
+      operation: 'UPDATE',
+      data: map,
+    );
+
+    return CertificateTemplateModel.fromMap(map);
   }
 
   /// Clones an existing template with a new name.
@@ -200,14 +362,23 @@ class CertificateService {
       String sourceTemplateId,
       String newTemplateName,
       ) async {
-    final source = await _client
-        .from('certificate_templates')
-        .select()
-        .eq('template_id', sourceTemplateId)
-        .single();
+    final templates = await getAllTemplates();
+    CertificateTemplateModel? model;
+    try {
+      model = templates.firstWhere((t) => t.templateId == sourceTemplateId);
+    } catch (_) {}
 
-    final model = CertificateTemplateModel.fromMap(source);
-    final newId = 'TPL-${model.sacramentType.substring(0, 3).toUpperCase()}-${DateTime.now().millisecondsSinceEpoch % 100000}';
+    if (model == null) {
+      final source = await _client
+          .from('certificate_templates')
+          .select()
+          .eq('template_id', sourceTemplateId)
+          .single();
+      model = CertificateTemplateModel.fromMap(source);
+    }
+
+    final newId =
+        'TPL-${model.sacramentType.substring(0, 3).toUpperCase()}-${DateTime.now().millisecondsSinceEpoch % 100000}';
 
     final clone = model.copyWith(
       templateId: newId,
@@ -222,43 +393,120 @@ class CertificateService {
   }
 
   /// Sets a specific template as default for its sacrament.
-  static Future<void> setDefaultTemplate(String templateId, String sacramentType) async {
+  static Future<void> setDefaultTemplate(
+      String templateId,
+      String sacramentType,
+      ) async {
     await _unsetDefaultTemplates(sacramentType);
-    await _client
-        .from('certificate_templates')
-        .update({'is_default': true, 'updated_at': DateTime.now().toIso8601String()})
-        .eq('template_id', templateId);
+
+    final updateData = {
+      'is_default': true,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client
+            .from('certificate_templates')
+            .update(updateData)
+            .eq('template_id', templateId);
+        return;
+      } catch (_) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'certificate_templates',
+      recordId: templateId,
+      operation: 'UPDATE',
+      data: updateData,
+    );
   }
 
   /// Activates or deactivates a template.
-  static Future<void> toggleTemplateStatus(String templateId, bool isActive) async {
-    await _client
-        .from('certificate_templates')
-        .update({'is_active': isActive, 'updated_at': DateTime.now().toIso8601String()})
-        .eq('template_id', templateId);
+  static Future<void> toggleTemplateStatus(
+      String templateId,
+      bool isActive,
+      ) async {
+    final updateData = {
+      'is_active': isActive,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client
+            .from('certificate_templates')
+            .update(updateData)
+            .eq('template_id', templateId);
+        return;
+      } catch (_) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'certificate_templates',
+      recordId: templateId,
+      operation: 'UPDATE',
+      data: updateData,
+    );
   }
 
-  static Future<void> _unsetDefaultTemplates(String sacramentType, {String? excludeId}) async {
-    var query = _client
-        .from('certificate_templates')
-        .update({'is_default': false})
-        .eq('sacrament_type', sacramentType);
+  static Future<void> _unsetDefaultTemplates(
+      String sacramentType, {
+        String? excludeId,
+      }) async {
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        var query = _client
+            .from('certificate_templates')
+            .update({'is_default': false})
+            .eq('sacrament_type', sacramentType);
 
-    if (excludeId != null) {
-      query = query.neq('template_id', excludeId);
+        if (excludeId != null) {
+          query = query.neq('template_id', excludeId);
+        }
+        await query;
+      } catch (_) {}
     }
-    await query;
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        if (excludeId != null) {
+          await db.update(
+            'certificate_templates',
+            {'is_default': 0},
+            where: 'sacrament_type = ? AND template_id != ?',
+            whereArgs: [sacramentType, excludeId],
+          );
+        } else {
+          await db.update(
+            'certificate_templates',
+            {'is_default': 0},
+            where: 'sacrament_type = ?',
+            whereArgs: [sacramentType],
+          );
+        }
+      } catch (_) {}
+    }
   }
 
   // ===========================================================================
   // 3. Uploadable Certificate Assets (Borders, Backgrounds & Logos)
   // ===========================================================================
 
-  /// Uploads a decorative border, background image, or seal to the Supabase storage bucket.
+  /// Uploads a decorative border, background image, or seal to the Supabase storage bucket
+  /// and immediately caches the raw binary bytes in local SQLite for offline PDF printing.
   static Future<String> uploadCertificateAsset({
     required Uint8List fileBytes,
     required String fileExtension,
-    required String assetCategory, // 'borders', 'backgrounds', 'logos', 'signatures'
+    required String assetCategory,
   }) async {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final cleanExt = fileExtension.replaceAll('.', '').toLowerCase();
@@ -273,15 +521,27 @@ class CertificateService {
       ),
     );
 
-    return _client.storage.from('certificate-assets').getPublicUrl(fileName);
+    final publicUrl =
+    _client.storage.from('certificate-assets').getPublicUrl(fileName);
+
+    if (!kIsWeb) {
+      await LocalDatabaseService.instance.cacheAsset(
+        publicUrl,
+        assetCategory,
+        fileBytes,
+        mimeType: 'image/$cleanExt',
+      );
+    }
+
+    return publicUrl;
   }
 
   // ===========================================================================
-  // 4. Official Issuance Generation & Verification Tokenization
+  // 4. Official Issuance Generation & Verification Tokenization (Offline Ready)
   // ===========================================================================
 
-  /// Issues an official certificate, creating a permanent issuance snapshot,
-  /// linked to the corresponding payment transaction/receipt number in the Receipt System.
+  /// Issues an official certificate, creating a permanent issuance snapshot.
+  /// Operates seamlessly offline by writing to SQLite and queuing for auto-sync.
   static Future<CertificateIssuanceModel> issueCertificate({
     required String recordId,
     required String sacramentType,
@@ -299,25 +559,33 @@ class CertificateService {
     String? transactionId,
     String? receiptNumber,
   }) async {
-    final effectiveVerificationId = verificationId ?? generateSecureVerificationId();
-    final effectiveQrUrl = qrVerificationUrl ?? buildVerificationUrl(effectiveVerificationId);
+    final effectiveVerificationId =
+        verificationId ?? generateSecureVerificationId();
+    final effectiveQrUrl =
+        qrVerificationUrl ?? buildVerificationUrl(effectiveVerificationId);
     final issuanceId = await _generateIssuanceId();
 
+    final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
+    final now = DateTime.now();
+
     String? pdfPath;
-    if (generatedPdfBytes != null) {
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+
+    if ((isOnline || kIsWeb) && generatedPdfBytes != null) {
       try {
-        final pdfFileName = 'issued_pdfs/$sacramentType/${issuanceId}_$effectiveVerificationId.pdf';
+        final pdfFileName =
+            'issued_pdfs/$sacramentType/${issuanceId}_$effectiveVerificationId.pdf';
         await _client.storage.from('certificate-assets').uploadBinary(
           pdfFileName,
           generatedPdfBytes,
-          fileOptions: const FileOptions(contentType: 'application/pdf', upsert: true),
+          fileOptions: const FileOptions(
+            contentType: 'application/pdf',
+            upsert: true,
+          ),
         );
         pdfPath = pdfFileName;
       } catch (_) {}
     }
-
-    final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
-    final now = DateTime.now();
 
     final issuance = CertificateIssuanceModel(
       issuanceId: issuanceId,
@@ -345,45 +613,102 @@ class CertificateService {
       createdAt: now,
     );
 
-    final response = await _client
-        .from('certificate_issuances')
-        .insert(issuance.toMap())
-        .select()
-        .single();
-
-    // Bi-directional link back to parish_transactions if transactionId was created
-    if (transactionId != null && transactionId.isNotEmpty) {
+    if (isOnline || kIsWeb) {
       try {
-        await _client.from('parish_transactions').update({
-          'related_issuance_id': issuanceId,
-        }).eq('transaction_id', transactionId);
-      } catch (_) {}
+        final response = await _client
+            .from('certificate_issuances')
+            .insert(issuance.toMap())
+            .select()
+            .single();
+
+        if (transactionId != null && transactionId.isNotEmpty) {
+          try {
+            await _client.from('parish_transactions').update({
+              'related_issuance_id': issuanceId,
+            }).eq('transaction_id', transactionId);
+          } catch (_) {}
+        }
+
+        try {
+          await _client.from('pastoral_audit_logs').insert({
+            'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+            'priest_id': currentUserId,
+            'action_type': 'CERTIFICATE_ISSUED',
+            'target_reference_id': recordId,
+            'justification':
+            'Issued $sacramentType Certificate for $recipientName. Purpose: $purpose. Receipt: ${receiptNumber ?? "None/Exempt"}. Verification ID: $effectiveVerificationId',
+          });
+        } catch (_) {}
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'certificate_issuances',
+            [response],
+          );
+        }
+
+        return CertificateIssuanceModel.fromMap(response);
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
     }
 
-    try {
-      await _client.from('pastoral_audit_logs').insert({
-        'log_id': 'LOG-${now.millisecondsSinceEpoch}',
-        'priest_id': currentUserId,
-        'action_type': 'CERTIFICATE_ISSUED',
-        'target_reference_id': recordId,
-        'justification': 'Issued $sacramentType Certificate for $recipientName. Purpose: $purpose. Receipt: ${receiptNumber ?? "None/Exempt"}. Verification ID: $effectiveVerificationId',
-      });
-    } catch (_) {}
+    // Offline write on Native (Saves to SQLite table & sync queue)
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'certificate_issuances',
+      recordId: issuanceId,
+      operation: 'INSERT',
+      data: issuance.toMap(),
+    );
 
-    return CertificateIssuanceModel.fromMap(response);
+    return issuance;
   }
 
   /// Fetches issuance history for a specific sacramental record.
-  static Future<List<CertificateIssuanceModel>> getIssuancesForRecord(String recordId) async {
-    final response = await _client
-        .from('certificate_issuances')
-        .select()
-        .eq('record_id', recordId)
-        .order('issued_at', ascending: false);
+  static Future<List<CertificateIssuanceModel>> getIssuancesForRecord(
+      String recordId,
+      ) async {
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    return (response as List)
-        .map((row) => CertificateIssuanceModel.fromMap(row as Map<String, dynamic>))
-        .toList();
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('certificate_issuances')
+            .select()
+            .eq('record_id', recordId)
+            .order('issued_at', ascending: false);
+
+        final list = (response as List)
+            .map((r) => Map<String, dynamic>.from(r as Map))
+            .toList();
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'certificate_issuances',
+            list,
+          );
+        }
+
+        return list.map((r) => CertificateIssuanceModel.fromMap(r)).toList();
+      } catch (_) {
+        if (kIsWeb) return [];
+      }
+    }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final rows = await db.query(
+          'certificate_issuances',
+          where: 'record_id = ?',
+          whereArgs: [recordId],
+          orderBy: 'issued_at DESC',
+        );
+        return rows.map((r) => CertificateIssuanceModel.fromMap(r)).toList();
+      } catch (_) {}
+    }
+
+    return [];
   }
 
   /// Revokes an existing issued certificate.
@@ -394,46 +719,90 @@ class CertificateService {
     final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
     final now = DateTime.now();
 
-    await _client.from('certificate_issuances').update({
+    final updateData = {
       'certificate_status': 'Revoked',
       'revocation_reason': reason,
       'revoked_at': now.toIso8601String(),
       'revoked_by': currentUserId,
-    }).eq('issuance_id', issuanceId);
+    };
 
-    try {
-      await _client.from('pastoral_audit_logs').insert({
-        'log_id': 'LOG-${now.millisecondsSinceEpoch}',
-        'priest_id': currentUserId,
-        'action_type': 'CERTIFICATE_REVOKED',
-        'target_reference_id': issuanceId,
-        'justification': 'Revoked Certificate $issuanceId. Reason: $reason',
-      });
-    } catch (_) {}
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client
+            .from('certificate_issuances')
+            .update(updateData)
+            .eq('issuance_id', issuanceId);
+
+        try {
+          await _client.from('pastoral_audit_logs').insert({
+            'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+            'priest_id': currentUserId,
+            'action_type': 'CERTIFICATE_REVOKED',
+            'target_reference_id': issuanceId,
+            'justification': 'Revoked Certificate $issuanceId. Reason: $reason',
+          });
+        } catch (_) {}
+        return;
+      } catch (_) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'certificate_issuances',
+      recordId: issuanceId,
+      operation: 'UPDATE',
+      data: updateData,
+    );
   }
 
-  /// Online Verification Lookup with real-time scan metrics tracking.
-  static Future<CertificateIssuanceModel?> verifyCertificate(String verificationId) async {
+  /// Verification lookup supporting both live Supabase lookup and local offline cache verification.
+  static Future<CertificateIssuanceModel?> verifyCertificate(
+      String verificationId,
+      ) async {
     final cleanToken = verificationId.trim().toUpperCase();
 
-    final response = await _client
-        .from('certificate_issuances')
-        .select()
-        .eq('verification_id', cleanToken)
-        .maybeSingle();
-
-    if (response != null) {
-      final model = CertificateIssuanceModel.fromMap(response);
-
-      // Increment scan counter and update timestamp asynchronously
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
       try {
-        await _client.from('certificate_issuances').update({
-          'last_scanned_at': DateTime.now().toIso8601String(),
-        }).eq('verification_id', cleanToken);
-      } catch (_) {}
+        final response = await _client
+            .from('certificate_issuances')
+            .select()
+            .eq('verification_id', cleanToken)
+            .maybeSingle();
 
-      return model;
+        if (response != null) {
+          final model = CertificateIssuanceModel.fromMap(response);
+
+          try {
+            await _client.from('certificate_issuances').update({
+              'last_scanned_at': DateTime.now().toIso8601String(),
+            }).eq('verification_id', cleanToken);
+          } catch (_) {}
+
+          return model;
+        }
+      } catch (_) {
+        if (kIsWeb) return null;
+      }
     }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final rows = await db.query(
+          'certificate_issuances',
+          where: 'verification_id = ?',
+          whereArgs: [cleanToken],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) {
+          return CertificateIssuanceModel.fromMap(rows.first);
+        }
+      } catch (_) {}
+    }
+
     return null;
   }
 
@@ -459,26 +828,54 @@ class CertificateService {
 
   static Future<String> _generateIssuanceId() async {
     final year = DateTime.now().year;
-    try {
-      final records = await _client
-          .from('certificate_issuances')
-          .select('issuance_id')
-          .like('issuance_id', 'ISS-$year-%');
+    int highest = 0;
 
-      int highest = 0;
-      for (final r in records) {
-        final id = r['issuance_id']?.toString() ?? '';
-        final parts = id.split('-');
-        if (parts.length >= 3) {
-          final num = int.tryParse(parts[2]);
-          if (num != null && num > highest) highest = num;
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final records = await _client
+            .from('certificate_issuances')
+            .select('issuance_id')
+            .like('issuance_id', 'ISS-$year-%');
+
+        for (final r in records) {
+          final id = r['issuance_id']?.toString() ?? '';
+          final parts = id.split('-');
+          if (parts.length >= 3) {
+            final num = int.tryParse(parts[2]);
+            if (num != null && num > highest) highest = num;
+          }
+        }
+        final nextSeq = (highest + 1).toString().padLeft(4, '0');
+        return 'ISS-$year-$nextSeq';
+      } catch (_) {
+        if (kIsWeb) {
+          final fallback = (DateTime.now().millisecondsSinceEpoch % 10000)
+              .toString()
+              .padLeft(4, '0');
+          return 'ISS-$year-$fallback';
         }
       }
-      final nextSeq = (highest + 1).toString().padLeft(4, '0');
-      return 'ISS-$year-$nextSeq';
-    } catch (_) {
-      final fallback = (DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0');
-      return 'ISS-$year-$fallback';
     }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final rows = await db.rawQuery(
+          "SELECT issuance_id FROM certificate_issuances WHERE issuance_id LIKE 'ISS-$year-%'",
+        );
+        for (final r in rows) {
+          final id = r['issuance_id']?.toString() ?? '';
+          final parts = id.split('-');
+          if (parts.length >= 3) {
+            final num = int.tryParse(parts[2]);
+            if (num != null && num > highest) highest = num;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final nextSeq = (highest + 1).toString().padLeft(4, '0');
+    return 'ISS-$year-$nextSeq';
   }
 }

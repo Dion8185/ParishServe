@@ -17,7 +17,7 @@
 **ParishServe** is an enterprise-grade ecclesiastical administration and pastoral stewardship platform engineered specifically for Catholic parishes under the jurisdiction of the Diocese of San Pablo, Philippines, operating in strict compliance with the **Code of Canon Law** (*Codex Iuris Canonici*).
 
 The platform seamlessly connects seven core operational pillars:
-1. **Canonical Sacramental Register Digitization (Canon 535)** & Dynamic PDF/QR Certificate Generation.
+1. **Canonical Sacramental Register Digitization (Canon 535), Pabuklat Requests** & Dynamic PDF/QR Certificate Generation.
 2. **Parish Service Appointments, Mass Intention Scheduling** & LitCal Calendar Integration.
 3. **POS Cashiering, Financial Ledgering,** & Particulars Catalog Management.
 4. **Diocesan Asset Inventory (CustodiaIMS),** Reference Data Management, Security Watermarking, & Sticker Label Printing.
@@ -35,8 +35,8 @@ ParishServe enforces strict, role-based access control across all screens, servi
 | :--- | :--- | :--- |
 | **`superadmin`** | Super Administrator (S) | Unrestricted root system control across all modules, database tables, and settings. User account provisioning, role reassignment, account archiving (`AdminArchivedUsersPage`), hard deletion, global parish branding, certificate templates, and receipt configurations. |
 | **`admin`** | Administrator (A) | System manager for user governance, asset inventory, smart archive thresholds, and operational diagnostics. |
-| **`parishpriest`** | Parish Priest (P) | Supreme canonical authority and pastor. Full access to all 6 Sacramental Registers (Canon 535), Tuesday appointment approvals, mass intention approvals, official certificate signatory approvals, marginal notations, and immutable pastoral audit logs (`pastoral_audit_logs`). |
-| **`secretary`** | Parish Secretary (Sc) | Primary day-to-day administrative user. Operates POS cashiering (`PosCashierPage`), official receipt issuance, particulars catalog management (`ParticularsService`), appointment bookings, sacramental record entry, asset label batch printing, and certificate issuance. |
+| **`parishpriest`** | Parish Priest (P) | Supreme canonical authority and pastor. Full access to all 6 Sacramental Registers (Canon 535), Pabuklat record requests, Tuesday appointment approvals, mass intention approvals, official certificate signatory approvals, marginal notations, and immutable pastoral audit logs (`pastoral_audit_logs`). |
+| **`secretary`** | Parish Secretary (Sc) | Primary day-to-day administrative user. Operates POS cashiering (`PosCashierPage`), official receipt issuance, particulars catalog management (`ParticularsService`), appointment bookings, sacramental record entry, Pabuklat requests (`PabuklatRequestsModal`, `PabuklatService`), asset label batch printing, and certificate issuance. |
 | **`encoder`** | Records Encoder (E) | Data entry specialist for field digitization of physical ledger books (*Liber Baptismorum*, etc.), OCR scan verification, and physical asset inventory tagging. |
 | **`pfc`** | Parish Finance Council (PFC) | Financial auditor access for receipt reviews, particulars catalog oversight, cashiering reports, remittance exports (`RemittanceReportService`), and diocesan asset valuation. |
 | **`user`** | Parishioner / Client (U) | Self-service portal access for parishioners to book appointments, request mass intentions, track personal transaction receipts, read daily Catholic mass scriptures, verify official certificate authenticity via QR tokens, and submit Pabuklat requests. |
@@ -83,10 +83,11 @@ The system architecture combines a Flutter multi-platform frontend with Supabase
 
 ## 4. Core Functional Modules
 
-### 1. Canonical Sacramental Records Digitization & Verification
+### 1. Canonical Sacramental Records Digitization, Pabuklat & Verification
 * **6 Canonical Registers:** *Liber Baptismorum* (Baptisms), *Liber Confirmatorum* (Confirmations), *Liber Primae Communionis* (First Holy Communions), *Liber Matrimoniorum* (Matrimonies), *Liber Defunctorum* (Deaths/Burials), and *Liber Conversorum* (Conversions).
 * **Physical Coordinates Validation:** Coordinates check for Book (1–200), Page (1–100), and Line (1–10) to prevent duplicate book/page/line registration.
 * **Canon 877 §2 Unwed Paternity Compliance:** Handles unacknowledged paternity ("Not Indicated" fills canonical placeholders and displays "—" on certificates).
+* **Pabuklat Record Search Requests (`PabuklatService`, `PabuklatRequestsModal`):** Search request workflow for parishioners and parish office staff to request and inspect physical register entries.
 * **Certificate Engine & Visual Canvas Designer:** Simple Mode and Canva-Style Visual Designer Mode (`CertificateCanvasDesignerPage`) with drag-and-drop elements, custom styles, resizable text, and seal/signature placements.
 * **Cryptographic QR Verification Tokenization:** Generates non-sequential UUID v4 verification tokens (`verification_id`) embedded as QR codes pointing to `https://parishserve.web.app/verify?v=<TOKEN>`.
 
@@ -169,9 +170,9 @@ ParishServe features an adaptive theme system (`ParishColors`) supporting clean 
 ## 7. Offline Codebase Bundle Directory
 
 The project root directory maintains 6 synchronized text bundle files for offline code review:
-1. `parishserve_codebase.txt`: Complete source tree across all 128 Dart files in `lib/`.
+1. `parishserve_codebase.txt`: Complete source tree across all 130 Dart files in `lib/`.
 2. `receipts_codebase.txt`: All 14 Dart files in the Receipt Management module.
 3. `assets_codebase.txt`: All 14 Dart files in the Asset Inventory module.
 4. `sacramental_records_code.txt`: All 39 Dart files in the Sacramental Records module.
-5. `parishserve_appointments_bundle.txt`: All 22 Dart files in the Appointments module.
+5. `parishserve_appointments_bundle.txt`: All 28 Dart files in the Appointments module.
 6. `parishserve_system_context.txt`: Exhaustive system context documentation.

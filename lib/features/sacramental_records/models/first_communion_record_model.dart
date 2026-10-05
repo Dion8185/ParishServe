@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/models/first_communion_record_model.dart
+// =============================================================================
+
 class FirstCommunionRecordModel {
   final String recordId;
   final int year;
@@ -99,29 +103,36 @@ class FirstCommunionRecordModel {
   String get referenceDisplay => 'Year $year • Control # $controlNumber';
 
   factory FirstCommunionRecordModel.fromMap(Map<String, dynamic> map) {
+    // Robust boolean parsing for both Supabase bool and SQLite int (1/0)
+    final rawVerified = map['is_verified'];
+    final bool isVerifiedParsed = rawVerified == true ||
+        rawVerified == 1 ||
+        rawVerified == 'true' ||
+        rawVerified == '1';
+
     return FirstCommunionRecordModel(
-      recordId: map['record_id'] ?? '',
+      recordId: map['record_id']?.toString() ?? '',
       year: int.tryParse(map['year']?.toString() ?? '${DateTime.now().year}') ?? DateTime.now().year,
-      controlNumber: map['control_number'] ?? '',
-      communicantFirstName: map['communicant_first_name'] ?? '',
-      communicantMiddleName: map['communicant_middle_name'],
-      communicantLastName: map['communicant_last_name'] ?? '',
+      controlNumber: map['control_number']?.toString() ?? '',
+      communicantFirstName: map['communicant_first_name']?.toString() ?? '',
+      communicantMiddleName: map['communicant_middle_name']?.toString(),
+      communicantLastName: map['communicant_last_name']?.toString() ?? '',
       dateOfCommunion: DateTime.tryParse(map['date_of_communion']?.toString() ?? '') ?? DateTime.now(),
-      baptismParish: map['baptism_parish'] ?? '',
+      baptismParish: map['baptism_parish']?.toString() ?? '',
       baptismDate: map['baptism_date'] != null ? DateTime.tryParse(map['baptism_date'].toString()) : null,
-      fatherFirstName: map['father_first_name'],
-      fatherMiddleName: map['father_middle_name'],
-      fatherLastName: map['father_last_name'],
-      motherFirstName: map['mother_first_name'],
-      motherMiddleName: map['mother_middle_name'],
-      motherMaidenLastName: map['mother_maiden_last_name'],
-      ministerFirstName: map['minister_first_name'] ?? '',
-      ministerMiddleName: map['minister_middle_name'],
-      ministerLastName: map['minister_last_name'] ?? '',
-      remarks: map['remarks'],
-      scannedImageUrl: map['scanned_image_url'],
-      isVerified: map['is_verified'] ?? false,
-      encodedBy: map['encoded_by'],
+      fatherFirstName: map['father_first_name']?.toString(),
+      fatherMiddleName: map['father_middle_name']?.toString(),
+      fatherLastName: map['father_last_name']?.toString(),
+      motherFirstName: map['mother_first_name']?.toString(),
+      motherMiddleName: map['mother_middle_name']?.toString(),
+      motherMaidenLastName: map['mother_maiden_last_name']?.toString(),
+      ministerFirstName: map['minister_first_name']?.toString() ?? '',
+      ministerMiddleName: map['minister_middle_name']?.toString(),
+      ministerLastName: map['minister_last_name']?.toString() ?? '',
+      remarks: map['remarks']?.toString(),
+      scannedImageUrl: map['scanned_image_url']?.toString(),
+      isVerified: isVerifiedParsed,
+      encodedBy: map['encoded_by']?.toString(),
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
     );
   }

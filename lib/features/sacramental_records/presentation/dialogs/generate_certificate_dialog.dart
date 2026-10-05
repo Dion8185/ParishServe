@@ -1,7 +1,13 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/dialogs/generate_certificate_dialog.dart
+// =============================================================================
+
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/database/local_database_service.dart';
+import '../../../../core/services/records_sync_service.dart';
 import '../../../receipts/models/pos_item_model.dart';
 import '../../../receipts/presentation/dialogs/receipt_detail_dialog.dart';
 import '../../../receipts/services/particulars_service.dart';
@@ -55,10 +61,12 @@ class GenerateCertificateDialog extends StatefulWidget {
   });
 
   @override
-  State<GenerateCertificateDialog> createState() => _GenerateCertificateDialogState();
+  State<GenerateCertificateDialog> createState() =>
+      _GenerateCertificateDialogState();
 }
 
-class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
+class _GenerateCertificateDialogState
+    extends State<GenerateCertificateDialog> {
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoadingTemplates = true;
@@ -69,7 +77,8 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
   CertificateTemplateModel? _selectedTemplate;
 
   String _selectedPurposePreset = 'For Personal Records';
-  final TextEditingController _customPurposeController = TextEditingController();
+  final TextEditingController _customPurposeController =
+  TextEditingController();
 
   // Dynamic Receipt System Particulars Integration
   List<PosItemModel> _availableCertificateParticulars = [];
@@ -116,42 +125,68 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
 
     // 2. Baptism / Binyag / Pabuklat
     if (s.contains('bapt') || s.contains('binyag')) {
-      if (t.contains('bapt') || t.contains('binyag') || t.contains('pabuklat') || d.contains('bapt')) {
+      if (t.contains('bapt') ||
+          t.contains('binyag') ||
+          t.contains('pabuklat') ||
+          d.contains('bapt')) {
         return true;
       }
     }
 
     // 3. Confirmation / Kumpil
     if (s.contains('confirm') || s.contains('kumpil')) {
-      if (t.contains('confirm') || t.contains('kumpil') || d.contains('confirm')) {
+      if (t.contains('confirm') ||
+          t.contains('kumpil') ||
+          d.contains('confirm')) {
         return true;
       }
     }
 
     // 4. First Communion / Komunyon / Eucharist
-    if (s.contains('commun') || s.contains('eucharist') || s.contains('komunyon')) {
-      if (t.contains('commun') || t.contains('komunyon') || d.contains('commun')) {
+    if (s.contains('commun') ||
+        s.contains('eucharist') ||
+        s.contains('komunyon')) {
+      if (t.contains('commun') ||
+          t.contains('komunyon') ||
+          d.contains('commun')) {
         return true;
       }
     }
 
     // 5. Matrimony / Marriage / Kasal / Nuptial
-    if (s.contains('matrimon') || s.contains('marr') || s.contains('kasal') || s.contains('nuptial')) {
-      if (t.contains('marr') || t.contains('matrimon') || t.contains('kasal') || t.contains('nuptial') || d.contains('marr') || d.contains('matrimon')) {
+    if (s.contains('matrimon') ||
+        s.contains('marr') ||
+        s.contains('kasal') ||
+        s.contains('nuptial')) {
+      if (t.contains('marr') ||
+          t.contains('matrimon') ||
+          t.contains('kasal') ||
+          t.contains('nuptial') ||
+          d.contains('marr') ||
+          d.contains('matrimon')) {
         return true;
       }
     }
 
     // 6. Death / Burial / Funeral / Libing
-    if (s.contains('death') || s.contains('burial') || s.contains('funeral') || s.contains('libing')) {
-      if (t.contains('death') || t.contains('burial') || t.contains('funeral') || t.contains('libing') || d.contains('death')) {
+    if (s.contains('death') ||
+        s.contains('burial') ||
+        s.contains('funeral') ||
+        s.contains('libing')) {
+      if (t.contains('death') ||
+          t.contains('burial') ||
+          t.contains('funeral') ||
+          t.contains('libing') ||
+          d.contains('death')) {
         return true;
       }
     }
 
     // 7. Conversion
     if (s.contains('convert') || s.contains('conversion')) {
-      if (t.contains('convert') || t.contains('conversion') || d.contains('convert')) {
+      if (t.contains('convert') ||
+          t.contains('conversion') ||
+          d.contains('convert')) {
         return true;
       }
     }
@@ -165,82 +200,159 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
       _errorMessage = null;
     });
 
+    List<CertificateTemplateModel> templates = [];
+    List<PosItemModel> particulars = [];
+
+    // 1. Fetch certificate templates (from Supabase online or SQLite offline)
     try {
-      // 1. Fetch certificate templates for this sacrament
-      final templatesFuture = CertificateService.getTemplatesForSacrament(widget.sacramentType);
+      templates = await CertificateService.getTemplatesForSacrament(
+        widget.sacramentType,
+      );
+    } catch (_) {}
 
-      // 2. Fetch live particulars catalog from the Receipt Management system
-      final particularsFuture = ParticularsService.getParticulars(activeOnly: true);
-
-      final results = await Future.wait([templatesFuture, particularsFuture]);
-      final templates = results[0] as List<CertificateTemplateModel>;
-      final particulars = results[1] as List<PosItemModel>;
-
-      if (!mounted) return;
-
-      // 3. Filter certificate-applicable particulars
-      final List<PosItemModel> certParticulars = particulars.where((p) {
-        final cat = p.category.toLowerCase();
-        return cat.contains('cert') || _matchesSacrament(p.title, p.description, widget.sacramentType);
-      }).toList();
-
-      // If no certificate particulars are registered yet, allow any active particular as fallback
-      final candidateList = certParticulars.isNotEmpty ? certParticulars : particulars;
-
-      // 4. Find the best matching particular for this sacrament
-      PosItemModel? bestMatch;
-      for (final p in candidateList) {
-        if (_matchesSacrament(p.title, p.description, widget.sacramentType)) {
-          bestMatch = p;
-          break;
-        }
-      }
-
-      // If still not matched, pick first certificate particular or compute canonical fallback
-      bestMatch ??= candidateList.isNotEmpty ? candidateList.first : null;
-
-      double dynamicFee;
-      String dynamicTitle;
-
-      if (bestMatch != null) {
-        dynamicFee = bestMatch.defaultPrice;
-        dynamicTitle = bestMatch.title;
-      } else {
-        final sacramentLower = widget.sacramentType.toLowerCase();
-        dynamicFee = (sacramentLower.contains('matrimony') || sacramentLower.contains('marriage')) ? 200.00 : 150.00;
-        dynamicTitle = '${widget.sacramentType} Certificate (Pabuklat)';
-      }
-
-      setState(() {
-        _availableCertificateParticulars = candidateList;
-        _selectedParticular = bestMatch;
-        _resolvedFee = dynamicFee;
-        _resolvedServiceTitle = dynamicTitle;
-        _availableTemplates = templates;
-        if (templates.isNotEmpty) {
-          _selectedTemplate = templates.firstWhere(
-                (t) => t.isDefault,
-            orElse: () => templates.first,
+    // Direct SQLite fallback if remote query failed or returned empty
+    if (templates.isEmpty) {
+      final db = await LocalDatabaseService.instance.database;
+      if (db != null) {
+        try {
+          final rows = await db.query(
+            'certificate_templates',
+            where:
+            'sacrament_type = ? AND (is_active = 1 OR is_active = "true")',
+            orderBy: 'is_default DESC, created_at DESC',
           );
-          if (_selectedTemplate?.defaultPurpose != null &&
-              _selectedTemplate!.defaultPurpose.isNotEmpty) {
-            if (PlaceholderRegistry.standardPurposes.contains(_selectedTemplate!.defaultPurpose)) {
-              _selectedPurposePreset = _selectedTemplate!.defaultPurpose;
-            } else {
-              _selectedPurposePreset = 'Other / Custom Purpose';
-              _customPurposeController.text = _selectedTemplate!.defaultPurpose;
-            }
+          if (rows.isNotEmpty) {
+            templates =
+                rows.map((r) => CertificateTemplateModel.fromMap(r)).toList();
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Provision fallback canonical template if SQLite is newly initialized
+    if (templates.isEmpty) {
+      templates = [_generateFallbackTemplate(widget.sacramentType)];
+    }
+
+    // 2. Fetch live particulars catalog safely (fails gracefully offline)
+    try {
+      particulars =
+      await ParticularsService.getParticulars(activeOnly: true);
+    } catch (_) {
+      particulars = [];
+    }
+
+    if (!mounted) return;
+
+    // 3. Filter certificate-applicable particulars
+    final List<PosItemModel> certParticulars = particulars.where((p) {
+      final cat = p.category.toLowerCase();
+      return cat.contains('cert') ||
+          _matchesSacrament(p.title, p.description, widget.sacramentType);
+    }).toList();
+
+    final candidateList =
+    certParticulars.isNotEmpty ? certParticulars : particulars;
+
+    // 4. Find the best matching particular for this sacrament
+    PosItemModel? bestMatch;
+    for (final p in candidateList) {
+      if (_matchesSacrament(p.title, p.description, widget.sacramentType)) {
+        bestMatch = p;
+        break;
+      }
+    }
+
+    bestMatch ??= candidateList.isNotEmpty ? candidateList.first : null;
+
+    double dynamicFee;
+    String dynamicTitle;
+
+    if (bestMatch != null) {
+      dynamicFee = bestMatch.defaultPrice;
+      dynamicTitle = bestMatch.title;
+    } else {
+      final sacramentLower = widget.sacramentType.toLowerCase();
+      dynamicFee = (sacramentLower.contains('matrimony') ||
+          sacramentLower.contains('marriage'))
+          ? 200.00
+          : 150.00;
+      dynamicTitle = '${widget.sacramentType} Certificate (Pabuklat)';
+    }
+
+    setState(() {
+      _availableCertificateParticulars = candidateList;
+      _selectedParticular = bestMatch;
+      _resolvedFee = dynamicFee;
+      _resolvedServiceTitle = dynamicTitle;
+      _availableTemplates = templates;
+      if (templates.isNotEmpty) {
+        _selectedTemplate = templates.firstWhere(
+              (t) => t.isDefault,
+          orElse: () => templates.first,
+        );
+        if (_selectedTemplate?.defaultPurpose != null &&
+            _selectedTemplate!.defaultPurpose.isNotEmpty) {
+          if (PlaceholderRegistry.standardPurposes
+              .contains(_selectedTemplate!.defaultPurpose)) {
+            _selectedPurposePreset = _selectedTemplate!.defaultPurpose;
+          } else {
+            _selectedPurposePreset = 'Other / Custom Purpose';
+            _customPurposeController.text = _selectedTemplate!.defaultPurpose;
           }
         }
-        _isLoadingTemplates = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to load templates and pricing: $e';
-        _isLoadingTemplates = false;
-      });
+      }
+      _isLoadingTemplates = false;
+    });
+  }
+
+  CertificateTemplateModel _generateFallbackTemplate(String sacrament) {
+    String wording = '';
+    switch (sacrament) {
+      case 'Baptism':
+        wording =
+        'This is to Certify that {Full Name}, child of {Father Name} and {Mother Name}, born in {Place of Birth} on {Date of Birth}, was solemnly Baptized according to the Rites of the Roman Catholic Church on {Date of Baptism} by {Minister Name}.\n\nSponsors were {Sponsor 1} and {Sponsor 2}.\n\nIssued upon request for {Purpose}.';
+        break;
+      case 'Confirmation':
+        wording =
+        'This is to Certify that {Full Name}, child of {Father Name} and {Mother Name}, baptized at {Church of Baptism} on {Date of Baptism}, was solemnly Confirmed in the Catholic Faith on {Date of Confirmation} by {Minister Name}.\n\nSponsor was {Sponsor 1}.\n\nIssued upon request for {Purpose}.';
+        break;
+      case 'First Communion':
+        wording =
+        'This is to Certify that {Full Name} has received for the first time the Most Holy Body and Blood of our Lord Jesus Christ on {Date of Communion} at Saint John Paul II Parish, officiated by {Minister Name}.\n\nIssued upon request for {Purpose}.';
+        break;
+      case 'Matrimony':
+        wording =
+        'This is to Certify that {Groom Name} and {Bride Name} were united in Holy Matrimony according to the Rites of the Holy Roman Catholic Church on {Date of Marriage} by {Solemnizer Name}.\n\nWitnesses were {Sponsor 1} and {Sponsor 2}.\n\nIssued upon request for {Purpose}.';
+        break;
+      case 'Death':
+        wording =
+        'This is to Certify that {Full Name}, aged {Age}, died on {Date of Death} and was granted Christian Burial on {Date of Burial} at {Place of Burial}, with funeral rites officiated by {Minister Name}.\n\nIssued upon request for {Purpose}.';
+        break;
+      case 'Conversion':
+        wording =
+        'This is to Certify that {Full Name}, born on {Date of Birth} in {Place of Birth}, was solemnly received into Full Communion with the Catholic Church on {Date of Reception} by {Minister Name}.\n\nWitnesses were {Witness 1} and {Witness 2}.\n\nIssued upon request for {Purpose}.';
+        break;
+      default:
+        wording =
+        'This is to Certify that {Full Name} received the Sacrament of $sacrament.\n\nIssued upon request for {Purpose}.';
     }
+
+    return CertificateTemplateModel(
+      templateId: 'TPL-${sacrament.substring(0, 3).toUpperCase()}-DEFAULT',
+      sacramentType: sacrament,
+      templateName: '$sacrament Canonical Certificate',
+      certificateTitle: 'CERTIFICATE OF ${sacrament.toUpperCase()}',
+      headerText:
+      'Diocese of San Pablo\nSaint John Paul II Parish\nSanta Cruz, Laguna',
+      bodyWording: wording,
+      defaultPurpose: 'For Legal / Personal Records',
+      isDefault: true,
+      paperSize: 'A4',
+      orientation: 'Portrait',
+      signatoryName: 'Rev. Fr. Joseph Santos',
+      signatoryTitle: 'Parish Priest',
+    );
   }
 
   void _onParticularChanged(PosItemModel? item) {
@@ -268,22 +380,26 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
   Future<void> _openFullPdfPreview() async {
     if (_selectedTemplate == null) return;
 
-    final previewVerificationId = 'PREVIEW-${DateTime.now().millisecondsSinceEpoch % 10000}';
-    final previewQrUrl = CertificateService.buildVerificationUrl(previewVerificationId);
+    final previewVerificationId =
+        'PREVIEW-${DateTime.now().millisecondsSinceEpoch % 10000}';
+    final previewQrUrl =
+    CertificateService.buildVerificationUrl(previewVerificationId);
 
     showDialog(
       context: context,
       builder: (ctx) {
         final screenHeight = MediaQuery.of(context).size.height;
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(
                   '${widget.sacramentType} Certificate Preview',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -325,10 +441,12 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
 
     try {
       final renderedWording = _buildRenderedPreviewText();
-      final verificationId = CertificateService.generateSecureVerificationId();
-      final qrVerificationUrl = CertificateService.buildVerificationUrl(verificationId);
+      final verificationId =
+      CertificateService.generateSecureVerificationId();
+      final qrVerificationUrl =
+      CertificateService.buildVerificationUrl(verificationId);
 
-      // 1. Compile the print-ready Certificate PDF binary
+      // 1. Compile print-ready Certificate PDF binary (works completely offline)
       final certPdfBytes = await CertificatePdfGenerator.generatePdf(
         template: _selectedTemplate!,
         sacramentType: widget.sacramentType,
@@ -342,30 +460,40 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
       String? linkedReceiptNumber;
       Map<String, dynamic>? createdTxnRecord;
 
-      // 2. Record transaction in Receipt System with dynamically resolved fee
+      // 2. Record transaction in Receipt System if requested
       if (_issueReceipt) {
         final payorName = _payorNameController.text.trim().isNotEmpty
             ? _payorNameController.text.trim()
             : widget.recipientName;
 
         final serviceTitle = _resolvedServiceTitle;
-        final lineDetails = '- $serviceTitle x1\n  @ P ${_resolvedFee.toStringAsFixed(2)} = P ${_resolvedFee.toStringAsFixed(2)}';
-        final remarksText = 'Recipient: ${widget.recipientName} | Ref: ${widget.bookRef} | Purpose: $_effectivePurpose | Token: $verificationId';
+        final lineDetails =
+            '- $serviceTitle x1\n  @ P ${_resolvedFee.toStringAsFixed(2)} = P ${_resolvedFee.toStringAsFixed(2)}';
+        final remarksText =
+            'Recipient: ${widget.recipientName} | Ref: ${widget.bookRef} | Purpose: $_effectivePurpose | Token: $verificationId';
         final fullDetails = '$lineDetails\nRemarks: $remarksText';
 
-        createdTxnRecord = await SecretaryService.createTransaction(
-          payorName: payorName,
-          relatedService: serviceTitle,
-          transactionDetails: fullDetails,
-          transactionAmount: _resolvedFee,
-          transactionType: 'certificate',
-        );
+        try {
+          createdTxnRecord = await SecretaryService.createTransaction(
+            payorName: payorName,
+            relatedService: serviceTitle,
+            transactionDetails: fullDetails,
+            transactionAmount: _resolvedFee,
+            transactionType: 'certificate',
+          );
 
-        linkedTransactionId = createdTxnRecord['transaction_id']?.toString();
-        linkedReceiptNumber = createdTxnRecord['receipt_number']?.toString();
+          linkedTransactionId =
+              createdTxnRecord['transaction_id']?.toString();
+          linkedReceiptNumber =
+              createdTxnRecord['receipt_number']?.toString();
+        } catch (_) {
+          // Offline fallback receipt reference
+          linkedReceiptNumber =
+          'REC-OFFLINE-${DateTime.now().millisecondsSinceEpoch % 100000}';
+        }
       }
 
-      // 3. Save the Certificate Issuance Record linked with Receipt Data
+      // 3. Save Certificate Issuance Record (Persists to SQLite & queues offline)
       final issuance = await CertificateService.issueCertificate(
         recordId: widget.recordId,
         sacramentType: widget.sacramentType,
@@ -416,7 +544,8 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: ParishColors.cardWhite,
         title: Row(
           children: [
@@ -426,11 +555,14 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                 color: ParishColors.oliveGreenSurface,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 24),
+              child: const Icon(Icons.check_circle,
+                  color: ParishColors.oliveGreen, size: 24),
             ),
             const SizedBox(width: 10),
             const Expanded(
-              child: Text('Certificate Issued & Logged', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              child: Text('Certificate Issued & Logged',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
             ),
           ],
         ),
@@ -442,10 +574,10 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
             children: [
               Text(
                 'The ${widget.sacramentType} Certificate for ${widget.recipientName} has been recorded in parish archives.',
-                style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.4),
+                style: TextStyle(
+                    fontSize: 13, color: ParishColors.textDark, height: 1.4),
               ),
               const SizedBox(height: 12),
-
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -460,20 +592,31 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Issuance ID:', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-                        Text(issuance.issuanceId, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                        Text('Issuance ID:',
+                            style: TextStyle(
+                                fontSize: 12, color: ParishColors.textMuted)),
+                        Text(issuance.issuanceId,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.marianBlue)),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Verification Token:', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                        Text('Verification Token:',
+                            style: TextStyle(
+                                fontSize: 12, color: ParishColors.textMuted)),
                         Text(
                           issuance.verificationId.length > 20
                               ? '${issuance.verificationId.substring(0, 18)}...'
                               : issuance.verificationId,
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: ParishColors.textDark),
                         ),
                       ],
                     ),
@@ -481,13 +624,19 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Logged Receipt No.:', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                        Text('Logged Receipt No.:',
+                            style: TextStyle(
+                                fontSize: 12, color: ParishColors.textMuted)),
                         Text(
-                          receiptNumber != null && receiptNumber.isNotEmpty ? receiptNumber : 'None',
+                          receiptNumber != null && receiptNumber.isNotEmpty
+                              ? receiptNumber
+                              : 'None / Exempt',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: receiptNumber != null ? ParishColors.oliveGreen : ParishColors.goldAccent,
+                            color: receiptNumber != null
+                                ? ParishColors.oliveGreen
+                                : ParishColors.goldAccent,
                           ),
                         ),
                       ],
@@ -498,7 +647,8 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
             ],
           ),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        actionsPadding:
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         actions: [
           Wrap(
             alignment: WrapAlignment.end,
@@ -507,48 +657,58 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
             children: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text('Done / Close', style: TextStyle(color: ParishColors.textMuted)),
+                child: Text('Done / Close',
+                    style: TextStyle(color: ParishColors.textMuted)),
               ),
               if (receiptRecord != null)
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: ParishColors.oliveGreen, width: 1.2),
+                    side: const BorderSide(
+                        color: ParishColors.oliveGreen, width: 1.2),
                     foregroundColor: ParishColors.oliveGreen,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
                   ),
                   onPressed: () {
                     final rawAmt = receiptRecord['transaction_amount'];
                     final double parsedAmt = (rawAmt is num)
                         ? rawAmt.toDouble()
-                        : (double.tryParse(rawAmt?.toString() ?? '0') ?? _resolvedFee);
+                        : (double.tryParse(rawAmt?.toString() ?? '0') ??
+                        _resolvedFee);
 
                     ReceiptPdfGenerator.printReceipt(
                       receiptNumber: receiptRecord['receipt_number'],
                       payorName: receiptRecord['payor_name'],
                       payorContact: receiptRecord['payor_contact'],
                       relatedService: receiptRecord['related_service'],
-                      transactionDetails: receiptRecord['transaction_details'],
+                      transactionDetails:
+                      receiptRecord['transaction_details'],
                       amount: parsedAmt,
                       paymentMode: 'Cash',
                     );
                   },
                   icon: const Icon(Icons.receipt, size: 16),
-                  label: const Text('Print Receipt', style: TextStyle(fontSize: 12)),
+                  label: const Text('Print Receipt',
+                      style: TextStyle(fontSize: 12)),
                 ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ParishColors.marianBlue,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 ),
                 onPressed: () async {
                   await CertificatePdfGenerator.printCertificate(
                     pdfBytes: certPdfBytes,
-                    documentTitle: '${widget.sacramentType}_Certificate_${widget.recipientName.replaceAll(" ", "_")}',
+                    documentTitle:
+                    '${widget.sacramentType}_Certificate_${widget.recipientName.replaceAll(" ", "_")}',
                   );
                 },
                 icon: const Icon(Icons.print, size: 16),
-                label: const Text('Print Certificate', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                label: const Text('Print Certificate',
+                    style: TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -566,9 +726,11 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
     final screenHeight = MediaQuery.of(context).size.height;
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape:
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: cardWhite,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      insetPadding:
+      const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       title: Row(
         children: [
           Container(
@@ -577,7 +739,8 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
               color: ParishColors.marianBlueSurface,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.verified, color: ParishColors.marianBlue, size: 22),
+            child: const Icon(Icons.verified,
+                color: ParishColors.marianBlue, size: 22),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -586,7 +749,10 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
               children: [
                 Text(
                   'Generate ${widget.sacramentType} Certificate',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textDark),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: textDark),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -607,7 +773,8 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
       ),
       content: Container(
         width: double.maxFinite,
-        constraints: BoxConstraints(maxWidth: 580, maxHeight: screenHeight * 0.78),
+        constraints:
+        BoxConstraints(maxWidth: 580, maxHeight: screenHeight * 0.78),
         child: _isLoadingTemplates
             ? const Padding(
           padding: EdgeInsets.symmetric(vertical: 40),
@@ -630,12 +797,16 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 20),
+                        const Icon(Icons.error_outline,
+                            color: ParishColors.mercyRed, size: 20),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _errorMessage!,
-                            style: const TextStyle(fontSize: 12.5, color: ParishColors.mercyRed, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                                fontSize: 12.5,
+                                color: ParishColors.mercyRed,
+                                fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],
@@ -653,13 +824,19 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.person, color: ParishColors.marianBlue, size: 18),
+                      const Icon(Icons.person,
+                          color: ParishColors.marianBlue, size: 18),
                       const SizedBox(width: 8),
-                      Text('Recipient: ', style: TextStyle(fontSize: 12.5, color: textMuted)),
+                      Text('Recipient: ',
+                          style: TextStyle(
+                              fontSize: 12.5, color: textMuted)),
                       Expanded(
                         child: Text(
                           widget.recipientName,
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDark),
+                          style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                              color: textDark),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -669,7 +846,11 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                 const SizedBox(height: 14),
 
                 // 1. Template Selection
-                Text('1. Certificate Template', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark)),
+                Text('1. Certificate Template',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: textDark)),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<CertificateTemplateModel>(
                   value: _selectedTemplate,
@@ -679,20 +860,33 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                     return DropdownMenuItem(
                       value: t,
                       child: Text(
-                        t.isDefault ? '${t.templateName} (Default)' : t.templateName,
-                        style: TextStyle(fontSize: 13, color: textDark, fontWeight: t.isDefault ? FontWeight.bold : FontWeight.normal),
+                        t.isDefault
+                            ? '${t.templateName} (Default)'
+                            : t.templateName,
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: textDark,
+                            fontWeight: t.isDefault
+                                ? FontWeight.bold
+                                : FontWeight.normal),
                         overflow: TextOverflow.ellipsis,
                       ),
                     );
                   }).toList(),
                   onChanged: (val) {
-                    if (val != null) setState(() => _selectedTemplate = val);
+                    if (val != null) {
+                      setState(() => _selectedTemplate = val);
+                    }
                   },
                 ),
                 const SizedBox(height: 14),
 
                 // 2. Purpose Selection
-                Text('2. Purpose of Certificate', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark)),
+                Text('2. Purpose of Certificate',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: textDark)),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
                   value: _selectedPurposePreset,
@@ -701,15 +895,21 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                   items: PlaceholderRegistry.standardPurposes.map((p) {
                     return DropdownMenuItem(
                       value: p,
-                      child: Text(p, style: TextStyle(fontSize: 13, color: textDark), overflow: TextOverflow.ellipsis),
+                      child: Text(p,
+                          style: TextStyle(
+                              fontSize: 13, color: textDark),
+                          overflow: TextOverflow.ellipsis),
                     );
                   }).toList(),
                   onChanged: (val) {
-                    if (val != null) setState(() => _selectedPurposePreset = val);
+                    if (val != null) {
+                      setState(() => _selectedPurposePreset = val);
+                    }
                   },
                 ),
 
-                if (_selectedPurposePreset == 'Other / Custom Purpose') ...[
+                if (_selectedPurposePreset ==
+                    'Other / Custom Purpose') ...[
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _customPurposeController,
@@ -717,7 +917,8 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                     onChanged: (_) => setState(() {}),
                     decoration: _inputDecoration(
                       labelText: 'Custom Purpose',
-                      hint: 'Enter specific purpose (e.g. Scholarship Application)',
+                      hint:
+                      'Enter specific purpose (e.g. Scholarship Application)',
                     ),
                   ),
                 ],
@@ -729,50 +930,60 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                   decoration: BoxDecoration(
                     color: ParishColors.backgroundLight,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
+                    border: Border.all(
+                        color:
+                        ParishColors.oliveGreen.withOpacity(0.4)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.receipt_long, size: 18, color: ParishColors.oliveGreen),
+                          const Icon(Icons.receipt_long,
+                              size: 18, color: ParishColors.oliveGreen),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               '3. Record in Receipt Ledger',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: textDark),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           Switch(
                             value: _issueReceipt,
                             activeColor: ParishColors.oliveGreen,
-                            onChanged: (val) => setState(() => _issueReceipt = val),
+                            onChanged: (val) =>
+                                setState(() => _issueReceipt = val),
                           ),
                         ],
                       ),
-
                       if (_issueReceipt) ...[
                         const Divider(height: 14),
-
-                        // Dynamic Particular Item Dropdown if multiple exist
-                        if (_availableCertificateParticulars.length > 1) ...[
+                        if (_availableCertificateParticulars.length >
+                            1) ...[
                           Text(
                             'Offering Particular Item *',
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.bold,
+                                color: textDark),
                           ),
                           const SizedBox(height: 6),
                           DropdownButtonFormField<PosItemModel>(
                             value: _selectedParticular,
                             isExpanded: true,
                             decoration: _inputDecoration(),
-                            items: _availableCertificateParticulars.map((p) {
+                            items: _availableCertificateParticulars
+                                .map((p) {
                               return DropdownMenuItem(
                                 value: p,
                                 child: Text(
                                   '${p.title} — P ${p.defaultPrice.toStringAsFixed(2)}',
-                                  style: TextStyle(fontSize: 13, color: textDark),
+                                  style: TextStyle(
+                                      fontSize: 13, color: textDark),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               );
@@ -781,34 +992,44 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                           ),
                           const SizedBox(height: 10),
                         ],
-
-                        // Live Dynamic Fee Display
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
                             color: ParishColors.oliveGreenSurface,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
+                            border: Border.all(
+                                color: ParishColors.oliveGreen
+                                    .withOpacity(0.3)),
                           ),
                           child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment:
+                            MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 'Current Stipend Fee:',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: textDark),
                               ),
                               Text(
                                 'P ${_resolvedFee.toStringAsFixed(2)}',
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.oliveGreen),
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 10),
-
                         Text(
                           "Receipt's Payor Name *",
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: textDark),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
@@ -817,7 +1038,10 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                           decoration: _inputDecoration(
                             hint: 'Payor / Requester Full Name',
                           ),
-                          validator: (v) => _issueReceipt && (v?.trim().isEmpty ?? true) ? 'Payor name required' : null,
+                          validator: (v) => _issueReceipt &&
+                              (v?.trim().isEmpty ?? true)
+                              ? 'Payor name required'
+                              : null,
                         ),
                       ],
                     ],
@@ -831,18 +1055,25 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                     Expanded(
                       child: Text(
                         '4. Rendered Wording',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: textDark),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        padding:
+                        const EdgeInsets.symmetric(horizontal: 4),
                       ),
                       onPressed: _openFullPdfPreview,
                       icon: const Icon(Icons.picture_as_pdf, size: 15),
-                      label: const Text('Preview PDF', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                      label: const Text('Preview PDF',
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -853,11 +1084,15 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                   decoration: BoxDecoration(
                     color: ParishColors.backgroundLight,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: ParishColors.goldAccent.withOpacity(0.5), width: 1.2),
+                    border: Border.all(
+                        color:
+                        ParishColors.goldAccent.withOpacity(0.5),
+                        width: 1.2),
                   ),
                   child: Text(
                     _buildRenderedPreviewText(),
-                    style: TextStyle(fontSize: 12, color: textDark, height: 1.4),
+                    style: TextStyle(
+                        fontSize: 12, color: textDark, height: 1.4),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -865,12 +1100,16 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
                 // Signatory summary
                 Row(
                   children: [
-                    Icon(Icons.draw, size: 15, color: ParishColors.textMuted),
+                    Icon(Icons.draw,
+                        size: 15, color: ParishColors.textMuted),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         'Signatory: ${_selectedTemplate?.signatoryName ?? "—"} (${_selectedTemplate?.signatoryTitle ?? "—"})',
-                        style: TextStyle(fontSize: 11, color: textMuted, fontStyle: FontStyle.italic),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: textMuted,
+                            fontStyle: FontStyle.italic),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -881,37 +1120,47 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
           ),
         ),
       ),
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      actionsPadding:
+      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       actions: [
         OutlinedButton(
           style: OutlinedButton.styleFrom(
             side: BorderSide(color: borderGrey, width: 1.2),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
           ),
           onPressed: _isGenerating ? null : () => Navigator.pop(context),
-          child: Text('Cancel', style: TextStyle(color: textMuted, fontWeight: FontWeight.w600)),
+          child: Text('Cancel',
+              style: TextStyle(
+                  color: textMuted, fontWeight: FontWeight.w600)),
         ),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
             backgroundColor: ParishColors.goldAccent,
             foregroundColor: Colors.white,
             elevation: 1,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           ),
-          onPressed: (_isLoadingTemplates || _availableTemplates.isEmpty || _isGenerating)
+          onPressed: (_isLoadingTemplates ||
+              _availableTemplates.isEmpty ||
+              _isGenerating)
               ? null
               : _issueAndPrintCertificate,
           icon: _isGenerating
               ? const SizedBox(
             width: 14,
             height: 14,
-            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+            child: CircularProgressIndicator(
+                color: Colors.white, strokeWidth: 2),
           )
               : const Icon(Icons.print, size: 17),
           label: Text(
             _isGenerating ? 'Recording...' : 'Issue Certificate & Log',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            style: const TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 13),
           ),
         ),
       ],
@@ -925,7 +1174,8 @@ class _GenerateCertificateDialogState extends State<GenerateCertificateDialog> {
       filled: true,
       fillColor: ParishColors.backgroundLight,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      contentPadding:
+      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: ParishColors.borderGrey),

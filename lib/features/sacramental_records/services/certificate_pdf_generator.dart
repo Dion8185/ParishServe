@@ -1,8 +1,13 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/services/certificate_pdf_generator.dart
+// =============================================================================
+
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../../../core/database/local_database_service.dart';
 import '../models/certificate_canvas_element.dart';
 import '../models/certificate_style_config.dart';
 import '../models/certificate_template_model.dart';
@@ -21,8 +26,9 @@ class CertificatePdfGenerator {
   static final Map<String, pw.Font> _fontCache = {};
 
   // ===========================================================================
-  // Unicode TrueType Font Resolver
+  // 1. Unicode TrueType Font Resolver with Fallback
   // ===========================================================================
+
   static Future<pw.Font> _resolveUnicodePdfFont(
       String fontFamily, {
         bool isBold = false,
@@ -110,7 +116,11 @@ class CertificatePdfGenerator {
     return loadedFont;
   }
 
-  static pw.Font _fallbackType1Font(String fontFamily, {bool isBold = false, bool isItalic = false}) {
+  static pw.Font _fallbackType1Font(
+      String fontFamily, {
+        bool isBold = false,
+        bool isItalic = false,
+      }) {
     switch (fontFamily.toLowerCase()) {
       case 'sans':
       case 'trebuchet':
@@ -179,6 +189,10 @@ class CertificatePdfGenerator {
     return pw.Alignment(x, y);
   }
 
+  // ===========================================================================
+  // 2. Main PDF Generation Entry Point
+  // ===========================================================================
+
   static Future<Uint8List> generatePdf({
     required CertificateTemplateModel template,
     required String sacramentType,
@@ -215,10 +229,11 @@ class CertificatePdfGenerator {
       ),
     );
 
-    final bgImage = await _fetchNetworkImage(template.backgroundImageUrl);
-    final dioceseLogo = await _fetchNetworkImage(template.dioceseLogoUrl);
-    final parishSeal = await _fetchNetworkImage(template.parishSealUrl);
-    final signatureImage = await _fetchNetworkImage(template.signatureImageUrl);
+    // Resolve binary assets from SQLite offline cache first, then HTTP fallback
+    final bgImage = await _resolveAssetBytes(template.backgroundImageUrl, 'border');
+    final dioceseLogo = await _resolveAssetBytes(template.dioceseLogoUrl, 'logo');
+    final parishSeal = await _resolveAssetBytes(template.parishSealUrl, 'seal');
+    final signatureImage = await _resolveAssetBytes(template.signatureImageUrl, 'signature');
 
     final placeholderValues = PlaceholderRegistry.extractPlaceholderValues(
       sacramentType: sacramentType,
@@ -227,6 +242,7 @@ class CertificatePdfGenerator {
       issueDate: issueDate,
     );
 
+    // Toggle: Visual Canvas Designer Mode vs Canonical Simple Mode
     final bool isCanvaMode = style.useVisualCanvas && style.canvasElements.isNotEmpty;
 
     final Map<String, pw.Font> elementFonts = {};
@@ -258,6 +274,7 @@ class CertificatePdfGenerator {
               else if (template.backgroundMode != 'None')
                 _buildDefaultEcclesiasticalBorder(),
 
+              // 1. RENDER VISUAL CANVAS DESIGNER ELEMENTS
               if (isCanvaMode)
                 ...style.canvasElements.map((element) {
                   final key = '${element.fontFamily}_${element.isBold}';
@@ -278,6 +295,7 @@ class CertificatePdfGenerator {
                     boldFont: boldFont,
                   );
                 })
+              // 2. RENDER CANONICAL SIMPLE MODE LAYOUT
               else
                 pw.Padding(
                   padding: const pw.EdgeInsets.symmetric(horizontal: 48, vertical: 40),
@@ -317,7 +335,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // 1:1 Canva-Style Element Renderer (With Horizontal & Vertical Alignment)
+  // 3. 1:1 Canva-Style Element Renderer (With Coordinates, Scaling & Alignments)
   // ===========================================================================
 
   static pw.Widget _buildCanvaElementPdfWidget({
@@ -346,7 +364,6 @@ class CertificatePdfGenerator {
         ? (element.fontSize * 4.0)
         : (elementHeight ?? (element.fontSize * 1.6));
 
-    // Exact top-left anchor matching canvas pixel layout
     final double left = pixelCenterX - (boxWidth / 2);
     final double top = pixelCenterY - (boxHeight / 2);
 
@@ -595,7 +612,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // Simple Mode Sequential Structured Flow
+  // 4. Simple Mode Sequential Structured Flow
   // ===========================================================================
 
   static List<pw.Widget> _buildSimpleModeWidgets({
@@ -617,7 +634,7 @@ class CertificatePdfGenerator {
       ),
     );
 
-    pw.Widget headerWidget = _buildCanonicalHeader(
+    final headerWidget = _buildCanonicalHeader(
       template: template,
       dioceseLogoBytes: dioceseLogo,
       parishSealBytes: parishSeal,
@@ -625,21 +642,21 @@ class CertificatePdfGenerator {
       boldFont: boldFont,
     );
 
-    pw.Widget titleWidget = _buildCertificateTitle(
+    final titleWidget = _buildCertificateTitle(
       title: template.certificateTitle,
       style: style,
       baseFont: baseFont,
       boldFont: boldFont,
     );
 
-    pw.Widget bodyWidget = _buildBodyWording(
+    final bodyWidget = _buildBodyWording(
       renderedText: renderedBody,
       style: style,
       baseFont: baseFont,
       boldFont: boldFont,
     );
 
-    pw.Widget footerWidget = _buildFooterLayout(
+    final footerWidget = _buildFooterLayout(
       template: template,
       style: style,
       signatureBytes: signatureImage,
@@ -680,7 +697,7 @@ class CertificatePdfGenerator {
   }
 
   // ===========================================================================
-  // Shared Canonical Header & Layout Elements
+  // 5. Shared Canonical Header & Layout Elements
   // ===========================================================================
 
   static pw.Widget _buildCanonicalHeader({
@@ -942,7 +959,11 @@ class CertificatePdfGenerator {
           verificationId.length > 18
               ? '${verificationId.substring(0, 18)}...'
               : verificationId,
-          style: pw.TextStyle(font: boldFont, fontSize: 7.0, fontWeight: pw.FontWeight.bold, color: textDark),
+          style: pw.TextStyle(
+              font: boldFont,
+              fontSize: 7.0,
+              fontWeight: pw.FontWeight.bold,
+              color: textDark),
         ),
         pw.Text(
           'Scan QR to verify canonical authenticity',
@@ -1032,20 +1053,47 @@ class CertificatePdfGenerator {
       child: pw.Center(
         child: pw.Text(
           label,
-          style: pw.TextStyle(font: boldFont, fontSize: 9, fontWeight: pw.FontWeight.bold, color: marianBlue),
+          style: pw.TextStyle(
+              font: boldFont,
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+              color: marianBlue),
         ),
       ),
     );
   }
 
-  static Future<Uint8List?> _fetchNetworkImage(String? url) async {
+  // ===========================================================================
+  // 6. Offline Binary Asset Resolver (SQLite Asset Cache -> HTTP Fallback)
+  // ===========================================================================
+
+  static Future<Uint8List?> _resolveAssetBytes(String? url, String assetType) async {
     if (url == null || url.trim().isEmpty) return null;
+    final cleanUrl = url.trim();
+
+    // 1. Check local SQLite binary cache first (instant & offline)
+    final cached = await LocalDatabaseService.instance.getCachedAsset(cleanUrl);
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+
+    // 2. Fetch over network and save into SQLite offline asset cache
     try {
-      final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-        return res.bodyBytes;
+      final uri = Uri.tryParse(cleanUrl);
+      if (uri != null && uri.hasScheme) {
+        final res = await http.get(uri).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          await LocalDatabaseService.instance.cacheAsset(
+            cleanUrl,
+            assetType,
+            res.bodyBytes,
+            mimeType: res.headers['content-type'],
+          );
+          return res.bodyBytes;
+        }
       }
     } catch (_) {}
+
     return null;
   }
 }

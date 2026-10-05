@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/models/death_record_model.dart
+// =============================================================================
+
 class DeathRecordModel {
   final String recordId;
   final String bookNumber;
@@ -25,7 +29,7 @@ class DeathRecordModel {
 
   final String? motherFirstName;
   final String? motherMiddleName;
-  final String? motherMaidenLastName;
+  final String motherMaidenLastName;
 
   // Death & Burial Circumstances
   final DateTime dateOfDeath;
@@ -72,7 +76,7 @@ class DeathRecordModel {
     this.fatherLastName,
     this.motherFirstName,
     this.motherMiddleName,
-    this.motherMaidenLastName,
+    this.motherMaidenLastName = '',
     required this.dateOfDeath,
     required this.dateOfBurial,
     required this.placeOfBurial,
@@ -125,7 +129,7 @@ class DeathRecordModel {
     if (!hasFather && !hasMother) return '—';
 
     final fName = hasFather ? '$fatherFirstName ${fatherLastName ?? ""}'.trim() : 'Unknown';
-    final mName = hasMother ? '$motherFirstName ${motherMaidenLastName ?? ""}'.trim() : 'Unknown';
+    final mName = hasMother ? '$motherFirstName $motherMaidenLastName'.trim() : 'Unknown';
     return '$fName & $mName';
   }
 
@@ -141,45 +145,59 @@ class DeathRecordModel {
   String get bookReference => 'Book $bookNumber, Page $pageNumber, Line $lineNumber';
 
   factory DeathRecordModel.fromMap(Map<String, dynamic> map) {
+    // Robust boolean parsing for both Supabase bool and SQLite int (1/0)
+    final rawVerified = map['is_verified'];
+    final bool isVerifiedParsed = rawVerified == true ||
+        rawVerified == 1 ||
+        rawVerified == 'true' ||
+        rawVerified == '1';
+
+    final rawSacraments = map['sacraments_received'];
+    final bool isSacramentsParsed = rawSacraments == null ||
+        rawSacraments == true ||
+        rawSacraments == 1 ||
+        rawSacraments == 'true' ||
+        rawSacraments == '1';
+
     return DeathRecordModel(
-      recordId: map['record_id'] ?? '',
-      bookNumber: map['book_number'] ?? '',
-      pageNumber: map['page_number'] ?? '',
-      lineNumber: map['line_number'] ?? '',
-      deceasedFirstName: map['deceased_first_name'] ?? '',
-      deceasedMiddleName: map['deceased_middle_name'],
-      deceasedLastName: map['deceased_last_name'] ?? '',
-      deceasedSuffix: map['deceased_suffix'],
-      gender: map['gender'] ?? 'Male',
+      recordId: map['record_id']?.toString() ?? '',
+      bookNumber: map['book_number']?.toString() ?? '',
+      pageNumber: map['page_number']?.toString() ?? '',
+      lineNumber: map['line_number']?.toString() ?? '',
+      deceasedFirstName: map['deceased_first_name']?.toString() ?? '',
+      deceasedMiddleName: map['deceased_middle_name']?.toString(),
+      deceasedLastName: map['deceased_last_name']?.toString() ?? '',
+      deceasedSuffix: map['deceased_suffix']?.toString(),
+      gender: map['gender']?.toString() ?? 'Male',
       age: map['age']?.toString() ?? '',
-      civilStatus: map['civil_status'] ?? 'Single',
-      residence: map['residence'] ?? '',
-      spouseFirstName: map['spouse_first_name'],
-      spouseMiddleName: map['spouse_middle_name'],
-      spouseLastName: map['spouse_last_name'],
-      fatherFirstName: map['father_first_name'],
-      fatherMiddleName: map['father_middle_name'],
-      fatherLastName: map['father_last_name'],
-      motherFirstName: map['mother_first_name'],
-      motherMiddleName: map['mother_middle_name'],
-      motherMaidenLastName: map['mother_maiden_last_name'],
+      civilStatus: map['civil_status']?.toString() ?? 'Single',
+      residence: map['residence']?.toString() ?? '',
+      spouseFirstName: map['spouse_first_name']?.toString(),
+      spouseMiddleName: map['spouse_middle_name']?.toString(),
+      spouseLastName: map['spouse_last_name']?.toString(),
+      fatherFirstName: map['father_first_name']?.toString(),
+      fatherMiddleName: map['father_middle_name']?.toString(),
+      fatherLastName: map['father_last_name']?.toString(),
+      motherFirstName: map['mother_first_name']?.toString(),
+      motherMiddleName: map['mother_middle_name']?.toString(),
+      motherMaidenLastName: map['mother_maiden_last_name']?.toString() ?? '',
       dateOfDeath: DateTime.tryParse(map['date_of_death']?.toString() ?? '') ?? DateTime.now(),
       dateOfBurial: DateTime.tryParse(map['date_of_burial']?.toString() ?? '') ?? DateTime.now(),
-      placeOfBurial: map['place_of_burial'] ?? '',
-      causeOfDeath: map['cause_of_death'],
-      sacramentsReceived: map['sacraments_received'] ?? true,
-      sacramentsNotes: map['sacraments_notes'],
-      liturgicalService: map['liturgical_service'] ?? 'Funeral Mass',
+      placeOfBurial: map['place_of_burial']?.toString() ?? '',
+      causeOfDeath: map['cause_of_death']?.toString(),
+      sacramentsReceived: isSacramentsParsed,
+      sacramentsNotes: map['sacraments_notes']?.toString(),
+      liturgicalService: map['liturgical_service']?.toString() ?? 'Funeral Mass',
       stipend: double.tryParse(map['stipend']?.toString() ?? '0.00') ?? 0.00,
-      ministerFirstName: map['minister_first_name'] ?? '',
-      ministerMiddleName: map['minister_middle_name'],
-      ministerLastName: map['minister_last_name'] ?? '',
-      remarks: map['remarks'],
-      parishName: map['parish_name'] ?? 'St. John Paul II Parish',
-      scannedImageUrl: map['scanned_image_url'],
-      ocrRawText: map['ocr_raw_text'],
-      isVerified: map['is_verified'] ?? false,
-      encodedBy: map['encoded_by'],
+      ministerFirstName: map['minister_first_name']?.toString() ?? '',
+      ministerMiddleName: map['minister_middle_name']?.toString(),
+      ministerLastName: map['minister_last_name']?.toString() ?? '',
+      remarks: map['remarks']?.toString(),
+      parishName: map['parish_name']?.toString() ?? 'St. John Paul II Parish',
+      scannedImageUrl: map['scanned_image_url']?.toString(),
+      ocrRawText: map['ocr_raw_text']?.toString(),
+      isVerified: isVerifiedParsed,
+      encodedBy: map['encoded_by']?.toString(),
       dateEncoded: map['date_encoded'] != null ? DateTime.tryParse(map['date_encoded'].toString()) : null,
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
     );

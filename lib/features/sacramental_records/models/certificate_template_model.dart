@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/models/certificate_template_model.dart
+// =============================================================================
+
+import 'dart:convert';
 import 'certificate_style_config.dart';
 
 class CertificateTemplateModel {
@@ -23,7 +28,7 @@ class CertificateTemplateModel {
 
   // Decorative Border / Background
   final String? backgroundImageUrl;
-  final String backgroundMode; // 'Border', 'Full-Page'
+  final String backgroundMode; // 'Border', 'Full-Page', 'None'
 
   // Signatory Configuration
   final String signatoryName;
@@ -90,6 +95,59 @@ class CertificateTemplateModel {
   }
 
   factory CertificateTemplateModel.fromMap(Map<String, dynamic> map) {
+    // Robust boolean parsing for both Supabase bool and SQLite int (1/0)
+    final rawDiocese = map['show_diocese_logo'];
+    final bool showDioceseLogoParsed = rawDiocese == null ||
+        rawDiocese == true ||
+        rawDiocese == 1 ||
+        rawDiocese == 'true' ||
+        rawDiocese == '1';
+
+    final rawSeal = map['show_parish_seal'];
+    final bool showParishSealParsed = rawSeal == null ||
+        rawSeal == true ||
+        rawSeal == 1 ||
+        rawSeal == 'true' ||
+        rawSeal == '1';
+
+    final rawQr = map['enable_qr_verification'];
+    final bool enableQrParsed = rawQr == null ||
+        rawQr == true ||
+        rawQr == 1 ||
+        rawQr == 'true' ||
+        rawQr == '1';
+
+    final rawActive = map['is_active'];
+    final bool isActiveParsed = rawActive == null ||
+        rawActive == true ||
+        rawActive == 1 ||
+        rawActive == 'true' ||
+        rawActive == '1';
+
+    final rawDefault = map['is_default'];
+    final bool isDefaultParsed = rawDefault == true ||
+        rawDefault == 1 ||
+        rawDefault == 'true' ||
+        rawDefault == '1';
+
+    // Parse style_config whether passed as Map (Supabase) or JSON string (SQLite)
+    Map<String, dynamic>? parsedStyleMap;
+    final rawStyle = map['style_config'];
+    if (rawStyle is Map<String, dynamic>) {
+      parsedStyleMap = rawStyle;
+    } else if (rawStyle is Map) {
+      parsedStyleMap = Map<String, dynamic>.from(rawStyle);
+    } else if (rawStyle is String && rawStyle.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawStyle);
+        if (decoded is Map<String, dynamic>) {
+          parsedStyleMap = decoded;
+        } else if (decoded is Map) {
+          parsedStyleMap = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+    }
+
     return CertificateTemplateModel(
       templateId: map['template_id']?.toString() ?? '',
       sacramentType: map['sacrament_type']?.toString() ?? 'Baptism',
@@ -99,9 +157,9 @@ class CertificateTemplateModel {
           'Diocese of San Pablo\nSaint John Paul II Parish\nSanta Cruz, Laguna',
       dioceseLogoUrl: map['diocese_logo_url']?.toString(),
       parishSealUrl: map['parish_seal_url']?.toString(),
-      showDioceseLogo: map['show_diocese_logo'] ?? true,
-      showParishSeal: map['show_parish_seal'] ?? true,
-      bodyWording: map['body_wording']?.toString() ?? '',
+      showDioceseLogo: showDioceseLogoParsed,
+      showParishSeal: showParishSealParsed,
+      bodyWording: (map['body_wording'] ?? map['bodyWording'])?.toString() ?? '',
       defaultPurpose: map['default_purpose']?.toString() ?? 'For Record / Reference',
       paperSize: map['paper_size']?.toString() ?? 'A4',
       orientation: map['orientation']?.toString() ?? 'Portrait',
@@ -110,14 +168,10 @@ class CertificateTemplateModel {
       signatoryName: map['signatory_name']?.toString() ?? 'Rev. Fr. Roy G. Reyes',
       signatoryTitle: map['signatory_title']?.toString() ?? 'Parish Priest',
       signatureImageUrl: map['signature_image_url']?.toString(),
-      styleConfig: CertificateStyleConfig.fromMap(
-        map['style_config'] is Map<String, dynamic>
-            ? map['style_config'] as Map<String, dynamic>
-            : null,
-      ),
-      enableQrVerification: map['enable_qr_verification'] ?? true,
-      isActive: map['is_active'] ?? true,
-      isDefault: map['is_default'] ?? false,
+      styleConfig: CertificateStyleConfig.fromMap(parsedStyleMap),
+      enableQrVerification: enableQrParsed,
+      isActive: isActiveParsed,
+      isDefault: isDefaultParsed,
       version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
       createdBy: map['created_by']?.toString(),
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
@@ -136,7 +190,7 @@ class CertificateTemplateModel {
       'parish_seal_url': parishSealUrl,
       'show_diocese_logo': showDioceseLogo,
       'show_parish_seal': showParishSeal,
-      'body_wording': bodyWording,
+      'body_wording': bodyWording, // Strictly snake_case matching Supabase column
       'default_purpose': defaultPurpose,
       'paper_size': paperSize,
       'orientation': orientation,

@@ -1,4 +1,11 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/services/first_communion_service.dart
+// =============================================================================
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/database/local_database_service.dart';
+import '../../../core/services/records_sync_service.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/first_communion_record_model.dart';
 import '../validators/sacramental_validators.dart';
@@ -6,29 +13,93 @@ import '../validators/sacramental_validators.dart';
 class FirstCommunionService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  /// Fetch all first communion records ordered by reception date descending
+  /// Fetch all first communion records ordered by communion date descending.
+  /// On Web or Online: Queries Supabase directly and transparently caches to SQLite on native platforms.
+  /// On Native Offline: Reads directly from local SQLite storage without blocking or throwing errors.
   static Future<List<FirstCommunionRecordModel>> getFirstCommunionRecords() async {
-    final response = await _client
-        .from('first_communion_records')
-        .select()
-        .order('date_of_communion', ascending: false)
-        .order('created_at', ascending: false);
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    return (response as List)
-        .map((row) => FirstCommunionRecordModel.fromMap(row as Map<String, dynamic>))
-        .toList();
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('first_communion_records')
+            .select()
+            .order('date_of_communion', ascending: false)
+            .order('created_at', ascending: false);
+
+        final list = (response as List)
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList();
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'first_communion_records',
+            list,
+          );
+        }
+
+        return list.map((row) => FirstCommunionRecordModel.fromMap(row)).toList();
+      } catch (_) {
+        if (kIsWeb) return [];
+      }
+    }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      final rows = await db.query(
+        'first_communion_records',
+        orderBy: 'date_of_communion DESC, created_at DESC',
+      );
+      return rows.map((row) => FirstCommunionRecordModel.fromMap(row)).toList();
+    }
+
+    return [];
   }
 
-  /// Automatically generates the next sequential control number: FCM-Year-Number (e.g. FCM-2026-0001)
+  /// Automatically generates the next sequential control number: FCM-Year-Number (e.g. FCM-2026-0001).
+  /// Checks Supabase directly on Web/Online and cross-checks SQLite on native platforms.
   static Future<String> generateNextControlNumber(int year) async {
-    try {
-      final records = await _client
-          .from('first_communion_records')
-          .select('control_number')
-          .eq('year', year);
+    int highest = 0;
 
-      int highest = 0;
-      for (final item in records) {
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final remoteRecords = await _client
+            .from('first_communion_records')
+            .select('control_number')
+            .eq('year', year);
+
+        for (final item in remoteRecords) {
+          final cNo = item['control_number']?.toString() ?? '';
+          final parts = cNo.split('-');
+          if (parts.length >= 3) {
+            final seq = int.tryParse(parts.last);
+            if (seq != null && seq > highest) {
+              highest = seq;
+            }
+          }
+        }
+        final nextSeq = (highest + 1).toString().padLeft(4, '0');
+        return 'FCM-$year-$nextSeq';
+      } catch (_) {
+        if (kIsWeb) {
+          final fallbackSeq =
+          (DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0');
+          return 'FCM-$year-$fallbackSeq';
+        }
+      }
+    }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      final localRows = await db.query(
+        'first_communion_records',
+        columns: ['control_number'],
+        where: 'year = ?',
+        whereArgs: [year],
+      );
+
+      for (final item in localRows) {
         final cNo = item['control_number']?.toString() ?? '';
         final parts = cNo.split('-');
         if (parts.length >= 3) {
@@ -38,17 +109,18 @@ class FirstCommunionService {
           }
         }
       }
-
-      final nextSeq = (highest + 1).toString().padLeft(4, '0');
-      return 'FCM-$year-$nextSeq';
-    } catch (_) {
-      final fallbackSeq = (DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0');
-      return 'FCM-$year-$fallbackSeq';
     }
+
+    final nextSeq = (highest + 1).toString().padLeft(4, '0');
+    return 'FCM-$year-$nextSeq';
   }
 
-  /// Validates and inserts a manual First Communion record into public.first_communion_records
-  static Future<FirstCommunionRecordModel> insertManualFirstCommunionRecord(Map<String, dynamic> data) async {
+  /// Validates and inserts a manual First Communion record into public.first_communion_records.
+  /// On Web or Online: Inserts directly into Supabase.
+  /// On Native Offline: Inserts into SQLite with pending status and queues for auto-sync.
+  static Future<FirstCommunionRecordModel> insertManualFirstCommunionRecord(
+      Map<String, dynamic> data,
+      ) async {
     final requiredFields = {
       'year': 'Communion Year',
       'control_number': 'Control Number',
@@ -67,7 +139,9 @@ class FirstCommunionService {
       }
     }
 
-    final yearError = SacramentalValidators.validateCommunionYear(data['year']?.toString());
+    final yearError = SacramentalValidators.validateCommunionYear(
+      data['year']?.toString(),
+    );
     if (yearError != null) throw yearError;
     final yearNum = int.parse(data['year'].toString().trim());
     data['year'] = yearNum;
@@ -77,20 +151,50 @@ class FirstCommunionService {
     if (controlError != null) throw controlError;
     data['control_number'] = controlNum;
 
-    final communionDate = DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
-    final baptismDate = DateTime.tryParse(data['baptism_date']?.toString() ?? '');
-    final communionDateError = SacramentalValidators.validateCommunionDate(communionDate, baptismDate);
+    final communionDate =
+    DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
+    final baptismDate =
+    DateTime.tryParse(data['baptism_date']?.toString() ?? '');
+    final communionDateError = SacramentalValidators.validateCommunionDate(
+      communionDate,
+      baptismDate,
+    );
     if (communionDateError != null) throw communionDateError;
 
-    final duplicate = await _client
-        .from('first_communion_records')
-        .select('record_id')
-        .eq('year', yearNum)
-        .eq('control_number', controlNum)
-        .maybeSingle();
+    // 1. Check duplicate control number in local SQLite first (Native)
+    if (!kIsWeb) {
+      final db = await LocalDatabaseService.instance.database;
+      if (db != null) {
+        final localDup = await db.query(
+          'first_communion_records',
+          where: 'year = ? AND control_number = ?',
+          whereArgs: [yearNum, controlNum],
+          limit: 1,
+        );
 
-    if (duplicate != null) {
-      throw 'Control Number "$controlNum" is already registered for the year $yearNum.';
+        if (localDup.isNotEmpty) {
+          throw 'Control Number "$controlNum" is already registered for the year $yearNum.';
+        }
+      }
+    }
+
+    // 2. Duplicate check in Supabase (Online / Web)
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final remoteDup = await _client
+            .from('first_communion_records')
+            .select('record_id')
+            .eq('year', yearNum)
+            .eq('control_number', controlNum)
+            .maybeSingle();
+
+        if (remoteDup != null) {
+          throw 'Control Number "$controlNum" is already registered for the year $yearNum.';
+        }
+      } catch (e) {
+        if (e is String) rethrow;
+      }
     }
 
     if (data['record_id'] == null || data['record_id'].toString().trim().isEmpty) {
@@ -98,31 +202,50 @@ class FirstCommunionService {
     }
 
     String? encoderId = AuthService.currentUser?.userId;
-    if (encoderId == null || encoderId.isEmpty) {
-      final defaultUser = await _client
-          .from('users')
-          .select('user_id')
-          .eq('account_status', true)
-          .limit(1)
-          .maybeSingle();
-      encoderId = defaultUser?['user_id'] ?? 'S26-0003';
-    }
-    data['encoded_by'] = encoderId;
+    data['encoded_by'] = encoderId ?? 'S26-0003';
 
     data['is_verified'] = false;
     data['scanned_image_url'] = null;
+    data['created_at'] = DateTime.now().toIso8601String();
 
-    final response = await _client
-        .from('first_communion_records')
-        .insert(data)
-        .select()
-        .single();
+    // 3. Execute Insert
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('first_communion_records')
+            .insert(data)
+            .select()
+            .single();
 
-    return FirstCommunionRecordModel.fromMap(response);
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'first_communion_records',
+            [response],
+          );
+        }
+
+        return FirstCommunionRecordModel.fromMap(response);
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'first_communion_records',
+      recordId: data['record_id'],
+      operation: 'INSERT',
+      data: data,
+    );
+
+    return FirstCommunionRecordModel.fromMap(data);
   }
 
-  /// Updates an existing manual First Communion record in public.first_communion_records
-  static Future<FirstCommunionRecordModel> updateFirstCommunionRecord(String recordId, Map<String, dynamic> data) async {
+  /// Updates an existing manual First Communion record in public.first_communion_records.
+  /// Protects immutable control coordinates from alteration.
+  static Future<FirstCommunionRecordModel> updateFirstCommunionRecord(
+      String recordId,
+      Map<String, dynamic> data,
+      ) async {
     final requiredFields = {
       'communicant_first_name': 'Communicant First Name',
       'communicant_last_name': 'Communicant Last Name',
@@ -139,9 +262,14 @@ class FirstCommunionService {
       }
     }
 
-    final communionDate = DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
-    final baptismDate = DateTime.tryParse(data['baptism_date']?.toString() ?? '');
-    final communionDateError = SacramentalValidators.validateCommunionDate(communionDate, baptismDate);
+    final communionDate =
+    DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
+    final baptismDate =
+    DateTime.tryParse(data['baptism_date']?.toString() ?? '');
+    final communionDateError = SacramentalValidators.validateCommunionDate(
+      communionDate,
+      baptismDate,
+    );
     if (communionDateError != null) throw communionDateError;
 
     // Protect control number and year coordinates from being altered
@@ -149,13 +277,49 @@ class FirstCommunionService {
     data.remove('year');
     data.remove('control_number');
 
-    final response = await _client
-        .from('first_communion_records')
-        .update(data)
-        .eq('record_id', recordId)
-        .select()
-        .single();
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('first_communion_records')
+            .update(data)
+            .eq('record_id', recordId)
+            .select()
+            .single();
 
-    return FirstCommunionRecordModel.fromMap(response);
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'first_communion_records',
+            [response],
+          );
+        }
+
+        return FirstCommunionRecordModel.fromMap(response);
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'first_communion_records',
+      recordId: recordId,
+      operation: 'UPDATE',
+      data: data,
+    );
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      final rows = await db.query(
+        'first_communion_records',
+        where: 'record_id = ?',
+        whereArgs: [recordId],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        return FirstCommunionRecordModel.fromMap(rows.first);
+      }
+    }
+
+    return FirstCommunionRecordModel.fromMap(data);
   }
 }

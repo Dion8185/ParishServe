@@ -1,5 +1,11 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/sacrament_registry_page.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/database/local_database_service.dart';
+import '../../../../core/services/records_sync_service.dart';
 import '../../models/baptism_record_model.dart';
 import '../../models/confirmation_record_model.dart';
 import '../../models/first_communion_record_model.dart';
@@ -57,6 +63,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   bool _isLoading = false;
   String? _fetchError;
   String _searchQuery = '';
+  bool _isLoadedFromSqlite = false;
 
   // View & Pagination State
   RegistryViewMode _viewMode = RegistryViewMode.cards;
@@ -81,37 +88,211 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
       _fetchError = null;
     });
 
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+
     try {
       if (widget.sacramentName == 'Baptism') {
-        final records = await BaptismService.getBaptismRecords();
+        List<BaptismRecordModel> records = [];
+        if (isOnline) {
+          try {
+            records = await BaptismService.getBaptismRecords();
+          } catch (_) {}
+        }
+        if (records.isEmpty) {
+          records = await _loadBaptismFromSqlite();
+          _isLoadedFromSqlite = true;
+        } else {
+          _isLoadedFromSqlite = false;
+        }
         if (!mounted) return;
-        setState(() => _baptismRecords = records);
+        setState(() {
+          _baptismRecords = records;
+          _fetchError = null;
+        });
       } else if (widget.sacramentName == 'Confirmation') {
-        final records = await ConfirmationService.getConfirmationRecords();
+        List<ConfirmationRecordModel> records = [];
+        if (isOnline) {
+          try {
+            records = await ConfirmationService.getConfirmationRecords();
+          } catch (_) {}
+        }
+        if (records.isEmpty) {
+          records = await _loadConfirmationFromSqlite();
+          _isLoadedFromSqlite = true;
+        } else {
+          _isLoadedFromSqlite = false;
+        }
         if (!mounted) return;
-        setState(() => _confirmationRecords = records);
+        setState(() {
+          _confirmationRecords = records;
+          _fetchError = null;
+        });
       } else if (widget.sacramentName == 'First Communion') {
-        final records = await FirstCommunionService.getFirstCommunionRecords();
+        List<FirstCommunionRecordModel> records = [];
+        if (isOnline) {
+          try {
+            records = await FirstCommunionService.getFirstCommunionRecords();
+          } catch (_) {}
+        }
+        if (records.isEmpty) {
+          records = await _loadFirstCommunionFromSqlite();
+          _isLoadedFromSqlite = true;
+        } else {
+          _isLoadedFromSqlite = false;
+        }
         if (!mounted) return;
-        setState(() => _firstCommunionRecords = records);
+        setState(() {
+          _firstCommunionRecords = records;
+          _fetchError = null;
+        });
       } else if (widget.sacramentName == 'Matrimony') {
-        final records = await MatrimonyService.getMatrimonyRecords();
+        List<MatrimonyRecordModel> records = [];
+        if (isOnline) {
+          try {
+            records = await MatrimonyService.getMatrimonyRecords();
+          } catch (_) {}
+        }
+        if (records.isEmpty) {
+          records = await _loadMatrimonyFromSqlite();
+          _isLoadedFromSqlite = true;
+        } else {
+          _isLoadedFromSqlite = false;
+        }
         if (!mounted) return;
-        setState(() => _matrimonyRecords = records);
+        setState(() {
+          _matrimonyRecords = records;
+          _fetchError = null;
+        });
       } else if (widget.sacramentName == 'Death') {
-        final records = await DeathService.getDeathRecords();
+        List<DeathRecordModel> records = [];
+        if (isOnline) {
+          try {
+            records = await DeathService.getDeathRecords();
+          } catch (_) {}
+        }
+        if (records.isEmpty) {
+          records = await _loadDeathFromSqlite();
+          _isLoadedFromSqlite = true;
+        } else {
+          _isLoadedFromSqlite = false;
+        }
         if (!mounted) return;
-        setState(() => _deathRecords = records);
+        setState(() {
+          _deathRecords = records;
+          _fetchError = null;
+        });
       } else if (widget.sacramentName == 'Conversion') {
-        final records = await ConversionService.getConversionRecords();
+        List<ConversionRecordModel> records = [];
+        if (isOnline) {
+          try {
+            records = await ConversionService.getConversionRecords();
+          } catch (_) {}
+        }
+        if (records.isEmpty) {
+          records = await _loadConversionFromSqlite();
+          _isLoadedFromSqlite = true;
+        } else {
+          _isLoadedFromSqlite = false;
+        }
         if (!mounted) return;
-        setState(() => _conversionRecords = records);
+        setState(() {
+          _conversionRecords = records;
+          _fetchError = null;
+        });
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _fetchError = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ===========================================================================
+  // Direct SQLite Load Fallbacks (Ensures Offline Readiness on All Platforms)
+  // ===========================================================================
+
+  Future<List<BaptismRecordModel>> _loadBaptismFromSqlite() async {
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) return [];
+    try {
+      final rows = await db.query(
+        'baptism_records',
+        orderBy: 'date_of_baptism DESC, created_at DESC',
+      );
+      return rows.map((r) => BaptismRecordModel.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<ConfirmationRecordModel>> _loadConfirmationFromSqlite() async {
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) return [];
+    try {
+      final rows = await db.query(
+        'confirmation_records',
+        orderBy: 'date_of_confirmation DESC, created_at DESC',
+      );
+      return rows.map((r) => ConfirmationRecordModel.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<FirstCommunionRecordModel>> _loadFirstCommunionFromSqlite() async {
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) return [];
+    try {
+      final rows = await db.query(
+        'first_communion_records',
+        orderBy: 'date_of_communion DESC, created_at DESC',
+      );
+      return rows.map((r) => FirstCommunionRecordModel.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<MatrimonyRecordModel>> _loadMatrimonyFromSqlite() async {
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) return [];
+    try {
+      final rows = await db.query(
+        'matrimony_records',
+        orderBy: 'date_of_marriage DESC, created_at DESC',
+      );
+      return rows.map((r) => MatrimonyRecordModel.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<DeathRecordModel>> _loadDeathFromSqlite() async {
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) return [];
+    try {
+      final rows = await db.query(
+        'death_records',
+        orderBy: 'date_of_death DESC, created_at DESC',
+      );
+      return rows.map((r) => DeathRecordModel.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<ConversionRecordModel>> _loadConversionFromSqlite() async {
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) return [];
+    try {
+      final rows = await db.query(
+        'conversion_records',
+        orderBy: 'date_of_reception DESC, created_at DESC',
+      );
+      return rows.map((r) => ConversionRecordModel.fromMap(r)).toList();
+    } catch (_) {
+      return [];
     }
   }
 
@@ -123,7 +304,8 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
       final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
           'page ${r.pageNumber}'.toLowerCase().contains(q) ||
           'line ${r.lineNumber}'.toLowerCase().contains(q);
-      final parentMatch = r.fatherFullName.toLowerCase().contains(q) || r.motherFullName.toLowerCase().contains(q);
+      final parentMatch = r.fatherFullName.toLowerCase().contains(q) ||
+          r.motherFullName.toLowerCase().contains(q);
       return nameMatch || bookMatch || parentMatch;
     }).toList();
   }
@@ -136,7 +318,8 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
       final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
           'page ${r.pageNumber}'.toLowerCase().contains(q) ||
           'line ${r.lineNumber}'.toLowerCase().contains(q);
-      final parentMatch = r.fatherFullName.toLowerCase().contains(q) || r.motherFullName.toLowerCase().contains(q);
+      final parentMatch = r.fatherFullName.toLowerCase().contains(q) ||
+          r.motherFullName.toLowerCase().contains(q);
       final churchMatch = r.churchBaptized.toLowerCase().contains(q);
       return nameMatch || bookMatch || parentMatch || churchMatch;
     }).toList();
@@ -158,7 +341,8 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     if (_searchQuery.trim().isEmpty) return _matrimonyRecords;
     final q = _searchQuery.toLowerCase();
     return _matrimonyRecords.where((r) {
-      final nameMatch = r.groomFullName.toLowerCase().contains(q) || r.brideFullName.toLowerCase().contains(q);
+      final nameMatch = r.groomFullName.toLowerCase().contains(q) ||
+          r.brideFullName.toLowerCase().contains(q);
       final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
           'page ${r.pageNumber}'.toLowerCase().contains(q) ||
           'line ${r.lineNumber}'.toLowerCase().contains(q);
@@ -187,7 +371,8 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
       final bookMatch = 'book ${c.bookNumber}'.toLowerCase().contains(q) ||
           'page ${c.pageNumber}'.toLowerCase().contains(q) ||
           'line ${c.lineNumber}'.toLowerCase().contains(q);
-      final parentMatch = c.fatherFullName.toLowerCase().contains(q) || c.motherFullName.toLowerCase().contains(q);
+      final parentMatch = c.fatherFullName.toLowerCase().contains(q) ||
+          c.motherFullName.toLowerCase().contains(q);
       return nameMatch || bookMatch || parentMatch;
     }).toList();
   }
@@ -331,12 +516,11 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                 tooltip: 'Certificate Templates Studio',
                 onPressed: _openCertificateTemplates,
               ),
-              if (isBaptism || isConfirmation || isCommunion || isMatrimony || isDeath || isConversion)
-                IconButton(
-                  icon: Icon(Icons.refresh, color: widget.themeColor),
-                  onPressed: _loadRecords,
-                  tooltip: 'Refresh Database Records',
-                ),
+              IconButton(
+                icon: Icon(Icons.refresh, color: widget.themeColor),
+                onPressed: _loadRecords,
+                tooltip: 'Refresh Records (Sync with SQLite/Cloud)',
+              ),
             ],
           ),
           body: SingleChildScrollView(
@@ -344,7 +528,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Ledger Status Banner
+                // Ledger Status Banner (With Responsive Wrap to eliminate 21px overflow)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -354,6 +538,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                     border: Border.all(color: widget.themeColor.withOpacity(0.4), width: 1.5),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -368,13 +553,52 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${widget.sacramentName} Canonical Books',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.themeColor),
+                            // Flexible Responsive Wrap eliminates the 21px overflow entirely
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  '${widget.sacramentName} Canonical Books',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: widget.themeColor,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _isLoadedFromSqlite
+                                        ? Colors.amber.shade100
+                                        : Colors.green.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: _isLoadedFromSqlite
+                                          ? Colors.amber.shade800
+                                          : Colors.green.shade800,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _isLoadedFromSqlite ? 'OFFLINE SQLITE' : 'CLOUD SYNCED',
+                                    style: TextStyle(
+                                      fontSize: 9.0,
+                                      fontWeight: FontWeight.bold,
+                                      color: _isLoadedFromSqlite
+                                          ? Colors.amber.shade900
+                                          : Colors.green.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 4),
                             Text(
-                              'Live Database Records: $totalCount registered',
+                              _isLoadedFromSqlite
+                                  ? 'Offline Local Cache: $totalCount registered (Working without internet)'
+                                  : 'Live Database Records: $totalCount registered',
                               style: TextStyle(fontSize: 12, color: textMutedColor),
                             ),
                           ],
@@ -385,7 +609,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                 ),
                 const SizedBox(height: 18),
 
-                // Action Buttons Toolbar (AI OCR, Manual Entry, and Certificate Templates)
+                // Action Buttons Toolbar
                 isDesktop
                     ? Row(
                   children: [
@@ -547,7 +771,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // View Mode Toggle (Cards vs Table)
                           ToggleButtons(
                             isSelected: [_viewMode == RegistryViewMode.cards, _viewMode == RegistryViewMode.table],
                             onPressed: (index) {
@@ -565,7 +788,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                               Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 18)),
                             ],
                           ),
-                          // Rows Per Page Selector
                           Row(
                             children: [
                               Text('Rows:', style: TextStyle(fontSize: 12, color: textMutedColor)),
@@ -620,7 +842,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                 ),
                 const SizedBox(height: 12),
 
-                // Main Records Display Area (Cards vs Table)
+                // Main Records Display Area
                 if (_isLoading)
                   const Center(
                     child: Padding(
@@ -628,7 +850,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                       child: CircularProgressIndicator(),
                     ),
                   )
-                else if (_fetchError != null)
+                else if (_fetchError != null && totalCount == 0)
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -651,8 +873,11 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                   )
                 else if (totalCount == 0)
                     _buildEmptyState(
-                      title: _searchQuery.isNotEmpty ? 'No records match your search.' : 'No registered ${widget.sacramentName.toLowerCase()} records yet.',
-                      subtitle: 'Tap "Manual Entry" above to add a new record.',
+                      title: _searchQuery.isNotEmpty
+                          ? 'No records match your search.'
+                          : 'No registered ${widget.sacramentName.toLowerCase()} records yet.',
+                      subtitle:
+                      'Tap "Manual Entry" above or download the Offline Pack from Records View.',
                     )
                   else if (_viewMode == RegistryViewMode.cards)
                       isDesktop
@@ -1244,7 +1469,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
               ],
             ),
             const SizedBox(height: 6),
-            // 1. Person's full name
             Text(
               name,
               style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: textDarkColor),
@@ -1252,7 +1476,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
-            // 2. Parents' names
             Text(
               parents,
               style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: textDarkColor),
@@ -1260,7 +1483,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
-            // 3. Date of birth
             Text(
               dob,
               style: TextStyle(fontSize: 12, color: textMutedColor),
@@ -1268,7 +1490,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
-            // 4. Date of the administered sacrament
             Text(
               sacramentDate,
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: widget.themeColor),
