@@ -1,6 +1,13 @@
+// =============================================================================
+// FILE: lib/features/appointments/services/appointment_service.dart
+// =============================================================================
+
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/database/local_database_service.dart';
+import '../../../core/services/records_sync_service.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/appointment_model.dart';
 import 'liturgical_calendar_service.dart';
@@ -48,28 +55,81 @@ class AppointmentService {
     return TimeOfDay(hour: h, minute: m);
   }
 
-  /// Fetch all appointments subject to role constraints (or filtered by specific user)
+  /// Fetch all appointments subject to role constraints (or filtered by specific user).
+  /// Online/Web: queries Supabase and caches locally in SQLite.
+  /// Offline native: queries SQLite directly.
   static Future<List<AppointmentModel>> getAppointments({
     String? statusFilter,
     String? userIdFilter,
   }) async {
-    var query = _client.from('appointments').select();
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    if (userIdFilter != null && userIdFilter.trim().isNotEmpty) {
-      query = query.eq('created_by', userIdFilter.trim());
+    if (isOnline || kIsWeb) {
+      try {
+        var query = _client.from('appointments').select();
+
+        if (userIdFilter != null && userIdFilter.trim().isNotEmpty) {
+          query = query.eq('created_by', userIdFilter.trim());
+        }
+
+        if (statusFilter != null && statusFilter.toLowerCase() != 'all') {
+          query = query.eq('appointment_status', statusFilter.toLowerCase());
+        }
+
+        final response = await query
+            .order('requested_date', ascending: true)
+            .order('requested_time', ascending: true);
+
+        final list = (response as List)
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList();
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'appointments',
+            list,
+          );
+        }
+
+        return list.map((row) => AppointmentModel.fromMap(row)).toList();
+      } catch (e) {
+        debugPrint('[AppointmentService] Remote fetch error: $e');
+        if (kIsWeb) return [];
+      }
     }
 
-    if (statusFilter != null && statusFilter.toLowerCase() != 'all') {
-      query = query.eq('appointment_status', statusFilter.toLowerCase());
+    // Direct SQLite Query for Native Offline
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        String? whereClause;
+        List<dynamic>? whereArgs;
+
+        if (userIdFilter != null && userIdFilter.trim().isNotEmpty && statusFilter != null && statusFilter.toLowerCase() != 'all') {
+          whereClause = 'created_by = ? AND appointment_status = ?';
+          whereArgs = [userIdFilter.trim(), statusFilter.toLowerCase()];
+        } else if (userIdFilter != null && userIdFilter.trim().isNotEmpty) {
+          whereClause = 'created_by = ?';
+          whereArgs = [userIdFilter.trim()];
+        } else if (statusFilter != null && statusFilter.toLowerCase() != 'all') {
+          whereClause = 'appointment_status = ?';
+          whereArgs = [statusFilter.toLowerCase()];
+        }
+
+        final rows = await db.query(
+          'appointments',
+          where: whereClause,
+          whereArgs: whereArgs,
+          orderBy: 'requested_date ASC, requested_time ASC',
+        );
+
+        return rows.map((r) => AppointmentModel.fromMap(r)).toList();
+      } catch (e) {
+        debugPrint('[AppointmentService] SQLite local query error: $e');
+      }
     }
 
-    final response = await query
-        .order('requested_date', ascending: true)
-        .order('requested_time', ascending: true);
-
-    return (response as List)
-        .map((row) => AppointmentModel.fromMap(row as Map<String, dynamic>))
-        .toList();
+    return [];
   }
 
   /// Fetch appointments belonging exclusively to the currently authenticated user
@@ -142,7 +202,8 @@ class AppointmentService {
     }
   }
 
-  /// Checks if the same requester already has an active booking on the target date
+  /// Checks if the same requester already has an active booking on the target date.
+  /// Seamlessly checks Supabase (online) and SQLite (offline).
   static Future<String?> checkDuplicateRequester({
     required String requesterName,
     required String date,
@@ -157,17 +218,50 @@ class AppointmentService {
         ? '${parsedDate.year}-${parsedDate.month.toString().padLeft(2, '0')}-${parsedDate.day.toString().padLeft(2, '0')}'
         : date.trim();
 
-    var query = _client
-        .from('appointments')
-        .select('appointment_id, service_type, requester_name, requested_time, end_time')
-        .eq('requested_date', cleanDate)
-        .neq('appointment_status', 'cancelled');
+    List<Map<String, dynamic>> bookings = [];
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    if (excludeAppointmentId != null) {
-      query = query.neq('appointment_id', excludeAppointmentId);
+    if (isOnline || kIsWeb) {
+      try {
+        var query = _client
+            .from('appointments')
+            .select('appointment_id, service_type, requester_name, requested_time, end_time')
+            .eq('requested_date', cleanDate)
+            .neq('appointment_status', 'cancelled');
+
+        if (excludeAppointmentId != null) {
+          query = query.neq('appointment_id', excludeAppointmentId);
+        }
+
+        bookings = (await query as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      } catch (_) {
+        if (kIsWeb) return null;
+      }
     }
 
-    final bookings = await query;
+    if (bookings.isEmpty && !kIsWeb) {
+      final db = await LocalDatabaseService.instance.database;
+      if (db != null) {
+        try {
+          String where = 'requested_date = ? AND appointment_status != "cancelled"';
+          List<dynamic> args = [cleanDate];
+
+          if (excludeAppointmentId != null) {
+            where += ' AND appointment_id != ?';
+            args.add(excludeAppointmentId);
+          }
+
+          final rows = await db.query(
+            'appointments',
+            columns: ['appointment_id', 'service_type', 'requester_name', 'requested_time', 'end_time'],
+            where: where,
+            whereArgs: args,
+          );
+          bookings = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+        } catch (_) {}
+      }
+    }
+
     for (final b in bookings) {
       final existingName = b['requester_name'].toString().trim().toLowerCase();
       final existingService = b['service_type'].toString().trim();
@@ -214,7 +308,8 @@ class AppointmentService {
     }
   }
 
-  /// Finds the earliest non-conflicting time slot for a given day within 9:00 AM – 5:00 PM
+  /// Finds the earliest non-conflicting time slot for a given day within 9:00 AM – 5:00 PM.
+  /// Supports both online and offline lookups.
   static Future<Map<String, TimeOfDay>?> findNextAvailableSlot({
     required String date,
     required int durationMinutes,
@@ -243,17 +338,50 @@ class AppointmentService {
     final cleanDate =
         '${parsedDate.year}-${parsedDate.month.toString().padLeft(2, '0')}-${parsedDate.day.toString().padLeft(2, '0')}';
 
-    var query = _client
-        .from('appointments')
-        .select('appointment_id, service_type, requested_time, end_time')
-        .eq('requested_date', cleanDate)
-        .neq('appointment_status', 'cancelled');
+    List<Map<String, dynamic>> activeBookings = [];
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    if (excludeAppointmentId != null) {
-      query = query.neq('appointment_id', excludeAppointmentId);
+    if (isOnline || kIsWeb) {
+      try {
+        var query = _client
+            .from('appointments')
+            .select('appointment_id, service_type, requested_time, end_time')
+            .eq('requested_date', cleanDate)
+            .neq('appointment_status', 'cancelled');
+
+        if (excludeAppointmentId != null) {
+          query = query.neq('appointment_id', excludeAppointmentId);
+        }
+
+        activeBookings = (await query as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      } catch (_) {
+        if (kIsWeb) return null;
+      }
     }
 
-    final activeBookings = await query;
+    if (activeBookings.isEmpty && !kIsWeb) {
+      final db = await LocalDatabaseService.instance.database;
+      if (db != null) {
+        try {
+          String where = 'requested_date = ? AND appointment_status != "cancelled"';
+          List<dynamic> args = [cleanDate];
+
+          if (excludeAppointmentId != null) {
+            where += ' AND appointment_id != ?';
+            args.add(excludeAppointmentId);
+          }
+
+          final rows = await db.query(
+            'appointments',
+            columns: ['appointment_id', 'service_type', 'requested_time', 'end_time'],
+            where: where,
+            whereArgs: args,
+          );
+          activeBookings = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+        } catch (_) {}
+      }
+    }
+
     final List<Map<String, int>> bookedIntervals = [];
 
     for (final b in activeBookings) {
@@ -322,7 +450,8 @@ class AppointmentService {
     return null;
   }
 
-  /// Automated Conflict Checking, Operating Hours (9 AM – 5 PM), and Batch Baptism Logic
+  /// Automated Conflict Checking, Operating Hours (9 AM – 5 PM), and Batch Baptism Logic.
+  /// Works seamlessly online or offline with local SQLite.
   static Future<void> checkScheduleConflict({
     required String date,       // YYYY-MM-DD
     required String startTime,  // HH:mm:ss
@@ -375,17 +504,49 @@ class AppointmentService {
         ? '${parsedDate.year}-${parsedDate.month.toString().padLeft(2, '0')}-${parsedDate.day.toString().padLeft(2, '0')}'
         : date.trim();
 
-    var query = _client
-        .from('appointments')
-        .select('appointment_id, service_type, venue, officiant_name, requested_time, end_time, requester_name')
-        .eq('requested_date', cleanDate)
-        .neq('appointment_status', 'cancelled');
+    List<Map<String, dynamic>> activeBookings = [];
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    if (excludeAppointmentId != null) {
-      query = query.neq('appointment_id', excludeAppointmentId);
+    if (isOnline || kIsWeb) {
+      try {
+        var query = _client
+            .from('appointments')
+            .select('appointment_id, service_type, venue, officiant_name, requested_time, end_time, requester_name')
+            .eq('requested_date', cleanDate)
+            .neq('appointment_status', 'cancelled');
+
+        if (excludeAppointmentId != null) {
+          query = query.neq('appointment_id', excludeAppointmentId);
+        }
+
+        activeBookings = (await query as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      } catch (_) {
+        if (kIsWeb) return;
+      }
     }
 
-    final activeBookings = await query;
+    if (activeBookings.isEmpty && !kIsWeb) {
+      final db = await LocalDatabaseService.instance.database;
+      if (db != null) {
+        try {
+          String where = 'requested_date = ? AND appointment_status != "cancelled"';
+          List<dynamic> args = [cleanDate];
+
+          if (excludeAppointmentId != null) {
+            where += ' AND appointment_id != ?';
+            args.add(excludeAppointmentId);
+          }
+
+          final rows = await db.query(
+            'appointments',
+            columns: ['appointment_id', 'service_type', 'venue', 'officiant_name', 'requested_time', 'end_time', 'requester_name'],
+            where: where,
+            whereArgs: args,
+          );
+          activeBookings = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+        } catch (_) {}
+      }
+    }
 
     for (final booking in activeBookings) {
       final existingStartStr = booking['requested_time'].toString();
@@ -428,7 +589,8 @@ class AppointmentService {
     }
   }
 
-  /// Rescheduling Method with Role-Aware Re-Approval & Operating Bounds
+  /// Rescheduling Method with Role-Aware Re-Approval & Operating Bounds.
+  /// Works online or queues offline for auto-sync.
   static Future<void> rescheduleAppointment({
     required String appointmentId,
     required String newDate,      // YYYY-MM-DD
@@ -476,7 +638,7 @@ class AppointmentService {
         ? auditLog
         : '$previousRemarks\n$auditLog';
 
-    await _client.from('appointments').update({
+    final updatePayload = {
       'requested_date': newDate,
       'requested_time': newStartTime,
       'end_time': newEndTime,
@@ -484,13 +646,39 @@ class AppointmentService {
       'officiant_name': officiant,
       'appointment_status': targetStatus,
       'appointment_remarks': updatedRemarks,
-      'reminder_24h_sent': false, // Reset reminder flags for new schedule
-      'reminder_12h_sent': false,
+      'reminder_24h_sent': 0,
+      'reminder_12h_sent': 0,
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('appointment_id', appointmentId);
+    };
+
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client.from('appointments').update(updatePayload).eq('appointment_id', appointmentId);
+
+        if (!kIsWeb) {
+          final db = await LocalDatabaseService.instance.database;
+          if (db != null) {
+            await db.update('appointments', updatePayload, where: 'appointment_id = ?', whereArgs: [appointmentId]);
+          }
+        }
+        return;
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    // Offline on native
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'appointments',
+      recordId: appointmentId,
+      operation: 'UPDATE',
+      data: updatePayload,
+    );
   }
 
-  /// Create and register an appointment with collision-proof retry mechanism
+  /// Create and register an appointment with collision-proof retry mechanism.
+  /// Supports offline walk-in bookings for staff.
   static Future<AppointmentModel> createAppointment({
     required String serviceType,
     required String requesterName,
@@ -553,114 +741,183 @@ class AppointmentService {
         : '$remarks\n[Online Parishioner Booking - Awaiting Staff Clearance]')
         : remarks);
 
-    // Collision-Proof Insert with retry for unique primary key constraint
-    for (int attempt = 0; attempt < 4; attempt++) {
-      final appointmentId = await _generateAppointmentId(attempt: attempt);
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-      final payload = {
-        'appointment_id': appointmentId,
-        'created_by': currentUserId,
-        'service_type': serviceType,
-        'requester_name': requesterName.trim(),
-        'contact_number': contactNumber.trim(),
-        'email': email?.trim().isEmpty ?? true ? null : email!.trim(),
-        'requested_date': date,
-        'requested_time': startTime,
-        'end_time': endTime,
-        'venue': venue,
-        'officiant_name': officiant,
-        'id_type': idType,
-        'id_number': idNumber?.trim().isEmpty ?? true ? null : idNumber!.trim(),
-        'id_document_url': idDocumentUrl,
-        'is_id_verified': false,
-        'appointment_status': initialStatus,
-        'appointment_remarks': finalRemarks?.trim().isEmpty ?? true ? null : finalRemarks!.trim(),
-      };
+    // 1. Online / Web Flow
+    if (isOnline || kIsWeb) {
+      for (int attempt = 0; attempt < 4; attempt++) {
+        final appointmentId = await _generateAppointmentId(attempt: attempt);
 
-      try {
-        final response = await _client
-            .from('appointments')
-            .insert(payload)
-            .select()
-            .single();
+        final payload = {
+          'appointment_id': appointmentId,
+          'created_by': currentUserId,
+          'service_type': serviceType,
+          'requester_name': requesterName.trim(),
+          'contact_number': contactNumber.trim(),
+          'email': email?.trim().isEmpty ?? true ? null : email!.trim(),
+          'requested_date': date,
+          'requested_time': startTime,
+          'end_time': endTime,
+          'venue': venue,
+          'officiant_name': officiant,
+          'id_type': idType,
+          'id_number': idNumber?.trim().isEmpty ?? true ? null : idNumber!.trim(),
+          'id_document_url': idDocumentUrl,
+          'is_id_verified': false,
+          'appointment_status': initialStatus,
+          'appointment_remarks': finalRemarks?.trim().isEmpty ?? true ? null : finalRemarks!.trim(),
+          'reminder_24h_sent': false,
+          'reminder_12h_sent': false,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        };
 
-        return AppointmentModel.fromMap(response);
-      } catch (e) {
-        if (e is PostgrestException && e.code == '23505' && attempt < 3) {
-          debugPrint('Duplicate appointment_id ($appointmentId) detected. Retrying with unique sequence...');
-          continue;
+        try {
+          final response = await _client
+              .from('appointments')
+              .insert(payload)
+              .select()
+              .single();
+
+          if (!kIsWeb) {
+            await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+              'appointments',
+              [response],
+            );
+          }
+
+          return AppointmentModel.fromMap(response);
+        } catch (e) {
+          if (e is PostgrestException && e.code == '23505' && attempt < 3) {
+            debugPrint('Duplicate appointment_id ($appointmentId) detected. Retrying...');
+            continue;
+          }
+          if (kIsWeb) rethrow;
         }
-        rethrow;
       }
     }
 
-    throw 'Could not generate a unique booking ID. Please try again.';
+    // 2. Native Offline Flow
+    final appointmentId = await _generateAppointmentId();
+    final offlinePayload = {
+      'appointment_id': appointmentId,
+      'created_by': currentUserId,
+      'service_type': serviceType,
+      'requester_name': requesterName.trim(),
+      'contact_number': contactNumber.trim(),
+      'email': email?.trim().isEmpty ?? true ? null : email!.trim(),
+      'requested_date': date,
+      'requested_time': startTime,
+      'end_time': endTime,
+      'venue': venue,
+      'officiant_name': officiant,
+      'id_type': idType,
+      'id_number': idNumber?.trim().isEmpty ?? true ? null : idNumber!.trim(),
+      'id_document_url': idDocumentUrl,
+      'is_id_verified': false,
+      'appointment_status': initialStatus,
+      'appointment_remarks': finalRemarks?.trim().isEmpty ?? true ? null : finalRemarks!.trim(),
+      'reminder_24h_sent': false,
+      'reminder_12h_sent': false,
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'appointments',
+      recordId: appointmentId,
+      operation: 'INSERT',
+      data: offlinePayload,
+    );
+
+    return AppointmentModel.fromMap(offlinePayload);
   }
 
   /// Update appointment status + triggers email notification only on FIRST transition to confirmed
   static Future<void> updateStatus(String appointmentId, String newStatus) async {
     final cleanStatus = newStatus.toLowerCase();
 
-    // 1. Fetch current appointment record to inspect prior status
-    final currentRecord = await _client
-        .from('appointments')
-        .select()
-        .eq('appointment_id', appointmentId)
-        .maybeSingle();
-
-    if (currentRecord == null) {
-      throw 'Appointment record not found.';
-    }
-
-    final priorStatus = (currentRecord['appointment_status'] ?? '').toString().toLowerCase();
-
-    // Prevent duplicate re-approval if already confirmed
-    if (priorStatus == 'confirmed' && cleanStatus == 'confirmed') {
-      debugPrint('[AppointmentService] Appointment is already confirmed. Skipping duplicate status update and email dispatch.');
-      return;
-    }
-
-    // 2. Auto-Purge Storage Cleanup on Completion (RA 10173 compliance)
-    if (cleanStatus == 'completed') {
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
       try {
-        final filePath = currentRecord['id_document_url']?.toString();
-        if (filePath != null && filePath.isNotEmpty) {
-          await _client.storage.from('appointment-documents').remove([filePath]);
-          await _client
-              .from('appointments')
-              .update({'id_document_url': null})
-              .eq('appointment_id', appointmentId);
+        final currentRecord = await _client
+            .from('appointments')
+            .select()
+            .eq('appointment_id', appointmentId)
+            .maybeSingle();
+
+        if (currentRecord == null) {
+          throw 'Appointment record not found.';
         }
+
+        final priorStatus = (currentRecord['appointment_status'] ?? '').toString().toLowerCase();
+
+        if (priorStatus == 'confirmed' && cleanStatus == 'confirmed') {
+          return;
+        }
+
+        if (cleanStatus == 'completed') {
+          try {
+            final filePath = currentRecord['id_document_url']?.toString();
+            if (filePath != null && filePath.isNotEmpty) {
+              await _client.storage.from('appointment-documents').remove([filePath]);
+              await _client
+                  .from('appointments')
+                  .update({'id_document_url': null})
+                  .eq('appointment_id', appointmentId);
+            }
+          } catch (_) {}
+        }
+
+        await _client.from('appointments').update({
+          'appointment_status': cleanStatus,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('appointment_id', appointmentId);
+
+        if (!kIsWeb) {
+          final db = await LocalDatabaseService.instance.database;
+          if (db != null) {
+            await db.update(
+              'appointments',
+              {'appointment_status': cleanStatus, 'updated_at': DateTime.now().toIso8601String()},
+              where: 'appointment_id = ?',
+              whereArgs: [appointmentId],
+            );
+          }
+        }
+
+        if (cleanStatus == 'confirmed' && priorStatus != 'confirmed') {
+          try {
+            if (currentRecord['email'] != null &&
+                currentRecord['email'].toString().trim().isNotEmpty) {
+              await _client.functions.invoke(
+                'send-booking-confirmation',
+                body: {
+                  ...currentRecord,
+                  'appointment_status': 'confirmed',
+                },
+              );
+            }
+          } catch (_) {}
+        }
+        return;
       } catch (e) {
-        debugPrint('Non-blocking storage cleanup notice: $e');
+        if (kIsWeb) rethrow;
       }
     }
 
-    // 3. Update status in Database
-    await _client.from('appointments').update({
+    // Offline on Native
+    final offlinePayload = {
       'appointment_status': cleanStatus,
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('appointment_id', appointmentId);
+    };
 
-    // 4. Automated Approval Email Trigger via Edge Function (Only when transitioning from pending/rescheduled -> confirmed)
-    if (cleanStatus == 'confirmed' && priorStatus != 'confirmed') {
-      try {
-        if (currentRecord['email'] != null &&
-            currentRecord['email'].toString().trim().isNotEmpty) {
-          debugPrint('Dispatching single approval confirmation email to: ${currentRecord['email']}');
-
-          await _client.functions.invoke(
-            'send-booking-confirmation',
-            body: {
-              ...currentRecord,
-              'appointment_status': 'confirmed',
-            },
-          );
-        }
-      } catch (e) {
-        debugPrint('Non-blocking approval email notice: $e');
-      }
-    }
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'appointments',
+      recordId: appointmentId,
+      operation: 'UPDATE',
+      data: offlinePayload,
+    );
   }
 
   /// Update Valid ID verification state (Staff Secretariat action)
@@ -671,13 +928,37 @@ class AppointmentService {
   }) async {
     final staffId = AuthService.currentUser?.userId;
 
-    await _client.from('appointments').update({
+    final updatePayload = {
       'is_id_verified': isVerified,
       'id_verified_by': staffId,
       'id_verified_at': DateTime.now().toIso8601String(),
       'id_verification_notes': notes,
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('appointment_id', appointmentId);
+    };
+
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client.from('appointments').update(updatePayload).eq('appointment_id', appointmentId);
+
+        if (!kIsWeb) {
+          final db = await LocalDatabaseService.instance.database;
+          if (db != null) {
+            await db.update('appointments', updatePayload, where: 'appointment_id = ?', whereArgs: [appointmentId]);
+          }
+        }
+        return;
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'appointments',
+      recordId: appointmentId,
+      operation: 'UPDATE',
+      data: updatePayload,
+    );
   }
 
   /// Generates sequential Appointment ID: APT-YY-XXXX with collision-proof fallback
@@ -690,31 +971,59 @@ class AppointmentService {
       return 'APT-$yearSuffix-$uniqueRand';
     }
 
-    try {
-      final records = await _client
-          .from('appointments')
-          .select('appointment_id')
-          .like('appointment_id', 'APT-$yearSuffix-%')
-          .order('created_at', ascending: false)
-          .limit(100);
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final records = await _client
+            .from('appointments')
+            .select('appointment_id')
+            .like('appointment_id', 'APT-$yearSuffix-%')
+            .order('created_at', ascending: false)
+            .limit(100);
 
-      int highest = 0;
-      for (final item in records) {
-        final id = item['appointment_id']?.toString() ?? '';
-        final parts = id.split('-');
-        if (parts.length >= 3) {
-          final seq = int.tryParse(parts[2]);
-          if (seq != null && seq > highest && seq < 10000) {
-            highest = seq;
+        int highest = 0;
+        for (final item in records) {
+          final id = item['appointment_id']?.toString() ?? '';
+          final parts = id.split('-');
+          if (parts.length >= 3) {
+            final seq = int.tryParse(parts[2]);
+            if (seq != null && seq > highest && seq < 10000) {
+              highest = seq;
+            }
           }
         }
-      }
 
-      if (highest > 0) {
-        final nextSeq = (highest + 1).toString().padLeft(4, '0');
-        return 'APT-$yearSuffix-$nextSeq';
-      }
-    } catch (_) {}
+        if (highest > 0) {
+          final nextSeq = (highest + 1).toString().padLeft(4, '0');
+          return 'APT-$yearSuffix-$nextSeq';
+        }
+      } catch (_) {}
+    }
+
+    // Direct SQLite check if offline
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final localRows = await db.rawQuery(
+          "SELECT appointment_id FROM appointments WHERE appointment_id LIKE 'APT-$yearSuffix-%'",
+        );
+        int highest = 0;
+        for (final item in localRows) {
+          final id = item['appointment_id']?.toString() ?? '';
+          final parts = id.split('-');
+          if (parts.length >= 3) {
+            final seq = int.tryParse(parts[2]);
+            if (seq != null && seq > highest && seq < 10000) {
+              highest = seq;
+            }
+          }
+        }
+        if (highest > 0) {
+          final nextSeq = (highest + 1).toString().padLeft(4, '0');
+          return 'APT-$yearSuffix-$nextSeq';
+        }
+      } catch (_) {}
+    }
 
     final timestampSeq = (now.millisecondsSinceEpoch ~/ 100 % 9000 + 1000).toString();
     return 'APT-$yearSuffix-$timestampSeq';

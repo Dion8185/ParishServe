@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/appointments/models/appointment_model.dart
+// =============================================================================
+
 class AppointmentModel {
   final String appointmentId;
   final String? scheduleId;
@@ -77,29 +81,36 @@ class AppointmentModel {
   }
 
   factory AppointmentModel.fromMap(Map<String, dynamic> map) {
+    // Robust parsing for boolean fields whether returned as bool (Supabase) or int 0/1 (SQLite)
+    final rawVerified = map['is_id_verified'];
+    final bool isVerifiedParsed = rawVerified == true ||
+        rawVerified == 1 ||
+        rawVerified == 'true' ||
+        rawVerified == '1';
+
     return AppointmentModel(
-      appointmentId: map['appointment_id'] ?? '',
-      scheduleId: map['schedule_id'],
-      serviceRequestId: map['service_request_id'],
-      createdBy: map['created_by'],
-      requesterName: map['requester_name'] ?? '',
-      contactNumber: map['contact_number'] ?? '',
-      email: map['email'],
-      serviceType: map['service_type'] ?? '',
+      appointmentId: map['appointment_id']?.toString() ?? '',
+      scheduleId: map['schedule_id']?.toString(),
+      serviceRequestId: map['service_request_id']?.toString(),
+      createdBy: map['created_by']?.toString(),
+      requesterName: map['requester_name']?.toString() ?? '',
+      contactNumber: map['contact_number']?.toString() ?? '',
+      email: map['email']?.toString(),
+      serviceType: map['service_type']?.toString() ?? '',
       requestedDate: DateTime.tryParse(map['requested_date']?.toString() ?? '') ?? DateTime.now(),
       requestedTime: map['requested_time']?.toString() ?? '00:00:00',
       endTime: map['end_time']?.toString() ?? '00:00:00',
-      venue: map['venue'] ?? 'Main Church Altar',
-      officiantName: map['officiant_name'] ?? 'Rev. Fr. Roy G. Reyes',
-      appointmentStatus: map['appointment_status'] ?? 'pending',
-      appointmentRemarks: map['appointment_remarks'],
-      idType: map['id_type'],
-      idNumber: map['id_number'],
-      idDocumentUrl: map['id_document_url'],
-      isIdVerified: map['is_id_verified'] ?? false,
-      idVerifiedBy: map['id_verified_by'],
+      venue: map['venue']?.toString() ?? 'Main Church Altar',
+      officiantName: map['officiant_name']?.toString() ?? 'Rev. Fr. Roy G. Reyes',
+      appointmentStatus: map['appointment_status']?.toString() ?? 'pending',
+      appointmentRemarks: map['appointment_remarks']?.toString(),
+      idType: map['id_type']?.toString(),
+      idNumber: map['id_number']?.toString(),
+      idDocumentUrl: map['id_document_url']?.toString(),
+      isIdVerified: isVerifiedParsed,
+      idVerifiedBy: map['id_verified_by']?.toString(),
       idVerifiedAt: map['id_verified_at'] != null ? DateTime.tryParse(map['id_verified_at'].toString()) : null,
-      idVerificationNotes: map['id_verification_notes'],
+      idVerificationNotes: map['id_verification_notes']?.toString(),
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
       updatedAt: map['updated_at'] != null ? DateTime.tryParse(map['updated_at'].toString()) : null,
     );

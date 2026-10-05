@@ -1,25 +1,76 @@
+// =============================================================================
+// FILE: lib/features/appointments/services/mass_intention_service.dart
+// =============================================================================
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/database/local_database_service.dart';
+import '../../../core/services/records_sync_service.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/mass_intention_model.dart';
 
 class MassIntentionService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  /// Fetch all mass intentions ordered by scheduled date and time
+  /// Fetch all mass intentions ordered by scheduled date and time.
+  /// Online/Web: queries Supabase and caches to SQLite.
+  /// Offline native: queries SQLite directly.
   static Future<List<MassIntentionModel>> getMassIntentions({String? statusFilter}) async {
-    var query = _client.from('mass_intentions').select();
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    if (statusFilter != null && statusFilter.toLowerCase() != 'all') {
-      query = query.eq('intention_status', statusFilter.toLowerCase());
+    if (isOnline || kIsWeb) {
+      try {
+        var query = _client.from('mass_intentions').select();
+
+        if (statusFilter != null && statusFilter.toLowerCase() != 'all') {
+          query = query.eq('intention_status', statusFilter.toLowerCase());
+        }
+
+        final response = await query
+            .order('scheduled_date', ascending: true)
+            .order('mass_time', ascending: true);
+
+        final list = (response as List)
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList();
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'mass_intentions',
+            list,
+          );
+        }
+
+        return list.map((row) => MassIntentionModel.fromMap(row)).toList();
+      } catch (_) {
+        if (kIsWeb) return [];
+      }
     }
 
-    final response = await query
-        .order('scheduled_date', ascending: true)
-        .order('mass_time', ascending: true);
+    // Direct SQLite Query for Native Offline
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        String? whereClause;
+        List<dynamic>? whereArgs;
 
-    return (response as List)
-        .map((row) => MassIntentionModel.fromMap(row as Map<String, dynamic>))
-        .toList();
+        if (statusFilter != null && statusFilter.toLowerCase() != 'all') {
+          whereClause = 'intention_status = ?';
+          whereArgs = [statusFilter.toLowerCase()];
+        }
+
+        final rows = await db.query(
+          'mass_intentions',
+          where: whereClause,
+          whereArgs: whereArgs,
+          orderBy: 'scheduled_date ASC, mass_time ASC',
+        );
+
+        return rows.map((r) => MassIntentionModel.fromMap(r)).toList();
+      } catch (_) {}
+    }
+
+    return [];
   }
 
   /// Fetch mass intentions created by current logged-in parishioner
@@ -65,7 +116,8 @@ class MassIntentionService {
     }
   }
 
-  /// Create and register a complete Mass Intention
+  /// Create and register a complete Mass Intention.
+  /// Works online or queues offline for auto-sync.
   static Future<MassIntentionModel> createMassIntention({
     required String requesterName,
     required String contactNumber,
@@ -142,15 +194,42 @@ class MassIntentionService {
       'gcash_reference_no': gcashReferenceNo?.trim().isEmpty ?? true ? null : gcashReferenceNo!.trim(),
       'intention_status': initialStatus,
       'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
     };
 
-    final response = await _client
-        .from('mass_intentions')
-        .insert(payload)
-        .select()
-        .single();
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
 
-    return MassIntentionModel.fromMap(response);
+    if (isOnline || kIsWeb) {
+      try {
+        final response = await _client
+            .from('mass_intentions')
+            .insert(payload)
+            .select()
+            .single();
+
+        if (!kIsWeb) {
+          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+            'mass_intentions',
+            [response],
+          );
+        }
+
+        return MassIntentionModel.fromMap(response);
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    // Offline on Native
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'mass_intentions',
+      recordId: intentionId,
+      operation: 'INSERT',
+      data: payload,
+    );
+
+    return MassIntentionModel.fromMap(payload);
   }
 
   /// Reschedule a specific Mass Intention to another valid Mass slot
@@ -185,21 +264,71 @@ class MassIntentionService {
         ? auditLog
         : '$previousRemarks\n$auditLog';
 
-    await _client.from('mass_intentions').update({
+    final updatePayload = {
       'scheduled_date': newDate,
       'mass_time': newMassTime,
       'intention_status': targetStatus,
       'remarks': updatedRemarks,
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('intention_id', intentionId);
+    };
+
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client.from('mass_intentions').update(updatePayload).eq('intention_id', intentionId);
+
+        if (!kIsWeb) {
+          final db = await LocalDatabaseService.instance.database;
+          if (db != null) {
+            await db.update('mass_intentions', updatePayload, where: 'intention_id = ?', whereArgs: [intentionId]);
+          }
+        }
+        return;
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    // Offline on Native
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'mass_intentions',
+      recordId: intentionId,
+      operation: 'UPDATE',
+      data: updatePayload,
+    );
   }
 
   /// Update Mass Intention status
   static Future<void> updateStatus(String intentionId, String newStatus) async {
-    await _client.from('mass_intentions').update({
+    final updatePayload = {
       'intention_status': newStatus.toLowerCase(),
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('intention_id', intentionId);
+    };
+
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client.from('mass_intentions').update(updatePayload).eq('intention_id', intentionId);
+
+        if (!kIsWeb) {
+          final db = await LocalDatabaseService.instance.database;
+          if (db != null) {
+            await db.update('mass_intentions', updatePayload, where: 'intention_id = ?', whereArgs: [intentionId]);
+          }
+        }
+        return;
+      } catch (e) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    // Offline on Native
+    await RecordsSyncService.instance.queueOfflineChange(
+      tableName: 'mass_intentions',
+      recordId: intentionId,
+      operation: 'UPDATE',
+      data: updatePayload,
+    );
   }
 
   /// Generates sequential Intention ID: INT-YY-XXXX
@@ -207,31 +336,59 @@ class MassIntentionService {
     final now = DateTime.now();
     final yearSuffix = (now.year % 100).toString().padLeft(2, '0');
 
-    try {
-      final records = await _client
-          .from('mass_intentions')
-          .select('intention_id')
-          .like('intention_id', 'INT-$yearSuffix-%')
-          .order('created_at', ascending: false)
-          .limit(50);
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        final records = await _client
+            .from('mass_intentions')
+            .select('intention_id')
+            .like('intention_id', 'INT-$yearSuffix-%')
+            .order('created_at', ascending: false)
+            .limit(50);
 
-      int highest = 0;
-      for (final item in records) {
-        final id = item['intention_id']?.toString() ?? '';
-        final parts = id.split('-');
-        if (parts.length >= 3) {
-          final seq = int.tryParse(parts[2]);
-          if (seq != null && seq > highest && seq < 10000) {
-            highest = seq;
+        int highest = 0;
+        for (final item in records) {
+          final id = item['intention_id']?.toString() ?? '';
+          final parts = id.split('-');
+          if (parts.length >= 3) {
+            final seq = int.tryParse(parts[2]);
+            if (seq != null && seq > highest && seq < 10000) {
+              highest = seq;
+            }
           }
         }
-      }
 
-      if (highest > 0) {
-        final nextSeq = (highest + 1).toString().padLeft(4, '0');
-        return 'INT-$yearSuffix-$nextSeq';
-      }
-    } catch (_) {}
+        if (highest > 0) {
+          final nextSeq = (highest + 1).toString().padLeft(4, '0');
+          return 'INT-$yearSuffix-$nextSeq';
+        }
+      } catch (_) {}
+    }
+
+    // Direct SQLite check if offline
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        final localRows = await db.rawQuery(
+          "SELECT intention_id FROM mass_intentions WHERE intention_id LIKE 'INT-$yearSuffix-%'",
+        );
+        int highest = 0;
+        for (final item in localRows) {
+          final id = item['intention_id']?.toString() ?? '';
+          final parts = id.split('-');
+          if (parts.length >= 3) {
+            final seq = int.tryParse(parts[2]);
+            if (seq != null && seq > highest && seq < 10000) {
+              highest = seq;
+            }
+          }
+        }
+        if (highest > 0) {
+          final nextSeq = (highest + 1).toString().padLeft(4, '0');
+          return 'INT-$yearSuffix-$nextSeq';
+        }
+      } catch (_) {}
+    }
 
     final timestampSeq = (now.millisecondsSinceEpoch ~/ 100 % 9000 + 1000).toString();
     return 'INT-$yearSuffix-$timestampSeq';
