@@ -5,6 +5,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/records_sync_service.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/appointment_model.dart';
 import '../models/mass_intention_model.dart';
@@ -44,7 +45,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
   // View Mode: Cards vs Table
   AppointmentViewMode _viewMode = AppointmentViewMode.cards;
 
-  // Unified Filtering & Sorting State (Matching Assets Module)
+  // Unified Filtering & Sorting State
   String _selectedStatusFilter = 'All';
   String _selectedDateRangeFilter = 'All Dates';
   DateTimeRange? _customDateRange;
@@ -742,7 +743,6 @@ class _AppointmentsViewState extends State<AppointmentsView>
         final bool isMobile = constraints.maxWidth < 650;
         final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
 
-        // Container explicitly claims available height on desktop and anchors child to topCenter
         return Container(
           width: double.infinity,
           height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
@@ -765,7 +765,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    // 1. Header (Subtext Removed completely per prompt instruction)
+                    // 1. Header
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -794,9 +794,87 @@ class _AppointmentsViewState extends State<AppointmentsView>
 
                     // 3. Compact Stats Row (Matching Assets Module)
                     _buildCompactStatsRow(),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
 
-                    // 4. Main Module Switcher (With Completed Logs & Cancelled Archive tabs)
+                    // 4. Offline Connectivity & Sync Status Bar
+                    ValueListenableBuilder<RecordsSyncStatus>(
+                      valueListenable: RecordsSyncService.syncStatusNotifier,
+                      builder: (context, status, _) {
+                        return ValueListenableBuilder<int>(
+                          valueListenable: RecordsSyncService.pendingSyncCountNotifier,
+                          builder: (context, pendingCount, _) {
+                            Color pillColor;
+                            Color textColor;
+                            IconData statusIcon;
+                            String statusLabel;
+
+                            if (status == RecordsSyncStatus.offline) {
+                              pillColor = Colors.amber.shade100;
+                              textColor = Colors.amber.shade900;
+                              statusIcon = Icons.cloud_off;
+                              statusLabel = pendingCount > 0
+                                  ? 'Offline Mode • Operating from local SQLite ($pendingCount pending changes)'
+                                  : 'Offline Mode • Operating from local SQLite';
+                            } else if (status == RecordsSyncStatus.syncing) {
+                              pillColor = Colors.blue.shade100;
+                              textColor = Colors.blue.shade900;
+                              statusIcon = Icons.sync;
+                              statusLabel = 'Syncing schedule with Supabase cloud...';
+                            } else if (pendingCount > 0) {
+                              pillColor = Colors.orange.shade100;
+                              textColor = Colors.orange.shade900;
+                              statusIcon = Icons.upload_file;
+                              statusLabel = 'Online • $pendingCount booking(s) queued for upload (Tap to Sync)';
+                            } else {
+                              pillColor = Colors.green.shade50;
+                              textColor = Colors.green.shade800;
+                              statusIcon = Icons.cloud_done;
+                              statusLabel = 'Online • Liturgical schedule & intentions synchronized';
+                            }
+
+                            return InkWell(
+                              onTap: pendingCount > 0 && status != RecordsSyncStatus.syncing
+                                  ? () => RecordsSyncService.instance.syncPendingChanges()
+                                  : null,
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: pillColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: textColor.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(statusIcon, size: 15, color: textColor),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        statusLabel,
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: textColor,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (pendingCount > 0 && status != RecordsSyncStatus.syncing) ...[
+                                      const SizedBox(width: 8),
+                                      Icon(Icons.refresh, size: 14, color: textColor),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 5. Main Module Switcher (With Completed Logs & Cancelled Archive tabs)
                     Container(
                       height: 40,
                       decoration: BoxDecoration(
@@ -859,7 +937,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                     ),
                     const SizedBox(height: 10),
 
-                    // 5. Search Bar (Compact 44dp height)
+                    // 6. Search Bar (Compact 44dp height)
                     Container(
                       width: double.infinity,
                       height: 44,
@@ -910,7 +988,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                     ),
                     const SizedBox(height: 10),
 
-                    // 6. Filter & Sort Toolbar with Card / Table View Toggle
+                    // 7. Filter & Sort Toolbar with Card / Table View Toggle
                     Row(
                       children: [
                         InkWell(
@@ -988,7 +1066,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                       ],
                     ),
 
-                    // 7. Active Filter Chips Row
+                    // 8. Active Filter Chips Row
                     if (_hasActiveFilters) ...[
                       const SizedBox(height: 8),
                       Wrap(
@@ -1045,7 +1123,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                     ],
                     const SizedBox(height: 12),
 
-                    // 8. Tab Content / Anti-Shift Skeleton Loader
+                    // 9. Tab Content / Anti-Shift Skeleton Loader
                     if (isAllDataLoading)
                       _buildSkeletonLoading(constraints.maxWidth)
                     else if (_mainTabController.index == 0)
@@ -1249,13 +1327,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
     );
   }
 
-// --- END OF PART 1 ---
-
-// =============================================================================
-// FILE: lib/features/appointments/presentation/appointments_view.dart (PART 2 OF 2)
-// =============================================================================
-
-  // ===========================================================================
+// ===========================================================================
   // Anti-Layout-Shift Skeleton Loader
   // ===========================================================================
   Widget _buildSkeletonLoading(double availableWidth) {
@@ -2111,7 +2183,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
   }
 
   // ===========================================================================
-  // Pagination Toolbar (Kept as is)
+  // Pagination Toolbar
   // ===========================================================================
   Widget _buildPaginationToolbar(int totalItems) {
     final totalPages = _totalPages;
@@ -2192,7 +2264,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
 }
 
 // =============================================================================
-// Self-Contained Mass Intention Reschedule Modal Dialog (Preserved Completely)
+// Self-Contained Mass Intention Reschedule Modal Dialog
 // =============================================================================
 
 class _RescheduleMassIntentionModalDialog extends StatefulWidget {

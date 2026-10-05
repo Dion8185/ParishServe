@@ -133,7 +133,7 @@ class RecordsSyncService {
   }
 
   // ===========================================================================
-  // 1. Download Offline Pack (All 6 Registers, User Templates & Assets)
+  // 1. Download Offline Pack (Registers, Appointments, Intentions, Templates & Assets)
   // ===========================================================================
 
   Future<void> downloadAllOfflineResources({bool forceWipe = false}) async {
@@ -161,6 +161,8 @@ class RecordsSyncService {
       'matrimony_records',
       'death_records',
       'conversion_records',
+      'appointments',
+      'mass_intentions',
       'certificate_issuances',
     ];
 
@@ -572,6 +574,10 @@ class RecordsSyncService {
       case 'death_records':
       case 'conversion_records':
         return 'record_id';
+      case 'appointments':
+        return 'appointment_id';
+      case 'mass_intentions':
+        return 'intention_id';
       case 'certificate_templates':
         return 'template_id';
       case 'certificate_issuances':
@@ -643,6 +649,9 @@ class RecordsSyncService {
       'enable_qr_verification',
       'is_active',
       'is_default',
+      'is_id_verified',
+      'reminder_24h_sent',
+      'reminder_12h_sent',
     ];
 
     for (final b in booleanFields) {
@@ -652,6 +661,23 @@ class RecordsSyncService {
           clean[b] = val == 1;
         } else if (val is String) {
           clean[b] = val == '1' || val.toLowerCase() == 'true';
+        }
+      }
+    }
+
+    // Decode mass intention petition arrays from JSON strings before Supabase upload
+    if (table == 'mass_intentions') {
+      final listFields = ['thanksgiving_list', 'repose_souls_list', 'special_intentions_list'];
+      for (final lf in listFields) {
+        if (clean[lf] is String) {
+          try {
+            final decoded = jsonDecode(clean[lf] as String);
+            if (decoded is List) {
+              clean[lf] = decoded.map((e) => e.toString().trim()).toList();
+            }
+          } catch (_) {
+            clean[lf] = <String>[];
+          }
         }
       }
     }

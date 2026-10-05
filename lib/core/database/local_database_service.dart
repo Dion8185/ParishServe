@@ -8,7 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'database_factory_helper.dart';
 
-/// Platform-Aware SQLite Local Database Manager for Offline Sacramental Records & Certificate Studio.
+/// Platform-Aware SQLite Local Database Manager for Offline Sacramental Records,
+/// Certificate Studio, Appointments, and Mass Intentions.
 /// Native (Android, Windows, iOS, Linux, macOS): Uses native/FFI SQLite.
 /// Web: Attempts SQLite via WebAssembly/IndexedDB; gracefully degrades if WASM is unavailable.
 class LocalDatabaseService {
@@ -16,7 +17,7 @@ class LocalDatabaseService {
   static final LocalDatabaseService instance = LocalDatabaseService._();
 
   static const String _dbName = 'parishserve_records_offline.db';
-  static const int _dbVersion = 3; // Bumped to v3 for complete schema cleanup
+  static const int _dbVersion = 5; // Bumped to v5 to ensure clean schema rebuild & data parity
 
   Database? _db;
   bool _isFactoryInitialized = false;
@@ -74,7 +75,7 @@ class LocalDatabaseService {
   Future<void> _onCreate(Database db, int version) async {
     final batch = db.batch();
 
-    // 1. Baptism Records (Liber Baptismorum) - Fully flexible columns
+    // 1. Baptism Records (Liber Baptismorum)
     batch.execute('''
       CREATE TABLE IF NOT EXISTS baptism_records (
         record_id TEXT PRIMARY KEY,
@@ -387,7 +388,68 @@ class LocalDatabaseService {
       )
     ''');
 
-    // 7. Certificate Templates (Canonical Simple Mode & All Custom User Templates)
+    // 7. Appointments (Parish Booking Schedule & Liturgy Desk)
+    batch.execute('''
+      CREATE TABLE IF NOT EXISTS appointments (
+        appointment_id TEXT PRIMARY KEY,
+        schedule_id TEXT,
+        service_request_id TEXT,
+        created_by TEXT,
+        requester_name TEXT,
+        contact_number TEXT,
+        email TEXT,
+        service_type TEXT,
+        requested_date TEXT,
+        requested_time TEXT,
+        end_time TEXT,
+        venue TEXT DEFAULT 'Main Church Altar',
+        officiant_name TEXT DEFAULT 'Rev. Fr. Roy G. Reyes',
+        appointment_status TEXT DEFAULT 'pending',
+        appointment_remarks TEXT,
+        id_type TEXT,
+        id_number TEXT,
+        id_document_url TEXT,
+        is_id_verified INTEGER DEFAULT 0,
+        id_verified_by TEXT,
+        id_verified_at TEXT,
+        id_verification_notes TEXT,
+        reminder_24h_sent INTEGER DEFAULT 0,
+        reminder_12h_sent INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT,
+        sync_status TEXT DEFAULT 'synced',
+        last_modified_at TEXT
+      )
+    ''');
+
+    // 8. Mass Intentions Registry
+    batch.execute('''
+      CREATE TABLE IF NOT EXISTS mass_intentions (
+        intention_id TEXT PRIMARY KEY,
+        created_by TEXT,
+        requester_name TEXT,
+        contact_number TEXT,
+        email TEXT,
+        scheduled_date TEXT,
+        mass_time TEXT,
+        thanksgiving_list TEXT,
+        repose_souls_list TEXT,
+        special_intentions_list TEXT,
+        other_intentions TEXT,
+        stipend_amount REAL DEFAULT 0.0,
+        payment_method TEXT DEFAULT 'GCash',
+        payment_status TEXT DEFAULT 'pending',
+        gcash_reference_no TEXT,
+        intention_status TEXT DEFAULT 'pending',
+        remarks TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        sync_status TEXT DEFAULT 'synced',
+        last_modified_at TEXT
+      )
+    ''');
+
+    // 9. Certificate Templates
     batch.execute('''
       CREATE TABLE IF NOT EXISTS certificate_templates (
         template_id TEXT PRIMARY KEY,
@@ -421,7 +483,7 @@ class LocalDatabaseService {
       )
     ''');
 
-    // 8. Certificate Issuances
+    // 10. Certificate Issuances
     batch.execute('''
       CREATE TABLE IF NOT EXISTS certificate_issuances (
         issuance_id TEXT PRIMARY KEY,
@@ -455,7 +517,7 @@ class LocalDatabaseService {
       )
     ''');
 
-    // 9. Global Parish Certificate Settings
+    // 11. Global Parish Certificate Settings
     batch.execute('''
       CREATE TABLE IF NOT EXISTS parish_certificate_settings (
         id TEXT PRIMARY KEY DEFAULT 'global',
@@ -472,7 +534,7 @@ class LocalDatabaseService {
       )
     ''');
 
-    // 10. Sync Queue
+    // 12. Sync Queue
     batch.execute('''
       CREATE TABLE IF NOT EXISTS sync_queue (
         queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -487,7 +549,7 @@ class LocalDatabaseService {
       )
     ''');
 
-    // 11. Sync Metadata
+    // 13. Sync Metadata
     batch.execute('''
       CREATE TABLE IF NOT EXISTS app_sync_metadata (
         key TEXT PRIMARY KEY,
@@ -496,7 +558,7 @@ class LocalDatabaseService {
       )
     ''');
 
-    // 12. Offline Binary Asset Cache
+    // 14. Offline Binary Asset Cache
     batch.execute('''
       CREATE TABLE IF NOT EXISTS offline_asset_cache (
         asset_key TEXT PRIMARY KEY,
@@ -513,8 +575,7 @@ class LocalDatabaseService {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint('[LocalDatabaseService] Migrating database from v$oldVersion to v$newVersion');
-    if (oldVersion < 3) {
-      // Drop old constrained tables so clean flexible schema is created
+    if (oldVersion < 5) {
       final tables = [
         'baptism_records',
         'confirmation_records',
@@ -522,6 +583,8 @@ class LocalDatabaseService {
         'matrimony_records',
         'death_records',
         'conversion_records',
+        'appointments',
+        'mass_intentions',
         'certificate_templates',
         'certificate_issuances',
         'parish_certificate_settings',
@@ -601,6 +664,8 @@ class LocalDatabaseService {
       'matrimony_records',
       'death_records',
       'conversion_records',
+      'appointments',
+      'mass_intentions',
       'certificate_templates',
       'certificate_issuances',
       'parish_certificate_settings',
