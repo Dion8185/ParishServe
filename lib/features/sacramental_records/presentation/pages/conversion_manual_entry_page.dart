@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/conversion_manual_entry_page.dart
+// =============================================================================
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/conversion_service.dart';
@@ -66,6 +71,11 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _lineNumberController = TextEditingController();
   DateTime? _dateOfReception = DateTime.now();
 
+  // Live Duplicate Checker State
+  Timer? _coordinateDebounce;
+  bool _isCheckingCoordinateDuplicate = false;
+  String? _coordinateDuplicateError;
+
   // 2. Convert Identity & Prior Baptism (Page 2)
   final _convertFirstNameController = TextEditingController();
   final _convertMiddleNameController = TextEditingController();
@@ -115,6 +125,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     super.initState();
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
+    } else {
+      _bookNumberController.addListener(_onCoordinateChanged);
+      _pageNumberController.addListener(_onCoordinateChanged);
+      _lineNumberController.addListener(_onCoordinateChanged);
     }
   }
 
@@ -169,9 +183,48 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     _remarksController.text = data['remarks']?.toString() ?? '';
   }
 
+  void _onCoordinateChanged() {
+    _coordinateDebounce?.cancel();
+    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+  }
+
+  Future<void> _checkCoordinatesLive() async {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+
+    if (b.isEmpty || p.isEmpty || l.isEmpty) {
+      if (mounted && _coordinateDuplicateError != null) {
+        setState(() => _coordinateDuplicateError = null);
+      }
+      return;
+    }
+
+    if (mounted) setState(() => _isCheckingCoordinateDuplicate = true);
+
+    final dupError = await SacramentalValidators.checkCoordinateDuplicate(
+      tableName: 'conversion_records',
+      bookNumber: b,
+      pageNumber: p,
+      lineNumber: l,
+      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _coordinateDuplicateError = dupError;
+        _isCheckingCoordinateDuplicate = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _coordinateDebounce?.cancel();
     _scrollController.dispose();
+    _bookNumberController.removeListener(_onCoordinateChanged);
+    _pageNumberController.removeListener(_onCoordinateChanged);
+    _lineNumberController.removeListener(_onCoordinateChanged);
     _bookNumberController.dispose();
     _pageNumberController.dispose();
     _lineNumberController.dispose();
@@ -219,9 +272,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) && dateType != 0 ? now : initialDate,
+      initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
-      lastDate: dateType == 0 ? now.add(const Duration(days: 365)) : now,
+      lastDate: now, // Enforce dates cannot be in the future
     );
 
     if (picked != null) {
@@ -249,6 +302,11 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     }
 
     if (step == 0) {
+      if (_coordinateDuplicateError != null) {
+        setState(() => _errorMessage = _coordinateDuplicateError);
+        return false;
+      }
+
       final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
       if (bookError != null) {
         setState(() => _errorMessage = bookError);
@@ -271,9 +329,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
         });
         return false;
       }
+      final notFutureDate = SacramentalValidators.validateNotFutureDate(_dateOfReception, 'Date of Reception');
+      if (notFutureDate != null) {
+        setState(() => _errorMessage = notFutureDate);
+        return false;
+      }
       return true;
     } else if (step == 1) {
-      // Validate realism of date of birth
       final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
       if (dobError != null) {
         setState(() {
@@ -665,14 +727,16 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _conversionOlive,
+                                      : _conversionOlive),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -734,14 +798,16 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _conversionOlive,
+                                      : _conversionOlive),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -792,6 +858,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   }
 
   Widget _buildStep1CanonicalCoordinates({required bool isMobile, required bool isSmallMobile}) {
+    final bool hasDup = _coordinateDuplicateError != null;
+
     return _buildSectionCard(
       title: isEditMode
           ? 'Canonical Coordinates & Reception Date (Coordinates Locked)'
@@ -823,6 +891,36 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
             ),
           ],
+
+          if (hasDup) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRedSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ParishColors.mercyRed, width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _coordinateDuplicateError!,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.mercyRed,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           isSmallMobile
               ? Column(
             children: [
@@ -832,6 +930,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validateBookNumber,
               ),
               _buildTextFormField(
@@ -840,6 +939,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validatePageNumber,
               ),
               _buildTextFormField(
@@ -848,6 +948,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validateLineNumber,
               ),
             ],
@@ -862,6 +963,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validateBookNumber,
                 ),
               ),
@@ -873,6 +975,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validatePageNumber,
                 ),
               ),
@@ -884,11 +987,25 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validateLineNumber,
                 ),
               ),
             ],
           ),
+
+          if (_isCheckingCoordinateDuplicate)
+            Padding(
+              padding: EdgeInsets.only(bottom: 8.0, left: 4.0),
+              child: Row(
+                children: [
+                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _conversionOlive)),
+                  SizedBox(width: 8),
+                  Text('Checking physical conversion register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                ],
+              ),
+            ),
+
           _buildDatePickerField(
             label: 'Date of Reception into Full Communion *',
             isRequired: true,
@@ -916,13 +1033,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _convertFirstNameController,
                   label: 'First Name',
                   isRequired: true,
-                  validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _convertMiddleNameController,
                   label: 'Middle Name (Optional)',
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -931,12 +1050,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _convertLastNameController,
                   label: 'Last Name',
                   isRequired: true,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _convertSuffixController,
                   label: 'Suffix',
                   isRequired: false,
+                  maxLength: 15,
+                  validator: SacramentalValidators.validateSuffix,
                 ),
               ),
               _buildAdaptivePair(
@@ -1007,7 +1129,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     if (_priorBaptismChurch == 'Others (Specify)' && (v == null || v.trim().isEmpty)) {
                       return 'Please specify the prior church / denomination.';
                     }
-                    return null;
+                    return SacramentalValidators.validatePlace(v, 'Prior church / denomination', isRequired: true, maxLength: 100);
                   },
                 ),
               ],
@@ -1033,13 +1155,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _fatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -1048,13 +1172,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _fatherLastNameController,
                   label: "Father's Last Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherReligionController,
                   label: "Father's Religion (e.g. Catholic, Methodist)",
                   isRequired: false,
-                  maxLength: 100,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validatePlace(v, "Father's religion", isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1073,13 +1199,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _motherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -1088,13 +1216,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   controller: _motherMaidenLastNameController,
                   label: "Mother's Maiden Last Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _motherReligionController,
                   label: "Mother's Religion",
                   isRequired: false,
-                  maxLength: 100,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validatePlace(v, "Mother's religion", isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1119,20 +1249,23 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               controller: _witness1FirstNameController,
               label: 'Witness 1 First Name',
               isRequired: true,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 first name', isRequired: true),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 first name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _witness1MiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 middle name', isRequired: false),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildTextFormField(
             controller: _witness1LastNameController,
             label: 'Witness 1 Last Name',
             isRequired: true,
-            validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 last name', isRequired: true),
+            maxLength: 50,
+            validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 last name', isRequired: true, maxLength: 50),
           ),
           const Divider(height: 24),
           const Text('Secondary Witness (Sponsor 2 - Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _conversionOlive)),
@@ -1143,26 +1276,30 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               controller: _witness2FirstNameController,
               label: 'Witness 2 First Name',
               isRequired: false,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 first name', isRequired: false),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 first name', isRequired: false, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _witness2MiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 middle name', isRequired: false),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildTextFormField(
             controller: _witness2LastNameController,
             label: 'Witness 2 Last Name',
             isRequired: false,
-            validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 last name', isRequired: false),
+            maxLength: 50,
+            validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 last name', isRequired: false, maxLength: 50),
           ),
           const Divider(height: 24),
           _buildTextFormField(
             controller: _stipendController,
             label: 'Stipend (₱) (Leave blank or 0 for Gratis)',
             isRequired: false,
+            maxLength: 12,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             validator: SacramentalValidators.validateStipend,
           ),
@@ -1173,20 +1310,23 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               controller: _ministerFirstNameController,
               label: 'Officiating Priest First Name',
               isRequired: true,
-              validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Officiating Priest Last Name',
             isRequired: true,
-            validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true),
+            maxLength: 50,
+            validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50),
           ),
           _buildTextFormField(
             controller: _parishNameController,

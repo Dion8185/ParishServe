@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/first_communion_manual_entry_page.dart
+// =============================================================================
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/first_communion_service.dart';
@@ -51,6 +56,11 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   final _controlNumberController = TextEditingController(text: 'Loading...');
   DateTime? _dateOfCommunion = DateTime.now();
 
+  // Live Duplicate Checker State
+  Timer? _controlDebounce;
+  bool _isCheckingControlDuplicate = false;
+  String? _controlDuplicateError;
+
   // 2. Communicant Identity & Baptism (Page 2)
   final _communicantFirstNameController = TextEditingController();
   final _communicantMiddleNameController = TextEditingController();
@@ -85,6 +95,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       _populateExistingData(widget.initialData!);
     } else {
       _loadAutoControlNumber();
+      _yearController.addListener(_onControlParametersChanged);
+      _controlNumberController.addListener(_onControlParametersChanged);
     }
   }
 
@@ -124,6 +136,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
         _controlNumberController.text = nextControlNo;
         _isLoadingControlNo = false;
       });
+      _checkControlNumberLive();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -133,9 +146,44 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     }
   }
 
+  void _onControlParametersChanged() {
+    _controlDebounce?.cancel();
+    _controlDebounce = Timer(const Duration(milliseconds: 350), _checkControlNumberLive);
+  }
+
+  Future<void> _checkControlNumberLive() async {
+    final year = int.tryParse(_yearController.text.trim());
+    final ctrl = _controlNumberController.text.trim();
+
+    if (year == null || ctrl.isEmpty || ctrl == 'Loading...') {
+      if (mounted && _controlDuplicateError != null) {
+        setState(() => _controlDuplicateError = null);
+      }
+      return;
+    }
+
+    if (mounted) setState(() => _isCheckingControlDuplicate = true);
+
+    final dupError = await SacramentalValidators.checkCommunionControlDuplicate(
+      year: year,
+      controlNumber: ctrl,
+      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _controlDuplicateError = dupError;
+        _isCheckingControlDuplicate = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _controlDebounce?.cancel();
     _scrollController.dispose();
+    _yearController.removeListener(_onControlParametersChanged);
+    _controlNumberController.removeListener(_onControlParametersChanged);
     _yearController.dispose();
     _controlNumberController.dispose();
     _communicantFirstNameController.dispose();
@@ -169,7 +217,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       context: context,
       initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now.add(const Duration(days: 365)),
+      lastDate: now, // Enforce dates cannot be in the future
     );
 
     if (picked != null) {
@@ -194,6 +242,11 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     }
 
     if (step == 0) {
+      if (_controlDuplicateError != null) {
+        setState(() => _errorMessage = _controlDuplicateError);
+        return false;
+      }
+
       final yearError = SacramentalValidators.validateCommunionYear(_yearController.text);
       if (yearError != null) {
         setState(() => _errorMessage = yearError);
@@ -211,6 +264,12 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
           _dateOfCommunionHasError = true;
           _errorMessage = 'Date of First Holy Communion is required.';
         });
+        return false;
+      }
+
+      final communionDateNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfCommunion, 'Date of First Holy Communion');
+      if (communionDateNotFuture != null) {
+        setState(() => _errorMessage = communionDateNotFuture);
         return false;
       }
       return true;
@@ -539,14 +598,16 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_controlDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _eucharisticGold,
+                                      : _eucharisticGold),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting || _isLoadingControlNo ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _isLoadingControlNo || _controlDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -608,14 +669,16 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_controlDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _eucharisticGold,
+                                      : _eucharisticGold),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting || _isLoadingControlNo ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _isLoadingControlNo || _controlDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -666,6 +729,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   }
 
   Widget _buildStep1TrackingAndReference({required bool isMobile}) {
+    final bool hasDup = _controlDuplicateError != null;
+
     return _buildSectionCard(
       title: isEditMode
           ? 'Canonical Ledger & Control Reference (Locked)'
@@ -697,6 +762,36 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               ),
             ),
           ],
+
+          if (hasDup) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRedSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ParishColors.mercyRed, width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _controlDuplicateError!,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.mercyRed,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildTextFormField(
@@ -705,6 +800,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               isRequired: true,
               enabled: !isEditMode, // Locked in Edit Mode
               keyboardType: TextInputType.number,
+              maxLength: 4,
               onChanged: (_) => _loadAutoControlNumber(),
               validator: SacramentalValidators.validateCommunionYear,
             ),
@@ -716,15 +812,28 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   label: 'Control Number (Auto-Generated)',
                   isRequired: true,
                   enabled: false,
+                  maxLength: 20,
                   validator: SacramentalValidators.validateCommunionControlNumber,
                 ),
-                const Padding(
-                  padding: EdgeInsets.only(top: 2, left: 4),
-                  child: Text(
-                    'Format: FCM-Year-Number (Incremented automatically per record)',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: ParishColors.goldAccent),
+                if (_isCheckingControlDuplicate)
+                  Padding(
+                    padding: EdgeInsets.only(top: 2, left: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: _eucharisticGold)),
+                        SizedBox(width: 6),
+                        Text('Checking control assignment...', style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted)),
+                      ],
+                    ),
+                  )
+                else
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2, left: 4),
+                    child: Text(
+                      'Format: FCM-Year-Number (Incremented automatically per record)',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: ParishColors.goldAccent),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -754,27 +863,31 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               controller: _communicantFirstNameController,
               label: 'Communicant First Name',
               isRequired: true,
-              validator: (val) => SacramentalValidators.validateName(val, 'Communicant first name', isRequired: true),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Communicant first name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _communicantMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildTextFormField(
             controller: _communicantLastNameController,
             label: 'Communicant Last Name',
             isRequired: true,
-            validator: (val) => SacramentalValidators.validateName(val, 'Communicant last name', isRequired: true),
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, 'Communicant last name', isRequired: true, maxLength: 50),
           ),
           const Divider(height: 24),
           _buildTextFormField(
             controller: _baptismParishController,
             label: 'Church of Baptism',
             isRequired: true,
-            validator: (val) => SacramentalValidators.validateRequiredText(val, 'Church of baptism'),
+            maxLength: 150,
+            validator: (val) => SacramentalValidators.validatePlace(val, 'Church of baptism', isRequired: true, maxLength: 150),
           ),
           _buildDatePickerField(
             label: 'Date of Baptism (Optional)',
@@ -825,20 +938,23 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   controller: _fatherFirstNameController,
                   label: 'Father First Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _fatherLastNameController,
                 label: 'Father Last Name',
                 isRequired: false,
-                validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: false),
+                maxLength: 50,
+                validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: false, maxLength: 50),
               ),
             ],
           ),
@@ -856,20 +972,23 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   controller: _motherFirstNameController,
                   label: 'Mother First Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _motherMaidenLastNameController,
                 label: 'Mother Maiden Last Name',
                 isRequired: false,
-                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: false),
+                maxLength: 50,
+                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: false, maxLength: 50),
               ),
             ],
           ),
@@ -891,26 +1010,30 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               controller: _ministerFirstNameController,
               label: 'Minister First Name',
               isRequired: true,
-              validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Minister Last Name',
             isRequired: true,
-            validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true),
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true, maxLength: 50),
           ),
           _buildTextFormField(
             controller: _remarksController,
             label: 'Remarks / Mass Batch Details',
             isRequired: false,
             maxLines: 3,
+            maxLength: 255,
           ),
         ],
       ),
@@ -1103,6 +1226,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     bool enabled = true,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    int? maxLength,
     void Function(String)? onChanged,
     String? Function(String?)? validator,
   }) {
@@ -1117,6 +1241,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             enabled: enabled,
             keyboardType: keyboardType,
             maxLines: maxLines,
+            maxLength: maxLength,
+            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
             onChanged: onChanged,
             validator: validator,
             style: TextStyle(fontSize: 14, color: enabled ? ParishColors.textDark : ParishColors.textMuted),

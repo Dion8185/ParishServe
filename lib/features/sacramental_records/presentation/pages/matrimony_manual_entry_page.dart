@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/matrimony_manual_entry_page.dart
+// =============================================================================
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/matrimony_service.dart';
@@ -55,6 +60,11 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   String _entryStatus = 'ORIGINAL';
   DateTime _registryDate = DateTime.now();
 
+  // Live Duplicate Checker State
+  Timer? _coordinateDebounce;
+  bool _isCheckingCoordinateDuplicate = false;
+  String? _coordinateDuplicateError;
+
   // 2. Groom Information (Page 2)
   final _groomFirstNameController = TextEditingController();
   final _groomMiddleNameController = TextEditingController();
@@ -100,7 +110,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _sponsor2LastNameController = TextEditingController();
   final _sponsor2OriginAddressController = TextEditingController();
 
-  // Dynamic Other Sponsors List (Plus button implementation)
+  // Dynamic Other Sponsors List (Plus button implementation - Names only)
   final List<TextEditingController> _otherSponsorControllers = [];
 
   // 5. Ceremony & Legal Details (Page 5)
@@ -129,6 +139,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     super.initState();
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
+    } else {
+      _bookNumberController.addListener(_onCoordinateChanged);
+      _pageNumberController.addListener(_onCoordinateChanged);
+      _lineNumberController.addListener(_onCoordinateChanged);
     }
   }
 
@@ -217,9 +231,48 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     if (_brideDateOfBirth != null) _recomputeBrideAge();
   }
 
+  void _onCoordinateChanged() {
+    _coordinateDebounce?.cancel();
+    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+  }
+
+  Future<void> _checkCoordinatesLive() async {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+
+    if (b.isEmpty || p.isEmpty || l.isEmpty) {
+      if (mounted && _coordinateDuplicateError != null) {
+        setState(() => _coordinateDuplicateError = null);
+      }
+      return;
+    }
+
+    if (mounted) setState(() => _isCheckingCoordinateDuplicate = true);
+
+    final dupError = await SacramentalValidators.checkCoordinateDuplicate(
+      tableName: 'matrimony_records',
+      bookNumber: b,
+      pageNumber: p,
+      lineNumber: l,
+      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _coordinateDuplicateError = dupError;
+        _isCheckingCoordinateDuplicate = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _coordinateDebounce?.cancel();
     _scrollController.dispose();
+    _bookNumberController.removeListener(_onCoordinateChanged);
+    _pageNumberController.removeListener(_onCoordinateChanged);
+    _lineNumberController.removeListener(_onCoordinateChanged);
     _bookNumberController.dispose();
     _pageNumberController.dispose();
     _lineNumberController.dispose();
@@ -305,11 +358,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     if (dateType == 4) initialDate = _licenseDateRegistered ?? now;
     if (dateType == 5) initialDate = _crasmValidityDate ?? now;
 
+    // Dates for marriage, license registration, birth, registry must not be in the future (lastDate: now)
+    // Only CRASM certificate validity (dateType == 5) can extend into the future
+    final DateTime upperDateBound = (dateType == 5) ? now.add(const Duration(days: 3650)) : now;
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) && dateType < 3 ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now.add(const Duration(days: 3650)),
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -359,6 +416,11 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     }
 
     if (step == 0) {
+      if (_coordinateDuplicateError != null) {
+        setState(() => _errorMessage = _coordinateDuplicateError);
+        return false;
+      }
+
       final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
       if (bookError != null) {
         setState(() => _errorMessage = bookError);
@@ -374,9 +436,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
         setState(() => _errorMessage = lineError);
         return false;
       }
+      final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
+      if (regDateError != null) {
+        setState(() => _errorMessage = regDateError);
+        return false;
+      }
       return true;
     } else if (step == 1) {
-      // Validate Groom DOB realism if indicated
       final groomDobError = SacramentalValidators.validateDateOfBirth(_groomDateOfBirth, isRequired: false);
       if (groomDobError != null) {
         setState(() => _errorMessage = 'Groom: $groomDobError');
@@ -384,7 +450,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       }
       return true;
     } else if (step == 2) {
-      // Validate Bride DOB realism if indicated
       final brideDobError = SacramentalValidators.validateDateOfBirth(_brideDateOfBirth, isRequired: false);
       if (brideDobError != null) {
         setState(() => _errorMessage = 'Bride: $brideDobError');
@@ -397,6 +462,11 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           _dateOfMarriageHasError = true;
           _errorMessage = 'Date of Marriage is required.';
         });
+        return false;
+      }
+      final marriageNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfMarriage, 'Date of Marriage');
+      if (marriageNotFuture != null) {
+        setState(() => _errorMessage = marriageNotFuture);
         return false;
       }
     }
@@ -768,14 +838,16 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _matrimonyBurgundy,
+                                      : _matrimonyBurgundy),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -837,14 +909,16 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _matrimonyBurgundy,
+                                      : _matrimonyBurgundy),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -897,6 +971,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   }
 
   Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
+    final bool hasDup = _coordinateDuplicateError != null;
+
     return _buildSectionCard(
       title: isEditMode
           ? 'Canonical Ledger Designation (Coordinates Locked)'
@@ -928,24 +1004,67 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               ),
             ),
           ],
+
+          if (hasDup) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRedSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ParishColors.mercyRed, width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _coordinateDuplicateError!,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.mercyRed,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           isSmallMobile
               ? Column(
             children: [
-              _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateBookNumber),
-              _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validatePageNumber),
-              _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateLineNumber),
+              _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateBookNumber),
+              _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validatePageNumber),
+              _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateLineNumber),
             ],
           )
               : Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateBookNumber)),
+              Expanded(child: _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateBookNumber)),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validatePageNumber)),
+              Expanded(child: _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validatePageNumber)),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, validator: SacramentalValidators.validateLineNumber)),
+              Expanded(child: _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateLineNumber)),
             ],
           ),
+
+          if (_isCheckingCoordinateDuplicate)
+            Padding(
+              padding: EdgeInsets.only(bottom: 8.0, left: 4.0),
+              child: Row(
+                children: [
+                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _matrimonyBurgundy)),
+                  SizedBox(width: 8),
+                  Text('Checking physical matrimony register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                ],
+              ),
+            ),
+
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildDropdownField(
@@ -985,13 +1104,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomFirstNameController,
                   label: "Groom's First Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Groom's first name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Groom's first name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _groomMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -1000,12 +1121,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomLastNameController,
                   label: "Groom's Last Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Groom's last name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Groom's last name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _groomSuffixController,
                   label: 'Suffix',
                   isRequired: false,
+                  maxLength: 15,
+                  validator: SacramentalValidators.validateSuffix,
                 ),
               ),
               _buildAdaptivePair(
@@ -1023,6 +1147,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   isRequired: true,
                   enabled: !hasGroomDob, // Editable only if birth is not indicated!
                   keyboardType: TextInputType.number,
+                  maxLength: 3,
                   validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
                 ),
               ),
@@ -1066,20 +1191,23 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomFatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _groomFatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _groomFatherLastNameController,
                 label: "Father's Last Name",
                 isRequired: true,
-                validator: (val) => SacramentalValidators.validateName(val, "Father's last name"),
+                maxLength: 50,
+                validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
               ),
               const Divider(height: 24),
               _buildAdaptivePair(
@@ -1088,20 +1216,23 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _groomMotherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _groomMotherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _groomMotherMaidenLastController,
                 label: "Mother's Maiden Last Name",
                 isRequired: true,
-                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name"),
+                maxLength: 50,
+                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
               ),
             ],
           ),
@@ -1127,13 +1258,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideFirstNameController,
                   label: "Bride's First Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Bride's first name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Bride's first name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _brideMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -1142,12 +1275,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideLastNameController,
                   label: "Bride's Last Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Bride's last name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Bride's last name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _brideSuffixController,
                   label: 'Suffix',
                   isRequired: false,
+                  maxLength: 15,
+                  validator: SacramentalValidators.validateSuffix,
                 ),
               ),
               _buildAdaptivePair(
@@ -1165,6 +1301,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   isRequired: true,
                   enabled: !hasBrideDob, // Editable only if birth is not indicated!
                   keyboardType: TextInputType.number,
+                  maxLength: 3,
                   validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
                 ),
               ),
@@ -1208,20 +1345,23 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideFatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _brideFatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _brideFatherLastNameController,
                 label: "Father's Last Name",
                 isRequired: true,
-                validator: (val) => SacramentalValidators.validateName(val, "Father's last name"),
+                maxLength: 50,
+                validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
               ),
               const Divider(height: 24),
               _buildAdaptivePair(
@@ -1230,20 +1370,23 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   controller: _brideMotherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name"),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _brideMotherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _brideMotherMaidenLastController,
                 label: "Mother's Maiden Last Name",
                 isRequired: true,
-                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name"),
+                maxLength: 50,
+                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
               ),
             ],
           ),
@@ -1265,12 +1408,12 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               const SizedBox(height: 8),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor1FirstNameController, label: 'First Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 first name')),
-                second: _buildTextFormField(controller: _sponsor1MiddleNameController, label: 'Middle Name', isRequired: false, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 middle name', isRequired: false)),
+                first: _buildTextFormField(controller: _sponsor1FirstNameController, label: 'First Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 first name', isRequired: true, maxLength: 50)),
+                second: _buildTextFormField(controller: _sponsor1MiddleNameController, label: 'Middle Name', isRequired: false, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 middle name', isRequired: false, maxLength: 50)),
               ),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor1LastNameController, label: 'Last Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 last name')),
+                first: _buildTextFormField(controller: _sponsor1LastNameController, label: 'Last Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 last name', isRequired: true, maxLength: 50)),
                 second: _buildTextFormField(controller: _sponsor1OriginAddressController, label: 'Origin / Address', isRequired: false, maxLength: 150, validator: (v) => SacramentalValidators.validatePlace(v, 'Sponsor 1 address', isRequired: false, maxLength: 150)),
               ),
               const Divider(height: 28),
@@ -1278,12 +1421,12 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               const SizedBox(height: 8),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor2FirstNameController, label: 'First Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 first name')),
-                second: _buildTextFormField(controller: _sponsor2MiddleNameController, label: 'Middle Name', isRequired: false, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 middle name', isRequired: false)),
+                first: _buildTextFormField(controller: _sponsor2FirstNameController, label: 'First Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 first name', isRequired: true, maxLength: 50)),
+                second: _buildTextFormField(controller: _sponsor2MiddleNameController, label: 'Middle Name', isRequired: false, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 middle name', isRequired: false, maxLength: 50)),
               ),
               _buildAdaptivePair(
                 isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor2LastNameController, label: 'Last Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 last name')),
+                first: _buildTextFormField(controller: _sponsor2LastNameController, label: 'Last Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 last name', isRequired: true, maxLength: 50)),
                 second: _buildTextFormField(controller: _sponsor2OriginAddressController, label: 'Origin / Address', isRequired: false, maxLength: 150, validator: (v) => SacramentalValidators.validatePlace(v, 'Sponsor 2 address', isRequired: false, maxLength: 150)),
               ),
             ],
@@ -1297,7 +1440,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Click "[+] Add Witness / Sponsor" to include additional secondary sponsors individually.',
+                'Click "[+] Add Witness / Sponsor" to include additional secondary sponsor names individually.',
                 style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
               ),
               const SizedBox(height: 12),
@@ -1311,16 +1454,17 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                       Expanded(
                         child: TextFormField(
                           controller: controller,
-                          maxLength: 150,
+                          maxLength: 60,
                           buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
                           style: const TextStyle(fontSize: 14),
                           decoration: InputDecoration(
-                            labelText: 'Witness / Sponsor #${idx + 1} Full Name & Residence',
+                            labelText: 'Witness / Sponsor #${idx + 1} Full Name',
                             filled: true,
                             fillColor: ParishColors.backgroundLight,
                             isDense: true,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           ),
+                          validator: (val) => SacramentalValidators.validateName(val, 'Witness #${idx + 1}', isRequired: false, maxLength: 60),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1394,7 +1538,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           const SizedBox(height: 10),
           _buildAdaptivePair(
             isStacked: isMobile,
-            first: _buildTextFormField(controller: _marriageLicenseNoController, label: 'Marriage License No.', isRequired: false),
+            first: _buildTextFormField(controller: _marriageLicenseNoController, label: 'Marriage License No.', isRequired: false, maxLength: 50),
             second: _buildDatePickerField(label: 'Date Registered', isRequired: false, value: _licenseDateRegistered, hasError: false, onTap: () => _selectDate(context, 4)),
           ),
           _buildTextFormField(
@@ -1409,13 +1553,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           const SizedBox(height: 10),
           _buildAdaptivePair(
             isStacked: isMobile,
-            first: _buildTextFormField(controller: _solemnizerFirstNameController, label: 'Minister First Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Minister first name')),
-            second: _buildTextFormField(controller: _solemnizerMiddleNameController, label: 'Middle Name', isRequired: false, validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false)),
+            first: _buildTextFormField(controller: _solemnizerFirstNameController, label: 'Minister First Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50)),
+            second: _buildTextFormField(controller: _solemnizerMiddleNameController, label: 'Middle Name', isRequired: false, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50)),
           ),
-          _buildTextFormField(controller: _solemnizerLastNameController, label: 'Minister Last Name', isRequired: true, validator: (v) => SacramentalValidators.validateName(v, 'Minister last name')),
+          _buildTextFormField(controller: _solemnizerLastNameController, label: 'Minister Last Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50)),
           _buildAdaptivePair(
             isStacked: isMobile,
-            first: _buildTextFormField(controller: _crasmNumberController, label: 'CRASM Number', isRequired: false),
+            first: _buildTextFormField(controller: _crasmNumberController, label: 'CRASM Number', isRequired: false, maxLength: 50),
             second: _buildDatePickerField(label: 'CRASM Validity Date', isRequired: false, value: _crasmValidityDate, hasError: false, onTap: () => _selectDate(context, 5)),
           ),
           _buildAdaptivePair(
@@ -1427,7 +1571,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               maxLength: 150, // Length limit enforced
               validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
             ),
-            second: _buildTextFormField(controller: _stipendController, label: 'Stipend (₱)', isRequired: false, keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: SacramentalValidators.validateStipend),
+            second: _buildTextFormField(controller: _stipendController, label: 'Stipend (₱)', isRequired: false, maxLength: 12, keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: SacramentalValidators.validateStipend),
           ),
           _buildTextFormField(controller: _remarksController, label: 'Remarks / Marginal Notations', isRequired: false, maxLines: 2, maxLength: 255),
         ],

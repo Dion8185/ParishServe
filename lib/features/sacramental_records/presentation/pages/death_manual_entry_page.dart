@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/death_manual_entry_page.dart
+// =============================================================================
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/death_service.dart';
@@ -51,6 +56,11 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   final _pageNumberController = TextEditingController();
   final _lineNumberController = TextEditingController();
 
+  // Live Duplicate Checker State
+  Timer? _coordinateDebounce;
+  bool _isCheckingCoordinateDuplicate = false;
+  String? _coordinateDuplicateError;
+
   // 2. Deceased Identity (Page 2)
   final _deceasedFirstNameController = TextEditingController();
   final _deceasedMiddleNameController = TextEditingController();
@@ -98,6 +108,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     super.initState();
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
+    } else {
+      _bookNumberController.addListener(_onCoordinateChanged);
+      _pageNumberController.addListener(_onCoordinateChanged);
+      _lineNumberController.addListener(_onCoordinateChanged);
     }
   }
 
@@ -142,9 +156,48 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     _remarksController.text = data['remarks']?.toString() ?? '';
   }
 
+  void _onCoordinateChanged() {
+    _coordinateDebounce?.cancel();
+    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+  }
+
+  Future<void> _checkCoordinatesLive() async {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+
+    if (b.isEmpty || p.isEmpty || l.isEmpty) {
+      if (mounted && _coordinateDuplicateError != null) {
+        setState(() => _coordinateDuplicateError = null);
+      }
+      return;
+    }
+
+    if (mounted) setState(() => _isCheckingCoordinateDuplicate = true);
+
+    final dupError = await SacramentalValidators.checkCoordinateDuplicate(
+      tableName: 'death_records',
+      bookNumber: b,
+      pageNumber: p,
+      lineNumber: l,
+      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _coordinateDuplicateError = dupError;
+        _isCheckingCoordinateDuplicate = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _coordinateDebounce?.cancel();
     _scrollController.dispose();
+    _bookNumberController.removeListener(_onCoordinateChanged);
+    _pageNumberController.removeListener(_onCoordinateChanged);
+    _lineNumberController.removeListener(_onCoordinateChanged);
     _bookNumberController.dispose();
     _pageNumberController.dispose();
     _lineNumberController.dispose();
@@ -180,9 +233,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now.add(const Duration(days: 30))) ? now : initialDate,
+      initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now.add(const Duration(days: 365)),
+      lastDate: now, // Enforce dates cannot be in the future
     );
 
     if (picked != null) {
@@ -208,6 +261,11 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     }
 
     if (step == 0) {
+      if (_coordinateDuplicateError != null) {
+        setState(() => _errorMessage = _coordinateDuplicateError);
+        return false;
+      }
+
       final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
       if (bookError != null) {
         setState(() => _errorMessage = bookError);
@@ -596,14 +654,16 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _deathViolet,
+                                      : _deathViolet),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -665,14 +725,16 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : _deathViolet,
+                                      : _deathViolet),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -723,6 +785,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   }
 
   Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
+    final bool hasDup = _coordinateDuplicateError != null;
+
     return _buildSectionCard(
       title: isEditMode
           ? 'Physical Register Book Coordinates (Coordinates Locked)'
@@ -754,6 +818,36 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               ),
             ),
           ],
+
+          if (hasDup) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRedSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ParishColors.mercyRed, width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _coordinateDuplicateError!,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.mercyRed,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           isSmallMobile
               ? Column(
             children: [
@@ -763,6 +857,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validateBookNumber,
               ),
               _buildTextFormField(
@@ -771,6 +866,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validatePageNumber,
               ),
               _buildTextFormField(
@@ -779,6 +875,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode,
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validateLineNumber,
               ),
             ],
@@ -793,6 +890,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validateBookNumber,
                 ),
               ),
@@ -804,6 +902,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validatePageNumber,
                 ),
               ),
@@ -815,11 +914,24 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validateLineNumber,
                 ),
               ),
             ],
           ),
+
+          if (_isCheckingCoordinateDuplicate)
+            Padding(
+              padding: EdgeInsets.only(bottom: 8.0, left: 4.0),
+              child: Row(
+                children: [
+                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _deathViolet)),
+                  SizedBox(width: 8),
+                  Text('Checking physical burial register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -838,13 +950,15 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _deceasedFirstNameController,
               label: 'First Name',
               isRequired: true,
-              validator: (v) => SacramentalValidators.validateName(v, 'First name'),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _deceasedMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildAdaptivePair(
@@ -853,12 +967,15 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _deceasedLastNameController,
               label: 'Last Name',
               isRequired: true,
-              validator: (v) => SacramentalValidators.validateName(v, 'Last name'),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _deceasedSuffixController,
               label: 'Suffix',
               isRequired: false,
+              maxLength: 15,
+              validator: SacramentalValidators.validateSuffix,
             ),
           ),
           _buildAdaptivePair(
@@ -875,6 +992,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               label: 'Age at Death (Whole Number)',
               isRequired: true,
               keyboardType: TextInputType.number,
+              maxLength: 3,
               validator: (v) => SacramentalValidators.validateWholeNumberAge(v, isRequired: true),
             ),
           ),
@@ -915,20 +1033,23 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   controller: _spouseFirstNameController,
                   label: "Spouse's First Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's first name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's first name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _spouseMiddleNameController,
                   label: "Spouse's Middle Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _spouseLastNameController,
                 label: "Spouse's Last Name",
                 isRequired: false,
-                validator: (v) => SacramentalValidators.validateName(v, "Spouse's last name", isRequired: false),
+                maxLength: 50,
+                validator: (v) => SacramentalValidators.validateName(v, "Spouse's last name", isRequired: false, maxLength: 50),
               ),
             ],
           ),
@@ -946,20 +1067,23 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   controller: _fatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: "Father's Middle Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _fatherLastNameController,
                 label: "Father's Last Name",
                 isRequired: false,
-                validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false),
+                maxLength: 50,
+                validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false, maxLength: 50),
               ),
               const Divider(height: 24),
               _buildAdaptivePair(
@@ -968,20 +1092,23 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   controller: _motherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: "Mother's Middle Name",
                   isRequired: false,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildTextFormField(
                 controller: _motherMaidenLastNameController,
                 label: "Mother's Maiden Last Name",
                 isRequired: false,
-                validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false),
+                maxLength: 50,
+                validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false, maxLength: 50),
               ),
             ],
           ),
@@ -1053,6 +1180,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _stipendController,
               label: 'Stipend (₱)',
               isRequired: false,
+              maxLength: 12,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               validator: SacramentalValidators.validateStipend,
             ),
@@ -1063,20 +1191,23 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               controller: _ministerFirstNameController,
               label: 'Officiating Priest First Name',
               isRequired: true,
-              validator: (v) => SacramentalValidators.validateName(v, 'Minister first name'),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Middle Name (Optional)',
               isRequired: false,
-              validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false),
+              maxLength: 50,
+              validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Officiating Priest Last Name',
             isRequired: true,
-            validator: (v) => SacramentalValidators.validateName(v, 'Minister last name'),
+            maxLength: 50,
+            validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50),
           ),
           _buildTextFormField(
             controller: _parishNameController,

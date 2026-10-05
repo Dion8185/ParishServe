@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/baptism_manual_entry_page.dart
+// =============================================================================
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/baptism_service.dart';
@@ -61,6 +66,11 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   String _entryStatus = 'ORIGINAL';
   DateTime _registryDate = DateTime.now();
 
+  // Live Duplicate Checker State
+  Timer? _coordinateDebounce;
+  bool _isCheckingCoordinateDuplicate = false;
+  String? _coordinateDuplicateError;
+
   // 2. Child Information (Page 2)
   final _childFirstNameController = TextEditingController();
   final _childMiddleNameController = TextEditingController();
@@ -99,7 +109,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final _sponsor2LastNameController = TextEditingController();
   final _sponsor2ResidenceController = TextEditingController();
 
-  // Dynamic Other Godparents List (Plus button implementation)
+  // Dynamic Other Godparents List (Plus button implementation - Full Name only)
   final List<TextEditingController> _otherGodparentControllers = [];
 
   // 5. Baptism & Minister Details (Page 5)
@@ -121,6 +131,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     super.initState();
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
+    } else {
+      _bookNumberController.addListener(_onCoordinateChanged);
+      _pageNumberController.addListener(_onCoordinateChanged);
+      _lineNumberController.addListener(_onCoordinateChanged);
     }
   }
 
@@ -201,9 +215,48 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     _recomputeAge();
   }
 
+  void _onCoordinateChanged() {
+    _coordinateDebounce?.cancel();
+    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+  }
+
+  Future<void> _checkCoordinatesLive() async {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+
+    if (b.isEmpty || p.isEmpty || l.isEmpty) {
+      if (mounted && _coordinateDuplicateError != null) {
+        setState(() => _coordinateDuplicateError = null);
+      }
+      return;
+    }
+
+    if (mounted) setState(() => _isCheckingCoordinateDuplicate = true);
+
+    final dupError = await SacramentalValidators.checkCoordinateDuplicate(
+      tableName: 'baptism_records',
+      bookNumber: b,
+      pageNumber: p,
+      lineNumber: l,
+      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _coordinateDuplicateError = dupError;
+        _isCheckingCoordinateDuplicate = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _coordinateDebounce?.cancel();
     _scrollController.dispose();
+    _bookNumberController.removeListener(_onCoordinateChanged);
+    _pageNumberController.removeListener(_onCoordinateChanged);
+    _lineNumberController.removeListener(_onCoordinateChanged);
     _bookNumberController.dispose();
     _pageNumberController.dispose();
     _lineNumberController.dispose();
@@ -268,9 +321,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) && dateType == 1 ? now : initialDate,
+      initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
-      lastDate: dateType == 1 ? now : now.add(const Duration(days: 365)),
+      lastDate: now, // Enforce no future dates
     );
 
     if (picked != null) {
@@ -338,7 +391,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     }
 
     if (step == 0) {
-      // Step 1: Canonical Reference Bounds
+      // Step 1: Canonical Reference Bounds & Live Duplicate Collision
+      if (_coordinateDuplicateError != null) {
+        setState(() => _errorMessage = _coordinateDuplicateError);
+        return false;
+      }
+
       final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
       if (bookError != null) {
         setState(() => _errorMessage = bookError);
@@ -354,6 +412,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
       if (lineError != null) {
         setState(() => _errorMessage = lineError);
+        return false;
+      }
+
+      final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
+      if (regDateError != null) {
+        setState(() => _errorMessage = regDateError);
         return false;
       }
       return true;
@@ -762,14 +826,16 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : ParishColors.marianBlue,
+                                      : ParishColors.marianBlue),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -831,14 +897,16 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                               height: 48,
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _currentStep == _totalSteps - 1
+                                  backgroundColor: (_coordinateDuplicateError != null)
+                                      ? ParishColors.mercyRed
+                                      : (_currentStep == _totalSteps - 1
                                       ? ParishColors.oliveGreen
-                                      : ParishColors.marianBlue,
+                                      : ParishColors.marianBlue),
                                   foregroundColor: Colors.white,
                                   elevation: 1,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                onPressed: _isSubmitting ? null : _goToNextStep,
+                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
                                 icon: _isSubmitting
                                     ? const SizedBox(
                                   width: 18,
@@ -894,8 +962,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     }
   }
 
-  // STEP 1: Canonical Reference (Book, Page, Line locked in Edit Mode)
+  // STEP 1: Canonical Reference (Book, Page, Line locked in Edit Mode with Live Collision Checker)
   Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
+    final bool hasDup = _coordinateDuplicateError != null;
+
     return _buildSectionCard(
       title: isEditMode
           ? 'Canonical Ledger Designation (Coordinates Locked)'
@@ -927,6 +997,37 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
             ),
           ],
+
+          // Live Automated Duplicate Error Alert Prompt
+          if (hasDup) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRedSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ParishColors.mercyRed, width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _coordinateDuplicateError!,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.mercyRed,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           isSmallMobile
               ? Column(
             children: [
@@ -936,6 +1037,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validateBookNumber,
               ),
               _buildTextFormField(
@@ -944,6 +1046,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validatePageNumber,
               ),
               _buildTextFormField(
@@ -952,6 +1055,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 isRequired: true,
                 enabled: !isEditMode, // Locked in Edit Mode
                 keyboardType: TextInputType.number,
+                maxLength: 4,
                 validator: SacramentalValidators.validateLineNumber,
               ),
             ],
@@ -966,6 +1070,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode, // Locked in Edit Mode
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validateBookNumber,
                 ),
               ),
@@ -977,6 +1082,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode, // Locked in Edit Mode
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validatePageNumber,
                 ),
               ),
@@ -988,11 +1094,25 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   isRequired: true,
                   enabled: !isEditMode, // Locked in Edit Mode
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   validator: SacramentalValidators.validateLineNumber,
                 ),
               ),
             ],
           ),
+
+          if (_isCheckingCoordinateDuplicate)
+            Padding(
+              padding: EdgeInsets.only(bottom: 8.0, left: 4.0),
+              child: Row(
+                children: [
+                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: ParishColors.marianBlue)),
+                  SizedBox(width: 8),
+                  Text('Checking physical ledger coordinates...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                ],
+              ),
+            ),
+
           _buildAdaptivePair(
             isStacked: isMobile,
             first: _buildDropdownField(
@@ -1031,13 +1151,15 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               controller: _childFirstNameController,
               label: 'First Name',
               isRequired: true,
-              validator: (val) => SacramentalValidators.validateName(val, 'First name', isRequired: true),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'First name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _childMiddleNameController,
               label: 'Middle Name',
               isRequired: false,
-              validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
             ),
             flexFirst: 2,
             flexSecond: 1,
@@ -1048,12 +1170,15 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               controller: _childLastNameController,
               label: 'Last Name',
               isRequired: true,
-              validator: (val) => SacramentalValidators.validateName(val, 'Last name', isRequired: true),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Last name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _childSuffixController,
               label: 'Suffix',
               isRequired: false,
+              maxLength: 15,
+              validator: SacramentalValidators.validateSuffix,
             ),
             flexFirst: 2,
             flexSecond: 1,
@@ -1072,6 +1197,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               label: hasBirthIndicated ? 'Age at Baptism (Autocomputed)' : 'Age at Baptism',
               isRequired: false,
               enabled: !hasBirthIndicated, // Editable only if birth is not indicated
+              maxLength: 30,
             ),
           ),
           _buildTextFormField(
@@ -1108,7 +1234,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 if (_legitimacy == 'Others (Specify)' && (val == null || val.trim().isEmpty)) {
                   return 'Please specify the denomination or type.';
                 }
-                return null;
+                return SacramentalValidators.validatePlace(val, 'Legitimacy denomination', isRequired: true, maxLength: 100);
               },
             ),
           ],
@@ -1149,14 +1275,16 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   label: 'Father First Name',
                   isRequired: !_fatherNotIndicated,
                   enabled: !_fatherNotIndicated,
-                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true) : null,
+                  maxLength: 50,
+                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50) : null,
                 ),
                 second: _buildTextFormField(
                   controller: _fatherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
                   enabled: !_fatherNotIndicated,
-                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false) : null,
+                  maxLength: 50,
+                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50) : null,
                 ),
               ),
               _buildAdaptivePair(
@@ -1166,7 +1294,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   label: 'Father Last Name',
                   isRequired: !_fatherNotIndicated,
                   enabled: !_fatherNotIndicated,
-                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true) : null,
+                  maxLength: 50,
+                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50) : null,
                 ),
                 second: _buildTextFormField(
                   controller: _fatherPlaceOfBirthController,
@@ -1193,13 +1322,15 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _motherFirstNameController,
                   label: 'Mother First Name',
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _motherMiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -1208,7 +1339,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _motherMaidenLastNameController,
                   label: 'Maiden Last Name',
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _motherPlaceOfBirthController,
@@ -1223,9 +1355,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 isStacked: isMobile,
                 first: _buildTextFormField(
                   controller: _parentsContactNumberController,
-                  label: 'Parents Contact Number',
+                  label: 'Parents Contact Number (11-digits)',
                   isRequired: false,
                   keyboardType: TextInputType.phone,
+                  maxLength: 11,
                   validator: SacramentalValidators.validatePhoneNumber,
                 ),
                 second: _buildTextFormField(
@@ -1264,13 +1397,15 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _sponsor1FirstNameController,
                   label: 'Sponsor 1 First Name',
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _sponsor1MiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -1279,7 +1414,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _sponsor1LastNameController,
                   label: 'Sponsor 1 Last Name',
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _sponsor1ResidenceController,
@@ -1296,13 +1432,15 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _sponsor2FirstNameController,
                   label: 'Sponsor 2 First Name',
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: true),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _sponsor2MiddleNameController,
                   label: 'Middle Name',
                   isRequired: false,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
                 ),
               ),
               _buildAdaptivePair(
@@ -1311,7 +1449,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _sponsor2LastNameController,
                   label: 'Sponsor 2 Last Name',
                   isRequired: true,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: true),
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: true, maxLength: 50),
                 ),
                 second: _buildTextFormField(
                   controller: _sponsor2ResidenceController,
@@ -1332,7 +1471,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Click "[+] Add Godparent" to include additional secondary sponsors individually.',
+                'Click "[+] Add Godparent" to include additional secondary sponsor names individually.',
                 style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
               ),
               const SizedBox(height: 12),
@@ -1346,16 +1485,17 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                       Expanded(
                         child: TextFormField(
                           controller: controller,
-                          maxLength: 150,
+                          maxLength: 60,
                           buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
                           style: const TextStyle(fontSize: 14),
                           decoration: InputDecoration(
-                            labelText: 'Godparent / Witness #${idx + 1} Full Name & Residence',
+                            labelText: 'Godparent / Witness #${idx + 1} Full Name',
                             filled: true,
                             fillColor: ParishColors.backgroundLight,
                             isDense: true,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           ),
+                          validator: (val) => SacramentalValidators.validateName(val, 'Godparent #${idx + 1}', isRequired: false, maxLength: 60),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1411,20 +1551,23 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               controller: _ministerFirstNameController,
               label: 'Minister First Name',
               isRequired: true,
-              validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true, maxLength: 50),
             ),
             second: _buildTextFormField(
               controller: _ministerMiddleNameController,
               label: 'Minister Middle Name',
               isRequired: false,
-              validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false),
+              maxLength: 50,
+              validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false, maxLength: 50),
             ),
           ),
           _buildTextFormField(
             controller: _ministerLastNameController,
             label: 'Minister Last Name',
             isRequired: true,
-            validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true),
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true, maxLength: 50),
           ),
           _buildAdaptivePair(
             isStacked: isMobile,
@@ -1439,6 +1582,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               controller: _stipendController,
               label: 'Stipend (₱)',
               isRequired: false,
+              maxLength: 12,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               validator: SacramentalValidators.validateStipend,
             ),
