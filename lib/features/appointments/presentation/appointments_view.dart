@@ -2008,10 +2008,10 @@ class _AppointmentsViewState extends State<AppointmentsView>
             spacing: 8,
             runSpacing: 6,
             children: [
-              _buildIntentionCounterChip('🕊️ Thanksgiving', totalThanksgiving, ParishColors.marianBlueAdaptive),
-              _buildIntentionCounterChip('✝️ Repose of Souls', totalSouls, const Color(0xFF7C3AED)),
-              _buildIntentionCounterChip('🙏 Special Intentions', totalSpecial, ParishColors.oliveGreen),
-              if (totalOthers > 0) _buildIntentionCounterChip('📝 Others', totalOthers, ParishColors.goldAccent),
+              _buildIntentionCounterChip('Thanksgiving', totalThanksgiving, ParishColors.marianBlueAdaptive),
+              _buildIntentionCounterChip('Repose of Souls', totalSouls, const Color(0xFF7C3AED)),
+              _buildIntentionCounterChip('Special Intentions', totalSpecial, ParishColors.oliveGreen),
+              if (totalOthers > 0) _buildIntentionCounterChip('Others', totalOthers, ParishColors.goldAccent),
             ],
           ),
         ],
@@ -2122,10 +2122,10 @@ class _AppointmentsViewState extends State<AppointmentsView>
           Text('Requester: ${item.requesterName} (${item.contactNumber})', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 6),
 
-          if (item.thanksgivingList.isNotEmpty) _buildCategoryRow('🕊️ Thanksgiving:', item.thanksgivingList.join(', ')),
-          if (item.reposeSoulsList.isNotEmpty) _buildCategoryRow('✝️ Repose of Souls:', item.reposeSoulsList.join(', ')),
-          if (item.specialIntentionsList.isNotEmpty) _buildCategoryRow('🙏 Special Intentions:', item.specialIntentionsList.join(', ')),
-          if (item.otherIntentions != null && item.otherIntentions!.isNotEmpty) _buildCategoryRow('📝 Others:', item.otherIntentions!),
+          if (item.thanksgivingList.isNotEmpty) _buildCategoryRow('Thanksgiving:', item.thanksgivingList.join(', ')),
+          if (item.reposeSoulsList.isNotEmpty) _buildCategoryRow('Repose of Souls:', item.reposeSoulsList.join(', ')),
+          if (item.specialIntentionsList.isNotEmpty) _buildCategoryRow('Special Intentions:', item.specialIntentionsList.join(', ')),
+          if (item.otherIntentions != null && item.otherIntentions!.isNotEmpty) _buildCategoryRow('Others:', item.otherIntentions!),
 
           const SizedBox(height: 8),
           Row(

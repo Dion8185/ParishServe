@@ -5,8 +5,15 @@ import 'package:flutter/widgets.dart';
 class Assets {
   Assets._();
 
-  static const AssetGenImage logoJp2 = AssetGenImage('images/logo-jp2.png');
+  static const $AssetsImagesGen images = $AssetsImagesGen();
   static const $AssetsLibGen lib = $AssetsLibGen();
+}
+
+class $AssetsImagesGen {
+  const $AssetsImagesGen();
+
+  final AssetGenImage jp2Bg = const AssetGenImage('images/jp2-bg.png');
+  final AssetGenImage logoJp2 = const AssetGenImage('images/logo-jp2.png');
 }
 
 class $AssetsLibGen {
