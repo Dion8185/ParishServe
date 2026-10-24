@@ -1,3 +1,8 @@
+// =============================================================================
+// FILE: lib/main.dart
+// =============================================================================
+
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,16 +11,23 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/sacramental_records/presentation/pages/certificate_verification_page.dart';
+import 'firebase_options.dart'; // <-- Imported from generated options file
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 1. Initialize Firebase for ESP32 Realtime Telemetry streaming
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // 2. Initialize Supabase for ACID database, Auth, Storage & Edge Functions
   await Supabase.initialize(
     url: 'https://wdosrvmkgdrkcotlkzgi.supabase.co',
     anonKey: 'sb_publishable_wzE6ee-MEqpM8Qz7H8awDQ_4q1i2oJq',
   );
 
-  // Initialize OneSignal push notification service (mobile staff devices)
+  // 3. Initialize OneSignal push notification service (mobile staff devices)
   await NotificationService.initialize();
 
   runApp(const ParishServeApp());

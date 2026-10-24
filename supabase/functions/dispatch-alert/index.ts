@@ -3,9 +3,12 @@
 // =============================================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const ONESIGNAL_APP_ID = Deno.env.get("ONESIGNAL_APP_ID") ?? "";
 const ONESIGNAL_REST_KEY = Deno.env.get("ONESIGNAL_REST_API_KEY") ?? "";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,7 +48,60 @@ serve(async (req) => {
       );
     }
 
-    // Base Push Payload
+    // Initialize Supabase admin client to log into public.notifications
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // 1. Record alert in public.notifications so in-app bell tray updates
+    try {
+      const notificationRows: Record<string, unknown>[] = [];
+      const referenceId = (additionalData?.node_id ?? additionalData?.reference_id ?? null) as string | null;
+
+      if (targetUserIds && targetUserIds.length > 0) {
+        for (const uid of targetUserIds) {
+          notificationRows.push({
+            user_id: uid,
+            title,
+            message,
+            notification_type: alertType,
+            reference_id: referenceId,
+          });
+        }
+      } else if (targetRoles && targetRoles.length > 0) {
+        for (const role of targetRoles) {
+          notificationRows.push({
+            target_role: role.toLowerCase(),
+            title,
+            message,
+            notification_type: alertType,
+            reference_id: referenceId,
+          });
+        }
+      } else if (alertType === "iot_breach") {
+        // Default to all operational staff roles
+        for (const role of ["secretary", "parishpriest", "admin"]) {
+          notificationRows.push({
+            target_role: role,
+            title,
+            message,
+            notification_type: alertType,
+            reference_id: referenceId,
+          });
+        }
+      }
+
+      if (notificationRows.length > 0) {
+        const { error: dbError } = await supabase.from("notifications").insert(notificationRows);
+        if (dbError) {
+          console.error("[dispatch-alert] Database notification insert note:", dbError);
+        } else {
+          console.log(`[dispatch-alert] Successfully logged ${notificationRows.length} in-app notification row(s).`);
+        }
+      }
+    } catch (dbErr) {
+      console.error("[dispatch-alert] Non-blocking DB log error:", dbErr);
+    }
+
+    // 2. Base OneSignal Push Payload
     const oneSignalBody: Record<string, unknown> = {
       app_id: ONESIGNAL_APP_ID,
       headings: { en: title },
@@ -59,19 +115,16 @@ serve(async (req) => {
       },
     };
 
-    // 1. Direct Target: By Specific Supabase user_id(s) / External ID
+    // 3. Resolve Target Devices
+    // Direct Target: Specific Supabase user_id(s) / External ID
     if (targetUserIds && targetUserIds.length > 0) {
       oneSignalBody["include_aliases"] = {
         external_id: targetUserIds,
       };
       oneSignalBody["target_channel"] = "push";
     }
-    // 2. Direct Broadcast for IoT Microclimate Breaches (All Staff Mobile Devices)
-    else if (alertType === "iot_breach" || !targetRoles || targetRoles.length === 0) {
-      oneSignalBody["included_segments"] = ["Total Subscriptions", "Subscribed Users"];
-    }
-    // 3. Role Target: By Canonical Tags with broad fallback
-    else {
+    // Specific Roles Requested (e.g., ["secretary", "parishpriest"])
+    else if (targetRoles && targetRoles.length > 0) {
       const filters: Record<string, unknown>[] = [];
       targetRoles.forEach((role, idx) => {
         if (idx > 0) filters.push({ operator: "OR" });
@@ -83,6 +136,25 @@ serve(async (req) => {
         });
       });
       oneSignalBody["filters"] = filters;
+    }
+    // IoT Breach Default: Only staff roles (Excludes regular parishioners 'user')
+    else if (alertType === "iot_breach") {
+      const staffRoles = ["secretary", "parishpriest", "admin", "encoder"];
+      const filters: Record<string, unknown>[] = [];
+      staffRoles.forEach((role, idx) => {
+        if (idx > 0) filters.push({ operator: "OR" });
+        filters.push({
+          field: "tag",
+          key: "role",
+          relation: "=",
+          value: role,
+        });
+      });
+      oneSignalBody["filters"] = filters;
+    }
+    // Fallback broadcast
+    else {
+      oneSignalBody["included_segments"] = ["Total Subscriptions", "Subscribed Users"];
     }
 
     console.log(`[dispatch-alert] Payload to OneSignal:`, JSON.stringify(oneSignalBody));
