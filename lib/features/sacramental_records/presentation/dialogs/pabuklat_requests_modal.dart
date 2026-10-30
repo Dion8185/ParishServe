@@ -1,5 +1,5 @@
 // =============================================================================
-// FILE: lib/features/sacramental_records/presentation/dialogs/pabuklat_requests_modal.dart (PART 1 OF 2)
+// FILE: lib/features/sacramental_records/presentation/dialogs/pabuklat_requests_modal.dart
 // =============================================================================
 
 import 'package:file_picker/file_picker.dart';
@@ -18,23 +18,31 @@ import '../../services/certificate_pdf_generator.dart';
 import '../../services/certificate_service.dart';
 import '../../services/pabuklat_service.dart';
 
+/// Navigates to the full-page Pabuklat Requests desk
 void showPabuklatRequestsModal(BuildContext context) {
-  showDialog(
-    context: context,
-    builder: (ctx) => const PabuklatRequestsModal(),
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (ctx) => const PabuklatRequestsPage(),
+    ),
   );
 }
 
-class PabuklatRequestsModal extends StatefulWidget {
-  const PabuklatRequestsModal({super.key});
+/// Backwards-compatible alias so existing widget references remain fully functional
+typedef PabuklatRequestsModal = PabuklatRequestsPage;
+
+class PabuklatRequestsPage extends StatefulWidget {
+  const PabuklatRequestsPage({super.key});
 
   @override
-  State<PabuklatRequestsModal> createState() => _PabuklatRequestsModalState();
+  State<PabuklatRequestsPage> createState() => _PabuklatRequestsPageState();
 }
 
-class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with SingleTickerProviderStateMixin {
+class _PabuklatRequestsPageState extends State<PabuklatRequestsPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = true;
+  bool _isActionProcessing = false;
   List<Map<String, dynamic>> _requests = [];
   String? _errorMessage;
 
@@ -101,22 +109,60 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
     if (t.contains(s) || d.contains(s)) return true;
 
     if (s.contains('bapt') || s.contains('binyag')) {
-      if (t.contains('bapt') || t.contains('binyag') || t.contains('pabuklat') || d.contains('bapt')) return true;
+      if (t.contains('bapt') ||
+          t.contains('binyag') ||
+          t.contains('pabuklat') ||
+          d.contains('bapt')) {
+        return true;
+      }
     }
     if (s.contains('confirm') || s.contains('kumpil')) {
-      if (t.contains('confirm') || t.contains('kumpil') || d.contains('confirm')) return true;
+      if (t.contains('confirm') ||
+          t.contains('kumpil') ||
+          d.contains('confirm')) {
+        return true;
+      }
     }
-    if (s.contains('commun') || s.contains('eucharist') || s.contains('komunyon')) {
-      if (t.contains('commun') || t.contains('komunyon') || d.contains('commun')) return true;
+    if (s.contains('commun') ||
+        s.contains('eucharist') ||
+        s.contains('komunyon')) {
+      if (t.contains('commun') ||
+          t.contains('komunyon') ||
+          d.contains('commun')) {
+        return true;
+      }
     }
-    if (s.contains('matrimon') || s.contains('marr') || s.contains('kasal') || s.contains('nuptial')) {
-      if (t.contains('marr') || t.contains('matrimon') || t.contains('kasal') || t.contains('nuptial') || d.contains('marr') || d.contains('matrimon')) return true;
+    if (s.contains('matrimon') ||
+        s.contains('marr') ||
+        s.contains('kasal') ||
+        s.contains('nuptial')) {
+      if (t.contains('marr') ||
+          t.contains('matrimon') ||
+          t.contains('kasal') ||
+          t.contains('nuptial') ||
+          d.contains('marr') ||
+          d.contains('matrimon')) {
+        return true;
+      }
     }
-    if (s.contains('death') || s.contains('burial') || s.contains('funeral') || s.contains('libing')) {
-      if (t.contains('death') || t.contains('burial') || t.contains('funeral') || t.contains('libing') || d.contains('death')) return true;
+    if (s.contains('death') ||
+        s.contains('burial') ||
+        s.contains('funeral') ||
+        s.contains('libing')) {
+      if (t.contains('death') ||
+          t.contains('burial') ||
+          t.contains('funeral') ||
+          t.contains('libing') ||
+          d.contains('death')) {
+        return true;
+      }
     }
     if (s.contains('convert') || s.contains('conversion')) {
-      if (t.contains('convert') || t.contains('conversion') || d.contains('convert')) return true;
+      if (t.contains('convert') ||
+          t.contains('conversion') ||
+          d.contains('convert')) {
+        return true;
+      }
     }
 
     return false;
@@ -140,7 +186,11 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
       if (!mounted) return;
       setState(() {
         _requests = List<Map<String, dynamic>>.from(response)
-            .where((r) => (r['service_type'] ?? '').toString().toLowerCase().contains('pabuklat') ||
+            .where((r) =>
+        (r['service_type'] ?? '')
+            .toString()
+            .toLowerCase()
+            .contains('pabuklat') ||
             r['sacrament_type'] != null)
             .toList();
         _priestStoredSignatureUrl = priestSig;
@@ -156,15 +206,11 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
   }
 
   // ===========================================================================
-  // 1. Certificate PDF Verification Preview (For Secretary & Parish Priest)
+  // 1. Certificate PDF Verification Preview
   // ===========================================================================
 
   Future<void> _previewCertificatePdf(Map<String, dynamic> request) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: ParishColors.marianBlue)),
-    );
+    setState(() => _isActionProcessing = true);
 
     try {
       final client = Supabase.instance.client;
@@ -207,7 +253,8 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
       final qrUrl = CertificateService.buildVerificationUrl(verificationId);
       final cleanPurpose = _extractCleanPurpose(request['service_request_details']);
 
-      if (mounted) Navigator.pop(context); // Dismiss loading dialog
+      if (!mounted) return;
+      setState(() => _isActionProcessing = false);
 
       final screenHeight = MediaQuery.of(context).size.height;
 
@@ -215,6 +262,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
         context: context,
         builder: (ctx) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 10),
           title: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -223,13 +271,13 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Certificate PDF Inspection ($sacramentType)',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      'Certificate Inspection ($sacramentType)',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       'Request: ${request["service_request_id"]} • Record ID: $recordId',
-                      style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -237,31 +285,54 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
               IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
             ],
           ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
           content: SizedBox(
             width: 720,
-            height: screenHeight * 0.75,
-            child: PdfPreview(
-              build: (format) => CertificatePdfGenerator.generatePdf(
-                template: effectiveTemplate,
-                sacramentType: sacramentType,
-                recordData: recordData,
-                purpose: cleanPurpose,
-                verificationId: verificationId,
-                qrVerificationUrl: qrUrl,
+            height: screenHeight * 0.78,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: PdfPreview(
+                build: (format) => CertificatePdfGenerator.generatePdf(
+                  template: effectiveTemplate,
+                  sacramentType: sacramentType,
+                  recordData: recordData,
+                  purpose: cleanPurpose,
+                  verificationId: verificationId,
+                  qrVerificationUrl: qrUrl,
+                ),
+                useActions: false,
+                allowPrinting: false,
+                allowSharing: false,
+                canChangePageFormat: false,
+                canChangeOrientation: false,
+                canDebug: false,
+                loadingWidget: Center(
+                  child: CircularProgressIndicator(color: ParishColors.marianBlue),
+                ),
               ),
-              allowPrinting: false,
-              allowSharing: false,
-              canChangePageFormat: false,
             ),
           ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close Preview')),
+            SizedBox(
+              height: 44,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.marianBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Looks Good / Close', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+              ),
+            ),
           ],
         ),
       );
     } catch (e) {
-      if (mounted) Navigator.pop(context);
       if (!mounted) return;
+      setState(() => _isActionProcessing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Preview error: $e'), backgroundColor: ParishColors.mercyRed),
       );
@@ -275,27 +346,24 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
   Future<void> _inspectRequestorId(String? idPath, String requesterName) async {
     if (idPath == null || idPath.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No verification ID was uploaded for this request.'),
+        SnackBar(
+          content: const Text('No verification ID was uploaded for this request.'),
           backgroundColor: ParishColors.goldAccent,
         ),
       );
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: ParishColors.marianBlue)),
-    );
+    setState(() => _isActionProcessing = true);
 
     final signedUrl = await PabuklatService.getSignedIdUrl(idPath);
-    if (mounted) Navigator.pop(context);
+    if (!mounted) return;
+    setState(() => _isActionProcessing = false);
 
-    if (!mounted || signedUrl == null) {
+    if (signedUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not access ID document. The 72-hour retention period may have expired.'),
+        SnackBar(
+          content: const Text('Could not access ID document. Retention period may have expired.'),
           backgroundColor: ParishColors.mercyRed,
         ),
       );
@@ -307,6 +375,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 10),
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -314,8 +383,8 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Verification ID Inspection', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  Text('Requestor: $requesterName', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                  const Text('Verification ID Inspection', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5)),
+                  Text('Requestor: $requesterName', style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted)),
                 ],
               ),
             ),
@@ -332,13 +401,13 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
               fit: BoxFit.contain,
               loadingBuilder: (context, child, progress) {
                 if (progress == null) return child;
-                return const Center(child: CircularProgressIndicator(color: ParishColors.marianBlue));
+                return Center(child: CircularProgressIndicator(color: ParishColors.marianBlue));
               },
               errorBuilder: (_, __, ___) => Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.broken_image, size: 48, color: ParishColors.mercyRed),
+                    Icon(Icons.broken_image, size: 48, color: ParishColors.mercyRed),
                     const SizedBox(height: 8),
                     Text('Failed to render ID image preview.', style: TextStyle(color: ParishColors.textMuted)),
                   ],
@@ -347,8 +416,16 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
             ),
           ),
         ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(90, 44),
+              side: BorderSide(color: ParishColors.borderGrey),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
@@ -376,7 +453,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: ParishColors.oliveGreen,
                     shape: BoxShape.circle,
                   ),
@@ -435,7 +512,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                               selectedPickupDate.toIso8601String().substring(0, 10),
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                             ),
-                            const Icon(Icons.calendar_today, size: 18, color: ParishColors.marianBlue),
+                            Icon(Icons.calendar_today, size: 18, color: ParishColors.marianBlue),
                           ],
                         ),
                       ),
@@ -480,7 +557,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                                   const Text('Physical Parish Priest Signature', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Parish Priest is physically present in the parish office. E-signature is not required; print certificate with blank signature line for manual ink sign.',
+                                    'Parish Priest is physically present in the parish office. Print certificate with blank signature line for manual ink sign.',
                                     style: TextStyle(fontSize: 11, color: ParishColors.textMuted, height: 1.3),
                                   ),
                                 ],
@@ -522,7 +599,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                                   const Text('Remote Parish Priest E-Signature Workflow', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Parish Priest is not physically available. Forwards request to Priest for remote review and approval using their stored reusable e-signature.',
+                                    'Parish Priest is not physically available. Forwards request to Priest for remote review using their stored reusable e-signature.',
                                     style: TextStyle(fontSize: 11, color: ParishColors.textMuted, height: 1.3),
                                   ),
                                 ],
@@ -559,6 +636,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
     );
 
     if (confirmed == true) {
+      setState(() => _isActionProcessing = true);
       try {
         await PabuklatService.approveRequestBySecretary(
           serviceRequestId: request['service_request_id'],
@@ -566,8 +644,9 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
           signatureMethod: selectedMethod,
         );
 
-        _loadAllData();
+        await _loadAllData();
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -579,6 +658,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
         );
       } catch (e) {
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error approving request: $e'), backgroundColor: ParishColors.mercyRed),
         );
@@ -593,8 +673,8 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
   Future<void> _handlePriestRemoteSign(Map<String, dynamic> request) async {
     if (_priestStoredSignatureUrl == null || _priestStoredSignatureUrl!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please upload your reusable e-signature first before signing.'),
+        SnackBar(
+          content: const Text('Please upload your reusable e-signature first before signing.'),
           backgroundColor: ParishColors.mercyRed,
         ),
       );
@@ -638,23 +718,26 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
     );
 
     if (confirmed == true) {
+      setState(() => _isActionProcessing = true);
       try {
         await PabuklatService.signAndApproveByPriest(
           serviceRequestId: request['service_request_id'],
           priestSignatureUrl: _priestStoredSignatureUrl!,
         );
 
-        _loadAllData();
+        await _loadAllData();
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('E-Signature applied! Certificate is now cleared and ready for printing.'),
+          SnackBar(
+            content: const Text('E-Signature applied! Certificate is now cleared and ready for printing.'),
             backgroundColor: ParishColors.oliveGreen,
           ),
         );
       } catch (e) {
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error applying signature: $e'), backgroundColor: ParishColors.mercyRed),
         );
@@ -663,7 +746,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
   }
 
   // ===========================================================================
-  // 5. Parish Priest Reusable E-Signature Upload & Management
+  // 5. Parish Priest Reusable E-Signature Upload
   // ===========================================================================
 
   Future<void> _uploadPriestSignature() async {
@@ -719,8 +802,8 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Reusable Parish Priest E-Signature updated successfully!'),
+                SnackBar(
+                  content: const Text('Reusable Parish Priest E-Signature updated successfully!'),
                   backgroundColor: ParishColors.oliveGreen,
                 ),
               );
@@ -769,32 +852,32 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
     );
 
     if (confirmed == true && reasonController.text.trim().isNotEmpty) {
+      setState(() => _isActionProcessing = true);
       try {
         await PabuklatService.rejectRequest(
           serviceRequestId: request['service_request_id'],
           reason: reasonController.text.trim(),
         );
 
-        _loadAllData();
+        await _loadAllData();
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request marked as rejected.'),
+          SnackBar(
+            content: const Text('Request marked as rejected.'),
             backgroundColor: ParishColors.mercyRed,
           ),
         );
       } catch (e) {
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error rejecting request: $e'), backgroundColor: ParishColors.mercyRed),
         );
       }
     }
   }
-
-// =============================================================================
-// FILE: lib/features/sacramental_records/presentation/dialogs/pabuklat_requests_modal.dart (PART 2 OF 2)
-// =============================================================================
 
   // ===========================================================================
   // 7. Certificate Printing & Verification Engine
@@ -825,11 +908,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: ParishColors.marianBlue)),
-    );
+    setState(() => _isActionProcessing = true);
 
     try {
       final client = Supabase.instance.client;
@@ -870,8 +949,6 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
 
       final verificationId = CertificateService.generateSecureVerificationId();
       final qrUrl = CertificateService.buildVerificationUrl(verificationId);
-
-      // Clean purpose without relationship and matched record ID strings
       final cleanPurpose = _extractCleanPurpose(request['service_request_details']);
 
       final pdfBytes = await CertificatePdfGenerator.generatePdf(
@@ -883,18 +960,17 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
         qrVerificationUrl: qrUrl,
       );
 
-      if (mounted) Navigator.pop(context);
-
       await CertificatePdfGenerator.printCertificate(
         pdfBytes: pdfBytes,
         documentTitle: '${sacramentType}_Certificate_${request["requester_name"]}',
       );
 
       await PabuklatService.markCertificatePrinted(request['service_request_id']);
-      _loadAllData();
+      await _loadAllData();
+      if (mounted) setState(() => _isActionProcessing = false);
     } catch (e) {
-      if (mounted) Navigator.pop(context);
       if (!mounted) return;
+      setState(() => _isActionProcessing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Print error: $e'), backgroundColor: ParishColors.mercyRed),
       );
@@ -902,15 +978,11 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
   }
 
   // ===========================================================================
-  // 8. Mark Released: Auto-Links to Receipt System with Managed Particulars Price
+  // 8. Mark Released: Auto-Links to Receipt System
   // ===========================================================================
 
   Future<void> _handleMarkReleased(Map<String, dynamic> request) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: ParishColors.marianBlue)),
-    );
+    setState(() => _isActionProcessing = true);
 
     double resolvedPrice = 150.0;
     String serviceTitle = '${request["sacrament_type"] ?? "Sacrament"} Certificate';
@@ -937,7 +1009,8 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
       }
     } catch (_) {}
 
-    if (mounted) Navigator.pop(context); // Dismiss loading
+    if (!mounted) return;
+    setState(() => _isActionProcessing = false);
 
     String selectedPaymentMode = 'Cash';
     final gcashRefController = TextEditingController();
@@ -953,7 +1026,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: ParishColors.oliveGreen,
                   shape: BoxShape.circle,
                 ),
@@ -974,7 +1047,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                 children: [
                   Text(
                     'Releasing: ${request["service_type"]} (${request["service_request_id"]})',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -983,7 +1056,6 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                   ),
                   const Divider(height: 20),
 
-                  // Managed Particulars Auto-Price Callout
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -1000,14 +1072,14 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                           children: [
                             Text(
                               serviceTitle,
-                              style:  TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                             ),
-                            const Text('Auto-priced from Managed Particulars catalog', style: TextStyle(fontSize: 10.5, color: ParishColors.oliveGreen)),
+                            Text('Auto-priced from Managed Particulars catalog', style: TextStyle(fontSize: 10.5, color: ParishColors.oliveGreen)),
                           ],
                         ),
                         Text(
-                          selectedPaymentMode == 'Gratis' ? '₱ 0.00' : '₱ ${resolvedPrice.toStringAsFixed(2)}',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                          selectedPaymentMode == 'Gratis' ? 'P 0.00' : 'P ${resolvedPrice.toStringAsFixed(2)}',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                         ),
                       ],
                     ),
@@ -1073,16 +1145,16 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
     );
 
     if (confirmed == true) {
+      setState(() => _isActionProcessing = true);
       try {
         final double finalAmount = selectedPaymentMode == 'Gratis' ? 0.0 : resolvedPrice;
         final cleanPurpose = _extractCleanPurpose(request['service_request_details']);
-        final lineDetails = '• $serviceTitle x1\n  @ ₱${resolvedPrice.toStringAsFixed(2)} = ₱${finalAmount.toStringAsFixed(2)}';
+        final lineDetails = '- $serviceTitle x1\n  @ P ${resolvedPrice.toStringAsFixed(2)} = P ${finalAmount.toStringAsFixed(2)}';
         String fullDetails = '$lineDetails\nPurpose: $cleanPurpose\nClaimant: ${request["requester_name"]}';
         if (selectedPaymentMode == 'GCash' && gcashRefController.text.trim().isNotEmpty) {
           fullDetails += '\nGCash Ref: ${gcashRefController.text.trim()}';
         }
 
-        // 1. Create Transaction in Receipt Management System
         final transactionRecord = await SecretaryService.createTransaction(
           payorName: request['requester_name'] ?? 'Parishioner',
           payorContact: request['contact_number'],
@@ -1093,11 +1165,11 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
           relatedRequestId: request['service_request_id'],
         );
 
-        // 2. Mark Request as Released in Pabuklat Workflow (activates 72-hour purge timer)
         await PabuklatService.markCertificateReleased(request['service_request_id']);
 
-        _loadAllData();
+        await _loadAllData();
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1106,13 +1178,12 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
           ),
         );
 
-        // 3. Launch official Receipt Detail Modal for immediate receipt printing/voucher handover
         showReceiptDetailModal(
           context,
           receiptNo: transactionRecord['receipt_number'] ?? 'REC-XXXX',
           payer: transactionRecord['payor_name'] ?? request['requester_name'],
           purpose: serviceTitle,
-          amount: '₱ ${finalAmount.toStringAsFixed(2)}',
+          amount: 'P ${finalAmount.toStringAsFixed(2)}',
           date: DateTime.now().toIso8601String().substring(0, 10),
           payorContact: request['contact_number'],
           transactionDetails: transactionRecord['transaction_details'],
@@ -1122,6 +1193,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
         );
       } catch (e) {
         if (!mounted) return;
+        setState(() => _isActionProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error releasing certificate: $e'), backgroundColor: ParishColors.mercyRed),
         );
@@ -1135,28 +1207,28 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
 
   List<Map<String, dynamic>> _filterRequests(int tabIndex) {
     switch (tabIndex) {
-      case 1: // Pending Review
+      case 1:
         return _requests.where((r) => (r['request_status'] ?? '').toString().toLowerCase() == 'submitted').toList();
-      case 2: // Awaiting Priest Signature
+      case 2:
         return _requests.where((r) => (r['request_status'] ?? '').toString().toLowerCase() == 'forwarded_to_priest').toList();
-      case 3: // Ready for Printing / Pickup
+      case 3:
         return _requests.where((r) {
           final s = (r['request_status'] ?? '').toString().toLowerCase();
           return s == 'approved' || s == 'signature_completed' || s == 'ready_for_pickup';
         }).toList();
-      case 4: // Released / Rejected
+      case 4:
         return _requests.where((r) {
           final s = (r['request_status'] ?? '').toString().toLowerCase();
           return s == 'released' || s == 'rejected' || s == 'cancelled';
         }).toList();
-      case 0: // All
+      case 0:
       default:
         return _requests;
     }
   }
 
   // ===========================================================================
-  // Main Build Method
+  // Main Build: Full-Screen Scaffold Page
   // ===========================================================================
 
   @override
@@ -1166,190 +1238,167 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      backgroundColor: cardWhite,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      child: Container(
-        width: 860,
-        constraints: const BoxConstraints(maxHeight: 780),
-        child: Column(
+    return Scaffold(
+      backgroundColor: ParishColors.backgroundLight,
+      appBar: AppBar(
+        backgroundColor: cardWhite,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+          onPressed: _isActionProcessing ? null : () => Navigator.pop(context),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Modal Header Banner
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-              decoration: BoxDecoration(
-                color: ParishColors.marianBlueSurface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                border: Border(bottom: BorderSide(color: borderGrey)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(color: ParishColors.marianBlue, shape: BoxShape.circle),
-                    child: const Icon(Icons.folder_shared, color: Colors.white, size: 22),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _isParishPriest ? 'Parish Priest Review: Certificate Requests' : 'Secretariat: Request Record Desk (Pabuklat)',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
-                        ),
-                        Text(
-                          _isParishPriest
-                              ? 'Remote e-signature sign-off and canonical review portal'
-                              : 'Verify requestor credentials, inspect PDF, assign pickup dates, and route signatures',
-                          style: TextStyle(fontSize: 12, color: textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
+            Text(
+              _isParishPriest ? 'Priest Review: Pabuklat Requests' : 'Pabuklat Requests Desk',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
             ),
-
-            // Parish Priest E-Signature Ribbon (Visible for Parish Priest)
-            if (_isParishPriest) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: ParishColors.goldLight,
-                  border: Border(bottom: BorderSide(color: ParishColors.goldAccent.withOpacity(0.4))),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.draw, size: 20, color: ParishColors.goldAccent),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Reusable Electronic Signature', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
-                          Text(
-                            _priestStoredSignatureUrl != null
-                                ? 'Active signature on file. Applied automatically when approving remote requests.'
-                                : 'No signature on file. Upload your e-signature to enable remote approvals.',
-                            style: TextStyle(fontSize: 11, color: textDark),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_priestStoredSignatureUrl != null) ...[
-                      Container(
-                        height: 32,
-                        width: 80,
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: borderGrey)),
-                        child: Image.network(_priestStoredSignatureUrl!, fit: BoxFit.contain),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: ParishColors.goldAccent),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      ),
-                      onPressed: _isUploadingPriestSignature ? null : _uploadPriestSignature,
-                      icon: const Icon(Icons.upload_file, size: 14, color: ParishColors.goldAccent),
-                      label: Text(
-                        _priestStoredSignatureUrl != null ? 'Replace' : 'Upload E-Signature',
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Navigation Tabs
-            Container(
-              color: cardWhite,
-              child: TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                labelColor: ParishColors.marianBlue,
-                unselectedLabelColor: textMuted,
-                indicatorColor: ParishColors.marianBlue,
-                indicatorWeight: 3,
-                tabs: [
-                  Tab(text: 'All (${_requests.length})'),
-                  Tab(text: 'Pending (${_filterRequests(1).length})'),
-                  Tab(text: 'Priest Signature (${_filterRequests(2).length})'),
-                  Tab(text: 'Ready to Print / Pickup (${_filterRequests(3).length})'),
-                  Tab(text: 'Released / Concluded (${_filterRequests(4).length})'),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-
-            // Tab Views Content
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _errorMessage != null
-                  ? Center(child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed)))
-                  : TabBarView(
-                controller: _tabController,
-                children: List.generate(5, (tabIndex) {
-                  final list = _filterRequests(tabIndex);
-                  if (list.isEmpty) {
-                    return Center(
-                      child: Text('No requests in this category.', style: TextStyle(color: textMuted)),
-                    );
-                  }
-
-                  return ListView.separated(
-                    padding: const EdgeInsets.all(18),
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final req = list[index];
-                      return _buildRequestCard(req);
-                    },
-                  );
-                }),
-              ),
-            ),
-
-            // Modal Footer
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-              decoration: BoxDecoration(
-                color: cardWhite,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(22)),
-                border: Border(top: BorderSide(color: borderGrey)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Physical certificate released at the Parish Secretariat desk upon claiming.',
-                    style: TextStyle(fontSize: 11.5, color: textMuted, fontStyle: FontStyle.italic),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('Close', style: TextStyle(color: textMuted, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
+            Text(
+              _isParishPriest
+                  ? 'Remote e-signature sign-off and canonical review portal'
+                  : 'Verify credentials, inspect PDF, assign pickup dates, and route signatures',
+              style: TextStyle(fontSize: 12, color: textMuted),
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh, color: ParishColors.marianBlue),
+            tooltip: 'Reload Requests',
+            onPressed: _isActionProcessing ? null : _loadAllData,
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          labelColor: ParishColors.marianBlue,
+          unselectedLabelColor: textMuted,
+          indicatorColor: ParishColors.marianBlue,
+          indicatorWeight: 3,
+          tabs: [
+            Tab(text: 'All (${_requests.length})'),
+            Tab(text: 'Pending (${_filterRequests(1).length})'),
+            Tab(text: 'Priest Signature (${_filterRequests(2).length})'),
+            Tab(text: 'Ready to Print / Pickup (${_filterRequests(3).length})'),
+            Tab(text: 'Released / Concluded (${_filterRequests(4).length})'),
+          ],
+        ),
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              // Parish Priest E-Signature Ribbon (Visible for Parish Priest)
+              if (_isParishPriest) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: ParishColors.goldLight,
+                    border: Border(bottom: BorderSide(color: ParishColors.goldAccent.withOpacity(0.4))),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.draw, size: 20, color: ParishColors.goldAccent),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Reusable Electronic Signature', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                            Text(
+                              _priestStoredSignatureUrl != null
+                                  ? 'Active signature on file. Applied automatically when approving remote requests.'
+                                  : 'No signature on file. Upload your e-signature to enable remote approvals.',
+                              style: TextStyle(fontSize: 11, color: textDark),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_priestStoredSignatureUrl != null) ...[
+                        Container(
+                          height: 32,
+                          width: 80,
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: borderGrey)),
+                          child: Image.network(_priestStoredSignatureUrl!, fit: BoxFit.contain),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: ParishColors.goldAccent),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        onPressed: _isUploadingPriestSignature ? null : _uploadPriestSignature,
+                        icon: Icon(Icons.upload_file, size: 14, color: ParishColors.goldAccent),
+                        label: Text(
+                          _priestStoredSignatureUrl != null ? 'Replace' : 'Upload E-Signature',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Main Tab Content Area
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _errorMessage != null
+                    ? Center(child: Text(_errorMessage!, style: TextStyle(color: ParishColors.mercyRed)))
+                    : TabBarView(
+                  controller: _tabController,
+                  children: List.generate(5, (tabIndex) {
+                    final list = _filterRequests(tabIndex);
+                    if (list.isEmpty) {
+                      return Center(
+                        child: Text('No requests in this category.', style: TextStyle(color: textMuted, fontSize: 14)),
+                      );
+                    }
+
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: ListView.separated(
+                          padding: const EdgeInsets.all(18),
+                          itemCount: list.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final req = list[index];
+                            return _buildRequestCard(req);
+                          },
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ],
+          ),
+
+          // Focused Non-Dismissible Translucent Loading Overlay
+          if (_isActionProcessing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.55),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: ParishColors.goldAccent,
+                    strokeWidth: 4.5,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
   // ===========================================================================
-  // Request Card Builder (With Prominent "View PDF" for Secretary & Priest)
+  // Request Card Builder
   // ===========================================================================
 
   Widget _buildRequestCard(Map<String, dynamic> request) {
@@ -1365,7 +1414,6 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
     final bool hasId = idPath != null && idPath.isNotEmpty;
     final bool canPrint = PabuklatService.validatePrintReadiness(request);
 
-    // Extracted clean purpose without relationship or record ID strings
     final cleanPurpose = _extractCleanPurpose(request['service_request_details']);
 
     Color statusColor = ParishColors.goldAccent;
@@ -1401,7 +1449,6 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1: Request ID & Dynamic Status Tag
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1409,7 +1456,7 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
                 children: [
                   Text(
                     request['service_request_id'] ?? 'REQ-XXXX',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue),
                   ),
                   const SizedBox(width: 8),
                   Container(
@@ -1434,10 +1481,9 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
           ),
           const SizedBox(height: 8),
 
-          // Requestor & Relationship Line
           Text(
             'Requestor: ${request["requester_name"]} (${request["relationship_to_recipient"] ?? "Self"})',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
           ),
           Text(
             'Contact: ${request["contact_number"]} • Email: ${request["email"] ?? "None"}',
@@ -1445,7 +1491,6 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
           ),
           const SizedBox(height: 6),
 
-          // Matched Record Details Box
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(10),
@@ -1472,15 +1517,14 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
           ),
           const SizedBox(height: 8),
 
-          // Pickup Schedule Bar
           if (pickup != null)
             Row(
               children: [
-                const Icon(Icons.event_available, size: 16, color: ParishColors.oliveGreen),
+                Icon(Icons.event_available, size: 16, color: ParishColors.oliveGreen),
                 const SizedBox(width: 6),
                 Text(
                   'Scheduled Pickup Date: $pickup (at Parish Office)',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                 ),
               ],
             ),
@@ -1489,110 +1533,120 @@ class _PabuklatRequestsModalState extends State<PabuklatRequestsModal> with Sing
             const SizedBox(height: 4),
             Text(
               'Rejection Reason: ${request["rejection_reason"]}',
-              style: const TextStyle(fontSize: 12, color: ParishColors.mercyRed, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 12, color: ParishColors.mercyRed, fontWeight: FontWeight.bold),
             ),
           ],
 
           const Divider(height: 20),
 
-          // Action Buttons Toolbar (With "View PDF" for both Secretary and Priest)
+          // Action Buttons Toolbar
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Left Group: Inspection Tools (View PDF + Inspect ID)
               Wrap(
                 spacing: 8,
                 children: [
-                  // View PDF Inspection Button
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ParishColors.marianBlueSurface,
                       foregroundColor: ParishColors.marianBlue,
                       elevation: 0,
                       side: BorderSide(color: ParishColors.marianBlue.withOpacity(0.4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
-                    onPressed: () => _previewCertificatePdf(request),
-                    icon: const Icon(Icons.picture_as_pdf, size: 15, color: ParishColors.marianBlue),
+                    onPressed: _isActionProcessing ? null : () => _previewCertificatePdf(request),
+                    icon: Icon(Icons.picture_as_pdf, size: 16, color: ParishColors.marianBlue),
                     label: const Text(
                       'View PDF',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
-
-                  // Inspect Valid ID Button
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: hasId ? ParishColors.marianBlue : borderGrey),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
-                    onPressed: hasId ? () => _inspectRequestorId(idPath, request['requester_name']) : null,
-                    icon: Icon(hasId ? Icons.verified_user : Icons.badge_outlined, size: 15, color: hasId ? ParishColors.marianBlue : textMuted),
+                    onPressed: (_isActionProcessing || !hasId) ? null : () => _inspectRequestorId(idPath, request['requester_name']),
+                    icon: Icon(hasId ? Icons.verified_user : Icons.badge_outlined, size: 16, color: hasId ? ParishColors.marianBlue : textMuted),
                     label: Text(
                       hasId ? 'Inspect ID' : 'No ID',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: hasId ? ParishColors.marianBlue : textMuted),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: hasId ? ParishColors.marianBlue : textMuted),
                     ),
                   ),
                 ],
               ),
 
-              // Right Group: Role-Specific Action Triggers
               Wrap(
                 spacing: 8,
                 children: [
-                  // Secretary Initial Review & Routing
                   if (_isSecretary && status == 'submitted') ...[
                     OutlinedButton(
-                      style: OutlinedButton.styleFrom(foregroundColor: ParishColors.mercyRed),
-                      onPressed: () => _rejectRequest(request),
-                      child: const Text('Reject', style: TextStyle(fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.mercyRed,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onPressed: _isActionProcessing ? null : () => _rejectRequest(request),
+                      child: const Text('Reject', style: TextStyle(fontSize: 12.5)),
                     ),
                     ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: ParishColors.oliveGreen, foregroundColor: Colors.white),
-                      onPressed: () => _openSecretaryApprovalDialog(request),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.oliveGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      ),
+                      onPressed: _isActionProcessing ? null : () => _openSecretaryApprovalDialog(request),
                       icon: const Icon(Icons.check, size: 16),
-                      label: const Text('Review & Approve', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      label: const Text('Review & Approve', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
                     ),
                   ],
 
-                  // Parish Priest Remote Signature Sign-Off
                   if (_isParishPriest && status == 'forwarded_to_priest') ...[
                     OutlinedButton(
-                      style: OutlinedButton.styleFrom(foregroundColor: ParishColors.mercyRed),
-                      onPressed: () => _rejectRequest(request),
-                      child: const Text('Reject', style: TextStyle(fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.mercyRed,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onPressed: _isActionProcessing ? null : () => _rejectRequest(request),
+                      child: const Text('Reject', style: TextStyle(fontSize: 12.5)),
                     ),
                     ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: ParishColors.goldAccent, foregroundColor: Colors.white),
-                      onPressed: () => _handlePriestRemoteSign(request),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.goldAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      ),
+                      onPressed: _isActionProcessing ? null : () => _handlePriestRemoteSign(request),
                       icon: const Icon(Icons.draw, size: 16),
-                      label: const Text('Sign with E-Signature', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      label: const Text('Sign with E-Signature', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
                     ),
                   ],
 
-                  // Certificate Print Action
                   if (_isSecretary && (status == 'approved' || status == 'signature_completed' || status == 'ready_for_pickup')) ...[
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: canPrint ? ParishColors.marianBlue : borderGrey,
                         foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       ),
-                      onPressed: () => _handlePrintCertificate(request),
+                      onPressed: (_isActionProcessing || !canPrint) ? null : () => _handlePrintCertificate(request),
                       icon: const Icon(Icons.print, size: 16),
                       label: Text(
                         status == 'ready_for_pickup' ? 'Re-Print Certificate' : 'Print Certificate',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
                       ),
                     ),
                   ],
 
-                  // Mark Released Action (Auto-Links to Receipt System)
                   if (_isSecretary && status == 'ready_for_pickup') ...[
                     ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: ParishColors.oliveGreen, foregroundColor: Colors.white),
-                      onPressed: () => _handleMarkReleased(request),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.oliveGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      ),
+                      onPressed: _isActionProcessing ? null : () => _handleMarkReleased(request),
                       icon: const Icon(Icons.done_all, size: 16),
-                      label: const Text('Mark Released', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      label: const Text('Mark Released', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
                     ),
                   ],
                 ],

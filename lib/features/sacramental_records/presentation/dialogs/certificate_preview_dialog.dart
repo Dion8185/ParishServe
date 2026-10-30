@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/dialogs/certificate_preview_dialog.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 
@@ -9,70 +13,166 @@ void showCertificatePreviewModal(
     }) {
   final textColorMuted = ParishColors.textMuted;
   final textColorDark = ParishColors.textDark;
+  final marianBlue = ParishColors.marianBlue;
+  final goldAccent = ParishColors.goldAccent;
+  final cardWhite = ParishColors.cardWhite;
+  final borderGrey = ParishColors.borderGrey;
 
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: cardWhite,
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 14, 10),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('Certificate Preview', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
+          Row(
+            children: [
+              Icon(Icons.visibility_outlined, color: marianBlue, size: 24),
+              const SizedBox(width: 10),
+              Text(
+                'Certificate Preview',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: textColorDark,
+                ),
+              ),
+            ],
+          ),
+          IconButton(
+            onPressed: () => Navigator.pop(ctx),
+            icon: const Icon(Icons.close, size: 24),
+            tooltip: 'Close Preview',
+          ),
         ],
       ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       content: Container(
-        padding: const EdgeInsets.all(16),
+        width: double.maxFinite,
+        constraints: const BoxConstraints(maxWidth: 480),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: ParishColors.cardWhite,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: ParishColors.goldAccent, width: 2),
+          color: ParishColors.backgroundLight,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: goldAccent, width: 2),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.shield_outlined, size: 40, color: ParishColors.marianBlue),
-            const SizedBox(height: 6),
-            const Text(
-              'PAROCHIA SANCTI IOANNIS PAULI II',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
-            ),
-            Text('Diocese of San Pablo', style: TextStyle(fontSize: 11, color: textColorMuted)),
-            const Divider(height: 20),
-            Text('CERTIFICATE OF $sacrament', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            Icon(Icons.shield_outlined, size: 44, color: marianBlue),
             const SizedBox(height: 8),
-            Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: ParishColors.marianBlue)),
-            const SizedBox(height: 4),
-            Text(bookRef, style: TextStyle(fontSize: 12, color: textColorMuted)),
-            const SizedBox(height: 14),
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                border: Border.all(color: ParishColors.borderGrey),
-                borderRadius: BorderRadius.circular(8),
+            Text(
+              'PAROCHIA SANCTI IOANNIS PAULI II',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                letterSpacing: 0.8,
+                color: textColorDark,
               ),
-              child: Icon(Icons.qr_code_2, size: 70, color: textColorDark),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Diocese of San Pablo',
+              style: TextStyle(fontSize: 13, color: textColorMuted, fontWeight: FontWeight.w500),
+            ),
+            const Divider(height: 22),
+            Text(
+              'CERTIFICATE OF ${sacrament.toUpperCase()}',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                letterSpacing: 0.5,
+                color: textColorDark,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              name,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 19,
+                color: marianBlue,
+              ),
             ),
             const SizedBox(height: 6),
-            Text('QR Code for Parish Verification', style: TextStyle(fontSize: 10, color: textColorMuted)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: cardWhite,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: borderGrey),
+              ),
+              child: Text(
+                bookRef,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColorDark),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                color: cardWhite,
+                border: Border.all(color: borderGrey, width: 1.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.qr_code_2, size: 76, color: textColorDark),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'QR Code for Parish Verification',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColorMuted),
+            ),
           ],
         ),
       ),
+      actionsPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       actions: [
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.goldAccent,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: borderGrey, width: 1.2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    'Close',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColorMuted),
+                  ),
+                ),
+              ),
             ),
-            onPressed: () => Navigator.pop(ctx),
-            icon: const Icon(Icons.print),
-            label: const Text('Print Official Certificate', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 48,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: goldAccent,
+                    foregroundColor: Colors.white,
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.print, size: 20),
+                  label: const Text(
+                    'Print Certificate',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     ),

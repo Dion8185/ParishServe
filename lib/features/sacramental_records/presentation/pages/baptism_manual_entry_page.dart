@@ -29,26 +29,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
   bool get isEditMode => widget.initialData != null;
 
-  // Pagination State (5 Pages / Steps)
-  int _currentStep = 0;
-  static const int _totalSteps = 5;
-
-  static const List<String> _stepTitles = [
-    'Canonical Record Reference',
-    "Child's Personal Information",
-    "Parents' Lineage & Origin",
-    'Godparents / Sponsors',
-    'Baptism & Minister Details',
-  ];
-
-  static const List<String> _stepDescriptions = [
-    'Specify book, page, line, and entry classification from the physical ledger.',
-    'Enter canonical identification of the child as inscribed in the register.',
-    'Record parental lineage and paternity acknowledgment under Canon 877.',
-    'Record canonical sponsors and additional witnesses (using [+] Add Godparent).',
-    'Administration date, place of baptism, clergy, stipend, and marginal notations.',
-  ];
-
   // Canonical options for Legitimacy
   static const List<String> _canonicalStatusOptions = [
     'Natural (Nat.)',
@@ -59,7 +39,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     'Others (Specify)',
   ];
 
-  // 1. Canonical Record Reference (Page 1)
+  // 1. Canonical Record Reference
   final _bookNumberController = TextEditingController();
   final _pageNumberController = TextEditingController();
   final _lineNumberController = TextEditingController();
@@ -71,7 +51,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   bool _isCheckingCoordinateDuplicate = false;
   String? _coordinateDuplicateError;
 
-  // 2. Child Information (Page 2)
+  // 2. Child Information
   final _childFirstNameController = TextEditingController();
   final _childMiddleNameController = TextEditingController();
   final _childLastNameController = TextEditingController();
@@ -83,7 +63,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   String _legitimacy = 'Catholic (Cath.)';
   final _legitimacyOtherController = TextEditingController();
 
-  // 3. Parents Information (Page 3)
+  // 3. Parents Information
   bool _fatherNotIndicated = false;
   final _fatherFirstNameController = TextEditingController();
   final _fatherMiddleNameController = TextEditingController();
@@ -98,7 +78,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final _parentsContactNumberController = TextEditingController();
   final _parentsResidenceController = TextEditingController();
 
-  // 4. Sponsors Information (Page 4)
+  // 4. Sponsors Information
   final _sponsor1FirstNameController = TextEditingController();
   final _sponsor1MiddleNameController = TextEditingController();
   final _sponsor1LastNameController = TextEditingController();
@@ -109,10 +89,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final _sponsor2LastNameController = TextEditingController();
   final _sponsor2ResidenceController = TextEditingController();
 
-  // Dynamic Other Godparents List (Plus button implementation - Full Name only)
+  // Dynamic Other Godparents List
   final List<TextEditingController> _otherGodparentControllers = [];
 
-  // 5. Baptism & Minister Details (Page 5)
+  // 5. Baptism & Minister Details
   final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish');
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
@@ -129,6 +109,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   @override
   void initState() {
     super.initState();
+
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
@@ -297,7 +278,16 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     super.dispose();
   }
 
-  /// Automatically computes age as (Date of Sacrament - Date of Birth) when birth is indicated.
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
   void _recomputeAge() {
     if (_dateOfBirth != null && _dateOfBaptism != null) {
       _ageController.text = SacramentalValidators.calculateFormattedAge(
@@ -323,7 +313,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       context: context,
       initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now, // Enforce no future dates
+      lastDate: now,
     );
 
     if (picked != null) {
@@ -377,147 +367,93 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     });
   }
 
-  // ===========================================================================
-  // Step-by-Step Google Forms Pagination Logic with Canonical Validators
-  // ===========================================================================
-
-  bool _validateStep(int step) {
+  bool _validateAllFields() {
     setState(() => _errorMessage = null);
 
-    final isStepValid = _formKey.currentState?.validate() ?? true;
-    if (!isStepValid) {
-      setState(() => _errorMessage = 'Please correct the highlighted errors below before proceeding.');
+    final isFormValid = _formKey.currentState?.validate() ?? false;
+    if (!isFormValid) {
+      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      _scrollToTop();
       return false;
     }
 
-    if (step == 0) {
-      // Step 1: Canonical Reference Bounds & Live Duplicate Collision
-      if (_coordinateDuplicateError != null) {
-        setState(() => _errorMessage = _coordinateDuplicateError);
-        return false;
-      }
-
-      final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
-      if (bookError != null) {
-        setState(() => _errorMessage = bookError);
-        return false;
-      }
-
-      final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
-      if (pageError != null) {
-        setState(() => _errorMessage = pageError);
-        return false;
-      }
-
-      final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
-      if (lineError != null) {
-        setState(() => _errorMessage = lineError);
-        return false;
-      }
-
-      final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
-      if (regDateError != null) {
-        setState(() => _errorMessage = regDateError);
-        return false;
-      }
-      return true;
-    } else if (step == 1) {
-      // Step 2: Child Information & Realistic DOB Check
-      final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
-      if (dobError != null) {
-        setState(() {
-          _dateOfBirthHasError = true;
-          _errorMessage = dobError;
-        });
-        return false;
-      }
-
-      final placeError = SacramentalValidators.validatePlace(
-        _placeOfBirthController.text,
-        'Place of birth',
-        isRequired: true,
-        maxLength: 100,
-      );
-      if (placeError != null) {
-        setState(() => _errorMessage = placeError);
-        return false;
-      }
-
-      if (_legitimacy == 'Others (Specify)' && _legitimacyOtherController.text.trim().isEmpty) {
-        setState(() => _errorMessage = 'Please specify the legitimacy denomination.');
-        return false;
-      }
-      return true;
-    } else if (step == 4) {
-      // Step 5: Administration Details & Chronological Check
-      final baptismError = SacramentalValidators.validateBaptismDate(_dateOfBaptism, _dateOfBirth);
-      if (baptismError != null) {
-        setState(() {
-          _dateOfBaptismHasError = true;
-          _errorMessage = baptismError;
-        });
-        return false;
-      }
+    if (_coordinateDuplicateError != null) {
+      setState(() => _errorMessage = _coordinateDuplicateError);
+      _scrollToTop();
+      return false;
     }
+
+    final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+    if (bookError != null) {
+      setState(() => _errorMessage = bookError);
+      _scrollToTop();
+      return false;
+    }
+
+    final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+    if (pageError != null) {
+      setState(() => _errorMessage = pageError);
+      _scrollToTop();
+      return false;
+    }
+
+    final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+    if (lineError != null) {
+      setState(() => _errorMessage = lineError);
+      _scrollToTop();
+      return false;
+    }
+
+    final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
+    if (regDateError != null) {
+      setState(() => _errorMessage = regDateError);
+      _scrollToTop();
+      return false;
+    }
+
+    final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
+    if (dobError != null) {
+      setState(() {
+        _dateOfBirthHasError = true;
+        _errorMessage = dobError;
+      });
+      _scrollToTop();
+      return false;
+    }
+
+    final placeError = SacramentalValidators.validatePlace(
+      _placeOfBirthController.text,
+      'Place of birth',
+      isRequired: true,
+      maxLength: 100,
+    );
+    if (placeError != null) {
+      setState(() => _errorMessage = placeError);
+      _scrollToTop();
+      return false;
+    }
+
+    if (_legitimacy == 'Others (Specify)' && _legitimacyOtherController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please specify the legitimacy denomination.');
+      _scrollToTop();
+      return false;
+    }
+
+    final baptismError = SacramentalValidators.validateBaptismDate(_dateOfBaptism, _dateOfBirth);
+    if (baptismError != null) {
+      setState(() {
+        _dateOfBaptismHasError = true;
+        _errorMessage = baptismError;
+      });
+      _scrollToTop();
+      return false;
+    }
+
     return true;
   }
 
-  void _goToNextStep() {
-    if (_validateStep(_currentStep)) {
-      if (_currentStep < _totalSteps - 1) {
-        setState(() {
-          _currentStep++;
-          _errorMessage = null;
-        });
-        _scrollToTop();
-      } else {
-        _submitForm();
-      }
-    }
-  }
-
-  Future<void> _goToPreviousStep() async {
-    if (_currentStep > 0) {
-      setState(() {
-        _currentStep--;
-        _errorMessage = null;
-      });
-      _scrollToTop();
-    } else {
-      final shouldExit = await showDiscardConfirmationDialog(
-        context,
-        accentColor: ParishColors.marianBlue,
-      );
-      if (shouldExit && mounted) {
-        Navigator.pop(context);
-      }
-    }
-  }
-
-  void _scrollToTop() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  // ===========================================================================
-  // Final Form Submission (Insert or Update)
-  // ===========================================================================
-
   Future<void> _submitForm() async {
-    for (int s = 0; s < _totalSteps; s++) {
-      if (!_validateStep(s)) {
-        setState(() => _currentStep = s);
-        _scrollToTop();
-        return;
-      }
-    }
+    if (!_validateAllFields()) return;
 
     final String finalLegitimacy = _legitimacy == 'Others (Specify)'
         ? (_legitimacyOtherController.text.trim().isNotEmpty
@@ -618,6 +554,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
+      _scrollToTop();
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -628,10 +565,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
-    final borderGreyColor = ParishColors.borderGrey;
 
     return PopScope(
-      canPop: false,
+      canPop: !_isSubmitting,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         if (_isSubmitting) return;
@@ -649,7 +585,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
           backgroundColor: cardWhiteColor,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+            icon: Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
             onPressed: _isSubmitting
                 ? null
                 : () async {
@@ -677,261 +613,126 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
             ],
           ),
+          actions: [
+            // Always-available Jump to Top button in AppBar
+            IconButton(
+              icon: Icon(Icons.vertical_align_top, color: ParishColors.marianBlue, size: 22),
+              tooltip: 'Jump to Top',
+              onPressed: _scrollToTop,
+            ),
+          ],
+        ),
+        // Permanent Floating "Back to Top" Action Button (Guaranteed Visible)
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: ParishColors.marianBlue,
+          foregroundColor: Colors.white,
+          elevation: 3,
+          onPressed: _scrollToTop,
+          icon: const Icon(Icons.arrow_upward, size: 18),
+          label: const Text(
+            'Back to Top',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
         ),
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final double availableWidth = constraints.maxWidth;
-              final bool isMobile = availableWidth < 600;
-              final bool isSmallMobile = availableWidth < 480;
-              final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
+              // Responsive wide breakpoint: $\ge 900$ expands field rows horizontally
+              final bool isWide = availableWidth >= 900;
+              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Column(
+              return Stack(
                 children: [
-                  // Progress Banner
-                  Container(
-                    width: double.infinity,
-                    color: cardWhiteColor,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
+                  SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 960),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  isEditMode
-                                      ? 'Editing Section ${_currentStep + 1} of $_totalSteps'
-                                      : 'Section ${_currentStep + 1} of $_totalSteps',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: ParishColors.marianBlue,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                Text(
-                                  '${((_currentStep + 1) / _totalSteps * 100).toInt()}% Completed',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: textMutedColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: (_currentStep + 1) / _totalSteps,
-                                minHeight: 6,
-                                backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
-                                valueColor: const AlwaysStoppedAnimation<Color>(ParishColors.marianBlue),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Divider(height: 1, color: borderGreyColor),
+                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                        child: Form(
+                          key: _formKey,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 1. Google Forms Header
+                              _buildGoogleFormsHeaderCard(),
+                              const SizedBox(height: 16),
 
-                  // Form Content
-                  Expanded(
-                    child: SingleChildScrollView(
-                      controller: _scrollController,
-                      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 18),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 960),
-                          child: Form(
-                            key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildGoogleFormsSectionHeader(
-                                  title: _stepTitles[_currentStep],
-                                  description: _stepDescriptions[_currentStep],
-                                  stepIndex: _currentStep,
-                                ),
-                                const SizedBox(height: 16),
-
-                                if (_errorMessage != null) ...[
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(14),
-                                    margin: const EdgeInsets.only(bottom: 16),
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.mercyRedSurface,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: ParishColors.mercyRed),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Text(
-                                            _errorMessage!,
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold,
-                                              color: ParishColors.mercyRed,
-                                            ),
+                              // Error Alert Banner
+                              if (_errorMessage != null) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  decoration: BoxDecoration(
+                                    color: ParishColors.mercyRedSurface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: ParishColors.mercyRed),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          _errorMessage!,
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: ParishColors.mercyRed,
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-
-                                _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
-                                const SizedBox(height: 24),
+                                ),
                               ],
-                            ),
+
+                              // 2. Canonical Coordinates Card
+                              _buildSection1Coordinates(isWide: isWide),
+                              const SizedBox(height: 16),
+
+                              // 3. Child's Personal Info Card
+                              _buildSection2Child(isWide: isWide),
+                              const SizedBox(height: 16),
+
+                              // 4. Parents' Information Card (Father & Mother Unified)
+                              _buildSection3Parents(isWide: isWide),
+                              const SizedBox(height: 16),
+
+                              // 5. Sponsors & Godparents Card (Primary & Additional Unified)
+                              _buildSection4Godparents(isWide: isWide),
+                              const SizedBox(height: 16),
+
+                              // 6. Baptism Administration & Clergy Card
+                              _buildSection5Administration(isWide: isWide),
+                              const SizedBox(height: 24),
+
+                              // 7. Bottom Submission Bar (with explicit Back to Top button)
+                              _buildBottomSubmissionBar(isWide: isWide),
+                              const SizedBox(height: 50),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
 
-                  // Sticky Bottom Actions
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: cardWhiteColor,
-                      border: Border(top: BorderSide(color: borderGreyColor)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 8,
-                          offset: const Offset(0, -3),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 960),
-                        child: isSmallMobile
-                            ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: (_coordinateDuplicateError != null)
-                                      ? ParishColors.mercyRed
-                                      : (_currentStep == _totalSteps - 1
-                                      ? ParishColors.oliveGreen
-                                      : ParishColors.marianBlue),
-                                  foregroundColor: Colors.white,
-                                  elevation: 1,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
-                                icon: _isSubmitting
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                                    : Icon(
-                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                  size: 20,
-                                ),
-                                label: Text(
-                                  _isSubmitting
-                                      ? (isEditMode ? 'Updating...' : 'Registering...')
-                                      : (_currentStep == _totalSteps - 1
-                                      ? (isEditMode ? 'Update Baptism Record' : 'Save Baptism Record')
-                                      : 'Continue / Next'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 44,
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(color: borderGreyColor, width: 1.5),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: _isSubmitting ? null : _goToPreviousStep,
-                                child: Text(
-                                  _currentStep == 0 ? 'Discard / Exit' : 'Back to Previous Page',
-                                  style: TextStyle(fontSize: 14, color: textMutedColor),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                            : Row(
-                          children: [
-                            SizedBox(
-                              width: isMobile ? 130 : 160,
-                              height: 48,
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(color: borderGreyColor, width: 1.5),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: _isSubmitting ? null : _goToPreviousStep,
-                                child: Text(
-                                  _currentStep == 0 ? 'Discard / Exit' : 'Back',
-                                  style: TextStyle(fontSize: 14, color: textMutedColor),
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            SizedBox(
-                              width: isMobile ? 180 : 260,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: (_coordinateDuplicateError != null)
-                                      ? ParishColors.mercyRed
-                                      : (_currentStep == _totalSteps - 1
-                                      ? ParishColors.oliveGreen
-                                      : ParishColors.marianBlue),
-                                  foregroundColor: Colors.white,
-                                  elevation: 1,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
-                                icon: _isSubmitting
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                                    : Icon(
-                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                  size: 20,
-                                ),
-                                label: Text(
-                                  _isSubmitting
-                                      ? (isEditMode ? 'Updating...' : 'Registering...')
-                                      : (_currentStep == _totalSteps - 1
-                                      ? (isEditMode ? 'Update Baptism Record' : 'Save Baptism Record')
-                                      : 'Next Section'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                              ),
-                            ),
-                          ],
+                  // Non-Dismissible Focused Loading Overlay
+                  if (_isSubmitting)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.55),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: ParishColors.goldAccent,
+                            strokeWidth: 4.5,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               );
             },
@@ -942,34 +743,100 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   }
 
   // ===========================================================================
-  // Step Content Views
+  // Section 1: Canonical Coordinates Card
   // ===========================================================================
 
-  Widget _buildActiveStepContent({required bool isMobile, required bool isSmallMobile}) {
-    switch (_currentStep) {
-      case 0:
-        return _buildStep1CanonicalReference(isMobile: isMobile, isSmallMobile: isSmallMobile);
-      case 1:
-        return _buildStep2ChildInformation(isMobile: isMobile);
-      case 2:
-        return _buildStep3ParentsInformation(isMobile: isMobile);
-      case 3:
-        return _buildStep4GodparentsInformation(isMobile: isMobile);
-      case 4:
-        return _buildStep5AdministrationDetails(isMobile: isMobile);
-      default:
-        return const SizedBox.shrink();
-    }
+  Widget _buildGoogleFormsHeaderCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 9,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: ParishColors.marianBlue,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'LIBER BAPTISMORUM',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.marianBlue,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: ParishColors.marianBlueSurface,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isEditMode ? 'Edit Record Mode' : 'Canonical Registration Form',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.marianBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Canonical Baptismal Entry',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Complete all fields in accordance with Canon 535 and the physical church ledger. All sections flow naturally below.',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: ParishColors.textMuted,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  // STEP 1: Canonical Reference (Book, Page, Line locked in Edit Mode with Live Collision Checker)
-  Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
+  Widget _buildSection1Coordinates({required bool isWide}) {
     final bool hasDup = _coordinateDuplicateError != null;
 
     return _buildSectionCard(
-      title: isEditMode
-          ? 'Canonical Ledger Designation (Coordinates Locked)'
-          : 'Canonical Ledger Designation',
+      title: '1. Canonical Record Reference (Physical Ledger Coordinates)',
       icon: Icons.menu_book,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -983,13 +850,13 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
                   Icon(Icons.lock, size: 16, color: ParishColors.marianBlue),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Book, Page, and Line coordinates are immutable physical coordinates and cannot be modified.',
+                      'Book, Page, and Line coordinates are permanent physical coordinates and cannot be altered.',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                     ),
                   ),
@@ -998,7 +865,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             ),
           ],
 
-          // Live Automated Duplicate Error Alert Prompt
           if (hasDup) ...[
             Container(
               width: double.infinity,
@@ -1011,12 +877,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _coordinateDuplicateError!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
                         color: ParishColors.mercyRed,
@@ -1028,39 +894,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             ),
           ],
 
-          isSmallMobile
-              ? Column(
-            children: [
-              _buildTextFormField(
-                controller: _bookNumberController,
-                label: 'Book No.',
-                isRequired: true,
-                enabled: !isEditMode, // Locked in Edit Mode
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                validator: SacramentalValidators.validateBookNumber,
-              ),
-              _buildTextFormField(
-                controller: _pageNumberController,
-                label: 'Page No.',
-                isRequired: true,
-                enabled: !isEditMode, // Locked in Edit Mode
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                validator: SacramentalValidators.validatePageNumber,
-              ),
-              _buildTextFormField(
-                controller: _lineNumberController,
-                label: 'Line No.',
-                isRequired: true,
-                enabled: !isEditMode, // Locked in Edit Mode
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                validator: SacramentalValidators.validateLineNumber,
-              ),
-            ],
-          )
-              : Row(
+          // Book, Page, Line (3 Columns on Desktop/Tablet, Responsive on Phone)
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
@@ -1068,7 +903,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _bookNumberController,
                   label: 'Book No.',
                   isRequired: true,
-                  enabled: !isEditMode, // Locked in Edit Mode
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   maxLength: 4,
                   validator: SacramentalValidators.validateBookNumber,
@@ -1080,7 +915,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _pageNumberController,
                   label: 'Page No.',
                   isRequired: true,
-                  enabled: !isEditMode, // Locked in Edit Mode
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   maxLength: 4,
                   validator: SacramentalValidators.validatePageNumber,
@@ -1092,7 +927,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   controller: _lineNumberController,
                   label: 'Line No.',
                   isRequired: true,
-                  enabled: !isEditMode, // Locked in Edit Mode
+                  enabled: !isEditMode,
                   keyboardType: TextInputType.number,
                   maxLength: 4,
                   validator: SacramentalValidators.validateLineNumber,
@@ -1103,127 +938,240 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
           if (_isCheckingCoordinateDuplicate)
             Padding(
-              padding: EdgeInsets.only(bottom: 8.0, left: 4.0),
+              padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
               child: Row(
                 children: [
                   SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: ParishColors.marianBlue)),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text('Checking physical ledger coordinates...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
                 ],
               ),
             ),
 
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildDropdownField(
-              label: 'Entry Status',
-              isRequired: true,
-              value: _entryStatus,
-              items: const ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'],
-              onChanged: (val) => setState(() => _entryStatus = val!),
-            ),
-            second: _buildDatePickerField(
-              label: 'Registry Date',
-              isRequired: true,
-              value: _registryDate,
-              hasError: false,
-              onTap: () => _selectDate(context, 0),
-            ),
+          // Entry Status & Registry Date
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildDropdownField(
+                  label: 'Entry Status',
+                  isRequired: true,
+                  value: _entryStatus,
+                  items: const ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'],
+                  onChanged: (val) => setState(() => _entryStatus = val!),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDatePickerField(
+                  label: 'Registry Date',
+                  isRequired: true,
+                  value: _registryDate,
+                  hasError: false,
+                  onTap: () => _selectDate(context, 0),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // STEP 2: Child Information
-  Widget _buildStep2ChildInformation({required bool isMobile}) {
+  // ===========================================================================
+  // Section 2: Child's Personal Information Card
+  // ===========================================================================
+
+  Widget _buildSection2Child({required bool isWide}) {
     final bool hasBirthIndicated = _dateOfBirth != null;
 
     return _buildSectionCard(
-      title: "Child's Canonical Identification",
+      title: "2. Child's Canonical Identification",
       icon: Icons.child_care,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _childFirstNameController,
-              label: 'First Name',
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _childFirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'First name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _childMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _childLastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _childSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _childFirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'First name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _childMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _childLastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _childSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          // DOB, Age, Place of Birth
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: isWide ? 3 : 2,
+                child: _buildDatePickerField(
+                  label: 'Date of Birth',
+                  isRequired: true,
+                  value: _dateOfBirth,
+                  hasError: _dateOfBirthHasError,
+                  onTap: () => _selectDate(context, 1),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: isWide ? 2 : 1,
+                child: _buildTextFormField(
+                  controller: _ageController,
+                  label: hasBirthIndicated ? 'Age (Autocomputed)' : 'Age at Baptism',
+                  isRequired: false,
+                  enabled: !hasBirthIndicated,
+                  maxLength: 30,
+                ),
+              ),
+              if (isWide) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 4,
+                  child: _buildTextFormField(
+                    controller: _placeOfBirthController,
+                    label: 'Place of Birth',
+                    isRequired: true,
+                    maxLength: 100,
+                    validator: (val) => SacramentalValidators.validatePlace(val, 'Place of birth', isRequired: true, maxLength: 100),
+                  ),
+                ),
+              ],
+            ],
+          ),
+
+          if (!isWide) ...[
+            _buildTextFormField(
+              controller: _placeOfBirthController,
+              label: 'Place of Birth',
               isRequired: true,
-              maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, 'First name', isRequired: true, maxLength: 50),
+              maxLength: 100,
+              validator: (val) => SacramentalValidators.validatePlace(val, 'Place of birth', isRequired: true, maxLength: 100),
             ),
-            second: _buildTextFormField(
-              controller: _childMiddleNameController,
-              label: 'Middle Name',
-              isRequired: false,
-              maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
-            ),
-            flexFirst: 2,
-            flexSecond: 1,
+          ],
+
+          // Gender & Legitimacy
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildDropdownField(
+                  label: 'Gender',
+                  isRequired: false,
+                  value: _gender,
+                  items: const ['Male', 'Female'],
+                  onChanged: (val) => setState(() => _gender = val!),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDropdownField(
+                  label: 'Legitimacy',
+                  isRequired: false,
+                  value: _legitimacy,
+                  items: _canonicalStatusOptions,
+                  onChanged: (val) => setState(() => _legitimacy = val!),
+                ),
+              ),
+            ],
           ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _childLastNameController,
-              label: 'Last Name',
-              isRequired: true,
-              maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, 'Last name', isRequired: true, maxLength: 50),
-            ),
-            second: _buildTextFormField(
-              controller: _childSuffixController,
-              label: 'Suffix',
-              isRequired: false,
-              maxLength: 15,
-              validator: SacramentalValidators.validateSuffix,
-            ),
-            flexFirst: 2,
-            flexSecond: 1,
-          ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildDatePickerField(
-              label: 'Date of Birth',
-              isRequired: true,
-              value: _dateOfBirth,
-              hasError: _dateOfBirthHasError,
-              onTap: () => _selectDate(context, 1),
-            ),
-            second: _buildTextFormField(
-              controller: _ageController,
-              label: hasBirthIndicated ? 'Age at Baptism (Autocomputed)' : 'Age at Baptism',
-              isRequired: false,
-              enabled: !hasBirthIndicated, // Editable only if birth is not indicated
-              maxLength: 30,
-            ),
-          ),
-          _buildTextFormField(
-            controller: _placeOfBirthController,
-            label: 'Place of Birth',
-            isRequired: true,
-            maxLength: 100, // Length limit enforced
-            validator: (val) => SacramentalValidators.validatePlace(val, 'Place of birth', isRequired: true, maxLength: 100),
-          ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildDropdownField(
-              label: 'Gender',
-              isRequired: false,
-              value: _gender,
-              items: const ['Male', 'Female'],
-              onChanged: (val) => setState(() => _gender = val!),
-            ),
-            second: _buildDropdownField(
-              label: 'Legitimacy',
-              isRequired: false,
-              value: _legitimacy,
-              items: _canonicalStatusOptions,
-              onChanged: (val) => setState(() => _legitimacy = val!),
-            ),
-          ),
+
           if (_legitimacy == 'Others (Specify)') ...[
             _buildTextFormField(
               controller: _legitimacyOtherController,
@@ -1243,297 +1191,575 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // STEP 3: Parents Information
-  Widget _buildStep3ParentsInformation({required bool isMobile}) {
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: "Father's Lineage & Canon 877 §2",
-          icon: Icons.person,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                activeColor: ParishColors.marianBlue,
-                title: const Text(
-                  'Father not indicated / acknowledged in COLB (Canon 877 §2)',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                subtitle: const Text(
-                  'Fills canonical placeholder and displays "—" on issued certificates.',
-                  style: TextStyle(fontSize: 11),
-                ),
-                value: _fatherNotIndicated,
-                onChanged: _onFatherNotIndicatedToggle,
-              ),
-              const SizedBox(height: 6),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _fatherFirstNameController,
-                  label: 'Father First Name',
-                  isRequired: !_fatherNotIndicated,
-                  enabled: !_fatherNotIndicated,
-                  maxLength: 50,
-                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50) : null,
-                ),
-                second: _buildTextFormField(
-                  controller: _fatherMiddleNameController,
-                  label: 'Middle Name',
-                  isRequired: false,
-                  enabled: !_fatherNotIndicated,
-                  maxLength: 50,
-                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50) : null,
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _fatherLastNameController,
-                  label: 'Father Last Name',
-                  isRequired: !_fatherNotIndicated,
-                  enabled: !_fatherNotIndicated,
-                  maxLength: 50,
-                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50) : null,
-                ),
-                second: _buildTextFormField(
-                  controller: _fatherPlaceOfBirthController,
-                  label: 'Place of Origin',
-                  isRequired: false,
-                  enabled: !_fatherNotIndicated,
-                  maxLength: 100, // Length limit enforced
-                  validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's place of origin", isRequired: false, maxLength: 100) : null,
-                ),
-              ),
-            ],
+  // ===========================================================================
+  // Section 3: Parents' Lineage & Residence Card (Unified)
+  // ===========================================================================
+
+  Widget _buildSection3Parents({required bool isWide}) {
+    return _buildSectionCard(
+      title: "3. Parents' Lineage & Residence",
+      icon: Icons.people,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Father's Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: ParishColors.marianBlue)),
+          const SizedBox(height: 4),
+
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            activeColor: ParishColors.marianBlue,
+            title: const Text(
+              'Father not indicated / acknowledged in COLB (Canon 877 §2)',
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+            ),
+            subtitle: const Text(
+              'Fills canonical placeholder and displays "—" on issued certificates.',
+              style: TextStyle(fontSize: 12),
+            ),
+            value: _fatherNotIndicated,
+            onChanged: _onFatherNotIndicatedToggle,
           ),
-        ),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-          title: "Mother's Lineage & Residence",
-          icon: Icons.person_outline,
-          child: Column(
+          const SizedBox(height: 6),
+
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _fatherFirstNameController,
+                    label: 'Father First Name',
+                    isRequired: !_fatherNotIndicated,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 50,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50) : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _fatherMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 50,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50) : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _fatherLastNameController,
+                    label: 'Father Last Name',
+                    isRequired: !_fatherNotIndicated,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 50,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50) : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _fatherPlaceOfBirthController,
+                    label: 'Place of Origin',
+                    isRequired: false,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 100,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's place of origin", isRequired: false, maxLength: 100) : null,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _fatherFirstNameController,
+                    label: 'Father First Name',
+                    isRequired: !_fatherNotIndicated,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 50,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50) : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _fatherMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 50,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50) : null,
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _fatherLastNameController,
+                    label: 'Father Last Name',
+                    isRequired: !_fatherNotIndicated,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 50,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50) : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _fatherPlaceOfBirthController,
+                    label: 'Place of Origin',
+                    isRequired: false,
+                    enabled: !_fatherNotIndicated,
+                    maxLength: 100,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's place of origin", isRequired: false, maxLength: 100) : null,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const Divider(height: 26),
+
+          Text("Mother's Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: ParishColors.marianBlue)),
+          const SizedBox(height: 10),
+
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _motherFirstNameController,
+                    label: 'Mother First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _motherMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _motherMaidenLastNameController,
+                    label: 'Maiden Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _motherPlaceOfBirthController,
+                    label: 'Place of Origin',
+                    isRequired: false,
+                    maxLength: 100,
+                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's place of origin", isRequired: false, maxLength: 100),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _motherFirstNameController,
+                    label: 'Mother First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _motherMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _motherMaidenLastNameController,
+                    label: 'Maiden Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _motherPlaceOfBirthController,
+                    label: 'Place of Origin',
+                    isRequired: false,
+                    maxLength: 100,
+                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's place of origin", isRequired: false, maxLength: 100),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const Divider(height: 26),
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _motherFirstNameController,
-                  label: 'Mother First Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _motherMiddleNameController,
-                  label: 'Middle Name',
-                  isRequired: false,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _motherMaidenLastNameController,
-                  label: 'Maiden Last Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _motherPlaceOfBirthController,
-                  label: 'Place of Origin',
-                  isRequired: false,
-                  maxLength: 100, // Length limit enforced
-                  validator: (val) => SacramentalValidators.validatePlace(val, "Mother's place of origin", isRequired: false, maxLength: 100),
-                ),
-              ),
-              const Divider(height: 24),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+              Expanded(
+                flex: isWide ? 4 : 1,
+                child: _buildTextFormField(
                   controller: _parentsContactNumberController,
-                  label: 'Parents Contact Number (11-digits)',
+                  label: 'Parents Contact No. (11-digits)',
                   isRequired: false,
                   keyboardType: TextInputType.phone,
                   maxLength: 11,
                   validator: SacramentalValidators.validatePhoneNumber,
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: isWide ? 6 : 1,
+                child: _buildTextFormField(
                   controller: _parentsResidenceController,
-                  label: 'Parents Residence / Address',
+                  label: 'Parents Residence Address',
                   isRequired: false,
-                  maxLength: 150, // Length limit enforced
+                  maxLength: 150,
                   validator: (val) => SacramentalValidators.validatePlace(val, 'Parents residence', isRequired: false, maxLength: 150),
                 ),
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  // STEP 4: Godparents / Sponsors
-  Widget _buildStep4GodparentsInformation({required bool isMobile}) {
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: 'Primary Sponsors (Godparents 1 & 2)',
-          icon: Icons.people_outline,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Canonical entries require Sponsor 1 and Sponsor 2.',
-                style: TextStyle(fontSize: 12, color: ParishColors.marianBlue, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 14),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _sponsor1FirstNameController,
-                  label: 'Sponsor 1 First Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _sponsor1MiddleNameController,
-                  label: 'Middle Name',
-                  isRequired: false,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _sponsor1LastNameController,
-                  label: 'Sponsor 1 Last Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _sponsor1ResidenceController,
-                  label: 'Sponsor 1 Residence',
-                  isRequired: false,
-                  maxLength: 150, // Length limit enforced
-                  validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 1 residence', isRequired: false, maxLength: 150),
-                ),
-              ),
-              const Divider(height: 28),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _sponsor2FirstNameController,
-                  label: 'Sponsor 2 First Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _sponsor2MiddleNameController,
-                  label: 'Middle Name',
-                  isRequired: false,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _sponsor2LastNameController,
-                  label: 'Sponsor 2 Last Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _sponsor2ResidenceController,
-                  label: 'Sponsor 2 Residence',
-                  isRequired: false,
-                  maxLength: 150, // Length limit enforced
-                  validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 2 residence', isRequired: false, maxLength: 150),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-          title: 'Additional Godparents / Witnesses',
-          icon: Icons.group_add_outlined,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Click "[+] Add Godparent" to include additional secondary sponsor names individually.',
-                style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-              ),
-              const SizedBox(height: 12),
-              ..._otherGodparentControllers.asMap().entries.map((entry) {
-                int idx = entry.key;
-                var controller = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: controller,
-                          maxLength: 60,
-                          buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                          style: const TextStyle(fontSize: 14),
-                          decoration: InputDecoration(
-                            labelText: 'Godparent / Witness #${idx + 1} Full Name',
-                            filled: true,
-                            fillColor: ParishColors.backgroundLight,
-                            isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          validator: (val) => SacramentalValidators.validateName(val, 'Godparent #${idx + 1}', isRequired: false, maxLength: 60),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, color: ParishColors.mercyRed),
-                        onPressed: () => _removeOtherGodparentField(idx),
-                        tooltip: 'Remove Godparent',
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 4),
-              SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-                    foregroundColor: ParishColors.marianBlue,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: _addOtherGodparentField,
-                  icon: const Icon(Icons.add_circle_outline, size: 18),
-                  label: const Text('Add Godparent', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+  // ===========================================================================
+  // Section 4: Godparents & Sponsors Card (Unified)
+  // ===========================================================================
 
-  // STEP 5: Administration Details
-  Widget _buildStep5AdministrationDetails({required bool isMobile}) {
+  Widget _buildSection4Godparents({required bool isWide}) {
     return _buildSectionCard(
-      title: 'Baptism Administration & Minister Details',
+      title: '4. Godparents / Canonical Sponsors',
+      icon: Icons.people_outline,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Primary Sponsors (Canonically Required)',
+            style: TextStyle(fontSize: 13, color: ParishColors.marianBlue, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+
+          Text('Sponsor 1 (Ninong / Ninang)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          const SizedBox(height: 6),
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _sponsor1FirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _sponsor1MiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _sponsor1LastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _sponsor1ResidenceController,
+                    label: 'Residence / Address',
+                    isRequired: false,
+                    maxLength: 150,
+                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 1 residence', isRequired: false, maxLength: 150),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor1FirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor1MiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor1LastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor1ResidenceController,
+                    label: 'Residence',
+                    isRequired: false,
+                    maxLength: 150,
+                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 1 residence', isRequired: false, maxLength: 150),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const Divider(height: 22),
+
+          Text('Sponsor 2 (Ninong / Ninang)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          const SizedBox(height: 6),
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _sponsor2FirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _sponsor2MiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _sponsor2LastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _sponsor2ResidenceController,
+                    label: 'Residence / Address',
+                    isRequired: false,
+                    maxLength: 150,
+                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 2 residence', isRequired: false, maxLength: 150),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor2FirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor2MiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor2LastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTextFormField(
+                    controller: _sponsor2ResidenceController,
+                    label: 'Residence',
+                    isRequired: false,
+                    maxLength: 150,
+                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 2 residence', isRequired: false, maxLength: 150),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const Divider(height: 26),
+
+          Text('Additional Secondary Godparents (Witnesses)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          const SizedBox(height: 4),
+          Text(
+            'Click "[+] Add Godparent" to add additional secondary sponsor names individually.',
+            style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          ..._otherGodparentControllers.asMap().entries.map((entry) {
+            int idx = entry.key;
+            var controller = entry.value;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: controller,
+                      maxLength: 60,
+                      buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                      style: const TextStyle(fontSize: 14.5),
+                      decoration: InputDecoration(
+                        labelText: 'Godparent / Witness #${idx + 1} Full Name',
+                        filled: true,
+                        fillColor: ParishColors.backgroundLight,
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      validator: (val) => SacramentalValidators.validateName(val, 'Godparent #${idx + 1}', isRequired: false, maxLength: 60),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.remove_circle_outline, color: ParishColors.mercyRed),
+                    onPressed: () => _removeOtherGodparentField(idx),
+                    tooltip: 'Remove Godparent',
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: isWide ? 220 : double.infinity,
+            height: 46,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: ParishColors.marianBlue, width: 1.5),
+                foregroundColor: ParishColors.marianBlue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _addOtherGodparentField,
+              icon: const Icon(Icons.add_circle_outline, size: 20),
+              label: const Text('Add Godparent', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Section 5: Administration & Clergy Details Card
+  // ===========================================================================
+
+  Widget _buildSection5Administration({required bool isWide}) {
+    return _buildSectionCard(
+      title: '5. Baptism Administration & Clergy Details',
       icon: Icons.church,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1542,51 +1768,76 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             controller: _parishChurchController,
             label: 'Parish / Church of Baptism',
             isRequired: true,
-            maxLength: 150, // Length limit enforced
+            maxLength: 150,
             validator: (val) => SacramentalValidators.validatePlace(val, 'Parish / Church of baptism', isRequired: true, maxLength: 150),
           ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _ministerFirstNameController,
-              label: 'Minister First Name',
-              isRequired: true,
-              maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true, maxLength: 50),
-            ),
-            second: _buildTextFormField(
-              controller: _ministerMiddleNameController,
-              label: 'Minister Middle Name',
-              isRequired: false,
-              maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false, maxLength: 50),
-            ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: _buildTextFormField(
+                  controller: _ministerFirstNameController,
+                  label: 'Minister First Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: _buildTextFormField(
+                  controller: _ministerMiddleNameController,
+                  label: 'Middle Name',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: _buildTextFormField(
+                  controller: _ministerLastNameController,
+                  label: 'Minister Last Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true, maxLength: 50),
+                ),
+              ),
+            ],
           ),
-          _buildTextFormField(
-            controller: _ministerLastNameController,
-            label: 'Minister Last Name',
-            isRequired: true,
-            maxLength: 50,
-            validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true, maxLength: 50),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: isWide ? 4 : 1,
+                child: _buildDatePickerField(
+                  label: 'Date of Baptism',
+                  isRequired: true,
+                  value: _dateOfBaptism,
+                  hasError: _dateOfBaptismHasError,
+                  onTap: () => _selectDate(context, 2),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: isWide ? 3 : 1,
+                child: _buildTextFormField(
+                  controller: _stipendController,
+                  label: 'Stipend (₱)',
+                  isRequired: false,
+                  maxLength: 12,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  validator: SacramentalValidators.validateStipend,
+                ),
+              ),
+            ],
           ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildDatePickerField(
-              label: 'Date of Baptism',
-              isRequired: true,
-              value: _dateOfBaptism,
-              hasError: _dateOfBaptismHasError,
-              onTap: () => _selectDate(context, 2),
-            ),
-            second: _buildTextFormField(
-              controller: _stipendController,
-              label: 'Stipend (₱)',
-              isRequired: false,
-              maxLength: 12,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              validator: SacramentalValidators.validateStipend,
-            ),
-          ),
+
           _buildTextFormField(
             controller: _remarksController,
             label: 'Canonical Remarks / Marginal Notations',
@@ -1600,16 +1851,111 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   }
 
   // ===========================================================================
-  // Google Forms Visual Components
+  // Bottom Submission Bar (With Explicit Back to Top)
   // ===========================================================================
 
-  Widget _buildGoogleFormsSectionHeader({
+  Widget _buildBottomSubmissionBar({required bool isWide}) {
+    final borderGreyColor = ParishColors.borderGrey;
+    final textMutedColor = ParishColors.textMuted;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderGreyColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(130, 50),
+              side: BorderSide(color: borderGreyColor, width: 1.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: _isSubmitting
+                ? null
+                : () async {
+              final shouldExit = await showDiscardConfirmationDialog(
+                context,
+                accentColor: ParishColors.marianBlue,
+              );
+              if (shouldExit && mounted) {
+                Navigator.pop(context);
+              }
+            },
+            child: Text(
+              'Discard & Exit',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Explicit Back to Top button in bottom bar
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(130, 50),
+                  side: BorderSide(color: ParishColors.marianBlue, width: 1.4),
+                  foregroundColor: ParishColors.marianBlue,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: _scrollToTop,
+                icon: const Icon(Icons.arrow_upward, size: 18),
+                label: const Text(
+                  'Back to Top',
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  minimumSize: Size(isWide ? 260 : 180, 50),
+                  backgroundColor: (_coordinateDuplicateError != null)
+                      ? ParishColors.mercyRed
+                      : ParishColors.oliveGreen,
+                  foregroundColor: Colors.white,
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _submitForm,
+                icon: const Icon(Icons.check_circle_outline, size: 22),
+                label: Text(
+                  isEditMode ? 'Update Baptism Record' : 'Save Baptism Record',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Reusable Form Field Component Builders
+  // ===========================================================================
+
+  Widget _buildSectionCard({
     required String title,
-    required String description,
-    required int stepIndex,
+    required IconData icon,
+    required Widget child,
   }) {
     return Container(
       width: double.infinity,
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(14),
@@ -1625,130 +1971,23 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            height: 8,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: ParishColors.marianBlue,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      isEditMode
-                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
-                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.marianBlue,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: ParishColors.marianBlueSurface,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        isEditMode ? 'Edit Record Mode' : 'Canonical Step',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.marianBlue,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: ParishColors.textDark,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: ParishColors.textMuted,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAdaptivePair({
-    required bool isStacked,
-    required Widget first,
-    required Widget second,
-    int flexFirst = 1,
-    int flexSecond = 1,
-  }) {
-    if (isStacked) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [first, second],
-      );
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: flexFirst, child: first),
-        const SizedBox(width: 12),
-        Expanded(flex: flexSecond, child: second),
-      ],
-    );
-  }
-
-  Widget _buildSectionCard({
-    required String title,
-    required IconData icon,
-    required Widget child,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ParishColors.borderGrey),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: ParishColors.marianBlue),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: ParishColors.marianBlue,
+              Icon(icon, size: 22, color: ParishColors.marianBlue),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
                 ),
               ),
             ],
           ),
-          const Divider(height: 20),
+          const Divider(height: 22),
           child,
         ],
       ),
@@ -1761,14 +2000,14 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       child: RichText(
         text: TextSpan(
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 13.5,
             fontWeight: FontWeight.w600,
             color: ParishColors.textDark,
           ),
           children: [
             TextSpan(text: label),
             if (isRequired)
-              const TextSpan(
+              TextSpan(
                 text: ' *',
                 style: TextStyle(
                   color: ParishColors.mercyRed,
@@ -1793,7 +2032,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     String? Function(String?)? validator,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1806,12 +2045,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             maxLength: maxLength,
             buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
             validator: validator,
-            style: TextStyle(fontSize: 14, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
               fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -1822,17 +2061,17 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+                borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2),
+                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.8),
+                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
               ),
-              errorStyle: const TextStyle(
+              errorStyle: TextStyle(
                 color: ParishColors.mercyRed,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -1854,7 +2093,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1863,7 +2102,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             onTap: onTap,
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              height: 48,
+              height: 50,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
@@ -1876,13 +2115,13 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   Text(
                     value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 14.5,
                       color: value != null ? ParishColors.textDark : ParishColors.textMuted,
                     ),
                   ),
                   Icon(
                     Icons.calendar_month,
-                    size: 20,
+                    size: 22,
                     color: hasError ? ParishColors.mercyRed : ParishColors.marianBlue,
                   ),
                 ],
@@ -1890,8 +2129,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             ),
           ),
           if (hasError)
-            const Padding(
-              padding: EdgeInsets.only(top: 6, left: 12),
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 12),
               child: Text(
                 'Date selection is required.',
                 style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
@@ -1910,7 +2149,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     required void Function(String?) onChanged,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1922,17 +2161,17 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 value: item,
                 child: Text(
                   item,
-                  style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+                  style: TextStyle(fontSize: 14, color: ParishColors.textDark),
                 ),
               );
             }).toList(),
             onChanged: onChanged,
-            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+            style: TextStyle(fontSize: 14, color: ParishColors.textDark),
             decoration: InputDecoration(
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -1943,7 +2182,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+                borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8),
               ),
             ),
           ),
