@@ -456,6 +456,41 @@ class CertificateService {
     );
   }
 
+  /// Permanently removes a template from Supabase and SQLite local storage.
+  static Future<void> deleteTemplatePermanently(String templateId) async {
+    final isOnline = await RecordsSyncService.instance.checkConnectivity();
+    if (isOnline || kIsWeb) {
+      try {
+        await _client
+            .from('certificate_templates')
+            .delete()
+            .eq('template_id', templateId);
+      } catch (_) {
+        if (kIsWeb) rethrow;
+      }
+    }
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db != null) {
+      try {
+        await db.delete(
+          'certificate_templates',
+          where: 'template_id = ?',
+          whereArgs: [templateId],
+        );
+      } catch (_) {}
+    }
+
+    if (!isOnline && !kIsWeb) {
+      await RecordsSyncService.instance.queueOfflineChange(
+        tableName: 'certificate_templates',
+        recordId: templateId,
+        operation: 'DELETE',
+        data: {'template_id': templateId},
+      );
+    }
+  }
+
   static Future<void> _unsetDefaultTemplates(
       String sacramentType, {
         String? excludeId,
