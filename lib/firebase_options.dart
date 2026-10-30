@@ -33,7 +33,7 @@ class DefaultFirebaseOptions {
   // 2. Android Configuration (Mobile Device / Emulator)
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDBm_9W_I45t326urqp2N0Abjt0gwfV3a0',
-    appId: '1:620738454065:web:809d7fe206ac398537eb10',
+    appId: '1:620738454065:android:809d7fe206ac398537eb10',
     messagingSenderId: '620738454065',
     projectId: 'parishserve',
     authDomain: 'parishserve.firebaseapp.com',

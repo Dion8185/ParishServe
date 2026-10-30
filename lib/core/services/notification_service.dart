@@ -26,7 +26,7 @@ class NotificationService {
   /// Caches push payloads received during cold start / killed state before the user session is mounted
   static Map<String, dynamic>? pendingNotificationData;
 
-  /// Initializes the OneSignal SDK on mobile platforms
+  /// Initializes the OneSignal SDK on mobile platforms without blocking the UI thread
   static Future<void> initialize() async {
     if (kIsWeb) {
       debugPrint('[NotificationService] Running on Web - skipping native OneSignal mobile SDK initialization.');
@@ -39,8 +39,12 @@ class NotificationService {
       OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
       OneSignal.initialize(_oneSignalAppId);
 
-      final permissionGranted = await OneSignal.Notifications.requestPermission(true);
-      debugPrint('[NotificationService] Push Permission Granted: $permissionGranted');
+      // Request notification permissions asynchronously so it does not block the Android draw traversal
+      OneSignal.Notifications.requestPermission(true).then((permissionGranted) {
+        debugPrint('[NotificationService] Push Permission Granted: $permissionGranted');
+      }).catchError((e) {
+        debugPrint('[NotificationService] Push permission request notice: $e');
+      });
 
       OneSignal.User.pushSubscription.addObserver((state) {
         debugPrint('[OneSignal Observer] Subscription ID: ${state.current.id}');
