@@ -15,6 +15,8 @@ import 'dialogs/mass_intention_dialog.dart';
 import 'dialogs/review_mass_intention_payment_dialog.dart';
 import 'dialogs/schedule_appointment_dialog.dart';
 import 'widgets/appointment_card.dart';
+import 'pages/book_mass_intention_page.dart';
+import 'pages/schedule_service_page.dart';
 
 enum AppointmentViewMode { cards, table }
 
@@ -1185,7 +1187,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
               elevation: 1,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            onPressed: () => showScheduleAppointmentModal(context, onAppointmentSaved: _loadAppointments),
+            onPressed: () => navigateToScheduleServicePage(context, onAppointmentSaved: _loadAppointments),
             icon: const Icon(Icons.add_task, size: 17),
             label: const Text('+ Book Sacrament / Service', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
           ),
@@ -1200,7 +1202,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
               foregroundColor: ParishColors.goldAccent,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            onPressed: () => showMassIntentionModal(context, onIntentionSaved: _loadMassIntentions),
+            onPressed: () => navigateToBookMassIntentionPage(context, onIntentionSaved: _loadMassIntentions),
             icon: const Icon(Icons.volunteer_activism, size: 17),
             label: const Text('+ Book Mass Intention (Walk-In)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
           ),
@@ -1220,7 +1222,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                 elevation: 1,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: () => showScheduleAppointmentModal(context, onAppointmentSaved: _loadAppointments),
+              onPressed: () => navigateToScheduleServicePage(context, onAppointmentSaved: _loadAppointments),
               icon: const Icon(Icons.add_task, size: 18),
               label: const Text('+ Book Sacrament / Service', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             ),
@@ -1237,7 +1239,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                 foregroundColor: ParishColors.goldAccent,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: () => showMassIntentionModal(context, onIntentionSaved: _loadMassIntentions),
+              onPressed: () => navigateToBookMassIntentionPage(context, onIntentionSaved: _loadMassIntentions),
               icon: const Icon(Icons.volunteer_activism, size: 18),
               label: const Text('+ Book Mass Intention (Walk-In)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             ),

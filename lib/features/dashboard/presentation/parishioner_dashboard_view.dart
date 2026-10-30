@@ -16,6 +16,8 @@ import 'dialogs/pabuklat_request_dialog.dart';
 import 'pages/parish_calendar_page.dart';
 import 'dialogs/calendar_event_dialog.dart';
 import 'widgets/daily_readings_card.dart';
+import '../../appointments/presentation/pages/book_mass_intention_page.dart';
+import '../../appointments/presentation/pages/schedule_service_page.dart';
 
 class ParishionerDashboardView extends StatefulWidget {
   final UserModel currentUser;
@@ -313,14 +315,14 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
               subtitle: 'Weddings, Baptisms & Blessings',
               icon: Icons.edit_calendar,
               color: ParishColors.marianBlue,
-              onTap: () => showScheduleAppointmentModal(context, onAppointmentSaved: _loadDashboardData),
+              onTap: () => navigateToScheduleServicePage(context, onAppointmentSaved: _loadDashboardData),
             ),
             _buildActionCard(
               title: 'Mass Intentions',
               subtitle: 'Wed/Fri (5:30PM) • Sun (8AM/4PM)',
               icon: Icons.volunteer_activism,
               color: ParishColors.goldAccent,
-              onTap: () => showMassIntentionModal(context, onIntentionSaved: _loadDashboardData),
+              onTap: () => navigateToBookMassIntentionPage(context, onIntentionSaved: _loadDashboardData),
             ),
             _buildActionCard(
               title: 'Request Record',
