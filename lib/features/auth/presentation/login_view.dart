@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../services/auth_service.dart';
+import 'auth_gate.dart';
 import 'dialogs/forgot_password_dialog.dart';
 import 'dialogs/login_help_dialog.dart';
 import 'otp_verification_view.dart';
@@ -50,6 +51,12 @@ class _LoginViewState extends State<LoginView> {
       if (user == null) {
         _showErrorDialog(
           'Invalid credentials. Please verify your email/username and password.',
+        );
+      } else {
+        // Restart/re-evaluate app navigation from AuthGate root after successful login
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
         );
       }
     } on EmailNotConfirmedException catch (e) {
