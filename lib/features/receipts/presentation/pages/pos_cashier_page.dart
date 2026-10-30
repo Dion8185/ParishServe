@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/receipts/presentation/pages/pos_cashier_page.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
@@ -5,10 +9,9 @@ import '../../../auth/services/auth_service.dart';
 import '../../models/pos_item_model.dart';
 import '../../services/particulars_service.dart';
 import '../../services/secretary_service.dart';
-import '../dialogs/manage_particulars_dialog.dart';
 import '../dialogs/receipt_detail_dialog.dart';
+import 'particulars_catalog_page.dart';
 
-/// Auto-masking phone input formatter for Philippine phone numbers
 class _PhilippinePhoneInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -16,9 +19,7 @@ class _PhilippinePhoneInputFormatter extends TextInputFormatter {
       TextEditingValue newValue,
       ) {
     final digitsOnly = newValue.text.replaceAll(RegExp(r'\D'), '');
-    if (digitsOnly.length > 11) {
-      return oldValue;
-    }
+    if (digitsOnly.length > 11) return oldValue;
 
     final buffer = StringBuffer();
     for (int i = 0; i < digitsOnly.length; i++) {
@@ -36,7 +37,6 @@ class _PhilippinePhoneInputFormatter extends TextInputFormatter {
   }
 }
 
-/// Title case formatter for names
 class _TitleCaseInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -215,11 +215,11 @@ class _PosCashierPageState extends State<PosCashierPage> {
     setState(() => _cart.clear());
   }
 
-  void _openManageParticulars() {
-    showManageParticularsModal(
+  void _openManageParticularsPage() {
+    Navigator.push(
       context,
-      onParticularsUpdated: _loadCatalog,
-    );
+      MaterialPageRoute(builder: (_) => const ParticularsCatalogPage()),
+    ).then((_) => _loadCatalog());
   }
 
   void _openCheckoutDialog() {
@@ -266,6 +266,207 @@ class _PosCashierPageState extends State<PosCashierPage> {
     );
   }
 
+  // ===========================================================================
+  // MOBILE PULL-UP ORDER SLIP SHEET
+  // ===========================================================================
+  void _openMobileOrderSlipSheet() {
+    if (_cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Order slip is empty. Tap items in the catalog to add.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ParishColors.cardWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final textDark = ParishColors.textDark;
+          final textMuted = ParishColors.textMuted;
+          final borderGrey = ParishColors.borderGrey;
+          final screenHeight = MediaQuery.of(context).size.height;
+
+          return SafeArea(
+            child: Container(
+              constraints: BoxConstraints(maxHeight: screenHeight * 0.78),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle Bar
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4.5,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: borderGrey,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+
+                  // Header with Count & Clear Slip
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.shopping_bag_outlined, color: ParishColors.marianBlue, size: 22),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Current Order Slip',
+                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: ParishColors.oliveGreenSurface,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$_totalItemCount items',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                            ),
+                          ),
+                        ],
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(foregroundColor: ParishColors.mercyRed),
+                        onPressed: () {
+                          _clearCart();
+                          Navigator.pop(ctx);
+                        },
+                        icon: const Icon(Icons.delete_sweep, size: 18),
+                        label: const Text('Clear', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 18),
+
+                  // Scrollable Cart Item List
+                  Flexible(
+                    child: _cart.isEmpty
+                        ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 30),
+                      child: Center(
+                        child: Text('Order slip is empty.', style: TextStyle(color: textMuted)),
+                      ),
+                    )
+                        : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _cart.length,
+                      separatorBuilder: (_, __) => const Divider(height: 14),
+                      itemBuilder: (context, index) {
+                        final cartItem = _cart[index];
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    cartItem.item.title,
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: textDark),
+                                  ),
+                                  Text(
+                                    '₱ ${cartItem.customPrice.toStringAsFixed(2)} each',
+                                    style: TextStyle(fontSize: 11.5, color: textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline, size: 20),
+                                  onPressed: () {
+                                    _removeFromCart(index);
+                                    setSheetState(() {});
+                                    if (_cart.isEmpty) Navigator.pop(ctx);
+                                  },
+                                  color: ParishColors.mercyRed,
+                                ),
+                                Text(
+                                  '${cartItem.quantity}',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                                  onPressed: () {
+                                    _addToCart(cartItem.item);
+                                    setSheetState(() {});
+                                  },
+                                  color: ParishColors.oliveGreen,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '₱ ${cartItem.total.toStringAsFixed(2)}',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: textDark),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+
+                  const Divider(height: 20),
+
+                  // Subtotal & Full Checkout Button
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Total Amount Due:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
+                      Text(
+                        '₱ ${_subtotal.toStringAsFixed(2)}',
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _cart.isEmpty ? borderGrey : ParishColors.marianBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _cart.isEmpty
+                          ? null
+                          : () {
+                        Navigator.pop(ctx);
+                        _openCheckoutDialog();
+                      },
+                      icon: const Icon(Icons.payment, size: 20),
+                      label: const Text('Proceed to Checkout', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
@@ -298,8 +499,8 @@ class _PosCashierPageState extends State<PosCashierPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.tune, color: ParishColors.marianBlue),
-            tooltip: 'Manage Particulars Catalog (CRUD)',
-            onPressed: _openManageParticulars,
+            tooltip: 'Offerings & Particulars Catalog',
+            onPressed: _openManageParticularsPage,
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: ParishColors.marianBlue),
@@ -310,7 +511,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
             TextButton.icon(
               onPressed: _clearCart,
               icon: const Icon(Icons.delete_sweep, color: ParishColors.mercyRed, size: 18),
-              label: const Text('Clear Order', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold)),
+              label: const Text('Clear', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold)),
             ),
           const SizedBox(width: 8),
         ],
@@ -340,7 +541,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
             children: [
               Positioned.fill(
                 child: Padding(
-                  padding: const EdgeInsets.only(bottom: 80),
+                  padding: const EdgeInsets.only(bottom: 84),
                   child: _buildCatalogSection(isWide: false),
                 ),
               ),
@@ -461,9 +662,9 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
               ),
               TextButton.icon(
-                onPressed: _openManageParticulars,
+                onPressed: _openManageParticularsPage,
                 icon: const Icon(Icons.edit_note, size: 16, color: ParishColors.marianBlue),
-                label: const Text('Edit Particulars', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                label: const Text('Manage Catalog', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
               ),
             ],
           ),
@@ -484,7 +685,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 const SizedBox(height: 10),
                 Text('No active offerings in this category.', style: TextStyle(fontWeight: FontWeight.bold, color: textDark)),
                 const SizedBox(height: 4),
-                Text('Tap "Edit Particulars" to activate or add new offerings.', style: TextStyle(fontSize: 12, color: textMuted)),
+                Text('Tap "Manage Catalog" to activate or add new offerings.', style: TextStyle(fontSize: 12, color: textMuted)),
               ],
             ),
           )
@@ -772,42 +973,77 @@ class _PosCashierPageState extends State<PosCashierPage> {
     );
   }
 
+  // ===========================================================================
+  // MOBILE BOTTOM BAR (PULL-UP TRIGGER)
+  // ===========================================================================
   Widget _buildMobileCheckoutBottomBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
-        border: Border(top: BorderSide(color: ParishColors.borderGrey)),
+        border: Border(top: BorderSide(color: ParishColors.borderGrey, width: 1.2)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, -3)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, -3),
+          ),
         ],
       ),
-      child: Row(
-        children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('$_totalItemCount items in slip', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
-              Text(
-                '₱ ${_subtotal.toStringAsFixed(2)}',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
-              ),
-            ],
-          ),
-          const Spacer(),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _cart.isEmpty ? ParishColors.borderGrey : ParishColors.marianBlue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openMobileOrderSlipSheet,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                // Pull-up chevron and item tally
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: ParishColors.marianBlueSurface,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.keyboard_arrow_up, color: ParishColors.marianBlue, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '$_totalItemCount items in slip',
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text('• Tap to view', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        ],
+                      ),
+                      Text(
+                        '₱ ${_subtotal.toStringAsFixed(2)}',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _cart.isEmpty ? ParishColors.borderGrey : ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: _cart.isEmpty ? null : _openCheckoutDialog,
+                  icon: const Icon(Icons.payment, size: 17),
+                  label: const Text('Checkout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                ),
+              ],
             ),
-            onPressed: _cart.isEmpty ? null : _openCheckoutDialog,
-            icon: const Icon(Icons.payment, size: 18),
-            label: const Text('Checkout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -894,12 +1130,10 @@ class _CheckoutModalState extends State<_CheckoutModal> {
         summaryServices = '${summaryServices.substring(0, 87)}...';
       }
 
-      // Line items formatted cleanly for receipt printing
       final lineDetails = widget.cartItems
           .map((c) => '• ${c.item.title} x${c.quantity}\n  @ ₱${c.customPrice.toStringAsFixed(2)} = ₱${c.total.toStringAsFixed(2)}')
           .join('\n');
 
-      // Only include user remarks if provided (tender mode is kept for modal computation only, omitted from receipt text)
       final userRemarks = _remarksController.text.trim();
       final fullDetails = userRemarks.isNotEmpty ? '$lineDetails\nRemarks: $userRemarks' : lineDetails;
       final resolvedType = _resolveTransactionTypeCategory();
@@ -974,7 +1208,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                 ],
               ),
             ),
-
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
@@ -996,7 +1229,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                           child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed, fontSize: 12.5, fontWeight: FontWeight.bold)),
                         ),
                       ],
-
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
@@ -1014,7 +1246,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         ),
                       ),
                       const SizedBox(height: 16),
-
                       Text('Payor / Parishioner Full Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       TextFormField(
@@ -1025,7 +1256,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         decoration: _inputDecoration(hint: 'e.g. Maria Clara Santos'),
                       ),
                       const SizedBox(height: 14),
-
                       Text('Contact Number (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       TextFormField(
@@ -1039,33 +1269,20 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
                       ),
                       const SizedBox(height: 16),
-
-                      // Tender Mode for Easy Computation (Hidden from printed receipt)
                       Text('Payment Tender Mode *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
                         value: _paymentMode,
                         isExpanded: true,
                         items: const [
-                          DropdownMenuItem(
-                            value: 'Cash',
-                            child: Text('Cash (Secretariat Desk)', overflow: TextOverflow.ellipsis),
-                          ),
-                          DropdownMenuItem(
-                            value: 'GCash',
-                            child: Text('GCash (Direct Transfer)', overflow: TextOverflow.ellipsis),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Gratis',
-                            child: Text('Gratis (Canonically Exempt)', overflow: TextOverflow.ellipsis),
-                          ),
+                          DropdownMenuItem(value: 'Cash', child: Text('Cash (Secretariat Desk)')),
+                          DropdownMenuItem(value: 'GCash', child: Text('GCash (Direct Transfer)')),
+                          DropdownMenuItem(value: 'Gratis', child: Text('Gratis (Canonically Exempt)')),
                         ],
                         onChanged: (val) => setState(() => _paymentMode = val!),
                         decoration: _inputDecoration(),
                       ),
                       const SizedBox(height: 14),
-
-                      // Cash Tendered & Change Computation for Cashier Ease
                       if (_paymentMode == 'Cash') ...[
                         Row(
                           children: [
@@ -1116,7 +1333,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         ),
                         const SizedBox(height: 14),
                       ],
-
                       if (_paymentMode == 'GCash') ...[
                         Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                         const SizedBox(height: 6),
@@ -1128,7 +1344,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         ),
                         const SizedBox(height: 14),
                       ],
-
                       Text('Internal Remarks / Specific Purpose', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       TextFormField(
@@ -1142,7 +1357,6 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                 ),
               ),
             ),
-
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(

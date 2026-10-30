@@ -1,17 +1,17 @@
 // =============================================================================
-// FILE: lib/features/receipts/presentation/receipts_view.dart (PART 1 OF 2)
+// FILE: lib/features/receipts/presentation/receipts_view.dart
 // =============================================================================
 
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../services/secretary_service.dart';
-import 'dialogs/manage_particulars_dialog.dart';
 import 'dialogs/new_transaction_dialog.dart';
 import 'dialogs/receipt_detail_dialog.dart';
-import 'dialogs/remittance_report_dialog.dart';
+import 'pages/particulars_catalog_page.dart';
 import 'pages/pos_cashier_page.dart';
 import 'pages/receipt_template_management_page.dart';
+import 'pages/remittance_report_page.dart';
 import 'widgets/receipt_card.dart';
 
 enum ReceiptViewMode { cards, table }
@@ -34,10 +34,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
   bool _isLoading = true;
   String? _errorMessage;
 
-  // View Mode: Cards vs Table
   ReceiptViewMode _viewMode = ReceiptViewMode.cards;
 
-  // Search, Filter & Sort State (Matching Assets & Appointments)
   String _searchQuery = '';
   String _selectedPaymentMode = 'All';
   String _selectedDateRangeFilter = 'All Dates';
@@ -45,25 +43,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
   String _sortBy = 'Date: Latest First';
   bool _sortAscending = false;
 
-  // Pagination State
   int _currentPage = 1;
   int _itemsPerPage = 10;
 
-  final List<String> _paymentModeOptions = [
-    'All',
-    'Cash',
-    'GCash',
-    'Gratis',
-  ];
-
-  final List<String> _dateRangeOptions = [
-    'All Dates',
-    'Today',
-    'This Week',
-    'This Month',
-    'Custom Date Range',
-  ];
-
+  final List<String> _paymentModeOptions = ['All', 'Cash', 'GCash', 'Gratis'];
+  final List<String> _dateRangeOptions = ['All Dates', 'Today', 'This Week', 'This Month', 'Custom Date Range'];
   final List<String> _sortOptions = [
     'Date: Latest First',
     'Date: Earliest First',
@@ -76,13 +60,10 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
   @override
   void initState() {
     super.initState();
-    // 2 Tabs: Active Receipts (Legitimate Ledger) & Voided Archive
     _mainTabController = TabController(length: 2, vsync: this);
     _mainTabController.addListener(() {
       if (!_mainTabController.indexIsChanging) {
-        setState(() {
-          _currentPage = 1;
-        });
+        setState(() => _currentPage = 1);
       }
     });
 
@@ -154,19 +135,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     return double.tryParse(raw?.toString() ?? '0') ?? 0.0;
   }
 
-  // ===========================================================================
-  // Data Filtering & Segregation
-  // ===========================================================================
-
-  // 1. Legitimate Active Transactions (Strictly Excludes Voided)
   List<Map<String, dynamic>> get _activeTransactions {
     var list = _transactions.where((t) => !_isTransactionVoided(t)).toList();
 
     if (_selectedPaymentMode != 'All') {
-      list = list.where((t) {
-        final mode = _getTenderMode(t);
-        return mode.toLowerCase() == _selectedPaymentMode.toLowerCase();
-      }).toList();
+      list = list.where((t) => _getTenderMode(t).toLowerCase() == _selectedPaymentMode.toLowerCase()).toList();
     }
 
     list = _applyDateRangeAndSearch(list);
@@ -174,10 +147,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     return list;
   }
 
-  // 2. Voided Archive Slips (Strictly Isolated to Prevent Ledger Clutter)
   List<Map<String, dynamic>> get _voidedTransactions {
     var list = _transactions.where((t) => _isTransactionVoided(t)).toList();
-
     list = _applyDateRangeAndSearch(list);
     _applySorting(list);
     return list;
@@ -229,11 +200,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
         final service = (t['related_service'] ?? '').toString().toLowerCase();
         final details = (t['transaction_details'] ?? '').toString().toLowerCase();
         final contact = (t['payor_contact'] ?? '').toString().toLowerCase();
-        return payer.contains(q) ||
-            rNo.contains(q) ||
-            service.contains(q) ||
-            details.contains(q) ||
-            contact.contains(q);
+        return payer.contains(q) || rNo.contains(q) || service.contains(q) || details.contains(q) || contact.contains(q);
       }).toList();
     }
 
@@ -272,10 +239,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     });
   }
 
-  // ===========================================================================
-  // Summary Stats & Metrics
-  // ===========================================================================
-
   double get _totalCollectedToday {
     final today = DateTime.now().toIso8601String().substring(0, 10);
     return _transactions.where((t) {
@@ -285,18 +248,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     }).fold(0.0, (sum, t) => sum + _getAmount(t));
   }
 
-  double get _totalValidIntake {
-    return _transactions
-        .where((t) => !_isTransactionVoided(t))
-        .fold(0.0, (sum, t) => sum + _getAmount(t));
-  }
-
-  double get _totalGCashIntake {
-    return _transactions
-        .where((t) => !_isTransactionVoided(t) && _getTenderMode(t) == 'GCash')
-        .fold(0.0, (sum, t) => sum + _getAmount(t));
-  }
-
+  double get _totalValidIntake => _transactions.where((t) => !_isTransactionVoided(t)).fold(0.0, (sum, t) => sum + _getAmount(t));
+  double get _totalGCashIntake => _transactions.where((t) => !_isTransactionVoided(t) && _getTenderMode(t) == 'GCash').fold(0.0, (sum, t) => sum + _getAmount(t));
   int get _voidedCount => _transactions.where((t) => _isTransactionVoided(t)).length;
 
   int get _totalPages {
@@ -332,24 +285,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
       context: context,
       firstDate: DateTime(2020),
       lastDate: DateTime(now.year + 2),
-      initialDateRange: _customDateRange ??
-          DateTimeRange(
-            start: now.subtract(const Duration(days: 7)),
-            end: now,
-          ),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: ParishColors.marianBlue,
-              onPrimary: Colors.white,
-              surface: ParishColors.cardWhite,
-              onSurface: ParishColors.textDark,
-            ),
-          ),
-          child: child!,
-        );
-      },
+      initialDateRange: _customDateRange ?? DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
     );
 
     if (picked != null) {
@@ -364,35 +300,31 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
   void _launchPos() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => PosCashierPage(onTransactionCompleted: _loadTransactions),
-      ),
+      MaterialPageRoute(builder: (_) => PosCashierPage(onTransactionCompleted: _loadTransactions)),
     );
   }
 
-  void _openManageParticulars() {
-    showManageParticularsModal(
-      context,
-      onParticularsUpdated: _loadTransactions,
-    );
-  }
-
-  void _openTemplateManager() {
+  void _openRemittanceReportsPage() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const ReceiptTemplateManagementPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const RemittanceReportPage()),
     );
   }
 
-  void _openRemittanceReports() {
-    showRemittanceReportModal(context);
+  void _openParticularsCatalogPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ParticularsCatalogPage()),
+    ).then((_) => _loadTransactions());
   }
 
-  // ===========================================================================
-  // Filter & Sort Bottom Sheet (Matching Assets Module)
-  // ===========================================================================
+  void _openTemplateManagerPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
+    );
+  }
+
   void _openFilterAndSortBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -420,23 +352,13 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                       width: 36,
                       height: 4,
                       margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: ParishColors.borderGrey,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+                      decoration: BoxDecoration(color: ParishColors.borderGrey, borderRadius: BorderRadius.circular(2)),
                     ),
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Filter & Sort Receipts',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.textDark,
-                        ),
-                      ),
+                      Text('Filter & Sort Receipts', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                       if (_hasActiveFilters)
                         TextButton(
                           onPressed: () {
@@ -444,28 +366,12 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                             setSheetState(() {});
                             Navigator.pop(ctx);
                           },
-                          child: const Text(
-                            'Reset All',
-                            style: TextStyle(
-                              color: ParishColors.mercyRed,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
+                          child: const Text('Reset All', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                     ],
                   ),
                   const Divider(height: 14),
-
-                  // 1. Sort Sequence
-                  Text(
-                    'Sort Sequence',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textDark,
-                    ),
-                  ),
+                  Text('Sort Sequence', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -477,9 +383,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          items: _sortOptions
-                              .map((opt) => DropdownMenuItem(value: opt, child: Text(opt, style: const TextStyle(fontSize: 13))))
-                              .toList(),
+                          items: _sortOptions.map((opt) => DropdownMenuItem(value: opt, child: Text(opt, style: const TextStyle(fontSize: 13)))).toList(),
                           onChanged: (val) {
                             if (val != null) {
                               setState(() => _sortBy = val);
@@ -494,11 +398,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                           backgroundColor: ParishColors.marianBlueSurface,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        icon: Icon(
-                          _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                          size: 18,
-                          color: ParishColors.marianBlue,
-                        ),
+                        icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward, size: 18, color: ParishColors.marianBlue),
                         onPressed: () {
                           setState(() => _sortAscending = !_sortAscending);
                           setSheetState(() {});
@@ -507,16 +407,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     ],
                   ),
                   const SizedBox(height: 14),
-
-                  // 2. Date Range Filter
-                  Text(
-                    'Date Range Filter',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textDark,
-                    ),
-                  ),
+                  Text('Date Range Filter', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     value: _selectedDateRangeFilter,
@@ -528,17 +419,14 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     items: _dateRangeOptions.map((opt) {
                       String label = opt;
                       if (opt == 'Custom Date Range' && _customDateRange != null) {
-                        label =
-                        'Custom: ${_customDateRange!.start.month}/${_customDateRange!.start.day} - ${_customDateRange!.end.month}/${_customDateRange!.end.day}';
+                        label = 'Custom: ${_customDateRange!.start.month}/${_customDateRange!.start.day} - ${_customDateRange!.end.month}/${_customDateRange!.end.day}';
                       }
                       return DropdownMenuItem(value: opt, child: Text(label, style: const TextStyle(fontSize: 13)));
                     }).toList(),
                     onChanged: (val) {
                       if (val != null) {
                         if (val == 'Custom Date Range') {
-                          _pickCustomDateRange().then((_) {
-                            setSheetState(() {});
-                          });
+                          _pickCustomDateRange().then((_) => setSheetState(() {}));
                         } else {
                           setState(() {
                             _selectedDateRangeFilter = val;
@@ -551,17 +439,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     },
                   ),
                   const SizedBox(height: 14),
-
-                  // 3. Payment Mode Filter (For Active Tab)
                   if (_mainTabController.index == 0) ...[
-                    Text(
-                      'Payment Tender Mode',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.textDark,
-                      ),
-                    ),
+                    Text('Payment Tender Mode', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                     const SizedBox(height: 6),
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -580,11 +459,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                               selected: isSelected,
                               selectedColor: activeColor,
                               backgroundColor: ParishColors.backgroundLight,
-                              labelStyle: TextStyle(
-                                color: isSelected ? Colors.white : ParishColors.textDark,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11.5,
-                              ),
+                              labelStyle: TextStyle(color: isSelected ? Colors.white : ParishColors.textDark, fontWeight: FontWeight.bold, fontSize: 11.5),
                               onSelected: (_) {
                                 setState(() {
                                   _selectedPaymentMode = mode;
@@ -599,8 +474,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     ),
                     const SizedBox(height: 18),
                   ],
-
-                  // Apply & Close Button
                   SizedBox(
                     width: double.infinity,
                     height: 46,
@@ -624,10 +497,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     );
   }
 
-  // ===========================================================================
-  // Build Main Shell (Anchored to Top on Desktop)
-  // ===========================================================================
-
   @override
   Widget build(BuildContext context) {
     final textDarkColor = ParishColors.textDark;
@@ -641,7 +510,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
         final totalCount = currentItems.length;
         final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
 
-        // Container explicitly claims available height on desktop and anchors child to topCenter
         return Container(
           width: double.infinity,
           height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
@@ -651,10 +519,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
             color: ParishColors.marianBlue,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 14 : 20,
-                vertical: isMobile ? 12 : 18,
-              ),
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: isMobile ? 12 : 18),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   minHeight: max(0.0, viewportHeight - (isMobile ? 24 : 36)),
@@ -662,39 +527,49 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    // 1. Header (Clean title, subtext removed for clean presentation)
+                    // Header Bar with Clean Settings Dropdown
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
                           child: Text(
                             'Parish Cashier & Receipts Desk',
-                            style: TextStyle(
-                              fontSize: isMobile ? 18 : 22,
-                              fontWeight: FontWeight.bold,
-                              color: textDarkColor,
-                            ),
+                            style: TextStyle(fontSize: isMobile ? 18 : 22, fontWeight: FontWeight.bold, color: textDarkColor),
                           ),
                         ),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.assessment_outlined, color: ParishColors.marianBlue, size: 20),
-                              onPressed: _openRemittanceReports,
-                              tooltip: 'Remittance & Financial Reports',
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.style_outlined, color: ParishColors.marianBlue, size: 20),
-                              onPressed: _openTemplateManager,
-                              tooltip: 'Receipt Templates & Canvas Studio',
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.tune, color: ParishColors.marianBlue, size: 20),
-                              onPressed: _openManageParticulars,
-                              tooltip: 'Manage Catalog Particulars (CRUD)',
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.settings_outlined, color: ParishColors.marianBlue),
+                              tooltip: 'Catalog & Template Configuration',
+                              onSelected: (val) {
+                                if (val == 'catalog') _openParticularsCatalogPage();
+                                if (val == 'templates') _openTemplateManagerPage();
+                              },
+                              itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'catalog',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.tune, size: 18, color: ParishColors.marianBlue),
+                                      SizedBox(width: 8),
+                                      Text('Offerings Catalog', style: TextStyle(fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'templates',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.style_outlined, size: 18, color: ParishColors.marianBlue),
+                                      SizedBox(width: 8),
+                                      Text('Receipt Templates Studio', style: TextStyle(fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                             IconButton(
                               icon: const Icon(Icons.refresh, color: ParishColors.marianBlue, size: 20),
@@ -707,15 +582,15 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     ),
                     const SizedBox(height: 12),
 
-                    // 2. Primary Action Buttons
+                    // Primary Action Buttons
                     _buildActionButtons(isMobile),
                     const SizedBox(height: 12),
 
-                    // 3. Compact Stats Row (Matching Assets Module)
+                    // Stats Bar
                     _buildCompactStatsRow(),
                     const SizedBox(height: 14),
 
-                    // 4. Main Module Switcher (Active Receipts vs Voided Archive)
+                    // Tabs: Active Receipts vs Voided Archive
                     Container(
                       height: 40,
                       decoration: BoxDecoration(
@@ -729,28 +604,20 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                         unselectedLabelColor: ParishColors.textMuted,
                         indicatorSize: TabBarIndicatorSize.tab,
                         indicator: BoxDecoration(
-                          color: _mainTabController.index == 1
-                              ? ParishColors.mercyRed
-                              : ParishColors.marianBlue,
+                          color: _mainTabController.index == 1 ? ParishColors.mercyRed : ParishColors.marianBlue,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         tabs: [
                           Tab(
                             child: Text(
-                              isMobile
-                                  ? 'Active (${_transactions.length - _voidedCount})'
-                                  : 'Active Receipts (${_transactions.length - _voidedCount})',
+                              isMobile ? 'Active (${_transactions.length - _voidedCount})' : 'Active Receipts (${_transactions.length - _voidedCount})',
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           Tab(
                             child: Text(
-                              isMobile
-                                  ? 'Voided ($_voidedCount)'
-                                  : 'Voided Archive ($_voidedCount)',
+                              isMobile ? 'Voided ($_voidedCount)' : 'Voided Archive ($_voidedCount)',
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -758,7 +625,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     ),
                     const SizedBox(height: 10),
 
-                    // 5. Search Bar (Compact 44dp height)
+                    // Search Bar
                     Container(
                       width: double.infinity,
                       height: 44,
@@ -775,27 +642,22 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                           Expanded(
                             child: TextField(
                               controller: _searchController,
-                              onChanged: (val) {
-                                setState(() {
-                                  _searchQuery = val;
-                                  _currentPage = 1;
-                                });
-                              },
+                              onChanged: (val) => setState(() {
+                                _searchQuery = val;
+                                _currentPage = 1;
+                              }),
                               style: TextStyle(fontSize: 13, color: textDarkColor),
                               decoration: InputDecoration(
                                 hintText: 'Search by payor, receipt #, service, notes...',
                                 hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
                                 border: InputBorder.none,
                                 isDense: true,
-                                contentPadding: EdgeInsets.zero,
                               ),
                             ),
                           ),
                           if (_searchQuery.isNotEmpty)
                             IconButton(
                               icon: const Icon(Icons.clear, size: 16),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
                               onPressed: () {
                                 _searchController.clear();
                                 setState(() {
@@ -809,7 +671,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     ),
                     const SizedBox(height: 10),
 
-                    // 6. Filter & Sort Toolbar with Card / Table View Toggle
+                    // Filter Toolbar with Card / Table Switcher
                     Row(
                       children: [
                         InkWell(
@@ -821,23 +683,14 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                             decoration: BoxDecoration(
                               color: _hasActiveFilters ? ParishColors.marianBlueSurface : cardWhiteColor,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _hasActiveFilters ? ParishColors.marianBlue : borderGreyColor,
-                              ),
+                              border: Border.all(color: _hasActiveFilters ? ParishColors.marianBlue : borderGreyColor),
                             ),
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
-                                  Icons.tune,
-                                  size: 15,
-                                  color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
-                                ),
+                                Icon(Icons.tune, size: 15, color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted),
                                 const SizedBox(width: 5),
                                 Text(
-                                  _hasActiveFilters
-                                      ? 'Filter & Sort ($_activeFilterCount)'
-                                      : 'Filter & Sort',
+                                  _hasActiveFilters ? 'Filter & Sort ($_activeFilterCount)' : 'Filter & Sort',
                                   style: TextStyle(
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.bold,
@@ -849,14 +702,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                           ),
                         ),
                         const Spacer(),
-                        Text(
-                          '$totalCount items',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: ParishColors.textMuted,
-                          ),
-                        ),
+                        Text('$totalCount items', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: ParishColors.textMuted)),
                         const SizedBox(width: 10),
                         Container(
                           height: 32,
@@ -866,13 +712,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                             border: Border.all(color: borderGreyColor),
                           ),
                           child: ToggleButtons(
-                            isSelected: [
-                              _viewMode == ReceiptViewMode.cards,
-                              _viewMode == ReceiptViewMode.table,
-                            ],
-                            onPressed: (idx) => setState(() {
-                              _viewMode = idx == 0 ? ReceiptViewMode.cards : ReceiptViewMode.table;
-                            }),
+                            isSelected: [_viewMode == ReceiptViewMode.cards, _viewMode == ReceiptViewMode.table],
+                            onPressed: (idx) => setState(() => _viewMode = idx == 0 ? ReceiptViewMode.cards : ReceiptViewMode.table),
                             borderRadius: BorderRadius.circular(6),
                             selectedColor: Colors.white,
                             fillColor: ParishColors.marianBlue,
@@ -887,13 +728,12 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                       ],
                     ),
 
-                    // 7. Active Filter Chips Row
+                    // Active Filter Badges
                     if (_hasActiveFilters) ...[
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 4,
                         runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           if (_selectedDateRangeFilter != 'All Dates')
                             _buildActiveFilterChip('Range: $_selectedDateRangeFilter', () {
@@ -918,18 +758,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                               });
                             }),
                           ActionChip(
-                            label: const Text(
-                              'Clear',
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
-                                color: ParishColors.mercyRed,
-                              ),
-                            ),
+                            label: const Text('Clear', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed)),
                             backgroundColor: ParishColors.mercyRedSurface,
-                            side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            visualDensity: VisualDensity.compact,
                             onPressed: _resetFilters,
                           ),
                         ],
@@ -937,9 +767,9 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     ],
                     const SizedBox(height: 12),
 
-                    // 8. Tab Content / Anti-Shift Skeleton Loader
+                    // Tab Views
                     if (_isLoading)
-                      _buildSkeletonLoading(constraints.maxWidth)
+                      _buildSkeletonLoading()
                     else if (_mainTabController.index == 0)
                       _buildActiveReceiptsTab(constraints.maxWidth)
                     else
@@ -954,15 +784,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     );
   }
 
-// --- END OF PART 1 ---
-
-// =============================================================================
-// FILE: lib/features/receipts/presentation/receipts_view.dart (PART 2 OF 2)
-// =============================================================================
-
-  // ===========================================================================
-  // Top Action Buttons
-  // ===========================================================================
   Widget _buildActionButtons(bool isMobile) {
     return isMobile
         ? Column(
@@ -974,15 +795,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
             style: ElevatedButton.styleFrom(
               backgroundColor: ParishColors.oliveGreen,
               foregroundColor: Colors.white,
-              elevation: 1,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: _launchPos,
             icon: const Icon(Icons.point_of_sale, size: 18),
-            label: const Text(
-              'Launch POS Cashier Terminal',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-            ),
+            label: const Text('Launch POS Cashier Terminal', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           ),
         ),
         const SizedBox(height: 8),
@@ -999,7 +816,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                   ),
                   onPressed: () => showNewTransactionModal(context, onTransactionSaved: _loadTransactions),
                   icon: const Icon(Icons.receipt_long, size: 16),
-                  label: const Text('Single Entry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  label: const Text('Single Receipt', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
@@ -1013,7 +830,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  onPressed: _openRemittanceReports,
+                  onPressed: _openRemittanceReportsPage,
                   icon: const Icon(Icons.assessment_outlined, size: 16),
                   label: const Text('Reports', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
@@ -1033,15 +850,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
               style: ElevatedButton.styleFrom(
                 backgroundColor: ParishColors.oliveGreen,
                 foregroundColor: Colors.white,
-                elevation: 1,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _launchPos,
               icon: const Icon(Icons.point_of_sale, size: 18),
-              label: const Text(
-                'Launch POS Cashier Terminal',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
-              ),
+              label: const Text('Launch POS Cashier Terminal', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
             ),
           ),
         ),
@@ -1058,10 +871,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
               ),
               onPressed: () => showNewTransactionModal(context, onTransactionSaved: _loadTransactions),
               icon: const Icon(Icons.receipt_long, size: 16),
-              label: const Text(
-                'Single Entry',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-              ),
+              label: const Text('Single Receipt Entry', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             ),
           ),
         ),
@@ -1076,12 +886,9 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: _openRemittanceReports,
+              onPressed: _openRemittanceReportsPage,
               icon: const Icon(Icons.assessment_outlined, size: 16),
-              label: const Text(
-                'Remittance Reports',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-              ),
+              label: const Text('Remittance Reports', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             ),
           ),
         ),
@@ -1089,9 +896,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     );
   }
 
-  // ===========================================================================
-  // Compact Stats Row (Matching Assets & Appointments Modules)
-  // ===========================================================================
   Widget _buildCompactStatsRow() {
     final validSlipsCount = _transactions.length - _voidedCount;
 
@@ -1104,45 +908,15 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
       ),
       child: Row(
         children: [
-          Expanded(
-            child: _buildCompactStatItem(
-              'Valid Slips',
-              '$validSlipsCount',
-              ParishColors.marianBlue,
-            ),
-          ),
+          Expanded(child: _buildCompactStatItem('Valid Slips', '$validSlipsCount', ParishColors.marianBlue)),
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              "Today's Intake",
-              '₱${_totalCollectedToday.toStringAsFixed(0)}',
-              ParishColors.oliveGreen,
-            ),
-          ),
+          Expanded(child: _buildCompactStatItem("Today's Intake", '₱${_totalCollectedToday.toStringAsFixed(0)}', ParishColors.oliveGreen)),
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              'Total Intake',
-              '₱${_totalValidIntake.toStringAsFixed(0)}',
-              ParishColors.goldAccent,
-            ),
-          ),
+          Expanded(child: _buildCompactStatItem('Total Intake', '₱${_totalValidIntake.toStringAsFixed(0)}', ParishColors.goldAccent)),
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              'GCash Intake',
-              '₱${_totalGCashIntake.toStringAsFixed(0)}',
-              const Color(0xFF005CEE),
-            ),
-          ),
+          Expanded(child: _buildCompactStatItem('GCash Intake', '₱${_totalGCashIntake.toStringAsFixed(0)}', const Color(0xFF005CEE))),
           Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              'Voided Slips',
-              '$_voidedCount',
-              ParishColors.mercyRed,
-            ),
-          ),
+          Expanded(child: _buildCompactStatItem('Voided Slips', '$_voidedCount', ParishColors.mercyRed)),
         ],
       ),
     );
@@ -1152,18 +926,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          value,
-          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: color),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: color), maxLines: 1),
+        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ParishColors.textMuted), maxLines: 1),
       ],
     );
   }
@@ -1174,90 +938,30 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
       backgroundColor: ParishColors.marianBlueSurface,
       deleteIcon: const Icon(Icons.close, size: 12),
       onDeleted: onDeleted,
-      padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 
-  // ===========================================================================
-  // Anti-Layout-Shift Skeleton Loader
-  // ===========================================================================
-  Widget _buildSkeletonLoading(double availableWidth) {
+  Widget _buildSkeletonLoading() {
     return AnimatedBuilder(
       animation: _skeletonOpacityAnimation,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _skeletonOpacityAnimation.value,
-          child: Column(
-            children: List.generate(4, (index) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                height: 96,
-                decoration: BoxDecoration(
-                  color: ParishColors.cardWhite,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
-                ),
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: ParishColors.borderGrey.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            height: 14,
-                            width: 150,
-                            decoration: BoxDecoration(
-                              color: ParishColors.borderGrey.withOpacity(0.3),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            height: 16,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: ParishColors.borderGrey.withOpacity(0.3),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            height: 12,
-                            width: 170,
-                            decoration: BoxDecoration(
-                              color: ParishColors.borderGrey.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ),
-        );
-      },
+      builder: (context, child) => Opacity(
+        opacity: _skeletonOpacityAnimation.value,
+        child: Column(
+          children: List.generate(4, (index) => Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            height: 96,
+            decoration: BoxDecoration(
+              color: ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
+            ),
+          )),
+        ),
+      ),
     );
   }
 
-  // ===========================================================================
-  // TAB 1: ACTIVE RECEIPTS LEDGER (Strictly Excludes Voided Records)
-  // ===========================================================================
   Widget _buildActiveReceiptsTab(double availableWidth) {
     final list = _activeTransactions;
     final totalItems = list.length;
@@ -1289,9 +993,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     );
   }
 
-  // ===========================================================================
-  // TAB 2: VOIDED ARCHIVE (Strictly Isolated to Protect Legitimate Ledgers)
-  // ===========================================================================
   Widget _buildVoidedReceiptsTab(double availableWidth) {
     final list = _voidedTransactions;
     final totalItems = list.length;
@@ -1302,7 +1003,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Isolation Info Banner
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
@@ -1319,12 +1019,9 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'ISOLATED VOIDED & CANCELLED RECEIPTS',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
-                    ),
+                    const Text('ISOLATED VOIDED & CANCELLED RECEIPTS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed)),
                     Text(
-                      'Nullified and cancelled receipts are preserved here for financial transparency. Amounts are excluded from canonical remittance summaries.',
+                      'Nullified receipts are preserved here for financial audit. Amounts are excluded from collections and remittance reports.',
                       style: TextStyle(fontSize: 11, color: ParishColors.textDark),
                     ),
                   ],
@@ -1334,21 +1031,17 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
           ),
         ),
         const SizedBox(height: 14),
-
         if (list.isEmpty)
           _buildEmptyState('No voided receipt slips found on record.')
-        else if (_viewMode == ReceiptViewMode.table)
-          ...[
-            _buildReceiptsTableView(paged, availableWidth, isVoidTab: true),
-            const SizedBox(height: 14),
-            _buildPaginationToolbar(totalItems),
-          ]
-        else
-          ...[
-            ...paged.map((t) => _buildReceiptCardItem(t)),
-            const SizedBox(height: 14),
-            _buildPaginationToolbar(totalItems),
-          ],
+        else if (_viewMode == ReceiptViewMode.table) ...[
+          _buildReceiptsTableView(paged, availableWidth, isVoidTab: true),
+          const SizedBox(height: 14),
+          _buildPaginationToolbar(totalItems),
+        ] else ...[
+          ...paged.map((t) => _buildReceiptCardItem(t)),
+          const SizedBox(height: 14),
+          _buildPaginationToolbar(totalItems),
+        ],
       ],
     );
   }
@@ -1398,9 +1091,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
     );
   }
 
-  // ===========================================================================
-  // Responsive DataTable View (Full Width with Horizontal Scroll)
-  // ===========================================================================
   Widget _buildReceiptsTableView(List<Map<String, dynamic>> items, double availableWidth, {required bool isVoidTab}) {
     return Container(
       width: double.infinity,
@@ -1416,14 +1106,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
           child: ConstrainedBox(
             constraints: BoxConstraints(minWidth: max(availableWidth, 980)),
             child: DataTable(
-              headingRowColor: WidgetStateProperty.all(
-                isVoidTab ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
-              ),
-              headingTextStyle: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isVoidTab ? ParishColors.mercyRed : ParishColors.marianBlue,
-                fontSize: 12.5,
-              ),
+              headingRowColor: WidgetStateProperty.all(isVoidTab ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface),
+              headingTextStyle: TextStyle(fontWeight: FontWeight.bold, color: isVoidTab ? ParishColors.mercyRed : ParishColors.marianBlue, fontSize: 12.5),
               dataTextStyle: TextStyle(fontSize: 12.5, color: ParishColors.textDark),
               columnSpacing: 16,
               horizontalMargin: 14,
@@ -1446,8 +1130,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                 final String date = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
                 final String status = (t['transaction_status'] ?? 'paid').toString().toUpperCase();
                 final String mode = _getTenderMode(t);
-                final String? contact = t['payor_contact']?.toString();
-                final String? details = t['transaction_details']?.toString();
                 final bool isVoided = _isTransactionVoided(t);
 
                 Color tenderColor = ParishColors.oliveGreen;
@@ -1455,56 +1137,20 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                 if (mode == 'Gratis') tenderColor = ParishColors.goldAccent;
 
                 return DataRow(cells: [
-                  DataCell(Text(
-                    rNo,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
-                    ),
-                  )),
+                  DataCell(Text(rNo, style: TextStyle(fontWeight: FontWeight.bold, color: isVoided ? ParishColors.mercyRed : ParishColors.marianBlue))),
                   DataCell(Text(date)),
                   DataCell(Text(payor, style: const TextStyle(fontWeight: FontWeight.w600))),
-                  DataCell(ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 220),
-                    child: Text(service, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  )),
+                  DataCell(ConstrainedBox(constraints: const BoxConstraints(maxWidth: 220), child: Text(service, maxLines: 1, overflow: TextOverflow.ellipsis))),
                   DataCell(Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isVoided ? ParishColors.mercyRedSurface : tenderColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      isVoided ? 'VOIDED' : mode.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                        color: isVoided ? ParishColors.mercyRed : tenderColor,
-                      ),
-                    ),
+                    decoration: BoxDecoration(color: isVoided ? ParishColors.mercyRedSurface : tenderColor.withOpacity(0.12), borderRadius: BorderRadius.circular(4)),
+                    child: Text(isVoided ? 'VOIDED' : mode.toUpperCase(), style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: isVoided ? ParishColors.mercyRed : tenderColor)),
                   )),
-                  DataCell(Text(
-                    '₱ ${amountVal.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen,
-                      decoration: isVoided ? TextDecoration.lineThrough : null,
-                    ),
-                  )),
+                  DataCell(Text('₱ ${amountVal.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, color: isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen, decoration: isVoided ? TextDecoration.lineThrough : null))),
                   DataCell(Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isVoided ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      isVoided ? 'VOID' : status,
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                        color: isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen,
-                      ),
-                    ),
+                    decoration: BoxDecoration(color: isVoided ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface, borderRadius: BorderRadius.circular(4)),
+                    child: Text(isVoided ? 'VOID' : status, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen)),
                   )),
                   DataCell(
                     TextButton.icon(
@@ -1517,8 +1163,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                           purpose: service,
                           amount: '₱ ${amountVal.toStringAsFixed(2)}',
                           date: date,
-                          payorContact: contact,
-                          transactionDetails: details,
+                          payorContact: t['payor_contact']?.toString(),
+                          transactionDetails: t['transaction_details']?.toString(),
                           paymentMode: mode,
                           transactionId: t['transaction_id']?.toString(),
                           status: status,
@@ -1551,19 +1197,12 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
         children: [
           Icon(Icons.receipt_long_outlined, size: 40, color: ParishColors.textMuted),
           const SizedBox(height: 10),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-          ),
+          Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
         ],
       ),
     );
   }
 
-  // ===========================================================================
-  // Pagination Toolbar (Kept Intact)
-  // ===========================================================================
   Widget _buildPaginationToolbar(int totalItems) {
     final totalPages = _totalPages;
 
@@ -1584,7 +1223,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                 value: _itemsPerPage,
                 isDense: true,
                 underline: const SizedBox.shrink(),
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
                 items: const [
                   DropdownMenuItem(value: 10, child: Text('10')),
                   DropdownMenuItem(value: 25, child: Text('25')),
@@ -1605,32 +1243,18 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
             children: [
               IconButton(
                 icon: const Icon(Icons.chevron_left, size: 22),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
                 color: _currentPage > 1 ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
                 onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
               ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: ParishColors.marianBlueSurface,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'Page $_currentPage of $totalPages',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: ParishColors.marianBlueAdaptive,
-                  ),
-                ),
+                decoration: BoxDecoration(color: ParishColors.marianBlueSurface, borderRadius: BorderRadius.circular(6)),
+                child: Text('Page $_currentPage of $totalPages', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive)),
               ),
               const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.chevron_right, size: 22),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
                 color: _currentPage < totalPages ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
                 onPressed: _currentPage < totalPages ? () => setState(() => _currentPage++) : null,
               ),
