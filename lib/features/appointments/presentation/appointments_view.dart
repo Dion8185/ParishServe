@@ -845,8 +845,8 @@ class _AppointmentsViewState extends State<AppointmentsView>
                               textColor = Colors.amber.shade900;
                               statusIcon = Icons.cloud_off;
                               statusLabel = pendingCount > 0
-                                  ? 'Offline Mode • Local SQLite ($pendingCount pending changes)'
-                                  : 'Offline Mode • Operating from local SQLite';
+                                  ? 'Offline Mode ($pendingCount pending changes)'
+                                  : 'Offline Mode';
                             } else if (status == RecordsSyncStatus.syncing) {
                               pillColor = Colors.blue.shade100;
                               textColor = Colors.blue.shade900;

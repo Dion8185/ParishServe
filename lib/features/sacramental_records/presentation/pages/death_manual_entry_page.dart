@@ -1325,7 +1325,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   flex: 2,
                   child: _buildTextFormField(
                     controller: _deceasedMiddleNameController,
-                    label: 'Middle Name (Optional)',
+                    label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
                     validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
@@ -1374,7 +1374,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   flex: 1,
                   child: _buildTextFormField(
                     controller: _deceasedMiddleNameController,
-                    label: 'Middle Name (Optional)',
+                    label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
                     validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
@@ -1426,7 +1426,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               Expanded(
                 child: _buildTextFormField(
                   controller: _ageController,
-                  label: 'Age at Death (Whole Number)',
+                  label: 'Age at Death',
                   isRequired: true,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
@@ -1692,7 +1692,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 flex: 2,
                 child: _buildTextFormField(
                   controller: _ministerMiddleNameController,
-                  label: 'Middle Name (Optional)',
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),

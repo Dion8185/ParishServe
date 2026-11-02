@@ -2290,7 +2290,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                 flex: 2,
                 child: _buildTextFormField(
                   controller: _solemnizerMiddleNameController,
-                  label: 'Middle Name (Optional)',
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, 'Priest middle name', isRequired: false, maxLength: 50),

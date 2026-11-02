@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/records_sync_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/auth_gate.dart';
@@ -40,6 +41,13 @@ Future<void> main() async {
     await NotificationService.initialize();
   } catch (e) {
     debugPrint('[main] OneSignal initialization notice: $e');
+  }
+
+  // 4. Initialize Automated Offline-First Background Sync & Resource Replication Service
+  try {
+    await RecordsSyncService.instance.initialize();
+  } catch (e) {
+    debugPrint('[main] RecordsSyncService initialization notice: $e');
   }
 
   runApp(const ParishServeApp());

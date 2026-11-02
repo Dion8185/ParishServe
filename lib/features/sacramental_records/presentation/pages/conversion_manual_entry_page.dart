@@ -1411,7 +1411,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   flex: 2,
                   child: _buildTextFormField(
                     controller: _convertMiddleNameController,
-                    label: 'Middle Name (Optional)',
+                    label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
                     validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
@@ -1460,7 +1460,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   flex: 1,
                   child: _buildTextFormField(
                     controller: _convertMiddleNameController,
-                    label: 'Middle Name (Optional)',
+                    label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
                     validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
@@ -1729,7 +1729,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               Expanded(
                 child: _buildTextFormField(
                   controller: _witness1MiddleNameController,
-                  label: 'Middle Name (Optional)',
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 middle name', isRequired: false, maxLength: 50),
@@ -1765,7 +1765,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               Expanded(
                 child: _buildTextFormField(
                   controller: _witness2MiddleNameController,
-                  label: 'Middle Name (Optional)',
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 middle name', isRequired: false, maxLength: 50),
@@ -1784,7 +1784,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
           const Divider(height: 24),
           _buildTextFormField(
             controller: _stipendController,
-            label: 'Stipend / Offering (₱) (Leave 0 for Gratis)',
+            label: 'Stipend (₱)',
             isRequired: false,
             maxLength: 12,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1810,7 +1810,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 flex: 2,
                 child: _buildTextFormField(
                   controller: _ministerMiddleNameController,
-                  label: 'Middle Name (Optional)',
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),

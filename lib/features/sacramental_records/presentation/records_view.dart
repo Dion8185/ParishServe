@@ -1645,8 +1645,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                         textColor = Colors.amber.shade900;
                                                                                                                         statusIcon = Icons.cloud_off;
                                                                                                                         statusLabel = pendingCount > 0
-                                                                                                                            ? 'Offline • Working from local SQLite ($pendingCount pending changes)'
-                                                                                                                            : 'Offline • Operating from local SQLite';
+                                                                                                                            ? 'Offline Mode • Working Locally ($pendingCount pending changes)'
+                                                                                                                            : 'Offline Mode • Working Locally';
                                                                                                                 } else if (status == RecordsSyncStatus.syncing) {
                                                                                                                         pillColor = Colors.blue.shade50;
                                                                                                                         textColor = Colors.blue.shade900;

@@ -1150,7 +1150,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   children: [
                     _buildTextFormField(
                       controller: _controlNumberController,
-                      label: 'Control Number (Auto-Generated)',
+                      label: 'Control Number',
                       isRequired: true,
                       enabled: false,
                       maxLength: 20,
@@ -1211,7 +1211,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   flex: 2,
                   child: _buildTextFormField(
                     controller: _communicantMiddleNameController,
-                    label: 'Middle Name (Optional)',
+                    label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
                     validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
@@ -1283,7 +1283,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               Expanded(
                 flex: isWide ? 4 : 1,
                 child: _buildDatePickerField(
-                  label: 'Date of Baptism (Optional)',
+                  label: 'Date of Baptism',
                   isRequired: false,
                   value: _baptismDate,
                   hasError: false,
@@ -1485,28 +1485,24 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                 flex: 2,
                 child: _buildTextFormField(
                   controller: _ministerMiddleNameController,
-                  label: 'Middle Name (Optional)',
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, 'Priest middle name', isRequired: false, maxLength: 50),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 3,
-                child: _buildTextFormField(
-                  controller: _ministerLastNameController,
-                  label: 'Priest Last Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Priest last name', isRequired: true, maxLength: 50),
-                ),
-              ),
             ],
           ),
           _buildTextFormField(
+            controller: _ministerLastNameController,
+            label: 'Priest Last Name',
+            isRequired: true,
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, 'Priest last name', isRequired: true, maxLength: 50),
+          ),
+          _buildTextFormField(
             controller: _remarksController,
-            label: 'Remarks / Batch Details (Optional)',
+            label: 'Remarks / Batch Details',
             isRequired: false,
             maxLines: 2,
             maxLength: 255,

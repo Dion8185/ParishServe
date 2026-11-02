@@ -1423,7 +1423,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                                           ),
                                         ),
                                         child: Text(
-                                          _isLoadedFromSqlite ? 'OFFLINE SQLITE' : 'CLOUD SYNCED',
+                                          _isLoadedFromSqlite ? 'OFFLINE MODE' : 'ONLINE MODE',
                                           style: TextStyle(
                                             fontSize: 9.0,
                                             fontWeight: FontWeight.bold,

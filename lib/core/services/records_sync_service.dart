@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:printing/printing.dart';
 import 'package:sqflite/sqflite.dart';
@@ -36,7 +37,7 @@ class RecordsSyncProgress {
       totalTables > 0 ? (currentTableIndex / totalTables).clamp(0.0, 1.0) : 0.0;
 }
 
-class RecordsSyncService {
+class RecordsSyncService with WidgetsBindingObserver {
   RecordsSyncService._();
   static final RecordsSyncService instance = RecordsSyncService._();
 
@@ -56,37 +57,101 @@ class RecordsSyncService {
   ValueNotifier<RecordsSyncProgress?>(null);
 
   Timer? _connectivityPollTimer;
+  Timer? _autoPeriodicSyncTimer;
   bool _isSyncRunning = false;
   bool _isOnline = true;
+  bool _isObserverRegistered = false;
+
+  DateTime? _lastAutoDownloadAttempt;
 
   bool get isOnline => _isOnline;
   bool get isSyncInProgress => _isSyncRunning;
 
+  /// Global list of tables replicated for offline operation
+  static const List<String> _syncTables = [
+    'parish_certificate_settings',
+    'certificate_templates',
+    'baptism_records',
+    'confirmation_records',
+    'first_communion_records',
+    'matrimony_records',
+    'death_records',
+    'conversion_records',
+    'appointments',
+    'mass_intentions',
+    'certificate_issuances',
+  ];
+
+  // ===========================================================================
+  // Initialization & Automated Background Lifecycle
+  // ===========================================================================
+
   Future<void> initialize() async {
+    if (!_isObserverRegistered) {
+      WidgetsBinding.instance.addObserver(this);
+      _isObserverRegistered = true;
+    }
+
     await updatePendingCount();
     await _loadLastSyncTimestamp();
     await checkConnectivity();
 
+    // 1. Initial background auto-sync & resource pull on launch
+    if (_isOnline) {
+      unawaited(autoSyncAndDownloadResources(silent: true));
+    }
+
+    // 2. Continuous connectivity polling (every 10 seconds)
     _connectivityPollTimer?.cancel();
     _connectivityPollTimer =
-        Timer.periodic(const Duration(seconds: 15), (_) async {
+        Timer.periodic(const Duration(seconds: 10), (_) async {
           final wasOnline = _isOnline;
-          await checkConnectivity();
+          final isNowOnline = await checkConnectivity();
 
-          // If connectivity returned or pending changes exist, sync automatically
-          if (_isOnline &&
-              (!wasOnline || pendingSyncCountNotifier.value > 0) &&
-              !_isSyncRunning) {
-            await syncPendingChanges();
+          // Trigger automatic sync immediately when network is restored or pending local edits exist
+          if (isNowOnline) {
+            if (!wasOnline || pendingSyncCountNotifier.value > 0) {
+              unawaited(autoSyncAndDownloadResources(silent: true));
+            }
+          }
+        });
+
+    // 3. Automated periodic background delta-sync (every 4 minutes while connected)
+    _autoPeriodicSyncTimer?.cancel();
+    _autoPeriodicSyncTimer =
+        Timer.periodic(const Duration(minutes: 4), (_) async {
+          if (_isOnline && !_isSyncRunning) {
+            unawaited(autoSyncAndDownloadResources(silent: true));
           }
         });
   }
 
   void dispose() {
+    if (_isObserverRegistered) {
+      WidgetsBinding.instance.removeObserver(this);
+      _isObserverRegistered = false;
+    }
     _connectivityPollTimer?.cancel();
+    _autoPeriodicSyncTimer?.cancel();
   }
 
-  /// CORS-Safe and resilient connectivity checker.
+  /// App lifecycle listener: triggers auto-sync when the app wakes up or resumes from background
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[RecordsSyncService] App resumed from background. Checking connectivity & triggering auto-sync.');
+      checkConnectivity().then((online) {
+        if (online && !_isSyncRunning) {
+          autoSyncAndDownloadResources(silent: true);
+        }
+      });
+    }
+  }
+
+  // ===========================================================================
+  // Connectivity Verification
+  // ===========================================================================
+
   Future<bool> checkConnectivity() async {
     try {
       if (kIsWeb) {
@@ -103,7 +168,6 @@ class RecordsSyncService {
         _isOnline = (response.statusCode == 204 || response.statusCode == 200);
       }
     } catch (_) {
-      // Secondary check: verify if Supabase itself is reachable
       try {
         await Supabase.instance.client
             .from('parish_certificate_settings')
@@ -133,7 +197,236 @@ class RecordsSyncService {
   }
 
   // ===========================================================================
-  // 1. Download Offline Pack (Registers, Appointments, Intentions, Templates & Assets)
+  // Automated Background Two-Way Sync (Push + Incremental Delta Pull)
+  // ===========================================================================
+
+  /// Automatically synchronizes pending local edits and downloads new/updated resources.
+  /// Runs completely in the background without blocking the UI thread or throwing intrusive errors.
+  Future<void> autoSyncAndDownloadResources({bool silent = true}) async {
+    if (_isSyncRunning) return;
+    if (!await checkConnectivity()) {
+      syncStatusNotifier.value = RecordsSyncStatus.offline;
+      return;
+    }
+
+    // Rate-limit automated delta checks to prevent network flooding (minimum 15s between runs)
+    final now = DateTime.now();
+    if (_lastAutoDownloadAttempt != null &&
+        now.difference(_lastAutoDownloadAttempt!) < const Duration(seconds: 15)) {
+      return;
+    }
+    _lastAutoDownloadAttempt = now;
+
+    _isSyncRunning = true;
+    syncStatusNotifier.value = RecordsSyncStatus.syncing;
+    if (!silent) lastSyncErrorNotifier.value = null;
+
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) {
+      _isSyncRunning = false;
+      return;
+    }
+
+    try {
+      // Step 1: Push all pending local offline changes to Cloud first
+      await _executePushQueue(db);
+
+      // Step 2: Incremental Delta Pull from Cloud to Local SQLite
+      final lastSyncTime = lastSyncedAtNotifier.value;
+      await _executeIncrementalPull(db, lastSyncTime);
+
+      // Step 3: Auto-warm typography & cache new template assets
+      await _cacheMissingTemplateAssets(db);
+
+      final finishTime = DateTime.now();
+      await _saveLastSyncTimestamp(finishTime);
+      await updatePendingCount();
+
+      syncStatusNotifier.value = pendingSyncCountNotifier.value > 0
+          ? RecordsSyncStatus.online
+          : RecordsSyncStatus.synced;
+      lastSyncedAtNotifier.value = finishTime;
+      lastSyncErrorNotifier.value = null;
+      debugPrint('[RecordsSyncService] Background auto-sync and delta-download completed successfully.');
+    } catch (e) {
+      debugPrint('[RecordsSyncService] Background auto-sync notice: $e');
+      syncStatusNotifier.value = RecordsSyncStatus.error;
+      lastSyncErrorNotifier.value = e.toString().replaceFirst('Exception: ', '');
+    } finally {
+      _isSyncRunning = false;
+    }
+  }
+
+  // ===========================================================================
+  // Internal Push & Incremental Pull Engines
+  // ===========================================================================
+
+  Future<void> _executePushQueue(Database db) async {
+    final client = Supabase.instance.client;
+
+    final pendingQueue = await db.query(
+      'sync_queue',
+      where: 'status = ?',
+      whereArgs: ['pending'],
+      orderBy: 'queue_id ASC',
+    );
+
+    for (final item in pendingQueue) {
+      final queueId = item['queue_id'] as int;
+      final tableName = item['table_name'] as String;
+      final recordId = item['record_id'] as String;
+      final operation = item['operation'] as String;
+      final payload = jsonDecode(item['payload'] as String) as Map<String, dynamic>;
+
+      try {
+        final supabasePayload = _prepareRowForSupabase(tableName, payload);
+
+        if (operation == 'INSERT') {
+          await client.from(tableName).upsert(supabasePayload);
+        } else if (operation == 'UPDATE') {
+          await client
+              .from(tableName)
+              .update(supabasePayload)
+              .eq(_getPrimaryKey(tableName), recordId);
+        } else if (operation == 'DELETE') {
+          await client
+              .from(tableName)
+              .delete()
+              .eq(_getPrimaryKey(tableName), recordId);
+        }
+
+        await db.transaction((txn) async {
+          await txn.delete(
+            'sync_queue',
+            where: 'queue_id = ?',
+            whereArgs: [queueId],
+          );
+
+          if (operation != 'DELETE') {
+            await txn.update(
+              tableName,
+              {'sync_status': 'synced'},
+              where: '${_getPrimaryKey(tableName)} = ?',
+              whereArgs: [recordId],
+            );
+          }
+        });
+      } catch (itemError) {
+        debugPrint('[RecordsSyncService] Push item failed ($recordId): $itemError');
+        await db.update(
+          'sync_queue',
+          {
+            'attempts': ((item['attempts'] as int? ?? 0) + 1),
+            'last_error': itemError.toString(),
+            'status': 'pending',
+          },
+          where: 'queue_id = ?',
+          whereArgs: [queueId],
+        );
+      }
+    }
+  }
+
+  Future<void> _executeIncrementalPull(Database db, DateTime? lastSyncTime) async {
+    final client = Supabase.instance.client;
+    final nowIso = DateTime.now().toIso8601String();
+
+    for (final table in _syncTables) {
+      try {
+        var query = client.from(table).select();
+
+        // If a previous sync exists, pull only newer or modified records
+        if (lastSyncTime != null) {
+          final lastSyncIso = lastSyncTime.toUtc().toIso8601String();
+          if (table == 'certificate_templates' ||
+              table == 'parish_certificate_settings' ||
+              table == 'appointments' ||
+              table == 'mass_intentions') {
+            query = query.gte('updated_at', lastSyncIso);
+          } else {
+            query = query.gte('created_at', lastSyncIso);
+          }
+        }
+
+        final response = await query;
+        final List rows = response as List;
+
+        if (rows.isNotEmpty) {
+          final tableInfo = await db.rawQuery('PRAGMA table_info($table)');
+          final validColumns = tableInfo.map((col) => col['name'] as String).toSet();
+
+          final batch = db.batch();
+          for (final row in rows) {
+            final map = Map<String, dynamic>.from(row as Map);
+            final sanitized = _sanitizeRowForSqlite(table, map, validColumns);
+            sanitized['sync_status'] = 'synced';
+            sanitized['last_modified_at'] = nowIso;
+
+            batch.insert(
+              table,
+              sanitized,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+          await batch.commit(noResult: true);
+          debugPrint('[RecordsSyncService] Delta-pulled ${rows.length} updated rows into $table');
+        }
+      } catch (tableErr) {
+        debugPrint('[RecordsSyncService] Delta pull notice for $table: $tableErr');
+      }
+    }
+  }
+
+  Future<void> _cacheMissingTemplateAssets(Database db) async {
+    try {
+      final rows = await db.rawQuery('''
+        SELECT background_image_url, diocese_logo_url, parish_seal_url, signature_image_url 
+        FROM certificate_templates
+        UNION
+        SELECT '' as background_image_url, diocese_logo_url, parish_seal_url, '' as signature_image_url
+        FROM parish_certificate_settings
+      ''');
+
+      final Set<String> urlsToCache = {};
+      for (final r in rows) {
+        for (final val in r.values) {
+          if (val != null && val is String && val.trim().startsWith('http')) {
+            urlsToCache.add(val.trim());
+          }
+        }
+      }
+
+      for (final url in urlsToCache) {
+        final existing = await LocalDatabaseService.instance.getCachedAsset(url);
+        if (existing == null || existing.isEmpty) {
+          try {
+            final uri = Uri.tryParse(url);
+            if (uri == null || !uri.hasScheme) continue;
+
+            final res = await http.get(uri).timeout(const Duration(seconds: 6));
+            if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+              String type = 'image';
+              final lower = url.toLowerCase();
+              if (lower.contains('border')) type = 'border';
+              if (lower.contains('signature')) type = 'signature';
+              if (lower.contains('logo') || lower.contains('seal')) type = 'logo';
+
+              await LocalDatabaseService.instance.cacheAsset(
+                url,
+                type,
+                res.bodyBytes,
+                mimeType: res.headers['content-type'],
+              );
+              debugPrint('[RecordsSyncService] Auto-cached template asset: $url');
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ===========================================================================
+  // Manual Full Offline Pack Download (Clean Rebuild)
   // ===========================================================================
 
   Future<void> downloadAllOfflineResources({bool forceWipe = false}) async {
@@ -152,20 +445,6 @@ class RecordsSyncService {
       throw 'Local SQLite database could not be initialized.';
     }
 
-    final tablesToDownload = [
-      'parish_certificate_settings',
-      'certificate_templates',
-      'baptism_records',
-      'confirmation_records',
-      'first_communion_records',
-      'matrimony_records',
-      'death_records',
-      'conversion_records',
-      'appointments',
-      'mass_intentions',
-      'certificate_issuances',
-    ];
-
     int totalDownloaded = 0;
     final Set<String> imageUrlsToDownload = {};
 
@@ -174,10 +453,10 @@ class RecordsSyncService {
         await LocalDatabaseService.instance.clearAllData();
       }
 
-      for (int i = 0; i < tablesToDownload.length; i++) {
-        final table = tablesToDownload[i];
+      for (int i = 0; i < _syncTables.length; i++) {
+        final table = _syncTables[i];
         downloadProgressNotifier.value = RecordsSyncProgress(
-          totalTables: tablesToDownload.length + 2,
+          totalTables: _syncTables.length + 2,
           currentTableIndex: i,
           currentTableName: 'Downloading $table...',
           recordsDownloaded: totalDownloaded,
@@ -188,7 +467,6 @@ class RecordsSyncService {
           final List rows = response as List;
 
           if (rows.isNotEmpty) {
-            // Retrieve valid local columns to avoid SQLite schema mismatch crashes
             final tableInfo = await db.rawQuery('PRAGMA table_info($table)');
             final validColumns =
             tableInfo.map((col) => col['name'] as String).toSet();
@@ -197,7 +475,6 @@ class RecordsSyncService {
             for (final row in rows) {
               final map = Map<String, dynamic>.from(row as Map);
 
-              // Extract images from both global settings and user-customized templates
               if (table == 'certificate_templates' ||
                   table == 'parish_certificate_settings') {
                 for (final field in [
@@ -214,7 +491,6 @@ class RecordsSyncService {
                   }
                 }
 
-                // Parse nested style_config and canvas elements for user-customized image URLs
                 final rawStyle = map['style_config'];
                 if (rawStyle != null) {
                   final styleStr =
@@ -245,21 +521,16 @@ class RecordsSyncService {
             }
             await batch.commit(noResult: true);
             totalDownloaded += rows.length;
-            debugPrint(
-                '[RecordsSyncService] Successfully synchronized ${rows.length} rows into $table');
           }
         } catch (tableError) {
-          debugPrint(
-              '[RecordsSyncService] Error syncing table $table: $tableError');
+          debugPrint('[RecordsSyncService] Error syncing table $table: $tableError');
         }
       }
 
-      // Download and cache all extracted borders, crests, logos, and signatures into SQLite
       downloadProgressNotifier.value = RecordsSyncProgress(
-        totalTables: tablesToDownload.length + 2,
-        currentTableIndex: tablesToDownload.length,
-        currentTableName:
-        'Caching ${imageUrlsToDownload.length} Certificate Assets & Borders...',
+        totalTables: _syncTables.length + 2,
+        currentTableIndex: _syncTables.length,
+        currentTableName: 'Caching ${imageUrlsToDownload.length} Certificate Assets & Borders...',
         recordsDownloaded: totalDownloaded,
       );
 
@@ -288,10 +559,9 @@ class RecordsSyncService {
         }
       }
 
-      // Pre-warm Google Fonts for offline PDF compilation
       downloadProgressNotifier.value = RecordsSyncProgress(
-        totalTables: tablesToDownload.length + 2,
-        currentTableIndex: tablesToDownload.length + 1,
+        totalTables: _syncTables.length + 2,
+        currentTableIndex: _syncTables.length + 1,
         currentTableName: 'Pre-warming Google Typography & Fonts...',
         recordsDownloaded: totalDownloaded,
       );
@@ -308,8 +578,7 @@ class RecordsSyncService {
     } catch (e) {
       debugPrint('[RecordsSyncService] Download error: $e');
       syncStatusNotifier.value = RecordsSyncStatus.error;
-      lastSyncErrorNotifier.value =
-          e.toString().replaceFirst('Exception: ', '');
+      lastSyncErrorNotifier.value = e.toString().replaceFirst('Exception: ', '');
       downloadProgressNotifier.value = null;
       rethrow;
     } finally {
@@ -345,7 +614,7 @@ class RecordsSyncService {
   }
 
   // ===========================================================================
-  // 2. Queue Offline Changes
+  // Local Change Queueing
   // ===========================================================================
 
   Future<void> queueOfflineChange({
@@ -400,6 +669,11 @@ class RecordsSyncService {
     });
 
     await updatePendingCount();
+
+    // If connected, automatically push this queued change right away
+    if (_isOnline && !_isSyncRunning) {
+      unawaited(syncPendingChanges());
+    }
   }
 
   Future<void> cacheRemoteRecordsLocally(
@@ -437,7 +711,7 @@ class RecordsSyncService {
   }
 
   // ===========================================================================
-  // 3. Bi-Directional Synchronization Loop
+  // Manual & Push-Only Trigger
   // ===========================================================================
 
   Future<void> syncPendingChanges() async {
@@ -457,73 +731,8 @@ class RecordsSyncService {
       return;
     }
 
-    final client = Supabase.instance.client;
-
     try {
-      final pendingQueue = await db.query(
-        'sync_queue',
-        where: 'status = ?',
-        whereArgs: ['pending'],
-        orderBy: 'queue_id ASC',
-      );
-
-      for (final item in pendingQueue) {
-        final queueId = item['queue_id'] as int;
-        final tableName = item['table_name'] as String;
-        final recordId = item['record_id'] as String;
-        final operation = item['operation'] as String;
-        final payload =
-        jsonDecode(item['payload'] as String) as Map<String, dynamic>;
-
-        try {
-          final supabasePayload = _prepareRowForSupabase(tableName, payload);
-
-          if (operation == 'INSERT') {
-            await client.from(tableName).upsert(supabasePayload);
-          } else if (operation == 'UPDATE') {
-            await client
-                .from(tableName)
-                .update(supabasePayload)
-                .eq(_getPrimaryKey(tableName), recordId);
-          } else if (operation == 'DELETE') {
-            await client
-                .from(tableName)
-                .delete()
-                .eq(_getPrimaryKey(tableName), recordId);
-          }
-
-          await db.transaction((txn) async {
-            await txn.delete(
-              'sync_queue',
-              where: 'queue_id = ?',
-              whereArgs: [queueId],
-            );
-
-            if (operation != 'DELETE') {
-              await txn.update(
-                tableName,
-                {'sync_status': 'synced'},
-                where: '${_getPrimaryKey(tableName)} = ?',
-                whereArgs: [recordId],
-              );
-            }
-          });
-        } catch (itemError) {
-          debugPrint(
-              '[RecordsSyncService] Push failed ($recordId): $itemError');
-          await db.update(
-            'sync_queue',
-            {
-              'attempts': ((item['attempts'] as int? ?? 0) + 1),
-              'last_error': itemError.toString(),
-              'status': 'pending',
-            },
-            where: 'queue_id = ?',
-            whereArgs: [queueId],
-          );
-        }
-      }
-
+      await _executePushQueue(db);
       final now = DateTime.now();
       await _saveLastSyncTimestamp(now);
       await updatePendingCount();
@@ -534,17 +743,16 @@ class RecordsSyncService {
       lastSyncedAtNotifier.value = now;
       lastSyncErrorNotifier.value = null;
     } catch (e) {
-      debugPrint('[RecordsSyncService] Sync loop error: $e');
+      debugPrint('[RecordsSyncService] Push loop error: $e');
       syncStatusNotifier.value = RecordsSyncStatus.error;
-      lastSyncErrorNotifier.value =
-          e.toString().replaceFirst('Exception: ', '');
+      lastSyncErrorNotifier.value = e.toString().replaceFirst('Exception: ', '');
     } finally {
       _isSyncRunning = false;
     }
   }
 
   // ===========================================================================
-  // 4. Utility & Metadata Helpers
+  // Utility & Serialization Helpers
   // ===========================================================================
 
   Future<int> updatePendingCount() async {
@@ -596,7 +804,6 @@ class RecordsSyncService {
       ]) {
     final clean = Map<String, dynamic>.from(row);
 
-    // Normalize any camelCase keys from memory before SQLite insertion
     if (clean.containsKey('bodyWording')) {
       clean['body_wording'] = clean['bodyWording'];
       clean.remove('bodyWording');
@@ -626,11 +833,9 @@ class RecordsSyncService {
       ) {
     final clean = Map<String, dynamic>.from(row);
 
-    // Remove SQLite-specific local metadata columns
     clean.remove('sync_status');
     clean.remove('last_modified_at');
 
-    // Strip legacy camelCase keys that cause PGRST204 errors
     if (clean.containsKey('bodyWording')) {
       if (!clean.containsKey('body_wording') || clean['body_wording'] == null) {
         clean['body_wording'] = clean['bodyWording'];
@@ -665,7 +870,6 @@ class RecordsSyncService {
       }
     }
 
-    // Decode mass intention petition arrays from JSON strings before Supabase upload
     if (table == 'mass_intentions') {
       final listFields = ['thanksgiving_list', 'repose_souls_list', 'special_intentions_list'];
       for (final lf in listFields) {

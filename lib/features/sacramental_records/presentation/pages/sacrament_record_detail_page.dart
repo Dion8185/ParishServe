@@ -410,16 +410,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                 // =============================================================
                 _buildHIGSectionHeader(
                   title: 'CANONICAL REGISTER INFORMATION',
-                  icon: Icons.article_outlined,
-                  action: TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: widget.themeColor,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    ),
-                    onPressed: () => _openEditRecord(context),
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('Edit Entry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  ),
+                  icon: Icons.article_outlined
                 ),
                 const SizedBox(height: 10),
                 _buildSacramentSpecificDetails(),
