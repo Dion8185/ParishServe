@@ -201,8 +201,16 @@ class FirstCommunionService {
       data['record_id'] = controlNum;
     }
 
-    String? encoderId = AuthService.currentUser?.userId;
-    data['encoded_by'] = encoderId ?? 'S26-0003';
+    final activeUserId = AuthService.currentUser?.userId?.trim();
+    final existingEncoder = data['encoded_by']?.toString().trim();
+    final effectiveEncoderId = (existingEncoder != null && existingEncoder.isNotEmpty)
+        ? existingEncoder
+        : activeUserId;
+
+    if (effectiveEncoderId == null || effectiveEncoderId.isEmpty) {
+      throw 'Authentication required. An active authenticated user session is required to encode First Communion records.';
+    }
+    data['encoded_by'] = effectiveEncoderId;
 
     data['is_verified'] = false;
     data['scanned_image_url'] = null;

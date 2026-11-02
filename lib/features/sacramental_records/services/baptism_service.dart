@@ -167,12 +167,17 @@ class BaptismService {
       data['record_id'] = await _generateRecordId();
     }
 
-    // 6. Automatic encoded_by mapping
-    String? encoderId = AuthService.currentUser?.userId;
-    if (encoderId == null || encoderId.isEmpty) {
-      encoderId = 'S26-0003';
+    // 6. Automatic encoded_by mapping with active session validation
+    final activeUserId = AuthService.currentUser?.userId?.trim();
+    final existingEncoder = data['encoded_by']?.toString().trim();
+    final effectiveEncoderId = (existingEncoder != null && existingEncoder.isNotEmpty)
+        ? existingEncoder
+        : activeUserId;
+
+    if (effectiveEncoderId == null || effectiveEncoderId.isEmpty) {
+      throw 'Authentication required. An active authenticated user session is required to encode baptism records.';
     }
-    data['encoded_by'] = encoderId;
+    data['encoded_by'] = effectiveEncoderId;
 
     // 7. Managed system defaults & audit timestamps
     data['is_verified'] = false;

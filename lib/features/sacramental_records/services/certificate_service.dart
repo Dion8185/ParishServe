@@ -262,7 +262,11 @@ class CertificateService {
   static Future<CertificateTemplateModel> createTemplate(
       CertificateTemplateModel template,
       ) async {
-    final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
+    final currentUserId = AuthService.currentUser?.userId?.trim();
+    if (currentUserId == null || currentUserId.isEmpty) {
+      throw 'Authentication required. Please sign in to create a certificate template.';
+    }
+
     final globalEmblems = await getGlobalEmblemSettings();
 
     final map = template.toMap();
@@ -600,7 +604,11 @@ class CertificateService {
         qrVerificationUrl ?? buildVerificationUrl(effectiveVerificationId);
     final issuanceId = await _generateIssuanceId();
 
-    final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
+    final currentUserId = AuthService.currentUser?.userId?.trim();
+    if (currentUserId == null || currentUserId.isEmpty) {
+      throw 'Authentication required. Please sign in to issue an official certificate.';
+    }
+
     final now = DateTime.now();
 
     String? pdfPath;
@@ -751,7 +759,11 @@ class CertificateService {
     required String issuanceId,
     required String reason,
   }) async {
-    final currentUserId = AuthService.currentUser?.userId ?? 'S26-0003';
+    final currentUserId = AuthService.currentUser?.userId?.trim();
+    if (currentUserId == null || currentUserId.isEmpty) {
+      throw 'Authentication required. Please sign in to revoke a certificate.';
+    }
+
     final now = DateTime.now();
 
     final updateData = {

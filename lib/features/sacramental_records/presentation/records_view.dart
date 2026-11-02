@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/records_view.dart
+// =============================================================================
+
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -12,10 +16,10 @@ import '../models/conversion_record_model.dart';
 import '../models/death_record_model.dart';
 import '../models/first_communion_record_model.dart';
 import '../models/matrimony_record_model.dart';
-import 'dialogs/ocr_scan_dialog.dart';
 import 'dialogs/pabuklat_requests_modal.dart';
 import 'pages/baptism_manual_entry_page.dart';
 import 'pages/certificate_template_management_page.dart';
+import 'pages/certificate_verification_page.dart';
 import 'pages/confirmation_manual_entry_page.dart';
 import 'pages/conversion_manual_entry_page.dart';
 import 'pages/death_manual_entry_page.dart';
@@ -70,7 +74,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
     with TickerProviderStateMixin {
         final TextEditingController _searchController = TextEditingController();
         final FocusNode _searchFocusNode = FocusNode();
-        late TabController _mainTabController;
         late AnimationController _skeletonAnimController;
         late Animation<double> _skeletonOpacityAnimation;
         Timer? _debounceTimer;
@@ -79,7 +82,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         List<UniversalRecordResult> _searchResults = [];
         String _selectedSacramentFilter = 'All';
 
-// Counts for Stats Row
+        // Counts for Stats & Badges
         int _baptismCount = 0;
         int _confirmationCount = 0;
         int _communionCount = 0;
@@ -87,14 +90,14 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         int _deathCount = 0;
         int _conversionCount = 0;
 
-// View Mode: Cards vs Table (Matching Receipts Module)
+        // View Mode: Cards vs Table
         RecordsViewDisplayMode _viewMode = RecordsViewDisplayMode.cards;
 
-// Sort & Filter State
+        // Sort & Filter State
         String _sortBy = 'Date: Latest First';
         bool _sortAscending = false;
 
-// Pagination State
+        // Pagination State
         int _currentPage = 1;
         int _itemsPerPage = 10;
 
@@ -119,15 +122,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         @override
         void initState() {
                 super.initState();
-                _mainTabController = TabController(length: 2, vsync: this);
-                _mainTabController.addListener(() {
-                        if (!_mainTabController.indexIsChanging) {
-                                setState(() {
-                                        _currentPage = 1;
-                                });
-                        }
-                });
-
                 _skeletonAnimController = AnimationController(
                         vsync: this,
                         duration: const Duration(milliseconds: 900),
@@ -147,7 +141,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 _debounceTimer?.cancel();
                 _searchController.dispose();
                 _searchFocusNode.dispose();
-                _mainTabController.dispose();
                 _skeletonAnimController.dispose();
                 super.dispose();
         }
@@ -183,7 +176,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         } catch (_) {}
                 }
 
-// Fallback or SQLite tally if native/offline
                 if (bCount == 0 && cCount == 0 && fcCount == 0 && !kIsWeb) {
                         final db = await LocalDatabaseService.instance.database;
                         if (db != null) {
@@ -268,9 +260,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 }
         }
 
-// ===========================================================================
-// Universal Search Logic (Supabase Online -> SQLite Offline)
-// ===========================================================================
+        // ===========================================================================
+        // Search Database Fetchers
+        // ===========================================================================
 
         Future<List<UniversalRecordResult>> _searchBaptisms(String q) async {
                 final isOnline = await RecordsSyncService.instance.checkConnectivity();
@@ -324,7 +316,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFF164E87),
                         surfaceColor: const Color(0xFFEDF4FB),
-                        icon: Icons.water_drop,
+                        icon: Icons.water_drop_outlined,
                         rawRecordData: model.toMap(),
                         sortDate: model.dateOfBaptism,
                 );
@@ -383,7 +375,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFFB91C1C),
                         surfaceColor: const Color(0xFFFDF2F2),
-                        icon: Icons.local_fire_department,
+                        icon: Icons.local_fire_department_outlined,
                         rawRecordData: model.toMap(),
                         sortDate: model.dateOfConfirmation,
                 );
@@ -420,7 +412,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ORDER BY date_of_communion DESC
         LIMIT 15
         ''',
-                                ['%$q%', '%$q%', '%$q%', '%$q%', '%$q%'],
+                                ['%$q%', '%$q%', '%$q%'],
                         );
                         return rows.map((r) => _mapCommunionResult(FirstCommunionRecordModel.fromMap(r))).toList();
                 }
@@ -500,7 +492,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFF9D174D),
                         surfaceColor: const Color(0xFFFCE7F3),
-                        icon: Icons.favorite,
+                        icon: Icons.favorite_border,
                         rawRecordData: model.toMap(),
                         sortDate: model.dateOfMarriage,
                 );
@@ -560,7 +552,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFF6B21A8),
                         surfaceColor: const Color(0xFFF3E8FF),
-                        icon: Icons.church,
+                        icon: Icons.church_outlined,
                         rawRecordData: model.toMap(),
                         sortDate: model.dateOfBurial,
                 );
@@ -597,7 +589,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ORDER BY date_of_reception DESC
         LIMIT 15
         ''',
-                                ['%$q%', '%$q%', '%$q%', '%$q%'],
+                                ['%$q%', '%$q%', '%$q%'],
                         );
                         return rows.map((r) => _mapConversionResult(ConversionRecordModel.fromMap(r))).toList();
                 }
@@ -617,15 +609,15 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFF2D6A4F),
                         surfaceColor: const Color(0xFFEDF7F2),
-                        icon: Icons.eco,
+                        icon: Icons.eco_outlined,
                         rawRecordData: model.toMap(),
                         sortDate: model.dateOfReception,
                 );
         }
 
-// ===========================================================================
-// Filtering & Sorting Operations
-// ===========================================================================
+        // ===========================================================================
+        // Filtering & Sorting Operations
+        // ===========================================================================
 
         List<UniversalRecordResult> get _filteredSearchResults {
                 var list = List<UniversalRecordResult>.from(_searchResults);
@@ -718,9 +710,18 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
-// ===========================================================================
-// Filter & Sort Bottom Sheet (Matching Receipts Module)
-// ===========================================================================
+        void _openCertificateVerificationPortal() {
+                Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                                builder: (_) => const CertificateVerificationPage(),
+                        ),
+                );
+        }
+
+        // ===========================================================================
+        // Filter & Sort Bottom Sheet
+        // ===========================================================================
 
         void _openFilterAndSortBottomSheet() {
                 showModalBottomSheet(
@@ -786,7 +787,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                         ),
                                                                         const Divider(height: 14),
 
-// 1. Sort Order
                                                                         Text(
                                                                                 'Sort Sequence',
                                                                                 style: TextStyle(
@@ -837,7 +837,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                         ),
                                                                         const SizedBox(height: 14),
 
-// 2. Sacrament Type Filter
                                                                         Text(
                                                                                 'Sacrament Register Filter',
                                                                                 style: TextStyle(
@@ -901,9 +900,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
-// ===========================================================================
-// Offline Resource Pack Modal
-// ===========================================================================
+        // ===========================================================================
+        // Offline Resource Pack Modal
+        // ===========================================================================
 
         void _showOfflinePackModal(BuildContext context) {
                 bool forceWipe = false;
@@ -1085,51 +1084,83 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
+        // ===========================================================================
+        // Slide-Up Bottom Sheet Modal for "Encode a new record" (Image 1)
+        // ===========================================================================
+
         void _showNewRecordSelector(BuildContext context) {
-                showDialog(
+                showModalBottomSheet(
                         context: context,
-                        builder: (ctx) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                backgroundColor: ParishColors.cardWhite,
-                                title: Row(
-                                        children: [
-                                                Container(
-                                                        padding: const EdgeInsets.all(8),
-                                                        decoration: const BoxDecoration(
-                                                                color: ParishColors.marianBlue,
-                                                                shape: BoxShape.circle,
-                                                        ),
-                                                        child: const Icon(Icons.post_add, color: Colors.white, size: 20),
+                        isScrollControlled: true,
+                        useSafeArea: false,
+                        backgroundColor: Colors.transparent,
+                        builder: (ctx) => Align(
+                                alignment: Alignment.bottomCenter,
+                                child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 560),
+                                        child: Container(
+                                                decoration: BoxDecoration(
+                                                        color: ParishColors.cardWhite,
+                                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                                                 ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                        child: Column(
-                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                children: [
-                                                                        Text(
-                                                                                'Select Canonical Register',
-                                                                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-                                                                        ),
-                                                                        Text(
-                                                                                'Choose the register to encode a new entry',
-                                                                                style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
-                                                                        ),
-                                                                ],
-                                                        ),
-                                                ),
-                                        ],
-                                ),
-                                content: SizedBox(
-                                        width: 480,
-                                        child: SingleChildScrollView(
+                                                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                                                 child: Column(
                                                         mainAxisSize: MainAxisSize.min,
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
                                                         children: [
+                                                                Center(
+                                                                        child: Container(
+                                                                                width: 36,
+                                                                                height: 4,
+                                                                                margin: const EdgeInsets.only(bottom: 14),
+                                                                                decoration: BoxDecoration(
+                                                                                        color: Colors.grey.shade300,
+                                                                                        borderRadius: BorderRadius.circular(2),
+                                                                                ),
+                                                                        ),
+                                                                ),
+                                                                Row(
+                                                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                                        children: [
+                                                                                Expanded(
+                                                                                        child: Column(
+                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                                children: [
+                                                                                                        Text(
+                                                                                                                'Encode a new record',
+                                                                                                                style: TextStyle(
+                                                                                                                        fontSize: 18,
+                                                                                                                        fontWeight: FontWeight.bold,
+                                                                                                                        color: ParishColors.textDark,
+                                                                                                                ),
+                                                                                                        ),
+                                                                                                        const SizedBox(height: 4),
+                                                                                                        Text(
+                                                                                                                'Which register does this entry belong to?',
+                                                                                                                style: TextStyle(
+                                                                                                                        fontSize: 13,
+                                                                                                                        color: ParishColors.textMuted,
+                                                                                                                ),
+                                                                                                        ),
+                                                                                                ],
+                                                                                        ),
+                                                                                ),
+                                                                                IconButton(
+                                                                                        icon: Icon(Icons.close, color: ParishColors.textMuted, size: 22),
+                                                                                        padding: EdgeInsets.zero,
+                                                                                        constraints: const BoxConstraints(),
+                                                                                        tooltip: 'Close',
+                                                                                        onPressed: () => Navigator.pop(ctx),
+                                                                                ),
+                                                                        ],
+                                                                ),
+                                                                const SizedBox(height: 16),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
-                                                                        title: 'Baptism Register (Liber Baptismorum)',
-                                                                        subtitle: 'Baptisms, lineages, and initial godparents',
-                                                                        icon: Icons.water_drop,
+                                                                        title: 'Baptism Register',
+                                                                        subtitle: 'Liber Baptismorum • Baptisms, lineage & godparents',
+                                                                        icon: Icons.water_drop_outlined,
                                                                         color: const Color(0xFF164E87),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
@@ -1138,9 +1169,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
-                                                                        title: 'Confirmation Register (Liber Confirmatorum)',
-                                                                        subtitle: 'Confirmands, chrismation dates, and sponsors',
-                                                                        icon: Icons.local_fire_department,
+                                                                        title: 'Confirmation Register',
+                                                                        subtitle: 'Liber Confirmatorum • Confirmands & sponsors',
+                                                                        icon: Icons.local_fire_department_outlined,
                                                                         color: const Color(0xFFB91C1C),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
@@ -1149,8 +1180,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
-                                                                        title: 'First Communion (Liber Primae Communionis)',
-                                                                        subtitle: 'Annual batch control registries and parishes',
+                                                                        title: 'First Communion Register',
+                                                                        subtitle: 'Liber Primae Communionis • Annual batch registries',
                                                                         icon: Icons.restaurant,
                                                                         color: const Color(0xFFD49B18),
                                                                         onTap: () {
@@ -1160,9 +1191,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
-                                                                        title: 'Matrimony Register (Liber Matrimoniorum)',
-                                                                        subtitle: 'Spouses, marriage license, and canonical banns',
-                                                                        icon: Icons.favorite,
+                                                                        title: 'Matrimony Register',
+                                                                        subtitle: 'Liber Matrimoniorum • Spouses, license & banns',
+                                                                        icon: Icons.favorite_border,
                                                                         color: const Color(0xFF9D174D),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
@@ -1171,9 +1202,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
-                                                                        title: 'Death & Burial (Liber Defunctorum)',
-                                                                        subtitle: 'Deceased, cemetery locations, and funeral rites',
-                                                                        icon: Icons.church,
+                                                                        title: 'Death & Burial Register',
+                                                                        subtitle: 'Liber Defunctorum • Deceased, burial & rites',
+                                                                        icon: Icons.church_outlined,
                                                                         color: const Color(0xFF6B21A8),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
@@ -1182,9 +1213,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
-                                                                        title: 'Conversion (Liber Conversorum)',
-                                                                        subtitle: 'Reception into full Catholic communion & witnesses',
-                                                                        icon: Icons.eco,
+                                                                        title: 'Conversion Register',
+                                                                        subtitle: 'Liber Conversorum • Reception into full communion',
+                                                                        icon: Icons.eco_outlined,
                                                                         color: const Color(0xFF2D6A4F),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
@@ -1195,12 +1226,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 ),
                                         ),
                                 ),
-                                actions: [
-                                        TextButton(
-                                                onPressed: () => Navigator.pop(ctx),
-                                                child: Text('Cancel', style: TextStyle(color: ParishColors.textMuted)),
-                                        ),
-                                ],
                         ),
                 );
         }
@@ -1214,283 +1239,203 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 required VoidCallback onTap,
         }) {
                 return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: InkWell(
-                                onTap: onTap,
-                                borderRadius: BorderRadius.circular(10),
-                                child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                        decoration: BoxDecoration(
-                                                color: color.withOpacity(0.06),
-                                                borderRadius: BorderRadius.circular(10),
-                                                border: Border.all(color: color.withOpacity(0.3)),
-                                        ),
-                                        child: Row(
-                                                children: [
-                                                        Container(
-                                                                padding: const EdgeInsets.all(8),
-                                                                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                                                                child: Icon(icon, color: Colors.white, size: 18),
-                                                        ),
-                                                        const SizedBox(width: 12),
-                                                        Expanded(
-                                                                child: Column(
-                                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                                        children: [
-                                                                                Text(title, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-                                                                                Text(subtitle, style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
-                                                                        ],
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                        onTap: onTap,
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                                decoration: BoxDecoration(
+                                                        color: color.withOpacity(0.04),
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        border: Border.all(color: color.withOpacity(0.35), width: 1.2),
+                                                ),
+                                                child: Row(
+                                                        children: [
+                                                                Container(
+                                                                        padding: const EdgeInsets.all(8),
+                                                                        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                                                                        child: Icon(icon, color: Colors.white, size: 18),
                                                                 ),
-                                                        ),
-                                                        Icon(Icons.chevron_right, size: 18, color: color),
-                                                ],
+                                                                const SizedBox(width: 14),
+                                                                Expanded(
+                                                                        child: Column(
+                                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                children: [
+                                                                                        Text(
+                                                                                                title,
+                                                                                                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                                                                                        ),
+                                                                                        const SizedBox(height: 2),
+                                                                                        Text(
+                                                                                                subtitle,
+                                                                                                style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                                                                                        ),
+                                                                                ],
+                                                                        ),
+                                                                ),
+                                                                Icon(Icons.chevron_right, size: 20, color: color),
+                                                        ],
+                                                ),
                                         ),
                                 ),
                         ),
                 );
         }
 
-// ===========================================================================
-// Top Action Buttons (Matching Receipts Module UI Pattern)
-// ===========================================================================
+        // ===========================================================================
+        // Responsive Action Cards Bar
+        // ===========================================================================
 
-        Widget _buildActionButtons(bool isMobile) {
-                return isMobile
-                    ? Column(
+        Widget _buildActionCardsRow(bool isDesktop) {
+                final encodeCard = _buildDashboardActionCard(
+                        title: 'Encode Record',
+                        subtitle: 'Add a new register entry',
+                        icon: Icons.post_add,
+                        isSolidBlue: true,
+                        onTap: () => _showNewRecordSelector(context),
+                );
+
+                final verifyCard = _buildDashboardActionCard(
+                        title: 'Verify Certificate',
+                        subtitle: 'Scan a QR to confirm authenticity',
+                        icon: Icons.qr_code_scanner,
+                        isSolidBlue: false,
+                        borderColor: ParishColors.borderGrey,
+                        iconColor: ParishColors.marianBlue,
+                        onTap: _openCertificateVerificationPortal,
+                );
+
+                final studioCard = _buildDashboardActionCard(
+                        title: 'Certificate Studio',
+                        subtitle: 'Design & manage templates',
+                        icon: Icons.design_services_outlined,
+                        isSolidBlue: false,
+                        borderColor: ParishColors.goldAccent,
+                        iconColor: ParishColors.goldAccent,
+                        titleColor: ParishColors.goldAccent,
+                        onTap: () {
+                                Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
+                                );
+                        },
+                );
+
+                if (isDesktop) {
+                        return Row(
+                                children: [
+                                        Expanded(child: encodeCard),
+                                        const SizedBox(width: 16),
+                                        Expanded(child: verifyCard),
+                                        const SizedBox(width: 16),
+                                        Expanded(child: studioCard),
+                                ],
+                        );
+                }
+
+                return Column(
                         children: [
-                                SizedBox(
-                                        width: double.infinity,
-                                        height: 44,
-                                        child: ElevatedButton.icon(
-                                                style: ElevatedButton.styleFrom(
-                                                        backgroundColor: ParishColors.marianBlue,
-                                                        foregroundColor: Colors.white,
-                                                        elevation: 1,
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                ),
-                                                onPressed: () => _showNewRecordSelector(context),
-                                                icon: const Icon(Icons.post_add, size: 18),
-                                                label: const Text(
-                                                        '+ Encode Canonical Record',
-                                                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                                                ),
-                                        ),
-                                ),
-                                const SizedBox(height: 8),
+                                encodeCard,
+                                const SizedBox(height: 10),
                                 Row(
                                         children: [
-                                                Expanded(
-                                                        child: SizedBox(
-                                                                height: 42,
-                                                                child: OutlinedButton.icon(
-                                                                        style: OutlinedButton.styleFrom(
-                                                                                side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-                                                                                foregroundColor: ParishColors.marianBlue,
-                                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                                        ),
-                                                                        onPressed: () => showOcrScanModal(context),
-                                                                        icon: const Icon(Icons.document_scanner, size: 16),
-                                                                        label: const Text('AI OCR Scan', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                                                ),
-                                                        ),
+                                                Expanded(child: verifyCard),
+                                                const SizedBox(width: 10),
+                                                Expanded(child: studioCard),
+                                        ],
+                                ),
+                        ],
+                );
+        }
+
+        Widget _buildDashboardActionCard({
+                required String title,
+                required String subtitle,
+                required IconData icon,
+                bool isSolidBlue = false,
+                Color? borderColor,
+                Color? iconColor,
+                Color? titleColor,
+                required VoidCallback onTap,
+        }) {
+                final bgColor = isSolidBlue ? ParishColors.marianBlue : ParishColors.cardWhite;
+                final primaryTextColor = isSolidBlue ? Colors.white : (titleColor ?? ParishColors.textDark);
+                final secondaryTextColor = isSolidBlue ? Colors.white70 : ParishColors.textMuted;
+                final resolvedIconColor = isSolidBlue ? Colors.white : (iconColor ?? ParishColors.marianBlue);
+
+                return InkWell(
+                        onTap: onTap,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                                height: 72,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                decoration: BoxDecoration(
+                                        color: bgColor,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                                color: isSolidBlue ? Colors.transparent : (borderColor ?? ParishColors.borderGrey),
+                                                width: 1.4,
+                                        ),
+                                        boxShadow: [
+                                                BoxShadow(
+                                                        color: Colors.black.withOpacity(isSolidBlue ? 0.08 : 0.02),
+                                                        blurRadius: 6,
+                                                        offset: const Offset(0, 2),
                                                 ),
-                                                const SizedBox(width: 8),
+                                        ],
+                                ),
+                                child: Row(
+                                        children: [
+                                                Container(
+                                                        width: 44,
+                                                        height: 44,
+                                                        decoration: BoxDecoration(
+                                                                color: isSolidBlue ? Colors.white.withOpacity(0.18) : (iconColor?.withOpacity(0.12) ?? ParishColors.marianBlueSurface),
+                                                                borderRadius: BorderRadius.circular(10),
+                                                        ),
+                                                        child: Icon(icon, color: resolvedIconColor, size: 22),
+                                                ),
+                                                const SizedBox(width: 14),
                                                 Expanded(
-                                                        child: SizedBox(
-                                                                height: 42,
-                                                                child: OutlinedButton.icon(
-                                                                        style: OutlinedButton.styleFrom(
-                                                                                side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-                                                                                foregroundColor: ParishColors.goldAccent,
-                                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                        child: Column(
+                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                                children: [
+                                                                        Text(
+                                                                                title,
+                                                                                style: TextStyle(
+                                                                                        fontSize: 14.5,
+                                                                                        fontWeight: FontWeight.bold,
+                                                                                        color: primaryTextColor,
+                                                                                ),
+                                                                                maxLines: 1,
+                                                                                overflow: TextOverflow.ellipsis,
                                                                         ),
-                                                                        onPressed: () {
-                                                                                Navigator.push(
-                                                                                        context,
-                                                                                        MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
-                                                                                );
-                                                                        },
-                                                                        icon: const Icon(Icons.design_services_outlined, size: 16),
-                                                                        label: const Text('Studio', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                                                ),
+                                                                        const SizedBox(height: 2),
+                                                                        Text(
+                                                                                subtitle,
+                                                                                style: TextStyle(
+                                                                                        fontSize: 11.5,
+                                                                                        color: secondaryTextColor,
+                                                                                ),
+                                                                                maxLines: 1,
+                                                                                overflow: TextOverflow.ellipsis,
+                                                                        ),
+                                                                ],
                                                         ),
                                                 ),
                                         ],
                                 ),
-                        ],
-                )
-                    : Row(
-                        children: [
-                                Expanded(
-                                        flex: 4,
-                                        child: SizedBox(
-                                                height: 44,
-                                                child: ElevatedButton.icon(
-                                                        style: ElevatedButton.styleFrom(
-                                                                backgroundColor: ParishColors.marianBlue,
-                                                                foregroundColor: Colors.white,
-                                                                elevation: 1,
-                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                        ),
-                                                        onPressed: () => _showNewRecordSelector(context),
-                                                        icon: const Icon(Icons.post_add, size: 18),
-                                                        label: const Text(
-                                                                '+ Encode Canonical Record',
-                                                                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
-                                                        ),
-                                                ),
-                                        ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                        flex: 3,
-                                        child: SizedBox(
-                                                height: 44,
-                                                child: OutlinedButton.icon(
-                                                        style: OutlinedButton.styleFrom(
-                                                                side: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-                                                                foregroundColor: ParishColors.marianBlue,
-                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                        ),
-                                                        onPressed: () => showOcrScanModal(context),
-                                                        icon: const Icon(Icons.document_scanner, size: 16),
-                                                        label: const Text(
-                                                                'AI OCR Ledger Scan',
-                                                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                                                        ),
-                                                ),
-                                        ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                        flex: 3,
-                                        child: SizedBox(
-                                                height: 44,
-                                                child: OutlinedButton.icon(
-                                                        style: OutlinedButton.styleFrom(
-                                                                side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-                                                                foregroundColor: ParishColors.goldAccent,
-                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                        ),
-                                                        onPressed: () {
-                                                                Navigator.push(
-                                                                        context,
-                                                                        MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
-                                                                );
-                                                        },
-                                                        icon: const Icon(Icons.design_services_outlined, size: 16),
-                                                        label: const Text(
-                                                                'Certificate Studio',
-                                                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                                                        ),
-                                                ),
-                                        ),
-                                ),
-                        ],
-                );
-        }
-
-// ===========================================================================
-// Compact Stats Row (Matching Receipts Module UI Pattern)
-// ===========================================================================
-
-        Widget _buildCompactStatsRow() {
-                return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                                color: ParishColors.cardWhite,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: ParishColors.borderGrey),
-                        ),
-                        child: Row(
-                                children: [
-                                        Expanded(
-                                                child: _buildCompactStatItem(
-                                                        'Baptisms',
-                                                        '$_baptismCount',
-                                                        const Color(0xFF164E87),
-                                                ),
-                                        ),
-                                        Container(width: 1, height: 20, color: ParishColors.borderGrey),
-                                        Expanded(
-                                                child: _buildCompactStatItem(
-                                                        'Confirmation',
-                                                        '$_confirmationCount',
-                                                        const Color(0xFFB91C1C),
-                                                ),
-                                        ),
-                                        Container(width: 1, height: 20, color: ParishColors.borderGrey),
-                                        Expanded(
-                                                child: _buildCompactStatItem(
-                                                        'Holy Communion',
-                                                        '$_communionCount',
-                                                        const Color(0xFFD49B18),
-                                                ),
-                                        ),
-                                        Container(width: 1, height: 20, color: ParishColors.borderGrey),
-                                        Expanded(
-                                                child: _buildCompactStatItem(
-                                                        'Matrimony',
-                                                        '$_matrimonyCount',
-                                                        const Color(0xFF9D174D),
-                                                ),
-                                        ),
-                                        Container(width: 1, height: 20, color: ParishColors.borderGrey),
-                                        Expanded(
-                                                child: _buildCompactStatItem(
-                                                        'Burial',
-                                                        '$_deathCount',
-                                                        const Color(0xFF6B21A8),
-                                                ),
-                                        ),
-                                        Container(width: 1, height: 20, color: ParishColors.borderGrey),
-                                        Expanded(
-                                                child: _buildCompactStatItem(
-                                                        'Total',
-                                                        '$_totalRecordsCount',
-                                                        ParishColors.oliveGreen,
-                                                ),
-                                        ),
-                                ],
                         ),
                 );
         }
 
-        Widget _buildCompactStatItem(String label, String value, Color color) {
-                return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                                Text(
-                                        value,
-                                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: color),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                        label,
-                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                ),
-                        ],
-                );
-        }
-
-        Widget _buildActiveFilterChip(String label, VoidCallback onDeleted) {
-                return Chip(
-                        label: Text(label, style: TextStyle(fontSize: 10, color: ParishColors.textDark)),
-                        backgroundColor: ParishColors.marianBlueSurface,
-                        deleteIcon: const Icon(Icons.close, size: 12),
-                        onDeleted: onDeleted,
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                );
-        }
-
-// ===========================================================================
-// Anti-Layout-Shift Skeleton Loader
-// ===========================================================================
+        // ===========================================================================
+        // Anti-Layout-Shift Skeleton Loader
+        // ===========================================================================
 
         Widget _buildSkeletonLoading() {
                 return AnimatedBuilder(
@@ -1564,9 +1509,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
-// ===========================================================================
-// Build Main Dashboard Shell
-// ===========================================================================
+        // ===========================================================================
+        // Build Main Dashboard Shell
+        // ===========================================================================
 
         @override
         Widget build(BuildContext context) {
@@ -1576,83 +1521,106 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
 
                 return LayoutBuilder(
                         builder: (context, constraints) {
-                                final bool isMobile = constraints.maxWidth < 650;
+                                final double screenWidth = constraints.maxWidth;
+                                final bool isDesktop = screenWidth >= 1080;
+                                final bool isTablet = screenWidth >= 650 && screenWidth < 1080;
+                                final bool isMobile = screenWidth < 650;
                                 final isSearchActive = _searchController.text.trim().isNotEmpty;
-                                final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
 
-                                return Container(
-                                        width: double.infinity,
-                                        height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
-                                        alignment: Alignment.topCenter,
-                                        child: RefreshIndicator(
-                                                onRefresh: () async {
-                                                        await RecordsSyncService.instance.checkConnectivity();
-                                                        await RecordsSyncService.instance.updatePendingCount();
-                                                        await _loadSummaryStats();
-                                                        if (isSearchActive) {
-                                                                _performUniversalSearch(_searchController.text.trim());
-                                                        }
-                                                },
-                                                color: ParishColors.marianBlue,
-                                                child: SingleChildScrollView(
-                                                        physics: const AlwaysScrollableScrollPhysics(),
-                                                        padding: EdgeInsets.symmetric(
-                                                                horizontal: isMobile ? 14 : 20,
-                                                                vertical: isMobile ? 12 : 18,
-                                                        ),
+                                return RefreshIndicator(
+                                        onRefresh: () async {
+                                                await RecordsSyncService.instance.checkConnectivity();
+                                                await RecordsSyncService.instance.updatePendingCount();
+                                                await _loadSummaryStats();
+                                                if (isSearchActive) {
+                                                        _performUniversalSearch(_searchController.text.trim());
+                                                }
+                                        },
+                                        color: ParishColors.marianBlue,
+                                        child: SingleChildScrollView(
+                                                physics: const AlwaysScrollableScrollPhysics(),
+                                                padding: EdgeInsets.symmetric(
+                                                        horizontal: isMobile ? 16 : 28,
+                                                        vertical: isMobile ? 14 : 24,
+                                                ),
+                                                child: Center(
                                                         child: ConstrainedBox(
-                                                                constraints: BoxConstraints(
-                                                                        minHeight: max(0.0, viewportHeight - (isMobile ? 24 : 36)),
-                                                                        minWidth: double.infinity,
-                                                                ),
+                                                                constraints: const BoxConstraints(maxWidth: 1400),
                                                                 child: Column(
                                                                         crossAxisAlignment: CrossAxisAlignment.start,
-                                                                        mainAxisAlignment: MainAxisAlignment.start,
                                                                         children: [
-// 1. Header with clean quick action icons
+                                                                                // 1. Header with title, record tally & overflow popup menu
                                                                                 Row(
                                                                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                                                        crossAxisAlignment: CrossAxisAlignment.start,
                                                                                         children: [
                                                                                                 Expanded(
-                                                                                                        child: Text(
-                                                                                                                'Sacramental Records Digitization',
-                                                                                                                style: TextStyle(
-                                                                                                                        fontSize: isMobile ? 18 : 22,
-                                                                                                                        fontWeight: FontWeight.bold,
-                                                                                                                        color: textDarkColor,
-                                                                                                                ),
+                                                                                                        child: Column(
+                                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                                                children: [
+                                                                                                                        Text(
+                                                                                                                                'Sacramental Registers',
+                                                                                                                                style: TextStyle(
+                                                                                                                                        fontSize: isMobile ? 20 : 25,
+                                                                                                                                        fontWeight: FontWeight.bold,
+                                                                                                                                        color: textDarkColor,
+                                                                                                                                ),
+                                                                                                                        ),
+                                                                                                                        const SizedBox(height: 4),
+                                                                                                                        Text(
+                                                                                                                                '$_totalRecordsCount records across 6 canonical books',
+                                                                                                                                style: TextStyle(
+                                                                                                                                        fontSize: 13,
+                                                                                                                                        color: ParishColors.textMuted,
+                                                                                                                                ),
+                                                                                                                        ),
+                                                                                                                ],
                                                                                                         ),
                                                                                                 ),
-                                                                                                Row(
-                                                                                                        mainAxisSize: MainAxisSize.min,
-                                                                                                        children: [
-                                                                                                                IconButton(
-                                                                                                                        icon: const Icon(Icons.cloud_download_outlined, color: ParishColors.marianBlue, size: 20),
-                                                                                                                        onPressed: () => _showOfflinePackModal(context),
-                                                                                                                        tooltip: 'Download Offline Resource Pack',
+                                                                                                PopupMenuButton<String>(
+                                                                                                        icon: Icon(Icons.more_vert, color: ParishColors.textMuted, size: 22),
+                                                                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                                                                                        color: cardWhiteColor,
+                                                                                                        onSelected: (val) {
+                                                                                                                if (val == 'download_pack') {
+                                                                                                                        _showOfflinePackModal(context);
+                                                                                                                } else if (val == 'pabuklat') {
+                                                                                                                        showPabuklatRequestsModal(context);
+                                                                                                                } else if (val == 'refresh') {
+                                                                                                                        _loadSummaryStats();
+                                                                                                                        RecordsSyncService.instance.checkConnectivity();
+                                                                                                                }
+                                                                                                        },
+                                                                                                        itemBuilder: (ctx) => [
+                                                                                                                const PopupMenuItem(
+                                                                                                                        value: 'download_pack',
+                                                                                                                        child: Row(
+                                                                                                                                children: [
+                                                                                                                                        Icon(Icons.cloud_download_outlined, size: 18, color: ParishColors.marianBlue),
+                                                                                                                                        SizedBox(width: 10),
+                                                                                                                                        Text('Download Offline Pack', style: TextStyle(fontSize: 13)),
+                                                                                                                                ],
+                                                                                                                        ),
                                                                                                                 ),
-                                                                                                                IconButton(
-                                                                                                                        icon: const Icon(Icons.folder_shared_outlined, color: ParishColors.oliveGreen, size: 20),
-                                                                                                                        onPressed: () => showPabuklatRequestsModal(context),
-                                                                                                                        tooltip: 'Review Pabuklat Search Requests',
+                                                                                                                const PopupMenuItem(
+                                                                                                                        value: 'pabuklat',
+                                                                                                                        child: Row(
+                                                                                                                                children: [
+                                                                                                                                        Icon(Icons.folder_shared_outlined, size: 18, color: ParishColors.oliveGreen),
+                                                                                                                                        SizedBox(width: 10),
+                                                                                                                                        Text('Pabuklat Search Requests', style: TextStyle(fontSize: 13)),
+                                                                                                                                ],
+                                                                                                                        ),
                                                                                                                 ),
-                                                                                                                IconButton(
-                                                                                                                        icon: const Icon(Icons.design_services_outlined, color: ParishColors.goldAccent, size: 20),
-                                                                                                                        onPressed: () {
-                                                                                                                                Navigator.push(
-                                                                                                                                        context,
-                                                                                                                                        MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
-                                                                                                                                );
-                                                                                                                        },
-                                                                                                                        tooltip: 'Certificate Templates Studio',
-                                                                                                                ),
-                                                                                                                IconButton(
-                                                                                                                        icon: const Icon(Icons.refresh, color: ParishColors.marianBlue, size: 20),
-                                                                                                                        onPressed: () {
-                                                                                                                                _loadSummaryStats();
-                                                                                                                                RecordsSyncService.instance.checkConnectivity();
-                                                                                                                        },
-                                                                                                                        tooltip: 'Reload Registers',
+                                                                                                                const PopupMenuItem(
+                                                                                                                        value: 'refresh',
+                                                                                                                        child: Row(
+                                                                                                                                children: [
+                                                                                                                                        Icon(Icons.refresh, size: 18),
+                                                                                                                                        SizedBox(width: 10),
+                                                                                                                                        Text('Refresh Registers', style: TextStyle(fontSize: 13)),
+                                                                                                                                ],
+                                                                                                                        ),
                                                                                                                 ),
                                                                                                         ],
                                                                                                 ),
@@ -1660,15 +1628,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 ),
                                                                                 const SizedBox(height: 12),
 
-// 2. Primary Action Buttons
-                                                                                _buildActionButtons(isMobile),
-                                                                                const SizedBox(height: 12),
-
-// 3. Compact Stats Row
-                                                                                _buildCompactStatsRow(),
-                                                                                const SizedBox(height: 12),
-
-// 4. Offline Connectivity & Sync Status Bar
+                                                                                // 2. Connectivity & Sync Status Bar
                                                                                 ValueListenableBuilder<RecordsSyncStatus>(
                                                                                         valueListenable: RecordsSyncService.syncStatusNotifier,
                                                                                         builder: (context, status, _) {
@@ -1681,27 +1641,27 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                 String statusLabel;
 
                                                                                                                 if (status == RecordsSyncStatus.offline) {
-                                                                                                                        pillColor = Colors.amber.shade100;
+                                                                                                                        pillColor = Colors.amber.shade50;
                                                                                                                         textColor = Colors.amber.shade900;
                                                                                                                         statusIcon = Icons.cloud_off;
                                                                                                                         statusLabel = pendingCount > 0
-                                                                                                                            ? 'Offline Mode • Working from local SQLite ($pendingCount pending changes)'
-                                                                                                                            : 'Offline Mode • Operating from local SQLite';
+                                                                                                                            ? 'Offline • Working from local SQLite ($pendingCount pending changes)'
+                                                                                                                            : 'Offline • Operating from local SQLite';
                                                                                                                 } else if (status == RecordsSyncStatus.syncing) {
-                                                                                                                        pillColor = Colors.blue.shade100;
+                                                                                                                        pillColor = Colors.blue.shade50;
                                                                                                                         textColor = Colors.blue.shade900;
                                                                                                                         statusIcon = Icons.sync;
                                                                                                                         statusLabel = 'Syncing records with Supabase cloud...';
                                                                                                                 } else if (pendingCount > 0) {
-                                                                                                                        pillColor = Colors.orange.shade100;
+                                                                                                                        pillColor = Colors.orange.shade50;
                                                                                                                         textColor = Colors.orange.shade900;
                                                                                                                         statusIcon = Icons.upload_file;
                                                                                                                         statusLabel = 'Online • $pendingCount record(s) queued for upload (Tap to Sync Now)';
                                                                                                                 } else {
-                                                                                                                        pillColor = Colors.green.shade50;
-                                                                                                                        textColor = Colors.green.shade800;
+                                                                                                                        pillColor = const Color(0xFFE8F5E9);
+                                                                                                                        textColor = const Color(0xFF2E7D32);
                                                                                                                         statusIcon = Icons.cloud_done;
-                                                                                                                        statusLabel = 'Online • All sacramental records synchronized';
+                                                                                                                        statusLabel = 'Online • all records synchronized';
                                                                                                                 }
 
                                                                                                                 return InkWell(
@@ -1711,7 +1671,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                         borderRadius: BorderRadius.circular(8),
                                                                                                                         child: Container(
                                                                                                                                 width: double.infinity,
-                                                                                                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                                                                                                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                                                                                                                 decoration: BoxDecoration(
                                                                                                                                         color: pillColor,
                                                                                                                                         borderRadius: BorderRadius.circular(8),
@@ -1719,14 +1679,14 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                                 ),
                                                                                                                                 child: Row(
                                                                                                                                         children: [
-                                                                                                                                                Icon(statusIcon, size: 15, color: textColor),
+                                                                                                                                                Icon(statusIcon, size: 16, color: textColor),
                                                                                                                                                 const SizedBox(width: 8),
                                                                                                                                                 Expanded(
                                                                                                                                                         child: Text(
                                                                                                                                                                 statusLabel,
                                                                                                                                                                 style: TextStyle(
-                                                                                                                                                                        fontSize: 11.5,
-                                                                                                                                                                        fontWeight: FontWeight.bold,
+                                                                                                                                                                        fontSize: 12,
+                                                                                                                                                                        fontWeight: FontWeight.w600,
                                                                                                                                                                         color: textColor,
                                                                                                                                                                 ),
                                                                                                                                                                 overflow: TextOverflow.ellipsis,
@@ -1734,7 +1694,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                                                 ),
                                                                                                                                                 if (pendingCount > 0 && status != RecordsSyncStatus.syncing) ...[
                                                                                                                                                         const SizedBox(width: 8),
-                                                                                                                                                        Icon(Icons.refresh, size: 14, color: textColor),
+                                                                                                                                                        Icon(Icons.refresh, size: 15, color: textColor),
                                                                                                                                                 ],
                                                                                                                                         ],
                                                                                                                                 ),
@@ -1744,88 +1704,68 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 );
                                                                                         },
                                                                                 ),
-                                                                                const SizedBox(height: 12),
+                                                                                const SizedBox(height: 16),
 
-// 5. Module Switcher (Canonical Ledgers Grid vs Universal Search Index)
-                                                                                Container(
-                                                                                        height: 40,
-                                                                                        decoration: BoxDecoration(
-                                                                                                color: cardWhiteColor,
-                                                                                                borderRadius: BorderRadius.circular(10),
-                                                                                                border: Border.all(color: borderGreyColor),
-                                                                                        ),
-                                                                                        child: TabBar(
-                                                                                                controller: _mainTabController,
-                                                                                                labelColor: Colors.white,
-                                                                                                unselectedLabelColor: ParishColors.textMuted,
-                                                                                                indicatorSize: TabBarIndicatorSize.tab,
-                                                                                                indicator: BoxDecoration(
-                                                                                                        color: ParishColors.marianBlue,
-                                                                                                        borderRadius: BorderRadius.circular(8),
-                                                                                                ),
-                                                                                                tabs: [
-                                                                                                        Tab(
-                                                                                                                child: Text(
-                                                                                                                        isMobile ? 'Canonical Books' : 'Canonical Register Ledgers (Canon 535)',
-                                                                                                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12),
-                                                                                                                        overflow: TextOverflow.ellipsis,
-                                                                                                                ),
-                                                                                                        ),
-                                                                                                        Tab(
-                                                                                                                child: Text(
-                                                                                                                        isMobile ? 'Search Index' : 'Universal Parishioner Index',
-                                                                                                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12),
-                                                                                                                        overflow: TextOverflow.ellipsis,
-                                                                                                                ),
-                                                                                                        ),
-                                                                                                ],
-                                                                                        ),
-                                                                                ),
-                                                                                const SizedBox(height: 10),
+                                                                                // 3. Action Cards Row (Aligned with Register Grid Columns)
+                                                                                _buildActionCardsRow(isDesktop),
+                                                                                const SizedBox(height: 16),
 
-// 6. Search Bar (Compact 44dp height)
+                                                                                // 4. Search Bar (Exact Reference UI: Height 48, Marian Blue Icon, Rounded Border 12)
                                                                                 Container(
                                                                                         width: double.infinity,
-                                                                                        height: 44,
-                                                                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                                                        height: 48,
+                                                                                        padding: const EdgeInsets.symmetric(horizontal: 14),
                                                                                         decoration: BoxDecoration(
                                                                                                 color: cardWhiteColor,
-                                                                                                borderRadius: BorderRadius.circular(10),
-                                                                                                border: Border.all(color: borderGreyColor),
+                                                                                                borderRadius: BorderRadius.circular(12),
+                                                                                                border: Border.all(
+                                                                                                        color: borderGreyColor,
+                                                                                                        width: 1,
+                                                                                                ),
                                                                                         ),
                                                                                         child: Row(
                                                                                                 children: [
-                                                                                                        const Icon(Icons.search, size: 20, color: ParishColors.marianBlue),
-                                                                                                        const SizedBox(width: 8),
+                                                                                                        const Icon(
+                                                                                                                Icons.search,
+                                                                                                                size: 21,
+                                                                                                                color: ParishColors.marianBlue,
+                                                                                                        ),
+                                                                                                        const SizedBox(width: 10),
                                                                                                         Expanded(
                                                                                                                 child: TextField(
                                                                                                                         controller: _searchController,
                                                                                                                         focusNode: _searchFocusNode,
-                                                                                                                        onChanged: (val) {
-                                                                                                                                _onSearchChanged(val);
-                                                                                                                                if (_mainTabController.index != 1 && val.trim().isNotEmpty) {
-                                                                                                                                        _mainTabController.animateTo(1);
-                                                                                                                                }
-                                                                                                                        },
-                                                                                                                        style: TextStyle(fontSize: 13, color: textDarkColor),
+                                                                                                                        onChanged: _onSearchChanged,
+                                                                                                                        style: TextStyle(
+                                                                                                                                fontSize: 14,
+                                                                                                                                color: textDarkColor,
+                                                                                                                        ),
                                                                                                                         decoration: InputDecoration(
-                                                                                                                                hintText: 'Search by Name, Year, Book, or Line across all registers...',
-                                                                                                                                hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                                                                                                                                hintText: 'Search every register by name, parent, book or ID...',
+                                                                                                                                hintStyle: TextStyle(
+                                                                                                                                        fontSize: 13,
+                                                                                                                                        color: ParishColors.textMuted,
+                                                                                                                                ),
                                                                                                                                 border: InputBorder.none,
                                                                                                                                 isDense: true,
-                                                                                                                                contentPadding: EdgeInsets.zero,
                                                                                                                         ),
                                                                                                                 ),
                                                                                                         ),
                                                                                                         if (_isSearching)
-                                                                                                                const SizedBox(
-                                                                                                                        width: 16,
-                                                                                                                        height: 16,
-                                                                                                                        child: CircularProgressIndicator(strokeWidth: 2, color: ParishColors.marianBlue),
+                                                                                                                const Padding(
+                                                                                                                        padding: EdgeInsets.symmetric(horizontal: 4),
+                                                                                                                        child: SizedBox(
+                                                                                                                                width: 16,
+                                                                                                                                height: 16,
+                                                                                                                                child: CircularProgressIndicator(
+                                                                                                                                        strokeWidth: 2,
+                                                                                                                                        color: ParishColors.marianBlue,
+                                                                                                                                ),
+                                                                                                                        ),
                                                                                                                 )
                                                                                                         else if (isSearchActive)
                                                                                                                 IconButton(
-                                                                                                                        icon: const Icon(Icons.clear, size: 16),
+                                                                                                                        icon: const Icon(Icons.clear, size: 17),
                                                                                                                         padding: EdgeInsets.zero,
                                                                                                                         constraints: const BoxConstraints(),
                                                                                                                         onPressed: () {
@@ -1840,10 +1780,13 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 ],
                                                                                         ),
                                                                                 ),
-                                                                                const SizedBox(height: 10),
+                                                                                const SizedBox(height: 24),
 
-// 7. Filter & Sort Toolbar with View Toggle
-                                                                                if (_mainTabController.index == 1 || isSearchActive) ...[
+                                                                                // 5. Dynamic Section Switcher: Search Results vs Canonical Registers Grid
+                                                                                if (_isSearching)
+                                                                                        _buildSkeletonLoading()
+                                                                                else if (isSearchActive) ...[
+                                                                                        // Search Results Header & Filter Bar
                                                                                         Row(
                                                                                                 children: [
                                                                                                         InkWell(
@@ -1851,7 +1794,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                 borderRadius: BorderRadius.circular(8),
                                                                                                                 child: Container(
                                                                                                                         height: 36,
-                                                                                                                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                                                                                                                        padding: const EdgeInsets.symmetric(horizontal: 12),
                                                                                                                         decoration: BoxDecoration(
                                                                                                                                 color: _hasActiveFilters ? ParishColors.marianBlueSurface : cardWhiteColor,
                                                                                                                                 borderRadius: BorderRadius.circular(8),
@@ -1864,16 +1807,16 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                                 children: [
                                                                                                                                         Icon(
                                                                                                                                                 Icons.tune,
-                                                                                                                                                size: 15,
+                                                                                                                                                size: 16,
                                                                                                                                                 color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
                                                                                                                                         ),
-                                                                                                                                        const SizedBox(width: 5),
+                                                                                                                                        const SizedBox(width: 6),
                                                                                                                                         Text(
                                                                                                                                                 _hasActiveFilters
                                                                                                                                                     ? 'Filter & Sort ($_activeFilterCount)'
                                                                                                                                                     : 'Filter & Sort',
                                                                                                                                                 style: TextStyle(
-                                                                                                                                                        fontSize: 11.5,
+                                                                                                                                                        fontSize: 12,
                                                                                                                                                         fontWeight: FontWeight.bold,
                                                                                                                                                         color: _hasActiveFilters ? ParishColors.marianBlue : textDarkColor,
                                                                                                                                                 ),
@@ -1884,19 +1827,19 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                         ),
                                                                                                         const Spacer(),
                                                                                                         Text(
-                                                                                                                '${_filteredSearchResults.length} matches',
+                                                                                                                '${_filteredSearchResults.length} matches found',
                                                                                                                 style: TextStyle(
-                                                                                                                        fontSize: 11.5,
+                                                                                                                        fontSize: 12,
                                                                                                                         fontWeight: FontWeight.w600,
                                                                                                                         color: ParishColors.textMuted,
                                                                                                                 ),
                                                                                                         ),
-                                                                                                        const SizedBox(width: 10),
+                                                                                                        const SizedBox(width: 12),
                                                                                                         Container(
                                                                                                                 height: 32,
                                                                                                                 decoration: BoxDecoration(
                                                                                                                         color: cardWhiteColor,
-                                                                                                                        borderRadius: BorderRadius.circular(7),
+                                                                                                                        borderRadius: BorderRadius.circular(8),
                                                                                                                         border: Border.all(color: borderGreyColor),
                                                                                                                 ),
                                                                                                                 child: ToggleButtons(
@@ -1907,68 +1850,46 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                         onPressed: (idx) => setState(() {
                                                                                                                                 _viewMode = idx == 0 ? RecordsViewDisplayMode.cards : RecordsViewDisplayMode.table;
                                                                                                                         }),
-                                                                                                                        borderRadius: BorderRadius.circular(6),
+                                                                                                                        borderRadius: BorderRadius.circular(7),
                                                                                                                         selectedColor: Colors.white,
                                                                                                                         fillColor: ParishColors.marianBlue,
                                                                                                                         color: ParishColors.textMuted,
-                                                                                                                        constraints: const BoxConstraints(minHeight: 28, minWidth: 32),
+                                                                                                                        constraints: const BoxConstraints(minHeight: 30, minWidth: 36),
                                                                                                                         children: const [
-                                                                                                                                Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 14)),
-                                                                                                                                Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 14)),
+                                                                                                                                Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 16)),
+                                                                                                                                Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 16)),
                                                                                                                         ],
                                                                                                                 ),
                                                                                                         ),
                                                                                                 ],
                                                                                         ),
-                                                                                        if (_hasActiveFilters) ...[
-                                                                                                const SizedBox(height: 8),
-                                                                                                Wrap(
-                                                                                                        spacing: 4,
-                                                                                                        runSpacing: 4,
-                                                                                                        crossAxisAlignment: WrapCrossAlignment.center,
-                                                                                                        children: [
-                                                                                                                if (_selectedSacramentFilter != 'All')
-                                                                                                                        _buildActiveFilterChip('Sacrament: $_selectedSacramentFilter', () {
-                                                                                                                                setState(() {
-                                                                                                                                        _selectedSacramentFilter = 'All';
-                                                                                                                                        _currentPage = 1;
-                                                                                                                                });
-                                                                                                                        }),
-                                                                                                                if (_sortBy != 'Date: Latest First' || _sortAscending)
-                                                                                                                        _buildActiveFilterChip('Sorted: $_sortBy', () {
-                                                                                                                                setState(() {
-                                                                                                                                        _sortBy = 'Date: Latest First';
-                                                                                                                                        _sortAscending = false;
-                                                                                                                                });
-                                                                                                                        }),
-                                                                                                                ActionChip(
-                                                                                                                        label: const Text(
-                                                                                                                                'Clear',
-                                                                                                                                style: TextStyle(
-                                                                                                                                        fontSize: 9.5,
-                                                                                                                                        fontWeight: FontWeight.bold,
-                                                                                                                                        color: ParishColors.mercyRed,
-                                                                                                                                ),
-                                                                                                                        ),
-                                                                                                                        backgroundColor: ParishColors.mercyRedSurface,
-                                                                                                                        side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
-                                                                                                                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                                                                                                                        visualDensity: VisualDensity.compact,
-                                                                                                                        onPressed: _resetFilters,
-                                                                                                                ),
-                                                                                                        ],
+                                                                                        const SizedBox(height: 14),
+                                                                                        _buildUniversalSearchResultsView(constraints.maxWidth),
+                                                                                ] else ...[
+                                                                                        // Standard Canonical Registers Section Title
+                                                                                        Text(
+                                                                                                'Canonical Registers',
+                                                                                                style: TextStyle(
+                                                                                                        fontSize: 18,
+                                                                                                        fontWeight: FontWeight.bold,
+                                                                                                        color: textDarkColor,
                                                                                                 ),
-                                                                                        ],
-                                                                                        const SizedBox(height: 12),
+                                                                                        ),
+                                                                                        const SizedBox(height: 3),
+                                                                                        Text(
+                                                                                                'Open a book to browse, filter, and issue certificates.',
+                                                                                                style: TextStyle(
+                                                                                                        fontSize: 13,
+                                                                                                        color: ParishColors.textMuted,
+                                                                                                ),
+                                                                                        ),
+                                                                                        const SizedBox(height: 16),
+
+                                                                                        // Responsive Grid of 6 Canonical Registers
+                                                                                        _buildCanonicalRegistersGrid(isDesktop, isTablet),
                                                                                 ],
 
-// 8. Tab View Content
-                                                                                if (_isSearching)
-                                                                                        _buildSkeletonLoading()
-                                                                                else if (_mainTabController.index == 1 || isSearchActive)
-                                                                                        _buildUniversalSearchResultsView(constraints.maxWidth)
-                                                                                else
-                                                                                        _buildCanonicalBooksGridView(context, textDarkColor, ParishColors.textMuted),
+                                                                                const SizedBox(height: 40),
                                                                         ],
                                                                 ),
                                                         ),
@@ -1979,168 +1900,292 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
-// ===========================================================================
-// TAB 1: Canonical Ledgers Grid View
-// ===========================================================================
+        // ===========================================================================
+        // Canonical Registers 6-Card Grid
+        // ===========================================================================
 
-        Widget _buildCanonicalBooksGridView(
-            BuildContext context,
-            Color textDarkColor,
-            Color textMutedColor,
-            ) {
-                return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                                _buildSacramentSelectionCard(
-                                        context: context,
-                                        title: 'Baptism Records',
-                                        subtitle: 'Liber Baptismorum • Books 1 to 14 • ($_baptismCount Indexed)',
-                                        icon: Icons.water_drop,
-                                        themeColor: const Color(0xFF164E87),
-                                        surfaceColor: const Color(0xFFEDF4FB),
-                                        sacramentName: 'Baptism',
-                                        ledgerSubtitle: 'Liber Baptismorum • Canonical Books',
-                                ),
-                                _buildSacramentSelectionCard(
-                                        context: context,
-                                        title: 'Confirmation Records',
-                                        subtitle: 'Liber Confirmatorum • Books 1 to 6 • ($_confirmationCount Indexed)',
-                                        icon: Icons.local_fire_department,
-                                        themeColor: const Color(0xFFB91C1C),
-                                        surfaceColor: const Color(0xFFFDF2F2),
-                                        sacramentName: 'Confirmation',
-                                        ledgerSubtitle: 'Liber Confirmatorum • Canonical Books',
-                                ),
-                                _buildSacramentSelectionCard(
-                                        context: context,
-                                        title: 'First Communion Records',
-                                        subtitle: 'Liber Primae Communionis • Annual Registries • ($_communionCount Indexed)',
-                                        icon: Icons.restaurant,
-                                        themeColor: const Color(0xFFD49B18),
-                                        surfaceColor: const Color(0xFFFFF7E6),
-                                        sacramentName: 'First Communion',
-                                        ledgerSubtitle: 'Liber Primae Communionis • Canonical Books',
-                                ),
-                                _buildSacramentSelectionCard(
-                                        context: context,
-                                        title: 'Matrimony Records',
-                                        subtitle: 'Liber Matrimoniorum • Books 1 to 8 • ($_matrimonyCount Indexed)',
-                                        icon: Icons.favorite,
-                                        themeColor: const Color(0xFF9D174D),
-                                        surfaceColor: const Color(0xFFFCE7F3),
-                                        sacramentName: 'Matrimony',
-                                        ledgerSubtitle: 'Liber Matrimoniorum • Canonical Books',
-                                ),
-                                _buildSacramentSelectionCard(
-                                        context: context,
-                                        title: 'Death & Burial Records',
-                                        subtitle: 'Liber Defunctorum • Books 1 to 7 • ($_deathCount Indexed)',
-                                        icon: Icons.church,
-                                        themeColor: const Color(0xFF6B21A8),
-                                        surfaceColor: const Color(0xFFF3E8FF),
-                                        sacramentName: 'Death',
-                                        ledgerSubtitle: 'Liber Defunctorum • Canonical Books',
-                                ),
-                                _buildSacramentSelectionCard(
-                                        context: context,
-                                        title: 'Conversion Records',
-                                        subtitle: 'Liber Conversorum • Reception into Full Communion • ($_conversionCount Indexed)',
-                                        icon: Icons.eco,
-                                        themeColor: const Color(0xFF2D6A4F),
-                                        surfaceColor: const Color(0xFFEDF7F2),
-                                        sacramentName: 'Conversion',
-                                        ledgerSubtitle: 'Liber Conversorum • Reception into Full Communion',
-                                ),
-                        ],
+        Widget _buildCanonicalRegistersGrid(bool isDesktop, bool isTablet) {
+                final int crossAxisCount = isDesktop ? 3 : (isTablet ? 2 : 1);
+
+                final registerCards = [
+                        _buildRegisterCard(
+                                title: 'Baptism',
+                                latinTitle: 'Liber Baptismorum',
+                                description: 'Baptisms, lineage & godparents',
+                                count: _baptismCount,
+                                icon: Icons.water_drop_outlined,
+                                themeColor: const Color(0xFF164E87),
+                                surfaceColor: const Color(0xFFEDF4FB),
+                                sacramentName: 'Baptism',
+                                onQuickAdd: () {
+                                        Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => BaptismManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        );
+                                },
+                        ),
+                        _buildRegisterCard(
+                                title: 'Confirmation',
+                                latinTitle: 'Liber Confirmatorum',
+                                description: 'Confirmands & sponsors',
+                                count: _confirmationCount,
+                                icon: Icons.local_fire_department_outlined,
+                                themeColor: const Color(0xFFB91C1C),
+                                surfaceColor: const Color(0xFFFDF2F2),
+                                sacramentName: 'Confirmation',
+                                onQuickAdd: () {
+                                        Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => ConfirmationManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        );
+                                },
+                        ),
+                        _buildRegisterCard(
+                                title: 'First Communion',
+                                latinTitle: 'Liber Primae Communionis',
+                                description: 'Annual batch registries',
+                                count: _communionCount,
+                                icon: Icons.restaurant,
+                                themeColor: const Color(0xFFD49B18),
+                                surfaceColor: const Color(0xFFFFF7E6),
+                                sacramentName: 'First Communion',
+                                onQuickAdd: () {
+                                        Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => FirstCommunionManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        );
+                                },
+                        ),
+                        _buildRegisterCard(
+                                title: 'Matrimony',
+                                latinTitle: 'Liber Matrimoniorum',
+                                description: 'Spouses, license & banns',
+                                count: _matrimonyCount,
+                                icon: Icons.favorite_border,
+                                themeColor: const Color(0xFF9D174D),
+                                surfaceColor: const Color(0xFFFCE7F3),
+                                sacramentName: 'Matrimony',
+                                onQuickAdd: () {
+                                        Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => MatrimonyManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        );
+                                },
+                        ),
+                        _buildRegisterCard(
+                                title: 'Death & Burial',
+                                latinTitle: 'Liber Defunctorum',
+                                description: 'Deceased, burial & rites',
+                                count: _deathCount,
+                                icon: Icons.church_outlined,
+                                themeColor: const Color(0xFF6B21A8),
+                                surfaceColor: const Color(0xFFF3E8FF),
+                                sacramentName: 'Death',
+                                onQuickAdd: () {
+                                        Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => DeathManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        );
+                                },
+                        ),
+                        _buildRegisterCard(
+                                title: 'Conversion',
+                                latinTitle: 'Liber Conversorum',
+                                description: 'Reception into full communion',
+                                count: _conversionCount,
+                                icon: Icons.eco_outlined,
+                                themeColor: const Color(0xFF2D6A4F),
+                                surfaceColor: const Color(0xFFEDF7F2),
+                                sacramentName: 'Conversion',
+                                onQuickAdd: () {
+                                        Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => ConversionManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        );
+                                },
+                        ),
+                ];
+
+                if (crossAxisCount == 1) {
+                        return Column(
+                                children: registerCards.map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: c)).toList(),
+                        );
+                }
+
+                return LayoutBuilder(
+                        builder: (context, gridConstraints) {
+                                final double itemWidth = (gridConstraints.maxWidth - ((crossAxisCount - 1) * 16)) / crossAxisCount;
+
+                                return Wrap(
+                                        spacing: 16,
+                                        runSpacing: 16,
+                                        children: registerCards.map((card) {
+                                                return SizedBox(
+                                                        width: itemWidth,
+                                                        child: card,
+                                                );
+                                        }).toList(),
+                                );
+                        },
                 );
         }
 
-        Widget _buildSacramentSelectionCard({
-                required BuildContext context,
+        Widget _buildRegisterCard({
                 required String title,
-                required String subtitle,
+                required String latinTitle,
+                required String description,
+                required int count,
                 required IconData icon,
                 required Color themeColor,
                 required Color surfaceColor,
                 required String sacramentName,
-                required String ledgerSubtitle,
+                required VoidCallback onQuickAdd,
         }) {
+                final textDark = ParishColors.textDark;
+                final textMuted = ParishColors.textMuted;
+
                 return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: InkWell(
-                                onTap: () {
-                                        Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                        builder: (context) => SacramentRegistryPage(
-                                                                sacramentName: sacramentName,
-                                                                ledgerSubtitle: ledgerSubtitle,
-                                                                icon: icon,
-                                                                themeColor: themeColor,
-                                                                surfaceColor: surfaceColor,
-                                                        ),
-                                                ),
-                                        ).then((_) => _loadSummaryStats());
-                                },
-                                borderRadius: BorderRadius.circular(14),
-                                child: Container(
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                                color: ParishColors.cardWhite,
-                                                borderRadius: BorderRadius.circular(14),
-                                                border: Border.all(color: themeColor.withOpacity(0.35), width: 1.2),
-                                                boxShadow: [
-                                                        BoxShadow(
-                                                                color: themeColor.withOpacity(0.04),
-                                                                blurRadius: 6,
-                                                                offset: const Offset(0, 2),
-                                                        ),
-                                                ],
+                        decoration: BoxDecoration(
+                                color: ParishColors.cardWhite,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: themeColor.withOpacity(0.35), width: 1.2),
+                                boxShadow: [
+                                        BoxShadow(
+                                                color: themeColor.withOpacity(0.04),
+                                                blurRadius: 6,
+                                                offset: const Offset(0, 2),
                                         ),
-                                        child: Row(
-                                                children: [
-                                                        Container(
-                                                                width: 46,
-                                                                height: 46,
-                                                                decoration: BoxDecoration(
-                                                                        color: surfaceColor,
-                                                                        borderRadius: BorderRadius.circular(12),
-                                                                        border: Border.all(color: themeColor.withOpacity(0.4), width: 1.0),
+                                ],
+                        ),
+                        child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () {
+                                                Navigator.push(
+                                                        context,
+                                                        MaterialPageRoute(
+                                                                builder: (_) => SacramentRegistryPage(
+                                                                        sacramentName: sacramentName,
+                                                                        ledgerSubtitle: '$latinTitle • Canonical Books',
+                                                                        icon: icon,
+                                                                        themeColor: themeColor,
+                                                                        surfaceColor: surfaceColor,
                                                                 ),
-                                                                child: Icon(icon, color: themeColor, size: 24),
                                                         ),
-                                                        const SizedBox(width: 14),
-                                                        Expanded(
-                                                                child: Column(
+                                                ).then((_) => _loadSummaryStats());
+                                        },
+                                        child: Padding(
+                                                padding: const EdgeInsets.all(18),
+                                                child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                                // Top Row: Sacrament Icon & Count Tally
+                                                                Row(
+                                                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                                         crossAxisAlignment: CrossAxisAlignment.start,
                                                                         children: [
-                                                                                Text(
-                                                                                        title,
-                                                                                        style: TextStyle(
-                                                                                                fontSize: 15.5,
-                                                                                                fontWeight: FontWeight.bold,
-                                                                                                color: ParishColors.textDark,
+                                                                                Container(
+                                                                                        width: 44,
+                                                                                        height: 44,
+                                                                                        decoration: BoxDecoration(
+                                                                                                color: surfaceColor,
+                                                                                                borderRadius: BorderRadius.circular(12),
+                                                                                                border: Border.all(color: themeColor.withOpacity(0.25), width: 1.0),
                                                                                         ),
+                                                                                        child: Icon(icon, color: themeColor, size: 22),
                                                                                 ),
-                                                                                const SizedBox(height: 2),
-                                                                                Text(
-                                                                                        subtitle,
-                                                                                        style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                                                                                Column(
+                                                                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                                                                        children: [
+                                                                                                Text(
+                                                                                                        '$count',
+                                                                                                        style: TextStyle(
+                                                                                                                fontSize: 22,
+                                                                                                                fontWeight: FontWeight.bold,
+                                                                                                                color: themeColor,
+                                                                                                                height: 1.1,
+                                                                                                        ),
+                                                                                                ),
+                                                                                                Text(
+                                                                                                        'records',
+                                                                                                        style: TextStyle(fontSize: 11, color: textMuted),
+                                                                                                ),
+                                                                                        ],
                                                                                 ),
                                                                         ],
                                                                 ),
-                                                        ),
-                                                        Icon(Icons.arrow_forward_ios, size: 16, color: themeColor),
-                                                ],
+                                                                const SizedBox(height: 14),
+
+                                                                // Title & Subtitle Nomenclature
+                                                                Text(
+                                                                        title,
+                                                                        style: TextStyle(
+                                                                                fontSize: 16.5,
+                                                                                fontWeight: FontWeight.bold,
+                                                                                color: textDark,
+                                                                        ),
+                                                                ),
+                                                                const SizedBox(height: 2),
+                                                                Text(
+                                                                        latinTitle,
+                                                                        style: TextStyle(
+                                                                                fontSize: 12,
+                                                                                fontStyle: FontStyle.italic,
+                                                                                color: textMuted,
+                                                                        ),
+                                                                ),
+                                                                const SizedBox(height: 4),
+                                                                Text(
+                                                                        description,
+                                                                        style: TextStyle(
+                                                                                fontSize: 12,
+                                                                                color: textDark.withOpacity(0.8),
+                                                                        ),
+                                                                        maxLines: 1,
+                                                                        overflow: TextOverflow.ellipsis,
+                                                                ),
+                                                                const SizedBox(height: 16),
+
+                                                                // Bottom Row: "Open register ->" and Quick Add (+) Button
+                                                                Row(
+                                                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                                        children: [
+                                                                                Row(
+                                                                                        children: [
+                                                                                                Text(
+                                                                                                        'Open register',
+                                                                                                        style: TextStyle(
+                                                                                                                fontSize: 12.5,
+                                                                                                                fontWeight: FontWeight.bold,
+                                                                                                                color: themeColor,
+                                                                                                        ),
+                                                                                                ),
+                                                                                                const SizedBox(width: 4),
+                                                                                                Icon(Icons.arrow_forward, size: 14, color: themeColor),
+                                                                                        ],
+                                                                                ),
+                                                                                IconButton(
+                                                                                        icon: Icon(Icons.add_circle_outline, color: themeColor, size: 22),
+                                                                                        padding: EdgeInsets.zero,
+                                                                                        constraints: const BoxConstraints(),
+                                                                                        tooltip: 'Encode $title Record',
+                                                                                        onPressed: onQuickAdd,
+                                                                                ),
+                                                                        ],
+                                                                ),
+                                                        ],
+                                                ),
                                         ),
                                 ),
                         ),
                 );
         }
 
-// ===========================================================================
-// TAB 2: Universal Search Results View (Cards vs Table)
-// ===========================================================================
+        // ===========================================================================
+        // Search Results Display (Cards vs Table)
+        // ===========================================================================
 
         Widget _buildUniversalSearchResultsView(double availableWidth) {
                 final list = _filteredSearchResults;
@@ -2169,7 +2214,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                        'Try adjusting your search query, clearing filters, or browsing by ledger book.',
+                                                        'Try adjusting your search query, clearing filters, or opening a specific register above.',
                                                         textAlign: TextAlign.center,
                                                         style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
                                                 ),
@@ -2369,9 +2414,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
-// ===========================================================================
-// Pagination Toolbar (Matching Receipts Module)
-// ===========================================================================
+        // ===========================================================================
+        // Pagination Toolbar
+        // ===========================================================================
 
         Widget _buildPaginationToolbar(int totalItems) {
                 final totalPages = _totalPages;

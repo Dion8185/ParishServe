@@ -166,9 +166,17 @@ class MatrimonyService {
       data['record_id'] = await _generateRecordId();
     }
 
-    // 6. Automatic encoded_by mapping
-    String? encoderId = AuthService.currentUser?.userId;
-    data['encoded_by'] = encoderId ?? 'S26-0003';
+    // 6. Automatic encoded_by mapping with active session validation
+    final activeUserId = AuthService.currentUser?.userId?.trim();
+    final existingEncoder = data['encoded_by']?.toString().trim();
+    final effectiveEncoderId = (existingEncoder != null && existingEncoder.isNotEmpty)
+        ? existingEncoder
+        : activeUserId;
+
+    if (effectiveEncoderId == null || effectiveEncoderId.isEmpty) {
+      throw 'Authentication required. An active authenticated user session is required to encode matrimony records.';
+    }
+    data['encoded_by'] = effectiveEncoderId;
 
     data['is_verified'] = false;
     data['scanned_image_url'] = null;

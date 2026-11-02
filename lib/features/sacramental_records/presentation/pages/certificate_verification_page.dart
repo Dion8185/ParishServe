@@ -1,5 +1,10 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/certificate_verification_page.dart
+// =============================================================================
+
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/certificate_issuance_model.dart';
 import '../../services/certificate_service.dart';
@@ -20,6 +25,12 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
   CertificateIssuanceModel? _issuanceRecord;
   String? _searchError;
 
+  // Camera QR Scanner State
+  MobileScannerController? _scannerController;
+  bool _isCameraActive = false;
+  bool _isTorchOn = false;
+  CameraFacing _cameraFacing = CameraFacing.back;
+
   @override
   void initState() {
     super.initState();
@@ -28,6 +39,8 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
 
   @override
   void dispose() {
+    // Guaranteed auto-close: releases camera hardware whenever leaving the screen
+    _stopAndCloseCamera();
     _tokenController.dispose();
     super.dispose();
   }
@@ -36,16 +49,12 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
   void _resolveAndVerifyToken() {
     String? token = widget.initialVerificationId;
 
-    // If no token was passed via constructor, extract directly from web address bar
     if ((token == null || token.trim().isEmpty) && kIsWeb) {
       final uri = Uri.base;
 
-      // 1. Check standard query parameter: https://app.web.app/verify?v=TOKEN
       if (uri.queryParameters.containsKey('v')) {
         token = uri.queryParameters['v'];
-      }
-      // 2. Check hash routing format: https://app.web.app/#/verify?v=TOKEN
-      else if (uri.hasFragment) {
+      } else if (uri.hasFragment) {
         try {
           final fragmentUri = Uri.parse(uri.fragment);
           if (fragmentUri.queryParameters.containsKey('v')) {
@@ -59,6 +68,76 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
       _tokenController.text = token.trim();
       _performVerification(token.trim());
     }
+  }
+
+  // ===========================================================================
+  // Camera Lifecycle & Auto-Close Management
+  // ===========================================================================
+
+  void _startCamera() {
+    setState(() {
+      _isCameraActive = true;
+      _isTorchOn = false;
+      _scannerController = MobileScannerController(
+        detectionSpeed: DetectionSpeed.noDuplicates,
+        facing: _cameraFacing,
+        torchEnabled: false,
+      );
+    });
+  }
+
+  Future<void> _stopAndCloseCamera() async {
+    if (_scannerController != null) {
+      try {
+        await _scannerController!.stop();
+        await _scannerController!.dispose();
+      } catch (_) {}
+      _scannerController = null;
+    }
+    if (mounted) {
+      setState(() {
+        _isCameraActive = false;
+        _isTorchOn = false;
+      });
+    }
+  }
+
+  void _onQrDetected(BarcodeCapture capture) {
+    if (!_isCameraActive) return;
+
+    final barcode = capture.barcodes.firstOrNull;
+    if (barcode == null) return;
+
+    final rawVal = barcode.rawValue;
+    if (rawVal == null || rawVal.trim().isEmpty) return;
+
+    final resolvedToken = _extractTokenFromScannedValue(rawVal);
+
+    // Auto-close camera immediately upon successful QR scan detection
+    _stopAndCloseCamera();
+
+    _tokenController.text = resolvedToken;
+    _performVerification(resolvedToken);
+  }
+
+  /// Extracts the token string whether the QR code contains a raw token or full verification URL
+  String _extractTokenFromScannedValue(String raw) {
+    final clean = raw.trim();
+    try {
+      final uri = Uri.parse(clean);
+      if (uri.queryParameters.containsKey('v')) {
+        final param = uri.queryParameters['v']?.trim();
+        if (param != null && param.isNotEmpty) return param;
+      }
+      if (uri.hasFragment) {
+        final fragmentUri = Uri.parse(uri.fragment);
+        if (fragmentUri.queryParameters.containsKey('v')) {
+          final param = fragmentUri.queryParameters['v']?.trim();
+          if (param != null && param.isNotEmpty) return param;
+        }
+      }
+    } catch (_) {}
+    return clean;
   }
 
   Future<void> _performVerification(String tokenId) async {
@@ -88,6 +167,10 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
     }
   }
 
+  // ===========================================================================
+  // Build Main Screen
+  // ===========================================================================
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
@@ -95,138 +178,306 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: cardWhite,
-        elevation: 0,
-        leading: Navigator.canPop(context)
-            ? IconButton(
-          icon: Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
-          onPressed: () => Navigator.pop(context),
-        )
-            : null,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Certificate Verification Portal',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
-            ),
-            Text(
-              'Official Document Authentication System • Diocese of San Pablo',
-              style: TextStyle(fontSize: 12, color: textMuted),
-            ),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        // Guaranteed auto-close if user navigates back while camera is active
+        if (_isCameraActive) {
+          _stopAndCloseCamera();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: ParishColors.backgroundLight,
+        appBar: AppBar(
+          backgroundColor: cardWhite,
+          elevation: 0,
+          leading: Navigator.canPop(context)
+              ? IconButton(
+            icon: Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+            onPressed: () {
+              _stopAndCloseCamera();
+              Navigator.pop(context);
+            },
+          )
+              : null,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Certificate Verification Portal',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+              ),
+              Text(
+                'Official Document Authentication System • Diocese of San Pablo',
+                style: TextStyle(fontSize: 12, color: textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            if (_isCameraActive)
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: ParishColors.mercyRed),
+                onPressed: _stopAndCloseCamera,
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Close Camera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
           ],
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Parish Header Branding
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: cardWhite,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: borderGrey),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.02),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Parish Header Branding
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: cardWhite,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderGrey),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.verified_user_outlined, size: 44, color: ParishColors.marianBlue),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Diocese of San Pablo',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted, letterSpacing: 0.8),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Saint John Paul II Parish',
+                          style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Santa Cruz, Laguna, Philippines',
+                          style: TextStyle(fontSize: 12, color: textMuted),
+                        ),
+                        const Divider(height: 24),
+                        Text(
+                          'Scan the physical certificate QR code using the camera, USB barcode scanner, or enter the Verification Token below to authenticate canonical records.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12.5, color: textMuted, height: 1.4),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Column(
-                    children: [
-                      Icon(Icons.verified_user_outlined, size: 44, color: ParishColors.marianBlue),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Diocese of San Pablo',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted, letterSpacing: 0.8),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Saint John Paul II Parish',
-                        style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Santa Cruz, Laguna, Philippines',
-                        style: TextStyle(fontSize: 12, color: textMuted),
-                      ),
-                      const Divider(height: 26),
-                      Text(
-                        'Scan the QR code printed on the physical certificate or enter the Verification Token below to confirm official parish registry authenticity.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12.5, color: textMuted, height: 1.4),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
+                  const SizedBox(height: 16),
 
-                // Token Search Bar
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: cardWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ParishColors.marianBlue, width: 1.5),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.qr_code_scanner, color: ParishColors.marianBlue),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _tokenController,
-                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
-                          decoration: const InputDecoration(
-                            hintText: 'Enter Verification Token (e.g. 550E8400-E29B-...)',
-                            border: InputBorder.none,
-                          ),
-                          onSubmitted: (v) => _performVerification(v),
+                  // Camera Viewport Scanner Card (Protected with errorBuilder)
+                  if (_isCameraActive && _scannerController != null) ...[
+                    Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: ParishColors.marianBlue, width: 2),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SizedBox(
+                              height: 320,
+                              width: double.infinity,
+                              child: MobileScanner(
+                                controller: _scannerController!,
+                                onDetect: _onQrDetected,
+                                errorBuilder: (context, error) {
+                                  return Container(
+                                    padding: const EdgeInsets.all(20),
+                                    color: Colors.black87,
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.no_photography, size: 42, color: ParishColors.mercyRed),
+                                          const SizedBox(height: 10),
+                                          const Text(
+                                            'Camera Access Error or Unsupported',
+                                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            'Ensure camera permissions are enabled in Windows Settings or enter the token manually.',
+                                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          const SizedBox(height: 12),
+                                          OutlinedButton(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: Colors.white,
+                                              side: const BorderSide(color: Colors.white54),
+                                            ),
+                                            onPressed: _stopAndCloseCamera,
+                                            child: const Text('Close Camera'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            // Viewfinder QR Frame Overlay
+                            Container(
+                              width: 200,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: ParishColors.goldAccent, width: 2.5),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            // Scanner Control Bar
+                            Positioned(
+                              top: 10,
+                              right: 10,
+                              child: Row(
+                                children: [
+                                  IconButton(
+                                    style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                                    icon: Icon(_isTorchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 20),
+                                    onPressed: () async {
+                                      await _scannerController?.toggleTorch();
+                                      setState(() => _isTorchOn = !_isTorchOn);
+                                    },
+                                    tooltip: 'Toggle Flashlight',
+                                  ),
+                                  const SizedBox(width: 6),
+                                  IconButton(
+                                    style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                                    icon: const Icon(Icons.flip_camera_ios, color: Colors.white, size: 20),
+                                    onPressed: () async {
+                                      await _scannerController?.switchCamera();
+                                      setState(() {
+                                        _cameraFacing = _cameraFacing == CameraFacing.back
+                                            ? CameraFacing.front
+                                            : CameraFacing.back;
+                                      });
+                                    },
+                                    tooltip: 'Switch Camera',
+                                  ),
+                                  const SizedBox(width: 6),
+                                  IconButton(
+                                    style: IconButton.styleFrom(backgroundColor: ParishColors.mercyRed),
+                                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                                    onPressed: _stopAndCloseCamera,
+                                    tooltip: 'Close Camera',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'Align certificate QR code within frame',
+                                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      ElevatedButton(
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Action Button to Launch Camera (when not active)
+                  if (!_isCameraActive) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: ParishColors.marianBlue,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        onPressed: _isLoading ? null : () => _performVerification(_tokenController.text),
-                        child: _isLoading
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('Verify', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: _startCamera,
+                        icon: const Icon(Icons.camera_alt_outlined, size: 20),
+                        label: const Text('Scan QR Code with Camera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 22),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
 
-                // Results View
-                if (_isLoading) ...[
-                  const Padding(
-                    padding: EdgeInsets.all(40),
-                    child: CircularProgressIndicator(),
+                  // Manual Token Search Bar (Supports USB Barcode/QR Scanner Guns)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: cardWhite,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: ParishColors.borderGrey, width: 1.4),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.vpn_key_outlined, color: ParishColors.marianBlue, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _tokenController,
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                            decoration: const InputDecoration(
+                              hintText: 'Or enter token / scan with barcode gun (e.g. 550E8400-...)',
+                              hintStyle: TextStyle(fontSize: 12.5, fontWeight: FontWeight.normal),
+                              border: InputBorder.none,
+                            ),
+                            onSubmitted: (v) => _performVerification(v),
+                          ),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ParishColors.marianBlue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                          onPressed: _isLoading ? null : () => _performVerification(_tokenController.text),
+                          child: _isLoading
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Text('Verify', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
                   ),
-                ] else if (_hasSearched) ...[
-                  if (_issuanceRecord == null)
-                    _buildInvalidResultCard()
-                  else if (_issuanceRecord!.isRevoked)
-                    _buildRevokedResultCard(_issuanceRecord!)
-                  else
-                    _buildValidResultCard(_issuanceRecord!),
+                  const SizedBox(height: 22),
+
+                  // Results View
+                  if (_isLoading) ...[
+                    const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: CircularProgressIndicator(),
+                    ),
+                  ] else if (_hasSearched) ...[
+                    if (_issuanceRecord == null)
+                      _buildInvalidResultCard()
+                    else if (_issuanceRecord!.isRevoked)
+                      _buildRevokedResultCard(_issuanceRecord!)
+                    else
+                      _buildValidResultCard(_issuanceRecord!),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -235,7 +486,7 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
   }
 
   // ===========================================================================
-  // 1. Valid Authentic Certificate State
+  // Result Cards (Valid, Revoked, Invalid)
   // ===========================================================================
 
   Widget _buildValidResultCard(CertificateIssuanceModel record) {
@@ -328,10 +579,6 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
     );
   }
 
-  // ===========================================================================
-  // 2. Revoked / Nullified State
-  // ===========================================================================
-
   Widget _buildRevokedResultCard(CertificateIssuanceModel record) {
     return Container(
       width: double.infinity,
@@ -393,10 +640,6 @@ class _CertificateVerificationPageState extends State<CertificateVerificationPag
       ),
     );
   }
-
-  // ===========================================================================
-  // 3. Invalid Token / Not Found State
-  // ===========================================================================
 
   Widget _buildInvalidResultCard() {
     return Container(

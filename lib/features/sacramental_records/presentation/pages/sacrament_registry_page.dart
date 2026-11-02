@@ -2,6 +2,7 @@
 // FILE: lib/features/sacramental_records/presentation/pages/sacrament_registry_page.dart
 // =============================================================================
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/database/local_database_service.dart';
@@ -19,9 +20,9 @@ import '../../services/matrimony_service.dart';
 import '../../services/death_service.dart';
 import '../../services/conversion_service.dart';
 import '../dialogs/manual_entry_dialog.dart';
-import '../dialogs/ocr_scan_dialog.dart';
 import 'baptism_manual_entry_page.dart';
 import 'certificate_template_management_page.dart';
+import 'certificate_verification_page.dart';
 import 'confirmation_manual_entry_page.dart';
 import 'first_communion_manual_entry_page.dart';
 import 'matrimony_manual_entry_page.dart';
@@ -51,8 +52,15 @@ class SacramentRegistryPage extends StatefulWidget {
   State<SacramentRegistryPage> createState() => _SacramentRegistryPageState();
 }
 
-class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
+class _SacramentRegistryPageState extends State<SacramentRegistryPage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  Timer? _debounceTimer;
+
+  late AnimationController _skeletonAnimController;
+  late Animation<double> _skeletonOpacityAnimation;
+
   List<BaptismRecordModel> _baptismRecords = [];
   List<ConfirmationRecordModel> _confirmationRecords = [];
   List<FirstCommunionRecordModel> _firstCommunionRecords = [];
@@ -70,16 +78,82 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   int _currentPage = 0;
   int _rowsPerPage = 10;
 
+  // Advanced Filters State
+  DateTimeRange? _selectedDateRange;
+  String _selectedEntryStatusFilter = 'All';
+
+  // Exact Locator State (Book No. + Page No. + Line No. applied together).
+  // For First Communion these map to: Year + Control No. (line is unused).
+  // 'All' means "Any".
+  String _selectedBookFilter = 'All';
+  String _selectedPageFilter = 'All';
+  String _selectedLineFilter = 'All';
+  bool _showLocator = false;
+
+  bool get _isCommunionRegistry => widget.sacramentName == 'First Communion';
+
   @override
   void initState() {
     super.initState();
+    _skeletonAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _skeletonOpacityAnimation = Tween<double>(begin: 0.35, end: 0.85).animate(
+      CurvedAnimation(parent: _skeletonAnimController, curve: Curves.easeInOut),
+    );
     _loadRecords();
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
+    _skeletonAnimController.dispose();
     super.dispose();
+  }
+
+  // ===========================================================================
+  // Data Loading (cloud first, SQLite fallback)
+  // ===========================================================================
+
+  Future<List<T>> _loadWithFallback<T>({
+    required bool isOnline,
+    required Future<List<T>> Function() cloud,
+    required Future<List<T>> Function() local,
+  }) async {
+    List<T> records = [];
+    if (isOnline) {
+      try {
+        records = await cloud();
+      } catch (_) {}
+    }
+    if (records.isEmpty) {
+      records = await local();
+      _isLoadedFromSqlite = true;
+    } else {
+      _isLoadedFromSqlite = false;
+    }
+    return records;
+  }
+
+  Future<List<T>> _queryLocal<T>(
+      String table,
+      String dateColumn,
+      T Function(Map<String, dynamic>) fromMap,
+      ) async {
+    final db = await LocalDatabaseService.instance.database;
+    if (db == null) return [];
+    try {
+      final rows = await db.query(
+        table,
+        orderBy: '$dateColumn DESC, created_at DESC',
+      );
+      return rows.map((r) => fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> _loadRecords() async {
@@ -92,108 +166,74 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
 
     try {
       if (widget.sacramentName == 'Baptism') {
-        List<BaptismRecordModel> records = [];
-        if (isOnline) {
-          try {
-            records = await BaptismService.getBaptismRecords();
-          } catch (_) {}
-        }
-        if (records.isEmpty) {
-          records = await _loadBaptismFromSqlite();
-          _isLoadedFromSqlite = true;
-        } else {
-          _isLoadedFromSqlite = false;
-        }
+        final records = await _loadWithFallback<BaptismRecordModel>(
+          isOnline: isOnline,
+          cloud: () => BaptismService.getBaptismRecords(),
+          local: () => _queryLocal<BaptismRecordModel>(
+              'baptism_records', 'date_of_baptism', BaptismRecordModel.fromMap),
+        );
         if (!mounted) return;
         setState(() {
           _baptismRecords = records;
           _fetchError = null;
         });
       } else if (widget.sacramentName == 'Confirmation') {
-        List<ConfirmationRecordModel> records = [];
-        if (isOnline) {
-          try {
-            records = await ConfirmationService.getConfirmationRecords();
-          } catch (_) {}
-        }
-        if (records.isEmpty) {
-          records = await _loadConfirmationFromSqlite();
-          _isLoadedFromSqlite = true;
-        } else {
-          _isLoadedFromSqlite = false;
-        }
+        final records = await _loadWithFallback<ConfirmationRecordModel>(
+          isOnline: isOnline,
+          cloud: () => ConfirmationService.getConfirmationRecords(),
+          local: () => _queryLocal<ConfirmationRecordModel>('confirmation_records',
+              'date_of_confirmation', ConfirmationRecordModel.fromMap),
+        );
         if (!mounted) return;
         setState(() {
           _confirmationRecords = records;
           _fetchError = null;
         });
       } else if (widget.sacramentName == 'First Communion') {
-        List<FirstCommunionRecordModel> records = [];
-        if (isOnline) {
-          try {
-            records = await FirstCommunionService.getFirstCommunionRecords();
-          } catch (_) {}
-        }
-        if (records.isEmpty) {
-          records = await _loadFirstCommunionFromSqlite();
-          _isLoadedFromSqlite = true;
-        } else {
-          _isLoadedFromSqlite = false;
-        }
+        final records = await _loadWithFallback<FirstCommunionRecordModel>(
+          isOnline: isOnline,
+          cloud: () => FirstCommunionService.getFirstCommunionRecords(),
+          local: () => _queryLocal<FirstCommunionRecordModel>(
+              'first_communion_records',
+              'date_of_communion',
+              FirstCommunionRecordModel.fromMap),
+        );
         if (!mounted) return;
         setState(() {
           _firstCommunionRecords = records;
           _fetchError = null;
         });
       } else if (widget.sacramentName == 'Matrimony') {
-        List<MatrimonyRecordModel> records = [];
-        if (isOnline) {
-          try {
-            records = await MatrimonyService.getMatrimonyRecords();
-          } catch (_) {}
-        }
-        if (records.isEmpty) {
-          records = await _loadMatrimonyFromSqlite();
-          _isLoadedFromSqlite = true;
-        } else {
-          _isLoadedFromSqlite = false;
-        }
+        final records = await _loadWithFallback<MatrimonyRecordModel>(
+          isOnline: isOnline,
+          cloud: () => MatrimonyService.getMatrimonyRecords(),
+          local: () => _queryLocal<MatrimonyRecordModel>(
+              'matrimony_records', 'date_of_marriage', MatrimonyRecordModel.fromMap),
+        );
         if (!mounted) return;
         setState(() {
           _matrimonyRecords = records;
           _fetchError = null;
         });
       } else if (widget.sacramentName == 'Death') {
-        List<DeathRecordModel> records = [];
-        if (isOnline) {
-          try {
-            records = await DeathService.getDeathRecords();
-          } catch (_) {}
-        }
-        if (records.isEmpty) {
-          records = await _loadDeathFromSqlite();
-          _isLoadedFromSqlite = true;
-        } else {
-          _isLoadedFromSqlite = false;
-        }
+        final records = await _loadWithFallback<DeathRecordModel>(
+          isOnline: isOnline,
+          cloud: () => DeathService.getDeathRecords(),
+          local: () => _queryLocal<DeathRecordModel>(
+              'death_records', 'date_of_death', DeathRecordModel.fromMap),
+        );
         if (!mounted) return;
         setState(() {
           _deathRecords = records;
           _fetchError = null;
         });
       } else if (widget.sacramentName == 'Conversion') {
-        List<ConversionRecordModel> records = [];
-        if (isOnline) {
-          try {
-            records = await ConversionService.getConversionRecords();
-          } catch (_) {}
-        }
-        if (records.isEmpty) {
-          records = await _loadConversionFromSqlite();
-          _isLoadedFromSqlite = true;
-        } else {
-          _isLoadedFromSqlite = false;
-        }
+        final records = await _loadWithFallback<ConversionRecordModel>(
+          isOnline: isOnline,
+          cloud: () => ConversionService.getConversionRecords(),
+          local: () => _queryLocal<ConversionRecordModel>('conversion_records',
+              'date_of_reception', ConversionRecordModel.fromMap),
+        );
         if (!mounted) return;
         setState(() {
           _conversionRecords = records;
@@ -209,111 +249,256 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
   }
 
   // ===========================================================================
-  // Direct SQLite Load Fallbacks (Ensures Offline Readiness on All Platforms)
+  // Search (debounced, same behaviour as the main registers dashboard)
   // ===========================================================================
 
-  Future<List<BaptismRecordModel>> _loadBaptismFromSqlite() async {
-    final db = await LocalDatabaseService.instance.database;
-    if (db == null) return [];
-    try {
-      final rows = await db.query(
-        'baptism_records',
-        orderBy: 'date_of_baptism DESC, created_at DESC',
-      );
-      return rows.map((r) => BaptismRecordModel.fromMap(r)).toList();
-    } catch (_) {
-      return [];
-    }
+  void _onSearchChanged(String value) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      setState(() {
+        _searchQuery = value.trim();
+        _currentPage = 0;
+      });
+    });
   }
 
-  Future<List<ConfirmationRecordModel>> _loadConfirmationFromSqlite() async {
-    final db = await LocalDatabaseService.instance.database;
-    if (db == null) return [];
-    try {
-      final rows = await db.query(
-        'confirmation_records',
-        orderBy: 'date_of_confirmation DESC, created_at DESC',
-      );
-      return rows.map((r) => ConfirmationRecordModel.fromMap(r)).toList();
-    } catch (_) {
-      return [];
-    }
+  void _clearSearch() {
+    _debounceTimer?.cancel();
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _currentPage = 0;
+    });
   }
 
-  Future<List<FirstCommunionRecordModel>> _loadFirstCommunionFromSqlite() async {
-    final db = await LocalDatabaseService.instance.database;
-    if (db == null) return [];
-    try {
-      final rows = await db.query(
-        'first_communion_records',
-        orderBy: 'date_of_communion DESC, created_at DESC',
-      );
-      return rows.map((r) => FirstCommunionRecordModel.fromMap(r)).toList();
-    } catch (_) {
-      return [];
+  // ===========================================================================
+  // Exact Locator: Book No. + Page No. + Line No. (cascading selection)
+  // ===========================================================================
+
+  /// One row per record: [book, page, line]. For First Communion: [year, control no., ''].
+  List<List<String>> get _locatorRows {
+    switch (widget.sacramentName) {
+      case 'Baptism':
+        return _baptismRecords
+            .map((r) => ['${r.bookNumber}'.trim(), '${r.pageNumber}'.trim(), '${r.lineNumber}'.trim()])
+            .toList();
+      case 'Confirmation':
+        return _confirmationRecords
+            .map((r) => ['${r.bookNumber}'.trim(), '${r.pageNumber}'.trim(), '${r.lineNumber}'.trim()])
+            .toList();
+      case 'Matrimony':
+        return _matrimonyRecords
+            .map((r) => ['${r.bookNumber}'.trim(), '${r.pageNumber}'.trim(), '${r.lineNumber}'.trim()])
+            .toList();
+      case 'Death':
+        return _deathRecords
+            .map((r) => ['${r.bookNumber}'.trim(), '${r.pageNumber}'.trim(), '${r.lineNumber}'.trim()])
+            .toList();
+      case 'Conversion':
+        return _conversionRecords
+            .map((r) => ['${r.bookNumber}'.trim(), '${r.pageNumber}'.trim(), '${r.lineNumber}'.trim()])
+            .toList();
+      case 'First Communion':
+        return _firstCommunionRecords
+            .map((r) => ['${r.year}'.trim(), '${r.controlNumber}'.trim(), ''])
+            .toList();
     }
+    return [];
   }
 
-  Future<List<MatrimonyRecordModel>> _loadMatrimonyFromSqlite() async {
-    final db = await LocalDatabaseService.instance.database;
-    if (db == null) return [];
-    try {
-      final rows = await db.query(
-        'matrimony_records',
-        orderBy: 'date_of_marriage DESC, created_at DESC',
-      );
-      return rows.map((r) => MatrimonyRecordModel.fromMap(r)).toList();
-    } catch (_) {
-      return [];
+  List<String> get _locatorLabels => _isCommunionRegistry
+      ? ['Archival Year', 'Control No.']
+      : ['Book No.', 'Page No.', 'Line No.'];
+
+  List<String> get _locatorSelection =>
+      [_selectedBookFilter, _selectedPageFilter, _selectedLineFilter];
+
+  bool get _hasLocatorSelection =>
+      _selectedBookFilter != 'All' ||
+          _selectedPageFilter != 'All' ||
+          _selectedLineFilter != 'All';
+
+  String get _locatorSummary {
+    final labels = _isCommunionRegistry
+        ? ['Year', 'Control']
+        : ['Book', 'Page', 'Line'];
+    final sel = _locatorSelection;
+    final parts = <String>[];
+    for (int i = 0; i < labels.length; i++) {
+      if (sel[i] != 'All') parts.add('${labels[i]} ${sel[i]}');
     }
+    return parts.join(' • ');
   }
 
-  Future<List<DeathRecordModel>> _loadDeathFromSqlite() async {
-    final db = await LocalDatabaseService.instance.database;
-    if (db == null) return [];
-    try {
-      final rows = await db.query(
-        'death_records',
-        orderBy: 'date_of_death DESC, created_at DESC',
-      );
-      return rows.map((r) => DeathRecordModel.fromMap(r)).toList();
-    } catch (_) {
-      return [];
-    }
+  int _compareLocatorValues(String a, String b) {
+    final ai = int.tryParse(a);
+    final bi = int.tryParse(b);
+    if (ai != null && bi != null) return ai.compareTo(bi);
+    if (ai != null) return -1;
+    if (bi != null) return 1;
+    return a.toLowerCase().compareTo(b.toLowerCase());
   }
 
-  Future<List<ConversionRecordModel>> _loadConversionFromSqlite() async {
-    final db = await LocalDatabaseService.instance.database;
-    if (db == null) return [];
-    try {
-      final rows = await db.query(
-        'conversion_records',
-        orderBy: 'date_of_reception DESC, created_at DESC',
-      );
-      return rows.map((r) => ConversionRecordModel.fromMap(r)).toList();
-    } catch (_) {
-      return [];
+  bool _valueMatches(String recordValue, String selected) {
+    if (selected == 'All') return true;
+    final a = recordValue.trim();
+    final b = selected.trim();
+    final ai = int.tryParse(a);
+    final bi = int.tryParse(b);
+    if (ai != null && bi != null) return ai == bi;
+    return a.toLowerCase() == b.toLowerCase();
+  }
+
+  /// All three parts must match at the same time.
+  bool _matchesLocator(String book, String page, String line) {
+    return _valueMatches(book, _selectedBookFilter) &&
+        _valueMatches(page, _selectedPageFilter) &&
+        _valueMatches(line, _selectedLineFilter);
+  }
+
+  /// Options for one locator field, narrowed by the fields before it
+  /// (Book narrows Page, Book + Page narrow Line).
+  List<String> _locatorOptions(int index) {
+    final sel = _locatorSelection;
+    final values = <String>{};
+    for (final row in _locatorRows) {
+      bool ok = true;
+      for (int i = 0; i < index; i++) {
+        if (!_valueMatches(row[i], sel[i])) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok && row[index].isNotEmpty) values.add(row[index]);
     }
+    final sorted = values.toList()..sort(_compareLocatorValues);
+    return ['All', ...sorted];
+  }
+
+  List<String> get _availableBookNumbers => _locatorOptions(0);
+
+  void _onBookChanged(String v) {
+    setState(() {
+      _selectedBookFilter = v;
+      _selectedPageFilter = 'All';
+      _selectedLineFilter = 'All';
+      _currentPage = 0;
+    });
+  }
+
+  void _onPageChanged(String v) {
+    setState(() {
+      _selectedPageFilter = v;
+      _selectedLineFilter = 'All';
+      _currentPage = 0;
+    });
+  }
+
+  void _onLineChanged(String v) {
+    setState(() {
+      _selectedLineFilter = v;
+      _currentPage = 0;
+    });
+  }
+
+  void _clearLocator() {
+    setState(() {
+      _selectedBookFilter = 'All';
+      _selectedPageFilter = 'All';
+      _selectedLineFilter = 'All';
+      _currentPage = 0;
+    });
+  }
+
+  // ===========================================================================
+  // Advanced Filter Computation & List Getters
+  // ===========================================================================
+
+  bool _matchesDateRange(DateTime date) {
+    if (_selectedDateRange == null) return true;
+    final start = DateTime(_selectedDateRange!.start.year, _selectedDateRange!.start.month, _selectedDateRange!.start.day);
+    final end = DateTime(_selectedDateRange!.end.year, _selectedDateRange!.end.month, _selectedDateRange!.end.day, 23, 59, 59);
+    return (date.isAfter(start) || date.isAtSameMomentAs(start)) &&
+        (date.isBefore(end) || date.isAtSameMomentAs(end));
+  }
+
+  bool _matchesStatus(String status) {
+    if (_selectedEntryStatusFilter == 'All') return true;
+    return status.trim().toUpperCase() == _selectedEntryStatusFilter.trim().toUpperCase();
+  }
+
+  bool get _hasActiveAdvancedFilters {
+    return _selectedDateRange != null ||
+        _hasLocatorSelection ||
+        _selectedEntryStatusFilter != 'All';
+  }
+
+  int get _activeAdvancedFilterCount {
+    int count = 0;
+    if (_selectedDateRange != null) count++;
+    if (_hasLocatorSelection) count++;
+    if (_selectedEntryStatusFilter != 'All') count++;
+    return count;
+  }
+
+  void _resetAdvancedFilters() {
+    setState(() {
+      _selectedDateRange = null;
+      _selectedBookFilter = 'All';
+      _selectedPageFilter = 'All';
+      _selectedLineFilter = 'All';
+      _selectedEntryStatusFilter = 'All';
+      _currentPage = 0;
+    });
+  }
+
+  void _resetEverything() {
+    _debounceTimer?.cancel();
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _selectedDateRange = null;
+      _selectedBookFilter = 'All';
+      _selectedPageFilter = 'All';
+      _selectedLineFilter = 'All';
+      _selectedEntryStatusFilter = 'All';
+      _currentPage = 0;
+    });
   }
 
   List<BaptismRecordModel> get _filteredBaptismRecords {
-    if (_searchQuery.trim().isEmpty) return _baptismRecords;
+    var list = _baptismRecords.where((r) {
+      if (!_matchesLocator(r.bookNumber, r.pageNumber, r.lineNumber)) return false;
+      if (!_matchesDateRange(r.dateOfBaptism)) return false;
+      return true;
+    }).toList();
+
+    if (_searchQuery.trim().isEmpty) return list;
     final q = _searchQuery.toLowerCase();
-    return _baptismRecords.where((r) {
+    return list.where((r) {
       final nameMatch = r.childFullName.toLowerCase().contains(q);
       final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
           'page ${r.pageNumber}'.toLowerCase().contains(q) ||
           'line ${r.lineNumber}'.toLowerCase().contains(q);
       final parentMatch = r.fatherFullName.toLowerCase().contains(q) ||
           r.motherFullName.toLowerCase().contains(q);
-      return nameMatch || bookMatch || parentMatch;
+      final idMatch = r.recordId.toLowerCase().contains(q);
+      return nameMatch || bookMatch || parentMatch || idMatch;
     }).toList();
   }
 
   List<ConfirmationRecordModel> get _filteredConfirmationRecords {
-    if (_searchQuery.trim().isEmpty) return _confirmationRecords;
+    var list = _confirmationRecords.where((c) {
+      if (!_matchesLocator(c.bookNumber, c.pageNumber, c.lineNumber)) return false;
+      if (!_matchesDateRange(c.dateOfConfirmation)) return false;
+      if (!_matchesStatus(c.entryStatus)) return false;
+      return true;
+    }).toList();
+
+    if (_searchQuery.trim().isEmpty) return list;
     final q = _searchQuery.toLowerCase();
-    return _confirmationRecords.where((r) {
+    return list.where((r) {
       final nameMatch = r.confirmandFullName.toLowerCase().contains(q);
       final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
           'page ${r.pageNumber}'.toLowerCase().contains(q) ||
@@ -321,61 +506,95 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
       final parentMatch = r.fatherFullName.toLowerCase().contains(q) ||
           r.motherFullName.toLowerCase().contains(q);
       final churchMatch = r.churchBaptized.toLowerCase().contains(q);
-      return nameMatch || bookMatch || parentMatch || churchMatch;
+      final idMatch = r.recordId.toLowerCase().contains(q);
+      return nameMatch || bookMatch || parentMatch || churchMatch || idMatch;
     }).toList();
   }
 
   List<FirstCommunionRecordModel> get _filteredFirstCommunionRecords {
-    if (_searchQuery.trim().isEmpty) return _firstCommunionRecords;
+    var list = _firstCommunionRecords.where((fcm) {
+      if (!_matchesDateRange(fcm.dateOfCommunion)) return false;
+      if (!_matchesLocator('${fcm.year}', fcm.controlNumber, '')) return false;
+      return true;
+    }).toList();
+
+    if (_searchQuery.trim().isEmpty) return list;
     final q = _searchQuery.toLowerCase();
-    return _firstCommunionRecords.where((r) {
+    return list.where((r) {
       final nameMatch = r.communicantFullName.toLowerCase().contains(q);
       final controlMatch = r.controlNumber.toLowerCase().contains(q);
       final yearMatch = r.year.toString().contains(q);
       final parishMatch = r.baptismParish.toLowerCase().contains(q);
-      return nameMatch || controlMatch || yearMatch || parishMatch;
+      final idMatch = r.recordId.toLowerCase().contains(q);
+      return nameMatch || controlMatch || yearMatch || parishMatch || idMatch;
     }).toList();
   }
 
   List<MatrimonyRecordModel> get _filteredMatrimonyRecords {
-    if (_searchQuery.trim().isEmpty) return _matrimonyRecords;
+    var list = _matrimonyRecords.where((m) {
+      if (!_matchesLocator(m.bookNumber, m.pageNumber, m.lineNumber)) return false;
+      if (!_matchesDateRange(m.dateOfMarriage)) return false;
+      if (!_matchesStatus(m.entryStatus)) return false;
+      return true;
+    }).toList();
+
+    if (_searchQuery.trim().isEmpty) return list;
     final q = _searchQuery.toLowerCase();
-    return _matrimonyRecords.where((r) {
+    return list.where((r) {
       final nameMatch = r.groomFullName.toLowerCase().contains(q) ||
           r.brideFullName.toLowerCase().contains(q);
       final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
           'page ${r.pageNumber}'.toLowerCase().contains(q) ||
           'line ${r.lineNumber}'.toLowerCase().contains(q);
-      return nameMatch || bookMatch;
+      final idMatch = r.recordId.toLowerCase().contains(q);
+      return nameMatch || bookMatch || idMatch;
     }).toList();
   }
 
   List<DeathRecordModel> get _filteredDeathRecords {
-    if (_searchQuery.trim().isEmpty) return _deathRecords;
+    var list = _deathRecords.where((d) {
+      if (!_matchesLocator(d.bookNumber, d.pageNumber, d.lineNumber)) return false;
+      if (!_matchesDateRange(d.dateOfBurial)) return false;
+      return true;
+    }).toList();
+
+    if (_searchQuery.trim().isEmpty) return list;
     final q = _searchQuery.toLowerCase();
-    return _deathRecords.where((d) {
+    return list.where((d) {
       final nameMatch = d.deceasedFullName.toLowerCase().contains(q);
       final bookMatch = 'book ${d.bookNumber}'.toLowerCase().contains(q) ||
           'page ${d.pageNumber}'.toLowerCase().contains(q) ||
           'line ${d.lineNumber}'.toLowerCase().contains(q);
       final placeMatch = d.placeOfBurial.toLowerCase().contains(q);
-      return nameMatch || bookMatch || placeMatch;
+      final idMatch = d.recordId.toLowerCase().contains(q);
+      return nameMatch || bookMatch || placeMatch || idMatch;
     }).toList();
   }
 
   List<ConversionRecordModel> get _filteredConversionRecords {
-    if (_searchQuery.trim().isEmpty) return _conversionRecords;
+    var list = _conversionRecords.where((cnv) {
+      if (!_matchesLocator(cnv.bookNumber, cnv.pageNumber, cnv.lineNumber)) return false;
+      if (!_matchesDateRange(cnv.dateOfReception)) return false;
+      return true;
+    }).toList();
+
+    if (_searchQuery.trim().isEmpty) return list;
     final q = _searchQuery.toLowerCase();
-    return _conversionRecords.where((c) {
+    return list.where((c) {
       final nameMatch = c.convertFullName.toLowerCase().contains(q);
       final bookMatch = 'book ${c.bookNumber}'.toLowerCase().contains(q) ||
           'page ${c.pageNumber}'.toLowerCase().contains(q) ||
           'line ${c.lineNumber}'.toLowerCase().contains(q);
       final parentMatch = c.fatherFullName.toLowerCase().contains(q) ||
           c.motherFullName.toLowerCase().contains(q);
-      return nameMatch || bookMatch || parentMatch;
+      final idMatch = c.recordId.toLowerCase().contains(q);
+      return nameMatch || bookMatch || parentMatch || idMatch;
     }).toList();
   }
+
+  // ===========================================================================
+  // Navigation
+  // ===========================================================================
 
   void _openManualEntry() {
     if (widget.sacramentName == 'Baptism') {
@@ -399,6 +618,13 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
+    );
+  }
+
+  void _openCertificateVerificationPortal() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CertificateVerificationPage()),
     );
   }
 
@@ -433,6 +659,613 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     );
   }
 
+  // ===========================================================================
+  // Advanced Filter Modal Bottom Sheet
+  // ===========================================================================
+
+  void _openAdvancedFilterBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ParishColors.cardWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final isCommunion = _isCommunionRegistry;
+          final hasStatusField = widget.sacramentName == 'Confirmation' || widget.sacramentName == 'Matrimony';
+          final bookOptions = _availableBookNumbers;
+          final bookValue = bookOptions.contains(_selectedBookFilter) ? _selectedBookFilter : 'All';
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              left: 20,
+              right: 20,
+              top: 14,
+            ),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: ParishColors.borderGrey,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.tune, color: widget.themeColor, size: 22),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Advanced Filters',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_hasActiveAdvancedFilters)
+                          TextButton(
+                            onPressed: () {
+                              _resetAdvancedFilters();
+                              setSheetState(() {});
+                              Navigator.pop(ctx);
+                            },
+                            child: const Text(
+                              'Reset All',
+                              style: TextStyle(
+                                color: ParishColors.mercyRed,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const Divider(height: 14),
+
+                    // 1. Physical Book Number / Year Filter
+                    Text(
+                      isCommunion ? 'Filter by Archival Year' : 'Filter by Physical Book Number',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('sheet-book-$bookValue-${bookOptions.length}'),
+                      value: bookValue,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      items: bookOptions.map((b) {
+                        return DropdownMenuItem(
+                          value: b,
+                          child: Text(
+                            b == 'All' ? 'All Books / Volumes' : (isCommunion ? 'Year $b' : 'Book $b'),
+                            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          _onBookChanged(val);
+                          setSheetState(() {});
+                        }
+                      },
+                    ),
+                    if (!isCommunion) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Need an exact entry? Use "Locate Entry" on the registry screen to pick Book, Page and Line together.',
+                        style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+
+                    // 2. Date Range Picker
+                    Text(
+                      'Sacrament Event Date Range',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    ),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDateRangePicker(
+                          context: context,
+                          firstDate: DateTime(1900),
+                          lastDate: DateTime.now(),
+                          initialDateRange: _selectedDateRange,
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: Theme.of(context).colorScheme.copyWith(
+                                  primary: widget.themeColor,
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _selectedDateRange = picked;
+                            _currentPage = 0;
+                          });
+                          setSheetState(() {});
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: ParishColors.borderGrey),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _selectedDateRange != null
+                                  ? '${_selectedDateRange!.start.toIso8601String().substring(0, 10)}  to  ${_selectedDateRange!.end.toIso8601String().substring(0, 10)}'
+                                  : 'Select Date Range (From - To)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: _selectedDateRange != null ? FontWeight.bold : FontWeight.normal,
+                                color: _selectedDateRange != null ? ParishColors.textDark : ParishColors.textMuted,
+                              ),
+                            ),
+                            Icon(Icons.date_range, size: 18, color: widget.themeColor),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // 3. Entry Status Filter (Where Applicable)
+                    if (hasStatusField) ...[
+                      Text(
+                        'Canonical Entry Status',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        children: ['All', 'ORIGINAL', 'CORRECTED', 'INCOMPLETE'].map((st) {
+                          final isSelected = _selectedEntryStatusFilter == st;
+                          return ChoiceChip(
+                            label: Text(st),
+                            selected: isSelected,
+                            selectedColor: widget.themeColor,
+                            backgroundColor: ParishColors.backgroundLight,
+                            labelStyle: TextStyle(
+                              color: isSelected ? Colors.white : ParishColors.textDark,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11.5,
+                            ),
+                            onSelected: (_) {
+                              setState(() {
+                                _selectedEntryStatusFilter = st;
+                                _currentPage = 0;
+                              });
+                              setSheetState(() {});
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.themeColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Apply Filters', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Search Bar (matches the main Sacramental Registers dashboard)
+  // ===========================================================================
+
+  Widget _buildSearchBar() {
+    return Container(
+      width: double.infinity,
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ParishColors.borderGrey, width: 1),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, size: 21, color: ParishColors.marianBlue),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: _onSearchChanged,
+              textInputAction: TextInputAction.search,
+              style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+              decoration: InputDecoration(
+                hintText: 'Search by name, parent, book, page or ID...',
+                hintStyle: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _searchController,
+            builder: (context, value, _) {
+              if (value.text.isEmpty) return const SizedBox.shrink();
+              return IconButton(
+                icon: const Icon(Icons.clear, size: 17),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Clear search',
+                onPressed: _clearSearch,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolbarButton({
+    required String label,
+    required IconData icon,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: active ? widget.surfaceColor : ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active ? widget.themeColor : ParishColors.borderGrey,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: active ? widget.themeColor : ParishColors.textMuted),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: active ? widget.themeColor : ParishColors.textDark,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchToolbar() {
+    return Row(
+      children: [
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildToolbarButton(
+                label: _hasLocatorSelection ? 'Locate Entry (set)' : 'Locate Entry',
+                icon: Icons.pin_drop_outlined,
+                active: _showLocator || _hasLocatorSelection,
+                onTap: () => setState(() => _showLocator = !_showLocator),
+              ),
+              _buildToolbarButton(
+                label: _hasActiveAdvancedFilters
+                    ? 'Filter ($_activeAdvancedFilterCount)'
+                    : 'Filter',
+                icon: Icons.tune,
+                active: _hasActiveAdvancedFilters,
+                onTap: _openAdvancedFilterBottomSheet,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          height: 32,
+          decoration: BoxDecoration(
+            color: ParishColors.cardWhite,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: ParishColors.borderGrey),
+          ),
+          child: ToggleButtons(
+            isSelected: [
+              _viewMode == RegistryViewMode.cards,
+              _viewMode == RegistryViewMode.table,
+            ],
+            onPressed: (index) {
+              setState(() {
+                _viewMode = index == 0 ? RegistryViewMode.cards : RegistryViewMode.table;
+              });
+            },
+            borderRadius: BorderRadius.circular(7),
+            selectedColor: Colors.white,
+            fillColor: widget.themeColor,
+            color: ParishColors.textMuted,
+            constraints: const BoxConstraints(minHeight: 30, minWidth: 36),
+            children: const [
+              Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 16)),
+              Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 16)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Locate Entry Panel: Book No. + Page No. + Line No. together
+  // ===========================================================================
+
+  Widget _buildLocatorDropdown({
+    required String label,
+    required List<String> options,
+    required String selected,
+    required ValueChanged<String> onChanged,
+  }) {
+    final safeValue = options.contains(selected) ? selected : 'All';
+    return DropdownButtonFormField<String>(
+      key: ValueKey('$label|$safeValue|${options.length}'),
+      value: safeValue,
+      isExpanded: true,
+      menuMaxHeight: 320,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: widget.themeColor, width: 1.6),
+        ),
+      ),
+      items: options.map((o) {
+        return DropdownMenuItem<String>(
+          value: o,
+          child: Text(
+            o == 'All' ? 'Any' : o,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: o == 'All' ? FontWeight.normal : FontWeight.bold,
+              color: ParishColors.textDark,
+            ),
+          ),
+        );
+      }).toList(),
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+
+  Widget _buildLocatorPanel() {
+    final labels = _locatorLabels;
+    final fields = <Widget>[
+      Expanded(
+        child: _buildLocatorDropdown(
+          label: labels[0],
+          options: _locatorOptions(0),
+          selected: _selectedBookFilter,
+          onChanged: _onBookChanged,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _buildLocatorDropdown(
+          label: labels[1],
+          options: _locatorOptions(1),
+          selected: _selectedPageFilter,
+          onChanged: _onPageChanged,
+        ),
+      ),
+      if (labels.length > 2) ...[
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildLocatorDropdown(
+            label: labels[2],
+            options: _locatorOptions(2),
+            selected: _selectedLineFilter,
+            onChanged: _onLineChanged,
+          ),
+        ),
+      ],
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: widget.themeColor.withOpacity(0.35), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: widget.themeColor.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: widget.surfaceColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.pin_drop_outlined, size: 18, color: widget.themeColor),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Locate exact entry',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    ),
+                    Text(
+                      _isCommunionRegistry
+                          ? 'Pick the Year and Control No. together.'
+                          : 'Pick Book, Page and Line together to jump straight to one ledger entry.',
+                      style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              if (_hasLocatorSelection)
+                TextButton(
+                  onPressed: _clearLocator,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'Clear',
+                    style: TextStyle(
+                      color: ParishColors.mercyRed,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: fields),
+          const SizedBox(height: 8),
+          Text(
+            _isCommunionRegistry
+                ? 'Tip: choose a Year first to narrow the Control No. list.'
+                : 'Tip: choose a Book first to narrow the Page list, then pick a Line.',
+            style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Skeleton Loader
+  // ===========================================================================
+
+  Widget _buildSkeletonLoading() {
+    return AnimatedBuilder(
+      animation: _skeletonOpacityAnimation,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _skeletonOpacityAnimation.value,
+          child: Column(
+            children: List.generate(4, (index) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                height: 110,
+                decoration: BoxDecoration(
+                  color: ParishColors.cardWhite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      height: 14,
+                      width: 90,
+                      decoration: BoxDecoration(
+                        color: ParishColors.borderGrey.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      height: 16,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: ParishColors.borderGrey.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      height: 12,
+                      width: 170,
+                      decoration: BoxDecoration(
+                        color: ParishColors.borderGrey.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // Build Main Screen
+  // ===========================================================================
+
   @override
   Widget build(BuildContext context) {
     final cardWhiteColor = ParishColors.cardWhite;
@@ -455,34 +1288,35 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     List paginatedDeath = [];
     List paginatedConversion = [];
 
+    // Compute totalCount first so the current page can be clamped before slicing.
+    List activeList = [];
     if (isBaptism) {
-      final list = _filteredBaptismRecords;
-      totalCount = list.length;
-      paginatedBaptism = _paginate(list);
+      activeList = _filteredBaptismRecords;
     } else if (isConfirmation) {
-      final list = _filteredConfirmationRecords;
-      totalCount = list.length;
-      paginatedConfirmation = _paginate(list);
+      activeList = _filteredConfirmationRecords;
     } else if (isCommunion) {
-      final list = _filteredFirstCommunionRecords;
-      totalCount = list.length;
-      paginatedCommunion = _paginate(list);
+      activeList = _filteredFirstCommunionRecords;
     } else if (isMatrimony) {
-      final list = _filteredMatrimonyRecords;
-      totalCount = list.length;
-      paginatedMatrimony = _paginate(list);
+      activeList = _filteredMatrimonyRecords;
     } else if (isDeath) {
-      final list = _filteredDeathRecords;
-      totalCount = list.length;
-      paginatedDeath = _paginate(list);
+      activeList = _filteredDeathRecords;
     } else if (isConversion) {
-      final list = _filteredConversionRecords;
-      totalCount = list.length;
-      paginatedConversion = _paginate(list);
+      activeList = _filteredConversionRecords;
     }
+    totalCount = activeList.length;
 
     final int totalPages = (totalCount / _rowsPerPage).ceil() > 0 ? (totalCount / _rowsPerPage).ceil() : 1;
     if (_currentPage >= totalPages) _currentPage = totalPages > 0 ? totalPages - 1 : 0;
+
+    final pageSlice = _paginate(activeList);
+    if (isBaptism) paginatedBaptism = pageSlice;
+    if (isConfirmation) paginatedConfirmation = pageSlice;
+    if (isCommunion) paginatedCommunion = pageSlice;
+    if (isMatrimony) paginatedMatrimony = pageSlice;
+    if (isDeath) paginatedDeath = pageSlice;
+    if (isConversion) paginatedConversion = pageSlice;
+
+    final bool isSearchOrFilterActive = _searchQuery.isNotEmpty || _hasActiveAdvancedFilters;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -523,464 +1357,491 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
               ),
             ],
           ),
-          body: SingleChildScrollView(
-            padding: EdgeInsets.all(isDesktop ? 26 : 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Ledger Status Banner (With Responsive Wrap to eliminate 21px overflow)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: widget.surfaceColor,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: widget.themeColor.withOpacity(0.4), width: 1.5),
-                  ),
-                  child: Row(
+          body: RefreshIndicator(
+            onRefresh: _loadRecords,
+            color: widget.themeColor,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.all(isDesktop ? 26 : 20),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1400),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Ledger Status Banner
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: widget.themeColor,
-                          shape: BoxShape.circle,
+                          color: widget.surfaceColor,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: widget.themeColor.withOpacity(0.4), width: 1.5),
                         ),
-                        child: Icon(widget.icon, color: Colors.white, size: 26),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Flexible Responsive Wrap eliminates the 21px overflow entirely
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: [
-                                Text(
-                                  '${widget.sacramentName} Canonical Books',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: widget.themeColor,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: _isLoadedFromSqlite
-                                        ? Colors.amber.shade100
-                                        : Colors.green.shade100,
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: _isLoadedFromSqlite
-                                          ? Colors.amber.shade800
-                                          : Colors.green.shade800,
-                                      width: 0.8,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _isLoadedFromSqlite ? 'OFFLINE SQLITE' : 'CLOUD SYNCED',
-                                    style: TextStyle(
-                                      fontSize: 9.0,
-                                      fontWeight: FontWeight.bold,
-                                      color: _isLoadedFromSqlite
-                                          ? Colors.amber.shade900
-                                          : Colors.green.shade900,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: widget.themeColor,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(widget.icon, color: Colors.white, size: 26),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _isLoadedFromSqlite
-                                  ? 'Offline Local Cache: $totalCount registered (Working without internet)'
-                                  : 'Live Database Records: $totalCount registered',
-                              style: TextStyle(fontSize: 12, color: textMutedColor),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Wrap(
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: [
+                                      Text(
+                                        '${widget.sacramentName} Canonical Books',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: widget.themeColor,
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: _isLoadedFromSqlite
+                                              ? Colors.amber.shade100
+                                              : Colors.green.shade100,
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: _isLoadedFromSqlite
+                                                ? Colors.amber.shade800
+                                                : Colors.green.shade800,
+                                            width: 0.8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _isLoadedFromSqlite ? 'OFFLINE SQLITE' : 'CLOUD SYNCED',
+                                          style: TextStyle(
+                                            fontSize: 9.0,
+                                            fontWeight: FontWeight.bold,
+                                            color: _isLoadedFromSqlite
+                                                ? Colors.amber.shade900
+                                                : Colors.green.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _isLoadedFromSqlite
+                                        ? 'Offline Local Cache: $totalCount registered (Working without internet)'
+                                        : 'Live Database Records: $totalCount registered',
+                                    style: TextStyle(fontSize: 12, color: textMutedColor),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
+                      const SizedBox(height: 18),
 
-                // Action Buttons Toolbar
-                isDesktop
-                    ? Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: SizedBox(
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.themeColor,
-                            foregroundColor: Colors.white,
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () => showOcrScanModal(context),
-                          icon: const Icon(Icons.document_scanner, size: 20),
-                          label: const Text('AI OCR Scan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 4,
-                      child: SizedBox(
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: widget.themeColor, width: 1.5),
-                            foregroundColor: widget.themeColor,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: _openManualEntry,
-                          icon: const Icon(Icons.add, size: 20),
-                          label: const Text('Manual Entry', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 3,
-                      child: SizedBox(
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-                            foregroundColor: ParishColors.goldAccent,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: _openCertificateTemplates,
-                          icon: const Icon(Icons.design_services_outlined, size: 18),
-                          label: const Text('Templates Studio', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-                    : Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 48,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: widget.themeColor,
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: () => showOcrScanModal(context),
-                              icon: const Icon(Icons.document_scanner, size: 20),
-                              label: const Text('AI OCR Scan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: SizedBox(
-                            height: 48,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: widget.themeColor, width: 1.5),
-                                foregroundColor: widget.themeColor,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _openManualEntry,
-                              icon: const Icon(Icons.add, size: 20),
-                              label: const Text('Manual Entry', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-                          foregroundColor: ParishColors.goldAccent,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        onPressed: _openCertificateTemplates,
-                        icon: const Icon(Icons.design_services_outlined, size: 18),
-                        label: const Text('Certificate Templates Studio', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // Search Bar & View/Pagination Controls Bar
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: cardWhiteColor,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderGreyColor),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
+                      // Action Buttons Toolbar
+                      isDesktop
+                          ? Row(
                         children: [
-                          Icon(Icons.search, size: 24, color: widget.themeColor),
+                          Expanded(
+                            flex: 4,
+                            child: SizedBox(
+                              height: 52,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: widget.themeColor,
+                                  foregroundColor: Colors.white,
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _openCertificateVerificationPortal,
+                                icon: const Icon(Icons.qr_code_scanner, size: 20),
+                                label: const Text('Verify Certificate (QR)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              onChanged: (val) => setState(() {
-                                _searchQuery = val;
-                                _currentPage = 0;
-                              }),
-                              style: TextStyle(fontSize: 14, color: textDarkColor),
-                              decoration: InputDecoration(
-                                hintText: 'Search ${widget.sacramentName} records...',
-                                hintStyle: TextStyle(fontSize: 14, color: textMutedColor),
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.zero,
+                            flex: 4,
+                            child: SizedBox(
+                              height: 52,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: widget.themeColor, width: 1.5),
+                                  foregroundColor: widget.themeColor,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _openManualEntry,
+                                icon: const Icon(Icons.add, size: 20),
+                                label: const Text('Manual Entry', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ),
-                          if (_searchQuery.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {
-                                  _searchQuery = '';
-                                  _currentPage = 0;
-                                });
-                              },
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 3,
+                            child: SizedBox(
+                              height: 52,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
+                                  foregroundColor: ParishColors.goldAccent,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: _openCertificateTemplates,
+                                icon: const Icon(Icons.design_services_outlined, size: 18),
+                                label: const Text('Templates Studio', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                              ),
                             ),
+                          ),
+                        ],
+                      )
+                          : Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 48,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: widget.themeColor,
+                                      foregroundColor: Colors.white,
+                                      elevation: 1,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    onPressed: _openCertificateVerificationPortal,
+                                    icon: const Icon(Icons.qr_code_scanner, size: 20),
+                                    label: const Text('Verify Cert (QR)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 48,
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      side: BorderSide(color: widget.themeColor, width: 1.5),
+                                      foregroundColor: widget.themeColor,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    onPressed: _openManualEntry,
+                                    icon: const Icon(Icons.add, size: 20),
+                                    label: const Text('Manual Entry', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 44,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
+                                foregroundColor: ParishColors.goldAccent,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: _openCertificateTemplates,
+                              icon: const Icon(Icons.design_services_outlined, size: 18),
+                              label: const Text('Certificate Templates Studio', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
                         ],
                       ),
-                      const Divider(height: 20),
+                      const SizedBox(height: 18),
+
+                      // Search bar (same design as the main registers dashboard)
+                      _buildSearchBar(),
+                      const SizedBox(height: 10),
+
+                      // Locate Entry + Filter + View toggle
+                      _buildSearchToolbar(),
+
+                      // Book • Page • Line locator panel
+                      if (_showLocator) _buildLocatorPanel(),
+
+                      // Active Filter Chips Display
+                      if (_hasActiveAdvancedFilters) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (_hasLocatorSelection)
+                              Chip(
+                                avatar: Icon(Icons.pin_drop_outlined, size: 14, color: widget.themeColor),
+                                label: Text(
+                                  _locatorSummary,
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textDarkColor),
+                                ),
+                                backgroundColor: widget.surfaceColor,
+                                deleteIcon: const Icon(Icons.close, size: 14),
+                                onDeleted: _clearLocator,
+                              ),
+                            if (_selectedDateRange != null)
+                              Chip(
+                                label: Text(
+                                  '${_selectedDateRange!.start.toIso8601String().substring(0, 10)} - ${_selectedDateRange!.end.toIso8601String().substring(0, 10)}',
+                                  style: TextStyle(fontSize: 11, color: textDarkColor),
+                                ),
+                                backgroundColor: widget.surfaceColor,
+                                deleteIcon: const Icon(Icons.close, size: 14),
+                                onDeleted: () => setState(() {
+                                  _selectedDateRange = null;
+                                  _currentPage = 0;
+                                }),
+                              ),
+                            if (_selectedEntryStatusFilter != 'All')
+                              Chip(
+                                label: Text(
+                                  'Status: $_selectedEntryStatusFilter',
+                                  style: TextStyle(fontSize: 11, color: textDarkColor),
+                                ),
+                                backgroundColor: widget.surfaceColor,
+                                deleteIcon: const Icon(Icons.close, size: 14),
+                                onDeleted: () => setState(() {
+                                  _selectedEntryStatusFilter = 'All';
+                                  _currentPage = 0;
+                                }),
+                              ),
+                            ActionChip(
+                              label: const Text(
+                                'Clear Filters',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
+                              ),
+                              backgroundColor: ParishColors.mercyRedSurface,
+                              side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
+                              onPressed: _resetAdvancedFilters,
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+
+                      // Header info & count
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          ToggleButtons(
-                            isSelected: [_viewMode == RegistryViewMode.cards, _viewMode == RegistryViewMode.table],
-                            onPressed: (index) {
-                              setState(() {
-                                _viewMode = index == 0 ? RegistryViewMode.cards : RegistryViewMode.table;
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            selectedColor: Colors.white,
-                            fillColor: widget.themeColor,
-                            color: textMutedColor,
-                            constraints: const BoxConstraints(minHeight: 36, minWidth: 44),
-                            children: const [
-                              Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 18)),
-                              Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 18)),
-                            ],
+                          Expanded(
+                            child: Text(
+                              isSearchOrFilterActive
+                                  ? '$totalCount ${totalCount == 1 ? 'match' : 'matches'} found'
+                                  : '${widget.sacramentName} Entries ($totalCount)',
+                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDarkColor),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          Row(
-                            children: [
-                              Text('Rows:', style: TextStyle(fontSize: 12, color: textMutedColor)),
-                              const SizedBox(width: 8),
-                              DropdownButton<int>(
-                                value: _rowsPerPage,
-                                isDense: true,
-                                items: [10, 25, 50].map((val) {
-                                  return DropdownMenuItem<int>(
-                                    value: val,
-                                    child: Text('$val', style: TextStyle(fontSize: 13, color: textDarkColor)),
-                                  );
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setState(() {
-                                      _rowsPerPage = val;
-                                      _currentPage = 0;
-                                    });
-                                  }
-                                },
-                              ),
-                            ],
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: widget.surfaceColor,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Page ${_currentPage + 1} of $totalPages',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
+                            ),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 12),
+
+                      // Main Records Display Area
+                      if (_isLoading)
+                        _buildSkeletonLoading()
+                      else if (_fetchError != null && totalCount == 0)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: ParishColors.mercyRedSurface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: ParishColors.mercyRed),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline, color: ParishColors.mercyRed),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Database error: $_fetchError',
+                                  style: const TextStyle(fontSize: 13, color: ParishColors.mercyRed),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _loadRecords,
+                                child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (totalCount == 0)
+                          _buildEmptyState(
+                            title: isSearchOrFilterActive
+                                ? 'No records match your search or filters.'
+                                : 'No registered ${widget.sacramentName.toLowerCase()} records yet.',
+                            subtitle: isSearchOrFilterActive
+                                ? 'Try a shorter search, or clear the filters to see every entry again.'
+                                : 'Tap "Manual Entry" above to encode a canonical record.',
+                            actionLabel: isSearchOrFilterActive ? 'Clear search & filters' : null,
+                            onAction: isSearchOrFilterActive ? _resetEverything : null,
+                          )
+                        else if (_viewMode == RegistryViewMode.cards)
+                            isDesktop
+                                ? GridView.count(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 14,
+                              childAspectRatio: 2.1,
+                              children: _buildCardsList(
+                                paginatedBaptism,
+                                paginatedConfirmation,
+                                paginatedCommunion,
+                                paginatedMatrimony,
+                                paginatedDeath,
+                                paginatedConversion,
+                                isBaptism,
+                                isConfirmation,
+                                isCommunion,
+                                isMatrimony,
+                                isDeath,
+                                isConversion,
+                              ),
+                            )
+                                : Column(
+                              children: _buildCardsList(
+                                paginatedBaptism,
+                                paginatedConfirmation,
+                                paginatedCommunion,
+                                paginatedMatrimony,
+                                paginatedDeath,
+                                paginatedConversion,
+                                isBaptism,
+                                isConfirmation,
+                                isCommunion,
+                                isMatrimony,
+                                isDeath,
+                                isConversion,
+                              ),
+                            )
+                          else
+                            _buildTableView(
+                              paginatedBaptism,
+                              paginatedConfirmation,
+                              paginatedCommunion,
+                              paginatedMatrimony,
+                              paginatedDeath,
+                              paginatedConversion,
+                              isBaptism,
+                              isConfirmation,
+                              isCommunion,
+                              isMatrimony,
+                              isDeath,
+                              isConversion,
+                            ),
+
+                      const SizedBox(height: 16),
+
+                      // Pagination Controls Footer
+                      if (!_isLoading && totalCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: cardWhiteColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: borderGreyColor),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Showing ${_currentPage * _rowsPerPage + 1}–${((_currentPage + 1) * _rowsPerPage) > totalCount ? totalCount : ((_currentPage + 1) * _rowsPerPage)} of $totalCount',
+                                      style: TextStyle(fontSize: 12, color: textMutedColor),
+                                    ),
+                                  ),
+                                  Text('Rows:', style: TextStyle(fontSize: 12, color: textMutedColor)),
+                                  const SizedBox(width: 8),
+                                  DropdownButton<int>(
+                                    value: _rowsPerPage,
+                                    isDense: true,
+                                    underline: const SizedBox.shrink(),
+                                    items: [10, 25, 50].map((val) {
+                                      return DropdownMenuItem<int>(
+                                        value: val,
+                                        child: Text(
+                                          '$val',
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: widget.themeColor),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() {
+                                          _rowsPerPage = val;
+                                          _currentPage = 0;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.first_page, size: 20),
+                                    tooltip: 'First page',
+                                    onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_left, size: 20),
+                                    tooltip: 'Previous page',
+                                    onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                                  ),
+                                  Text(
+                                    '${_currentPage + 1} / $totalPages',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_right, size: 20),
+                                    tooltip: 'Next page',
+                                    onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.last_page, size: 20),
+                                    tooltip: 'Last page',
+                                    onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage = totalPages - 1) : null,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 24),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-
-                // Header info & total count
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${widget.sacramentName} Records ($totalCount)',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: widget.surfaceColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Page ${_currentPage + 1} of $totalPages',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Main Records Display Area
-                if (_isLoading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32.0),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                else if (_fetchError != null && totalCount == 0)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: ParishColors.mercyRedSurface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: ParishColors.mercyRed),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.error_outline, color: ParishColors.mercyRed),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Database error: $_fetchError',
-                            style: const TextStyle(fontSize: 13, color: ParishColors.mercyRed),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (totalCount == 0)
-                    _buildEmptyState(
-                      title: _searchQuery.isNotEmpty
-                          ? 'No records match your search.'
-                          : 'No registered ${widget.sacramentName.toLowerCase()} records yet.',
-                      subtitle:
-                      'Tap "Manual Entry" above or download the Offline Pack from Records View.',
-                    )
-                  else if (_viewMode == RegistryViewMode.cards)
-                      isDesktop
-                          ? GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
-                        childAspectRatio: 2.1,
-                        children: _buildCardsList(
-                          paginatedBaptism,
-                          paginatedConfirmation,
-                          paginatedCommunion,
-                          paginatedMatrimony,
-                          paginatedDeath,
-                          paginatedConversion,
-                          isBaptism,
-                          isConfirmation,
-                          isCommunion,
-                          isMatrimony,
-                          isDeath,
-                          isConversion,
-                        ),
-                      )
-                          : Column(
-                        children: _buildCardsList(
-                          paginatedBaptism,
-                          paginatedConfirmation,
-                          paginatedCommunion,
-                          paginatedMatrimony,
-                          paginatedDeath,
-                          paginatedConversion,
-                          isBaptism,
-                          isConfirmation,
-                          isCommunion,
-                          isMatrimony,
-                          isDeath,
-                          isConversion,
-                        ),
-                      )
-                    else
-                      _buildTableView(
-                        paginatedBaptism,
-                        paginatedConfirmation,
-                        paginatedCommunion,
-                        paginatedMatrimony,
-                        paginatedDeath,
-                        paginatedConversion,
-                        isBaptism,
-                        isConfirmation,
-                        isCommunion,
-                        isMatrimony,
-                        isDeath,
-                        isConversion,
-                      ),
-
-                const SizedBox(height: 16),
-
-                // Pagination Controls Footer
-                if (totalCount > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: cardWhiteColor,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: borderGreyColor),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Showing ${_currentPage * _rowsPerPage + 1}–${((_currentPage + 1) * _rowsPerPage) > totalCount ? totalCount : ((_currentPage + 1) * _rowsPerPage)} of $totalCount',
-                          style: TextStyle(fontSize: 12, color: textMutedColor),
-                        ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.first_page, size: 20),
-                              onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.chevron_left, size: 20),
-                              onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
-                            ),
-                            Text(
-                              '${_currentPage + 1} / $totalPages',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.chevron_right, size: 20),
-                              onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.last_page, size: 20),
-                              onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage = totalPages - 1) : null,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
         );
@@ -1376,7 +2237,12 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     );
   }
 
-  Widget _buildEmptyState({required String title, required String subtitle}) {
+  Widget _buildEmptyState({
+    required String title,
+    required String subtitle,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -1387,15 +2253,36 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
       ),
       child: Column(
         children: [
-          Icon(Icons.inbox_outlined, size: 40, color: ParishColors.textMuted),
+          Icon(
+            actionLabel != null ? Icons.search_off_outlined : Icons.inbox_outlined,
+            size: 40,
+            color: ParishColors.textMuted,
+          ),
           const SizedBox(height: 8),
-          Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+          ),
           const SizedBox(height: 4),
           Text(
             subtitle,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
           ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: widget.themeColor, width: 1.3),
+                foregroundColor: widget.themeColor,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: onAction,
+              icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+              label: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            ),
+          ],
         ],
       ),
     );
@@ -1415,7 +2302,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
     required Map<String, dynamic> rawRecordData,
   }) {
     final cardWhiteColor = ParishColors.cardWhite;
-    final borderGreyColor = ParishColors.borderGrey;
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
 
@@ -1438,7 +2324,14 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
         decoration: BoxDecoration(
           color: cardWhiteColor,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderGreyColor),
+          border: Border.all(color: widget.themeColor.withOpacity(0.35), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: widget.themeColor.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1462,9 +2355,12 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage> {
                     ),
                   ),
                 ),
-                Text(
-                  bookRef,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textMutedColor),
+                Flexible(
+                  child: Text(
+                    bookRef,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textMutedColor),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),

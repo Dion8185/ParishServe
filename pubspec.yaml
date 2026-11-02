@@ -64,6 +64,12 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
   file_picker: ^13.1.0
 
+msix_config:
+  display_name: ParishServe
+  publisher_display_name: Saint John Paul II Parish
+  identity_name: com.parishserve.records
+  capabilities:
+    - webcam
 
 flutter_launcher_icons:
   android: "launcher_icon"
