@@ -3,8 +3,11 @@
 // =============================================================================
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
 import '../../services/conversion_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
@@ -27,31 +30,16 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
 
+  // Floating Back to Top state & micro-interactions
+  bool _showBackToTop = false;
+  bool _isBackToTopHovered = false;
+
   bool get isEditMode => widget.initialData != null;
 
   // Olive Green Theme Accent for Conversion & Reception records
   static const Color _conversionOlive = Color(0xFF2D6A4F);
-  static const Color _oliveSurface = Color(0xFFEDF7F2);
 
-  // Pagination State (4 Google Forms-Style Sections)
-  int _currentStep = 0;
-  static const int _totalSteps = 4;
-
-  static const List<String> _stepTitles = [
-    'Canonical Coordinates & Reception Date',
-    'Person Received & Prior Baptism (Receptorum)',
-    'Parents & Religious Affiliation (Parentum)',
-    'Witnesses, Minister & Offering (Testium)',
-  ];
-
-  static const List<String> _stepDescriptions = [
-    'Physical register book, page, line, and date of reception into full communion.',
-    'Identity of the candidate and prior non-Catholic baptism credentials.',
-    'Parental lineage and respective religious backgrounds (Optional).',
-    'Canonical witnesses (sponsors), presiding priest, and offering stipend.',
-  ];
-
-  // Canonical Options for Prior Non-Catholic Baptism from the Registry Book (BAPTISMI Ecclesia)
+  // Options for Prior Non-Catholic Baptism
   static const List<String> _priorChurchOptions = [
     'None / Not Specified',
     'LUTH: Lutheran Church of the Philippines',
@@ -65,7 +53,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     'Others (Specify)',
   ];
 
-  // 1. Canonical Coordinates & Date (Page 1)
+  // 1. Canonical Coordinates & Date
   final _bookNumberController = TextEditingController();
   final _pageNumberController = TextEditingController();
   final _lineNumberController = TextEditingController();
@@ -76,7 +64,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   bool _isCheckingCoordinateDuplicate = false;
   String? _coordinateDuplicateError;
 
-  // 2. Convert Identity & Prior Baptism (Page 2)
+  // 2. Convert Identity & Prior Baptism
   final _convertFirstNameController = TextEditingController();
   final _convertMiddleNameController = TextEditingController();
   final _convertLastNameController = TextEditingController();
@@ -88,7 +76,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _priorBaptismChurchOtherController = TextEditingController();
   final _priorBaptismPlaceController = TextEditingController();
 
-  // 3. Parents & Religious Affiliation (Page 3 - Optional)
+  // 3. Parents & Religious Affiliation
   final _fatherFirstNameController = TextEditingController();
   final _fatherMiddleNameController = TextEditingController();
   final _fatherLastNameController = TextEditingController();
@@ -99,7 +87,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _motherMaidenLastNameController = TextEditingController();
   final _motherReligionController = TextEditingController();
 
-  // 4. Witnesses, Offering & Minister (Page 4)
+  // 4. Witnesses, Offering & Minister
   final _witness1FirstNameController = TextEditingController();
   final _witness1MiddleNameController = TextEditingController();
   final _witness1LastNameController = TextEditingController();
@@ -114,6 +102,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _ministerLastNameController = TextEditingController(text: 'Reyes');
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
+  String? _existingCanonicalNotes;
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -123,6 +112,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
+
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
@@ -132,11 +123,29 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     }
   }
 
+  void _onScroll() {
+    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    if (shouldShow != _showBackToTop) {
+      setState(() => _showBackToTop = shouldShow);
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   void _populateExistingData(Map<String, dynamic> data) {
     _bookNumberController.text = data['book_number']?.toString() ?? '';
     _pageNumberController.text = data['page_number']?.toString() ?? '';
     _lineNumberController.text = data['line_number']?.toString() ?? '';
     _dateOfReception = DateTime.tryParse(data['date_of_reception']?.toString() ?? '');
+    _existingCanonicalNotes = data['canonical_notes']?.toString();
 
     _convertFirstNameController.text = data['convert_first_name']?.toString() ?? '';
     _convertMiddleNameController.text = data['convert_middle_name']?.toString() ?? '';
@@ -221,6 +230,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   @override
   void dispose() {
     _coordinateDebounce?.cancel();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _bookNumberController.removeListener(_onCoordinateChanged);
     _pageNumberController.removeListener(_onCoordinateChanged);
@@ -274,7 +284,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       context: context,
       initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now, // Enforce dates cannot be in the future
+      lastDate: now,
     );
 
     if (picked != null) {
@@ -292,143 +302,526 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     }
   }
 
-  bool _validateStep(int step) {
+  bool _validateAllFields() {
     setState(() => _errorMessage = null);
 
-    final isStepValid = _formKey.currentState?.validate() ?? true;
-    if (!isStepValid) {
-      setState(() => _errorMessage = 'Please correct the highlighted errors below before proceeding.');
+    final isFormValid = _formKey.currentState?.validate() ?? false;
+    if (!isFormValid) {
+      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      _scrollToTop();
       return false;
     }
 
-    if (step == 0) {
-      if (_coordinateDuplicateError != null) {
-        setState(() => _errorMessage = _coordinateDuplicateError);
-        return false;
-      }
-
-      final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
-      if (bookError != null) {
-        setState(() => _errorMessage = bookError);
-        return false;
-      }
-      final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
-      if (pageError != null) {
-        setState(() => _errorMessage = pageError);
-        return false;
-      }
-      final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
-      if (lineError != null) {
-        setState(() => _errorMessage = lineError);
-        return false;
-      }
-      if (_dateOfReception == null) {
-        setState(() {
-          _dateOfReceptionHasError = true;
-          _errorMessage = 'Date of Reception into Full Communion is required.';
-        });
-        return false;
-      }
-      final notFutureDate = SacramentalValidators.validateNotFutureDate(_dateOfReception, 'Date of Reception');
-      if (notFutureDate != null) {
-        setState(() => _errorMessage = notFutureDate);
-        return false;
-      }
-      return true;
-    } else if (step == 1) {
-      final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
-      if (dobError != null) {
-        setState(() {
-          _dateOfBirthHasError = true;
-          _errorMessage = dobError;
-        });
-        return false;
-      }
-
-      final placeError = SacramentalValidators.validatePlace(
-        _placeOfBirthController.text,
-        'Place of birth',
-        isRequired: true,
-        maxLength: 100,
-      );
-      if (placeError != null) {
-        setState(() => _errorMessage = placeError);
-        return false;
-      }
-
-      final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
-      if (receptionError != null) {
-        setState(() => _errorMessage = receptionError);
-        return false;
-      }
-
-      final priorBaptismError = SacramentalValidators.validatePriorBaptismDate(_priorBaptismDate, _dateOfBirth);
-      if (priorBaptismError != null) {
-        setState(() => _errorMessage = priorBaptismError);
-        return false;
-      }
-
-      if (_priorBaptismChurch == 'Others (Specify)' && _priorBaptismChurchOtherController.text.trim().isEmpty) {
-        setState(() => _errorMessage = 'Please specify the prior church / denomination.');
-        return false;
-      }
-      return true;
+    if (_coordinateDuplicateError != null) {
+      setState(() => _errorMessage = _coordinateDuplicateError);
+      _scrollToTop();
+      return false;
     }
+
+    final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+    if (bookError != null) {
+      setState(() => _errorMessage = bookError);
+      _scrollToTop();
+      return false;
+    }
+    final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+    if (pageError != null) {
+      setState(() => _errorMessage = pageError);
+      _scrollToTop();
+      return false;
+    }
+    final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+    if (lineError != null) {
+      setState(() => _errorMessage = lineError);
+      _scrollToTop();
+      return false;
+    }
+    if (_dateOfReception == null) {
+      setState(() {
+        _dateOfReceptionHasError = true;
+        _errorMessage = 'Date of Reception into Full Communion is required.';
+      });
+      _scrollToTop();
+      return false;
+    }
+    final notFutureDate = SacramentalValidators.validateNotFutureDate(_dateOfReception, 'Date of Reception');
+    if (notFutureDate != null) {
+      setState(() => _errorMessage = notFutureDate);
+      _scrollToTop();
+      return false;
+    }
+
+    final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
+    if (dobError != null) {
+      setState(() {
+        _dateOfBirthHasError = true;
+        _errorMessage = dobError;
+      });
+      _scrollToTop();
+      return false;
+    }
+
+    final placeError = SacramentalValidators.validatePlace(
+      _placeOfBirthController.text,
+      'Place of birth',
+      isRequired: true,
+      maxLength: 100,
+    );
+    if (placeError != null) {
+      setState(() => _errorMessage = placeError);
+      _scrollToTop();
+      return false;
+    }
+
+    final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
+    if (receptionError != null) {
+      setState(() => _errorMessage = receptionError);
+      _scrollToTop();
+      return false;
+    }
+
+    final priorBaptismError = SacramentalValidators.validatePriorBaptismDate(_priorBaptismDate, _dateOfBirth);
+    if (priorBaptismError != null) {
+      setState(() => _errorMessage = priorBaptismError);
+      _scrollToTop();
+      return false;
+    }
+
+    if (_priorBaptismChurch == 'Others (Specify)' && _priorBaptismChurchOtherController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please specify the prior church / denomination.');
+      _scrollToTop();
+      return false;
+    }
+
     return true;
   }
 
-  void _goToNextStep() {
-    if (_validateStep(_currentStep)) {
-      if (_currentStep < _totalSteps - 1) {
-        setState(() {
-          _currentStep++;
-          _errorMessage = null;
-        });
-        _scrollToTop();
-      } else {
-        _submitForm();
-      }
-    }
-  }
+  /// Computes strict dynamic diff, excluding unchanged fields and audit metadata
+  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+    final diffs = <String, Map<String, dynamic>>{};
 
-  Future<void> _goToPreviousStep() async {
-    if (_currentStep > 0) {
-      setState(() {
-        _currentStep--;
-        _errorMessage = null;
-      });
-      _scrollToTop();
-    } else {
-      final shouldExit = await showDiscardConfirmationDialog(
-        context,
-        accentColor: _conversionOlive,
-      );
-      if (shouldExit && mounted) {
-        Navigator.pop(context);
-      }
-    }
-  }
+    final Map<String, String> fieldLabels = {
+      'book_number': 'Book No.',
+      'page_number': 'Page No.',
+      'line_number': 'Line No.',
+      'date_of_reception': 'Date of Reception',
+      'convert_first_name': 'Candidate First Name',
+      'convert_middle_name': 'Candidate Middle Name',
+      'convert_last_name': 'Candidate Last Name',
+      'convert_suffix': 'Candidate Suffix',
+      'date_of_birth': 'Date of Birth',
+      'place_of_birth': 'Place of Birth',
+      'prior_baptism_date': 'Prior Baptism Date',
+      'prior_baptism_church': 'Prior Church / Denomination',
+      'prior_baptism_place': 'Prior Congregation Place',
+      'father_first_name': 'Father First Name',
+      'father_middle_name': 'Father Middle Name',
+      'father_last_name': 'Father Last Name',
+      'father_religion': 'Father Religion',
+      'mother_first_name': 'Mother First Name',
+      'mother_middle_name': 'Mother Middle Name',
+      'mother_maiden_last_name': 'Mother Maiden Last Name',
+      'mother_religion': 'Mother Religion',
+      'witness_1_first_name': 'Witness 1 First Name',
+      'witness_1_middle_name': 'Witness 1 Middle Name',
+      'witness_1_last_name': 'Witness 1 Last Name',
+      'witness_2_first_name': 'Witness 2 First Name',
+      'witness_2_middle_name': 'Witness 2 Middle Name',
+      'witness_2_last_name': 'Witness 2 Last Name',
+      'stipend': 'Stipend / Offering',
+      'minister_first_name': 'Priest First Name',
+      'minister_middle_name': 'Priest Middle Name',
+      'minister_last_name': 'Priest Last Name',
+      'parish_name': 'Parish Name',
+      'remarks': 'Remarks',
+    };
 
-  void _scrollToTop() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _submitForm() async {
-    for (int s = 0; s < _totalSteps; s++) {
-      if (!_validateStep(s)) {
-        setState(() => _currentStep = s);
-        _scrollToTop();
+    newData.forEach((key, newVal) {
+      if (key == 'created_at' ||
+          key == 'date_encoded' ||
+          key == 'canonical_notes' ||
+          key == 'registry_date' ||
+          key == 'entry_status') {
         return;
       }
+
+      final oldVal = oldData[key];
+      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
+      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+
+      String normOld = oldStr;
+      String normNew = newStr;
+      if (oldStr.length >= 10 && DateTime.tryParse(oldStr) != null) {
+        normOld = oldStr.substring(0, 10);
+      }
+      if (newStr.length >= 10 && DateTime.tryParse(newStr) != null) {
+        normNew = newStr.substring(0, 10);
+      }
+
+      if (normOld != normNew) {
+        final label = fieldLabels[key] ?? key;
+        diffs[label] = {
+          'old': oldStr.isEmpty ? '—' : oldStr,
+          'new': newStr.isEmpty ? '—' : newStr,
+        };
+      }
+    });
+
+    return diffs.isNotEmpty ? jsonEncode(diffs) : '';
+  }
+
+  /// Verification & Review confirmation dialog before saving a new Conversion record
+  Future<void> _promptSaveConfirmation() async {
+    if (!_validateAllFields()) return;
+
+    final candidateName = [
+      _convertFirstNameController.text.trim(),
+      _convertMiddleNameController.text.trim(),
+      _convertLastNameController.text.trim(),
+      _convertSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final fatherName = [
+      _fatherFirstNameController.text.trim(),
+      _fatherMiddleNameController.text.trim(),
+      _fatherLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final motherName = [
+      _motherFirstNameController.text.trim(),
+      _motherMiddleNameController.text.trim(),
+      _motherMaidenLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final witness1Name = [
+      _witness1FirstNameController.text.trim(),
+      _witness1MiddleNameController.text.trim(),
+      _witness1LastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final witness2Name = [
+      _witness2FirstNameController.text.trim(),
+      _witness2MiddleNameController.text.trim(),
+      _witness2LastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final priestName = [
+      'Rev. Fr.',
+      _ministerFirstNameController.text.trim(),
+      _ministerMiddleNameController.text.trim(),
+      _ministerLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _conversionOlive.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.fact_check_outlined, color: _conversionOlive, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Review & Verify Record',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      color: ParishColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Verify all fields before saving into Liber Conversorum.',
+                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 580,
+          height: screenHeight * 0.70,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildReviewSection('1. Registry Coordinates', [
+                  _buildReviewRow('Book No.:', _bookNumberController.text.trim()),
+                  _buildReviewRow('Page No.:', _pageNumberController.text.trim()),
+                  _buildReviewRow('Line No.:', _lineNumberController.text.trim()),
+                  _buildReviewRow('Date of Reception:', _dateOfReception?.toIso8601String().substring(0, 10) ?? '—'),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('2. Person Received into Full Communion', [
+                  _buildReviewRow('Full Name:', candidateName),
+                  _buildReviewRow('Date of Birth:', _dateOfBirth?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow('Place of Birth:', _placeOfBirthController.text.trim()),
+                  _buildReviewRow('Prior Church:', _priorBaptismChurch == 'Others (Specify)' ? _priorBaptismChurchOtherController.text.trim() : _priorBaptismChurch),
+                  if (_priorBaptismDate != null)
+                    _buildReviewRow('Prior Baptism Date:', _priorBaptismDate!.toIso8601String().substring(0, 10)),
+                  if (_priorBaptismPlaceController.text.trim().isNotEmpty)
+                    _buildReviewRow('Prior Congregation:', _priorBaptismPlaceController.text.trim()),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('3. Parents & Religious Background (Optional)', [
+                  _buildReviewRow('Father:', fatherName.isNotEmpty ? fatherName : 'Not Specified'),
+                  if (_fatherReligionController.text.trim().isNotEmpty)
+                    _buildReviewRow('Father Religion:', _fatherReligionController.text.trim()),
+                  _buildReviewRow('Mother Maiden Name:', motherName.isNotEmpty ? motherName : 'Not Specified'),
+                  if (_motherReligionController.text.trim().isNotEmpty)
+                    _buildReviewRow('Mother Religion:', _motherReligionController.text.trim()),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('4. Witnesses, Offering & Priest', [
+                  _buildReviewRow('Witness 1 (Required):', witness1Name),
+                  if (witness2Name.isNotEmpty)
+                    _buildReviewRow('Witness 2 (Optional):', witness2Name),
+                  _buildReviewRow('Officiating Priest:', priestName),
+                  _buildReviewRow('Parish Name:', _parishNameController.text.trim()),
+                  _buildReviewRow('Stipend / Offering:', _stipendController.text.trim().isNotEmpty ? '₱ ${_stipendController.text.trim()}' : '₱ 0.00 (Gratis)'),
+                  if (_remarksController.text.trim().isNotEmpty)
+                    _buildReviewRow('Remarks / Notes:', _remarksController.text.trim()),
+                ]),
+              ],
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+        actions: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(130, 46),
+              side: BorderSide(color: ParishColors.borderGrey),
+            ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go Back and Edit'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(160, 46),
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check_circle, size: 18),
+            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _submitForm();
     }
+  }
+
+  Widget _buildReviewSection(String title, List<Widget> children) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: _conversionOlive,
+            ),
+          ),
+          const Divider(height: 14),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 150,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: ParishColors.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: ParishColors.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Prompts for confirmation and audit annotation before updating canonical records
+  Future<void> _promptUpdateConfirmation() async {
+    if (!_validateAllFields()) return;
+
+    final currentUser = AuthService.currentUser;
+    final currentUserName = currentUser != null
+        ? '${currentUser.firstName} ${currentUser.lastName}'.trim()
+        : 'Authorized Parish Personnel';
+    final userRole = currentUser?.userRole ?? 'Secretary';
+
+    final reasonController = TextEditingController(text: 'Correction of reception details');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _conversionOlive.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.security_update_good, color: _conversionOlive, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Confirm Record Update',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                  color: ParishColors.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 500,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You are modifying canonical entry ${widget.initialData!['record_id']} (${_convertFirstNameController.text.trim()} ${_convertLastNameController.text.trim()}).',
+                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ParishColors.borderGrey),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AUDIT LOG ATTRIBUTION',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Editor: $currentUserName ($userRole)',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _conversionOlive),
+                    ),
+                    Text(
+                      'Coordinates: Book ${_bookNumberController.text.trim()}, Page ${_pageNumberController.text.trim()}, Line ${_lineNumberController.text.trim()}',
+                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Reason for Correction *',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+              ),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: reasonController,
+                maxLines: 2,
+                style: const TextStyle(fontSize: 13.5),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Typographical error correction on candidate name or denomination',
+                  filled: true,
+                  fillColor: ParishColors.backgroundLight,
+                  isDense: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+        actions: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(130, 44),
+              side: BorderSide(color: ParishColors.borderGrey),
+            ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go Back and Edit'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(160, 44),
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _submitForm(reasonForCorrection: reasonController.text.trim());
+    }
+  }
+
+  Future<void> _submitForm({String? reasonForCorrection}) async {
+    if (!isEditMode && !_validateAllFields()) return;
 
     setState(() => _isSubmitting = true);
 
@@ -446,6 +839,28 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
         finalPriorChurch = _priorBaptismChurch;
       } else {
         finalPriorChurch = null;
+      }
+
+      final currentUser = AuthService.currentUser;
+      final currentUserId = currentUser?.userId ?? 'STAFF';
+      final currentUserName = currentUser != null
+          ? '${currentUser.firstName} ${currentUser.lastName}'.trim()
+          : 'Authorized Parish Personnel';
+      final now = DateTime.now();
+
+      String? compiledCanonicalNotes = _existingCanonicalNotes;
+      if (isEditMode) {
+        final reason = reasonForCorrection?.isNotEmpty == true
+            ? reasonForCorrection!
+            : 'Amended canonical ledger entry';
+        final editLogStamp =
+            '[Amended on ${now.toIso8601String().substring(0, 10)} by $currentUserName (${currentUser?.userRole ?? "Staff"})]: $reason';
+
+        if (compiledCanonicalNotes != null && compiledCanonicalNotes.trim().isNotEmpty) {
+          compiledCanonicalNotes = '$compiledCanonicalNotes\n$editLogStamp';
+        } else {
+          compiledCanonicalNotes = editLogStamp;
+        }
       }
 
       final recordMap = {
@@ -495,22 +910,68 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       };
 
       if (isEditMode) {
-        await ConversionService.updateConversionRecord(
-          widget.initialData!['record_id'].toString(),
-          recordMap,
-        );
+        final recordId = widget.initialData!['record_id'].toString();
+
+        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+
+        await ConversionService.updateConversionRecord(recordId, recordMap);
+
+        if (changesJson.isNotEmpty) {
+          try {
+            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+              'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+              'record_id': recordId,
+              'sacrament_type': 'Conversion',
+              'action_type': 'UPDATED',
+              'recipient_name': '${_convertFirstNameController.text.trim()} ${_convertLastNameController.text.trim()}',
+              'book_number': _bookNumberController.text.trim(),
+              'page_number': _pageNumberController.text.trim(),
+              'line_number': _lineNumberController.text.trim(),
+              'performed_by_id': currentUserId,
+              'performed_by_name': currentUserName,
+              'performed_by_role': currentUser?.userRole ?? 'Secretary',
+              'justification': reasonForCorrection ?? 'Correction of reception details',
+              'changes_summary': changesJson,
+              'created_at': now.toIso8601String(),
+            });
+          } catch (auditErr) {
+            debugPrint('[ConversionManualEntryPage] Audit log insertion notice: $auditErr');
+          }
+        }
       } else {
-        await ConversionService.insertManualConversionRecord(recordMap);
+        final insertedRecord = await ConversionService.insertManualConversionRecord(recordMap);
+
+        try {
+          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+            'record_id': insertedRecord.recordId,
+            'sacrament_type': 'Conversion',
+            'action_type': 'CREATED',
+            'recipient_name': insertedRecord.convertFullName,
+            'book_number': insertedRecord.bookNumber,
+            'page_number': insertedRecord.pageNumber,
+            'line_number': insertedRecord.lineNumber,
+            'performed_by_id': currentUserId,
+            'performed_by_name': currentUserName,
+            'performed_by_role': currentUser?.userRole ?? 'Secretary',
+            'justification': 'Initial reception into full communion registry entry',
+            'changes_summary': '',
+            'created_at': now.toIso8601String(),
+          });
+        } catch (auditErr) {
+          debugPrint('[ConversionManualEntryPage] Audit log insertion notice: $auditErr');
+        }
       }
 
       if (!mounted) return;
+
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(isEditMode
-              ? 'Conversion record updated successfully in Liber Conversorum.'
-              : 'Conversion record successfully registered in Liber Conversorum.'),
+              ? 'Conversion record updated and logged successfully in Liber Conversorum.'
+              : 'Conversion record registered successfully in Liber Conversorum.'),
           backgroundColor: ParishColors.oliveGreen,
           duration: const Duration(seconds: 3),
         ),
@@ -521,6 +982,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
+      _scrollToTop();
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -531,10 +993,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
-    final borderGreyColor = ParishColors.borderGrey;
 
     return PopScope(
-      canPop: false,
+      canPop: !_isSubmitting,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         if (_isSubmitting) return;
@@ -574,265 +1035,134 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
               Text(
                 isEditMode
-                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
+                    ? 'Editing Record: ${widget.initialData!['record_id']}'
                     : 'Canonical Registry Book (Liber Conversorum)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
           ),
         ),
+        floatingActionButton: IgnorePointer(
+          ignoring: !_showBackToTop,
+          child: AnimatedOpacity(
+            opacity: _showBackToTop ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            child: Semantics(
+              button: true,
+              label: 'Back to top, button',
+              child: FocusableActionDetector(
+                onShowHoverHighlight: (hovered) {
+                  setState(() => _isBackToTopHovered = hovered);
+                },
+                actions: <Type, Action<Intent>>{
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) => _scrollToTop(),
+                  ),
+                },
+                child: AnimatedScale(
+                  scale: _isBackToTopHovered ? 1.05 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: SizedBox(
+                    height: 48,
+                    child: FloatingActionButton.extended(
+                      backgroundColor: _conversionOlive,
+                      foregroundColor: Colors.white,
+                      elevation: 4,
+                      onPressed: _scrollToTop,
+                      icon: const Icon(Icons.arrow_upward, size: 18),
+                      label: const Text(
+                        'Back to Top',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final double availableWidth = constraints.maxWidth;
-              final bool isMobile = availableWidth < 600;
-              final bool isSmallMobile = availableWidth < 480;
-              final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
+              final bool isWide = availableWidth >= 900;
+              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Column(
+              return Stack(
                 children: [
-                  Container(
-                    width: double.infinity,
-                    color: cardWhiteColor,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
+                  SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 960),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  isEditMode
-                                      ? 'EDITING SECTION ${_currentStep + 1} OF $_totalSteps'
-                                      : 'SECTION ${_currentStep + 1} OF $_totalSteps',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: _conversionOlive,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                Text(
-                                  '${((_currentStep + 1) / _totalSteps * 100).toInt()}% Completed',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: textMutedColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: (_currentStep + 1) / _totalSteps,
-                                minHeight: 6,
-                                backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
-                                valueColor: const AlwaysStoppedAnimation<Color>(_conversionOlive),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Divider(height: 1, color: borderGreyColor),
+                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                        child: Form(
+                          key: _formKey,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildFormHeaderCard(),
+                              const SizedBox(height: 16),
 
-                  Expanded(
-                    child: SingleChildScrollView(
-                      controller: _scrollController,
-                      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 18),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 960),
-                          child: Form(
-                            key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildGoogleFormsSectionHeader(
-                                  title: _stepTitles[_currentStep],
-                                  description: _stepDescriptions[_currentStep],
-                                  stepIndex: _currentStep,
-                                ),
-                                const SizedBox(height: 16),
-
-                                if (_errorMessage != null) ...[
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(14),
-                                    margin: const EdgeInsets.only(bottom: 16),
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.mercyRedSurface,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: ParishColors.mercyRed),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Text(
-                                            _errorMessage!,
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold,
-                                              color: ParishColors.mercyRed,
-                                            ),
+                              if (_errorMessage != null) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  decoration: BoxDecoration(
+                                    color: ParishColors.mercyRedSurface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: ParishColors.mercyRed),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          _errorMessage!,
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: ParishColors.mercyRed,
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-
-                                _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
-                                const SizedBox(height: 24),
+                                ),
                               ],
-                            ),
+
+                              _buildSection1Coordinates(isWide: isWide),
+                              const SizedBox(height: 16),
+                              _buildSection2Convert(isWide: isWide),
+                              const SizedBox(height: 16),
+                              _buildSection3Parents(isWide: isWide),
+                              const SizedBox(height: 16),
+                              _buildSection4Witnesses(isWide: isWide),
+                              const SizedBox(height: 24),
+                              _buildBottomSubmissionBar(isWide: isWide),
+                              const SizedBox(height: 50),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
 
-                  // Bottom Action Buttons
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: cardWhiteColor,
-                      border: Border(top: BorderSide(color: borderGreyColor)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 8,
-                          offset: const Offset(0, -3),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 960),
-                        child: isSmallMobile
-                            ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: (_coordinateDuplicateError != null)
-                                      ? ParishColors.mercyRed
-                                      : (_currentStep == _totalSteps - 1
-                                      ? ParishColors.oliveGreen
-                                      : _conversionOlive),
-                                  foregroundColor: Colors.white,
-                                  elevation: 1,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
-                                icon: _isSubmitting
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                                    : Icon(
-                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                  size: 20,
-                                ),
-                                label: Text(
-                                  _isSubmitting
-                                      ? (isEditMode ? 'Updating...' : 'Registering...')
-                                      : (_currentStep == _totalSteps - 1
-                                      ? (isEditMode ? 'Update Conversion Record' : 'Save Conversion Record')
-                                      : 'Continue / Next'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 44,
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(color: borderGreyColor, width: 1.5),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: _isSubmitting ? null : _goToPreviousStep,
-                                child: Text(
-                                  _currentStep == 0 ? 'Discard / Exit' : 'Back to Previous Page',
-                                  style: TextStyle(fontSize: 14, color: textMutedColor),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                            : Row(
-                          children: [
-                            SizedBox(
-                              width: isMobile ? 130 : 160,
-                              height: 48,
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(color: borderGreyColor, width: 1.5),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: _isSubmitting ? null : _goToPreviousStep,
-                                child: Text(
-                                  _currentStep == 0 ? 'Discard / Exit' : 'Back',
-                                  style: TextStyle(fontSize: 14, color: textMutedColor),
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            SizedBox(
-                              width: isMobile ? 180 : 260,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: (_coordinateDuplicateError != null)
-                                      ? ParishColors.mercyRed
-                                      : (_currentStep == _totalSteps - 1
-                                      ? ParishColors.oliveGreen
-                                      : _conversionOlive),
-                                  foregroundColor: Colors.white,
-                                  elevation: 1,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
-                                icon: _isSubmitting
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                                    : Icon(
-                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                  size: 20,
-                                ),
-                                label: Text(
-                                  _isSubmitting
-                                      ? (isEditMode ? 'Updating...' : 'Registering...')
-                                      : (_currentStep == _totalSteps - 1
-                                      ? (isEditMode ? 'Update Conversion Record' : 'Save Conversion Record')
-                                      : 'Next Section'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                              ),
-                            ),
-                          ],
+                  if (_isSubmitting)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.55),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: ParishColors.goldAccent,
+                            strokeWidth: 4.5,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               );
             },
@@ -842,28 +1172,97 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  Widget _buildActiveStepContent({required bool isMobile, required bool isSmallMobile}) {
-    switch (_currentStep) {
-      case 0:
-        return _buildStep1CanonicalCoordinates(isMobile: isMobile, isSmallMobile: isSmallMobile);
-      case 1:
-        return _buildStep2ConvertIdentity(isMobile: isMobile);
-      case 2:
-        return _buildStep3ParentsInfo(isMobile: isMobile);
-      case 3:
-        return _buildStep4WitnessesAndOffering(isMobile: isMobile);
-      default:
-        return const SizedBox.shrink();
-    }
+  Widget _buildFormHeaderCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 9,
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: _conversionOlive,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'CONVERSION REGISTER',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: _conversionOlive,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _conversionOlive.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Canonical Step',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _conversionOlive,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Full Communion Reception Entry',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Record candidate particulars, prior Christian baptism credentials, and official witnesses.',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: ParishColors.textMuted,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _buildStep1CanonicalCoordinates({required bool isMobile, required bool isSmallMobile}) {
+  Widget _buildSection1Coordinates({required bool isWide}) {
     final bool hasDup = _coordinateDuplicateError != null;
 
     return _buildSectionCard(
-      title: isEditMode
-          ? 'Canonical Coordinates & Reception Date (Coordinates Locked)'
-          : 'Canonical Coordinates & Reception Date (Conversionis)',
+      title: '1. Registry Book, Page & Line Coordinates',
       icon: Icons.menu_book,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,7 +1272,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               padding: const EdgeInsets.all(10),
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: _oliveSurface,
+                color: _conversionOlive.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: _conversionOlive.withOpacity(0.3)),
               ),
@@ -883,7 +1282,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Book, Page, and Line coordinates are permanent canonical coordinates and cannot be modified.',
+                      'Book, Page, and Line coordinates are permanent physical coordinates and cannot be altered.',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _conversionOlive),
                     ),
                   ),
@@ -904,12 +1303,12 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _coordinateDuplicateError!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
                         color: ParishColors.mercyRed,
@@ -921,39 +1320,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             ),
           ],
 
-          isSmallMobile
-              ? Column(
-            children: [
-              _buildTextFormField(
-                controller: _bookNumberController,
-                label: 'Book No.',
-                isRequired: true,
-                enabled: !isEditMode, // Locked in Edit Mode
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                validator: SacramentalValidators.validateBookNumber,
-              ),
-              _buildTextFormField(
-                controller: _pageNumberController,
-                label: 'Page No.',
-                isRequired: true,
-                enabled: !isEditMode,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                validator: SacramentalValidators.validatePageNumber,
-              ),
-              _buildTextFormField(
-                controller: _lineNumberController,
-                label: 'Line No.',
-                isRequired: true,
-                enabled: !isEditMode,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                validator: SacramentalValidators.validateLineNumber,
-              ),
-            ],
-          )
-              : Row(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
@@ -996,18 +1363,18 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
           if (_isCheckingCoordinateDuplicate)
             Padding(
-              padding: EdgeInsets.only(bottom: 8.0, left: 4.0),
+              padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
               child: Row(
                 children: [
-                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _conversionOlive)),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _conversionOlive)),
+                  const SizedBox(width: 8),
                   Text('Checking physical conversion register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
                 ],
               ),
             ),
 
           _buildDatePickerField(
-            label: 'Date of Reception into Full Communion *',
+            label: 'Date of Reception into Full Communion',
             isRequired: true,
             value: _dateOfReception,
             hasError: _dateOfReceptionHasError,
@@ -1018,87 +1385,166 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  Widget _buildStep2ConvertIdentity({required bool isMobile}) {
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: 'Identity of the Person Received (Receptorum)',
-          icon: Icons.person,
-          child: Column(
+  Widget _buildSection2Convert({required bool isWide}) {
+    return _buildSectionCard(
+      title: '2. Person Received & Prior Baptism Credentials',
+      icon: Icons.person,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _convertFirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _convertMiddleNameController,
+                    label: 'Middle Name (Optional)',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _convertLastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _convertSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _convertFirstNameController,
+                    label: 'First Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _convertMiddleNameController,
+                    label: 'Middle Name (Optional)',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _convertLastNameController,
+                    label: 'Last Name',
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _convertSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _convertFirstNameController,
-                  label: 'First Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _convertMiddleNameController,
-                  label: 'Middle Name (Optional)',
-                  isRequired: false,
-                  maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _convertLastNameController,
-                  label: 'Last Name',
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _convertSuffixController,
-                  label: 'Suffix',
-                  isRequired: false,
-                  maxLength: 15,
-                  validator: SacramentalValidators.validateSuffix,
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildDatePickerField(
-                  label: 'Date of Birth (Nativitatis) *',
+              Expanded(
+                flex: isWide ? 4 : 1,
+                child: _buildDatePickerField(
+                  label: 'Date of Birth',
                   isRequired: true,
                   value: _dateOfBirth,
                   hasError: _dateOfBirthHasError,
                   onTap: () => _selectDate(context, 1),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: isWide ? 6 : 1,
+                child: _buildTextFormField(
                   controller: _placeOfBirthController,
                   label: 'Place of Birth',
                   isRequired: true,
-                  maxLength: 100, // Length limit enforced
+                  maxLength: 100,
                   validator: (v) => SacramentalValidators.validatePlace(v, 'Place of birth', isRequired: true, maxLength: 100),
                 ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-          title: 'Prior Non-Catholic Baptism Details (BAPTISMI Ecclesia)',
-          icon: Icons.water_drop_outlined,
-          child: Column(
+
+          const Divider(height: 24),
+          const Text('Prior Non-Catholic Baptism Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _conversionOlive)),
+          const SizedBox(height: 8),
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildDatePickerField(
-                label: 'Prior Baptism Date (Optional)',
-                isRequired: false,
-                value: _priorBaptismDate,
-                hasError: false,
-                onTap: () => _selectDate(context, 2),
+              Expanded(
+                flex: isWide ? 4 : 1,
+                child: _buildDatePickerField(
+                  label: 'Prior Baptism Date (Optional)',
+                  isRequired: false,
+                  value: _priorBaptismDate,
+                  hasError: false,
+                  onTap: () => _selectDate(context, 2),
+                ),
               ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildDropdownField(
-                  label: 'Prior Church / Denomination',
+              const SizedBox(width: 12),
+              Expanded(
+                flex: isWide ? 6 : 1,
+                child: _buildDropdownField(
+                  label: 'Prior Christian Church / Denomination',
                   isRequired: false,
                   value: _priorBaptismChurch,
                   items: _priorChurchOptions,
@@ -1110,72 +1556,86 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     }
                   },
                 ),
-                second: _buildTextFormField(
-                  controller: _priorBaptismPlaceController,
-                  label: 'Congregation Location / Municipality',
-                  isRequired: false,
-                  maxLength: 150, // Length limit enforced
-                  validator: (v) => SacramentalValidators.validatePlace(v, 'Congregation location', isRequired: false, maxLength: 150),
-                ),
               ),
-              if (_priorBaptismChurch == 'Others (Specify)') ...[
-                const SizedBox(height: 4),
-                _buildTextFormField(
-                  controller: _priorBaptismChurchOtherController,
-                  label: 'Specify Prior Church / Denomination *',
-                  isRequired: true,
-                  maxLength: 100,
-                  validator: (v) {
-                    if (_priorBaptismChurch == 'Others (Specify)' && (v == null || v.trim().isEmpty)) {
-                      return 'Please specify the prior church / denomination.';
-                    }
-                    return SacramentalValidators.validatePlace(v, 'Prior church / denomination', isRequired: true, maxLength: 100);
-                  },
-                ),
-              ],
             ],
           ),
-        ),
-      ],
+
+          if (_priorBaptismChurch == 'Others (Specify)') ...[
+            _buildTextFormField(
+              controller: _priorBaptismChurchOtherController,
+              label: 'Specify Prior Church / Denomination',
+              isRequired: true,
+              maxLength: 100,
+              validator: (v) {
+                if (_priorBaptismChurch == 'Others (Specify)' && (v == null || v.trim().isEmpty)) {
+                  return 'Please specify the prior church / denomination.';
+                }
+                return SacramentalValidators.validatePlace(v, 'Prior church / denomination', isRequired: true, maxLength: 100);
+              },
+            ),
+          ],
+
+          _buildTextFormField(
+            controller: _priorBaptismPlaceController,
+            label: 'Prior Congregation Municipality / Address',
+            isRequired: false,
+            maxLength: 150,
+            validator: (v) => SacramentalValidators.validatePlace(v, 'Congregation location', isRequired: false, maxLength: 150),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildStep3ParentsInfo({required bool isMobile}) {
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: "Father's Lineage & Religion (Pater) - Optional",
-          icon: Icons.people,
-          child: Column(
+  Widget _buildSection3Parents({required bool isWide}) {
+    return _buildSectionCard(
+      title: "3. Parents & Religious Affiliation (Optional)",
+      icon: Icons.people_outline,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Father's Particulars", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _conversionOlive)),
+          const SizedBox(height: 8),
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+              Expanded(
+                child: _buildTextFormField(
                   controller: _fatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _fatherMiddleNameController,
-                  label: "Father's Middle Name",
+                  label: "Middle Name",
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+            ],
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
                   controller: _fatherLastNameController,
                   label: "Father's Last Name",
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _fatherReligionController,
                   label: "Father's Religion (e.g. Catholic, Methodist)",
                   isRequired: false,
@@ -1185,41 +1645,50 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-          title: "Mother's Lineage & Religion (Mater) - Optional",
-          icon: Icons.people_outline,
-          child: Column(
+
+          const Divider(height: 24),
+          const Text("Mother's Particulars", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _conversionOlive)),
+          const SizedBox(height: 8),
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+              Expanded(
+                child: _buildTextFormField(
                   controller: _motherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _motherMiddleNameController,
-                  label: "Mother's Middle Name",
+                  label: "Middle Name",
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+            ],
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
                   controller: _motherMaidenLastNameController,
                   label: "Mother's Maiden Last Name",
                   isRequired: false,
                   maxLength: 50,
                   validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _motherReligionController,
                   label: "Mother's Religion",
                   isRequired: false,
@@ -1229,36 +1698,44 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildStep4WitnessesAndOffering({required bool isMobile}) {
+  Widget _buildSection4Witnesses({required bool isWide}) {
     return _buildSectionCard(
-      title: 'Witnesses, Minister & Offering (Testium & Ministri)',
+      title: '4. Witnesses, Officiating Priest & Offering',
       icon: Icons.church,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Primary Witness (Sponsor 1) *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _conversionOlive)),
+          const Text('Primary Witness (Required)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: _conversionOlive)),
           const SizedBox(height: 8),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _witness1FirstNameController,
-              label: 'Witness 1 First Name',
-              isRequired: true,
-              maxLength: 50,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 first name', isRequired: true, maxLength: 50),
-            ),
-            second: _buildTextFormField(
-              controller: _witness1MiddleNameController,
-              label: 'Middle Name (Optional)',
-              isRequired: false,
-              maxLength: 50,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 middle name', isRequired: false, maxLength: 50),
-            ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _witness1FirstNameController,
+                  label: 'Witness 1 First Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 first name', isRequired: true, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _witness1MiddleNameController,
+                  label: 'Middle Name (Optional)',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 middle name', isRequired: false, maxLength: 50),
+                ),
+              ),
+            ],
           ),
           _buildTextFormField(
             controller: _witness1LastNameController,
@@ -1267,25 +1744,34 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             maxLength: 50,
             validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 last name', isRequired: true, maxLength: 50),
           ),
+
           const Divider(height: 24),
-          const Text('Secondary Witness (Sponsor 2 - Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _conversionOlive)),
+          const Text('Secondary Witness (Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: _conversionOlive)),
           const SizedBox(height: 8),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _witness2FirstNameController,
-              label: 'Witness 2 First Name',
-              isRequired: false,
-              maxLength: 50,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 first name', isRequired: false, maxLength: 50),
-            ),
-            second: _buildTextFormField(
-              controller: _witness2MiddleNameController,
-              label: 'Middle Name (Optional)',
-              isRequired: false,
-              maxLength: 50,
-              validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 middle name', isRequired: false, maxLength: 50),
-            ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _witness2FirstNameController,
+                  label: 'Witness 2 First Name',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 first name', isRequired: false, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _witness2MiddleNameController,
+                  label: 'Middle Name (Optional)',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 middle name', isRequired: false, maxLength: 50),
+                ),
+              ),
+            ],
           ),
           _buildTextFormField(
             controller: _witness2LastNameController,
@@ -1294,50 +1780,66 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             maxLength: 50,
             validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 last name', isRequired: false, maxLength: 50),
           ),
+
           const Divider(height: 24),
           _buildTextFormField(
             controller: _stipendController,
-            label: 'Stipend (₱) (Leave blank or 0 for Gratis)',
+            label: 'Stipend / Offering (₱) (Leave 0 for Gratis)',
             isRequired: false,
             maxLength: 12,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             validator: SacramentalValidators.validateStipend,
           ),
+
           const Divider(height: 24),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _ministerFirstNameController,
-              label: 'Officiating Priest First Name',
-              isRequired: true,
-              maxLength: 50,
-              validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50),
-            ),
-            second: _buildTextFormField(
-              controller: _ministerMiddleNameController,
-              label: 'Middle Name (Optional)',
-              isRequired: false,
-              maxLength: 50,
-              validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: _buildTextFormField(
+                  controller: _ministerFirstNameController,
+                  label: 'Priest First Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: _buildTextFormField(
+                  controller: _ministerMiddleNameController,
+                  label: 'Middle Name (Optional)',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: _buildTextFormField(
+                  controller: _ministerLastNameController,
+                  label: 'Priest Last Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50),
+                ),
+              ),
+            ],
           ),
-          _buildTextFormField(
-            controller: _ministerLastNameController,
-            label: 'Officiating Priest Last Name',
-            isRequired: true,
-            maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50),
-          ),
+
           _buildTextFormField(
             controller: _parishNameController,
             label: 'Parish Name',
             isRequired: true,
-            maxLength: 150, // Length limit enforced
+            maxLength: 150,
             validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
           ),
           _buildTextFormField(
             controller: _remarksController,
-            label: 'Remarks (Observanda: Confirmation, Marriage noted)',
+            label: 'Remarks / Marginal Notes (Optional)',
             isRequired: false,
             maxLines: 2,
             maxLength: 255,
@@ -1347,55 +1849,79 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  Widget _buildGoogleFormsSectionHeader({required String title, required String description, required int stepIndex}) {
+  Widget _buildBottomSubmissionBar({required bool isWide}) {
+    final borderGreyColor = ParishColors.borderGrey;
+    final textMutedColor = ParishColors.textMuted;
+
     return Container(
       width: double.infinity,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ParishColors.borderGrey),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6, offset: const Offset(0, 2))],
+        border: Border.all(color: borderGreyColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-            height: 8,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: _conversionOlive,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
+          SizedBox(
+            width: isWide ? 190 : 130,
+            height: 50,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: borderGreyColor, width: 1.4),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: _isSubmitting
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: _conversionOlive,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: Text(
+                'Discard & Exit',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+              ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      isEditMode
-                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
-                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _conversionOlive, letterSpacing: 1.0),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: _oliveSurface, borderRadius: BorderRadius.circular(6)),
-                      child: Text(
-                        isEditMode ? 'Edit Record Mode' : 'Conversion Register',
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _conversionOlive),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-                const SizedBox(height: 4),
-                Text(description, style: TextStyle(fontSize: 13, color: ParishColors.textMuted, height: 1.3)),
-              ],
+          SizedBox(
+            width: isWide ? 290 : 180,
+            height: 50,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: (_coordinateDuplicateError != null)
+                    ? ParishColors.mercyRed
+                    : (isEditMode ? _conversionOlive : ParishColors.oliveGreen),
+                foregroundColor: Colors.white,
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+                  ? null
+                  : () {
+                if (isEditMode) {
+                  _promptUpdateConfirmation();
+                } else {
+                  _promptSaveConfirmation();
+                }
+              },
+              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              label: Text(
+                isEditMode ? 'Update Conversion' : 'Save Conversion',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ),
           ),
         ],
@@ -1403,40 +1929,46 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  Widget _buildAdaptivePair({required bool isStacked, required Widget first, required Widget second, int flexFirst = 1, int flexSecond = 1}) {
-    if (isStacked) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [first, second]);
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: flexFirst, child: first),
-        const SizedBox(width: 12),
-        Expanded(flex: flexSecond, child: second),
-      ],
-    );
-  }
-
-  Widget _buildSectionCard({required String title, required IconData icon, required Widget child}) {
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: _conversionOlive),
-              const SizedBox(width: 8),
-              Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: _conversionOlive)),
+              Icon(icon, size: 22, color: _conversionOlive),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.bold,
+                    color: _conversionOlive,
+                  ),
+                ),
+              ),
             ],
           ),
-          const Divider(height: 20),
+          const Divider(height: 22),
           child,
         ],
       ),
@@ -1448,10 +1980,22 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       padding: const EdgeInsets.only(bottom: 6),
       child: RichText(
         text: TextSpan(
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: ParishColors.textDark,
+          ),
           children: [
             TextSpan(text: label),
-            if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold, fontSize: 14)),
+            if (isRequired)
+              TextSpan(
+                text: ' *',
+                style: TextStyle(
+                  color: ParishColors.mercyRed,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
           ],
         ),
       ),
@@ -1469,7 +2013,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     String? Function(String?)? validator,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1482,18 +2026,37 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             maxLength: maxLength,
             buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
             validator: validator,
-            style: TextStyle(fontSize: 14, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
               fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _conversionOlive, width: 1.8)),
-              errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2)),
-              focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.8)),
-              errorStyle: const TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+                borderSide: BorderSide(color: _conversionOlive, width: 1.8),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+              ),
+              errorStyle: TextStyle(
+                color: ParishColors.mercyRed,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -1501,10 +2064,17 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
   }
 
-  Widget _buildDatePickerField({required String label, required bool isRequired, required DateTime? value, required bool hasError, required VoidCallback onTap}) {
+  Widget _buildDatePickerField({
+    required String label,
+    required bool isRequired,
+    required DateTime? value,
+    required bool hasError,
+    required VoidCallback onTap,
+  }) {
     final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1513,7 +2083,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             onTap: onTap,
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              height: 48,
+              height: 50,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
@@ -1523,16 +2093,29 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD', style: TextStyle(fontSize: 14, color: value != null ? ParishColors.textDark : ParishColors.textMuted)),
-                  const Icon(Icons.calendar_month, size: 20, color: _conversionOlive),
+                  Text(
+                    value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      color: value != null ? ParishColors.textDark : ParishColors.textMuted,
+                    ),
+                  ),
+                  const Icon(
+                    Icons.calendar_month,
+                    size: 22,
+                    color: _conversionOlive,
+                  ),
                 ],
               ),
             ),
           ),
           if (hasError)
-            const Padding(
-              padding: EdgeInsets.only(top: 6, left: 12),
-              child: Text('Date selection is required.', style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500)),
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 12),
+              child: Text(
+                'Date selection is required.',
+                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+              ),
             ),
         ],
       ),
@@ -1547,7 +2130,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     required void Function(String?) onChanged,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1555,24 +2138,35 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
           DropdownButtonFormField<String>(
             value: value,
             isExpanded: true,
-            items: items.map((item) => DropdownMenuItem(
-              value: item,
-              child: Text(
-                item,
-                style: TextStyle(fontSize: 13, color: ParishColors.textDark),
-                overflow: TextOverflow.ellipsis,
-              ),
-            )).toList(),
+            items: items.map((item) {
+              return DropdownMenuItem<String>(
+                value: item,
+                child: Text(
+                  item,
+                  style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }).toList(),
             onChanged: onChanged,
-            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+            style: TextStyle(fontSize: 14, color: ParishColors.textDark),
             decoration: InputDecoration(
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _conversionOlive, width: 1.8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+                borderSide: BorderSide(color: _conversionOlive, width: 1.8),
+              ),
             ),
           ),
         ],

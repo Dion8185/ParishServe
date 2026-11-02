@@ -3,8 +3,11 @@
 // =============================================================================
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
 import '../../services/matrimony_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
@@ -27,33 +30,16 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
 
+  // Floating Back to Top state & micro-interactions
+  bool _showBackToTop = false;
+  bool _isBackToTopHovered = false;
+
   bool get isEditMode => widget.initialData != null;
 
   // Royal Amethyst / Burgundy Theme Accent for Matrimony
   static const Color _matrimonyBurgundy = Color(0xFF9D174D);
-  static const Color _burgundySurface = Color(0xFFFCE7F3);
 
-  // Pagination State (5 Google Forms-Style Sections)
-  int _currentStep = 0;
-  static const int _totalSteps = 5;
-
-  static const List<String> _stepTitles = [
-    'Canonical Record Reference',
-    "Groom's Personal & Parental Info",
-    "Bride's Personal & Parental Info",
-    'Primary & Additional Witnesses / Sponsors',
-    'Marriage Ceremony & Civil Compliance',
-  ];
-
-  static const List<String> _stepDescriptions = [
-    'Specify book, page, line, and registration status from the physical marriage register.',
-    'Groom identification, civil status, residence, and parents lineage.',
-    'Bride identification, civil status, residence, and parents lineage.',
-    'Strictly 2 Primary Sponsors plus dynamic additional witnesses (using [+] Add Witness).',
-    'Date of matrimony, solemnizing minister, CRASM credentials, and marriage license info.',
-  ];
-
-  // 1. Canonical Record Reference (Page 1)
+  // 1. Canonical Record Reference
   final _bookNumberController = TextEditingController();
   final _pageNumberController = TextEditingController();
   final _lineNumberController = TextEditingController();
@@ -65,7 +51,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   bool _isCheckingCoordinateDuplicate = false;
   String? _coordinateDuplicateError;
 
-  // 2. Groom Information (Page 2)
+  // 2. Groom Information
   final _groomFirstNameController = TextEditingController();
   final _groomMiddleNameController = TextEditingController();
   final _groomLastNameController = TextEditingController();
@@ -82,7 +68,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _groomMotherMiddleNameController = TextEditingController();
   final _groomMotherMaidenLastController = TextEditingController();
 
-  // 3. Bride Information (Page 3)
+  // 3. Bride Information
   final _brideFirstNameController = TextEditingController();
   final _brideMiddleNameController = TextEditingController();
   final _brideLastNameController = TextEditingController();
@@ -99,7 +85,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _brideMotherMiddleNameController = TextEditingController();
   final _brideMotherMaidenLastController = TextEditingController();
 
-  // 4. Sponsors (Page 4)
+  // 4. Sponsors
   final _sponsor1FirstNameController = TextEditingController();
   final _sponsor1MiddleNameController = TextEditingController();
   final _sponsor1LastNameController = TextEditingController();
@@ -110,10 +96,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _sponsor2LastNameController = TextEditingController();
   final _sponsor2OriginAddressController = TextEditingController();
 
-  // Dynamic Other Sponsors List (Plus button implementation - Names only)
+  // Dynamic Other Sponsors List
   final List<TextEditingController> _otherSponsorControllers = [];
 
-  // 5. Ceremony & Legal Details (Page 5)
+  // 5. Ceremony & Legal Details
   DateTime? _dateOfMarriage = DateTime.now();
   String _marriageType = 'Between Catholics';
   bool _isFilipinoForeigner = false;
@@ -129,6 +115,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _stipendController = TextEditingController();
   final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
+  String? _existingCanonicalNotes;
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -137,6 +124,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
+
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
@@ -146,12 +135,30 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     }
   }
 
+  void _onScroll() {
+    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    if (shouldShow != _showBackToTop) {
+      setState(() => _showBackToTop = shouldShow);
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   void _populateExistingData(Map<String, dynamic> data) {
     _bookNumberController.text = data['book_number']?.toString() ?? '';
     _pageNumberController.text = data['page_number']?.toString() ?? '';
     _lineNumberController.text = data['line_number']?.toString() ?? '';
     _entryStatus = data['entry_status']?.toString() ?? 'ORIGINAL';
     _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
+    _existingCanonicalNotes = data['canonical_notes']?.toString();
 
     // Groom
     _groomFirstNameController.text = data['groom_first_name']?.toString() ?? '';
@@ -269,6 +276,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   @override
   void dispose() {
     _coordinateDebounce?.cancel();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _bookNumberController.removeListener(_onCoordinateChanged);
     _pageNumberController.removeListener(_onCoordinateChanged);
@@ -325,7 +333,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     super.dispose();
   }
 
-  /// Automatically computes Groom's age as (Date of Marriage - Groom Date of Birth) when indicated.
   void _recomputeGroomAge() {
     if (_groomDateOfBirth != null && _dateOfMarriage != null) {
       final years = SacramentalValidators.calculateAgeInYears(
@@ -336,7 +343,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     }
   }
 
-  /// Automatically computes Bride's age as (Date of Marriage - Bride Date of Birth) when indicated.
   void _recomputeBrideAge() {
     if (_brideDateOfBirth != null && _dateOfMarriage != null) {
       final years = SacramentalValidators.calculateAgeInYears(
@@ -358,8 +364,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     if (dateType == 4) initialDate = _licenseDateRegistered ?? now;
     if (dateType == 5) initialDate = _crasmValidityDate ?? now;
 
-    // Dates for marriage, license registration, birth, registry must not be in the future (lastDate: now)
-    // Only CRASM certificate validity (dateType == 5) can extend into the future
     final DateTime upperDateBound = (dateType == 5) ? now.add(const Duration(days: 3650)) : now;
 
     final picked = await showDatePicker(
@@ -405,126 +409,545 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     });
   }
 
-  bool _validateStep(int step) {
+  bool _validateAllFields() {
     setState(() => _errorMessage = null);
 
-    final isStepValid = _formKey.currentState?.validate() ?? true;
-
-    if (!isStepValid) {
-      setState(() => _errorMessage = 'Please correct the highlighted errors below before proceeding.');
+    final isFormValid = _formKey.currentState?.validate() ?? false;
+    if (!isFormValid) {
+      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      _scrollToTop();
       return false;
     }
 
-    if (step == 0) {
-      if (_coordinateDuplicateError != null) {
-        setState(() => _errorMessage = _coordinateDuplicateError);
-        return false;
-      }
-
-      final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
-      if (bookError != null) {
-        setState(() => _errorMessage = bookError);
-        return false;
-      }
-      final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
-      if (pageError != null) {
-        setState(() => _errorMessage = pageError);
-        return false;
-      }
-      final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
-      if (lineError != null) {
-        setState(() => _errorMessage = lineError);
-        return false;
-      }
-      final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
-      if (regDateError != null) {
-        setState(() => _errorMessage = regDateError);
-        return false;
-      }
-      return true;
-    } else if (step == 1) {
-      final groomDobError = SacramentalValidators.validateDateOfBirth(_groomDateOfBirth, isRequired: false);
-      if (groomDobError != null) {
-        setState(() => _errorMessage = 'Groom: $groomDobError');
-        return false;
-      }
-      return true;
-    } else if (step == 2) {
-      final brideDobError = SacramentalValidators.validateDateOfBirth(_brideDateOfBirth, isRequired: false);
-      if (brideDobError != null) {
-        setState(() => _errorMessage = 'Bride: $brideDobError');
-        return false;
-      }
-      return true;
-    } else if (step == 4) {
-      if (_dateOfMarriage == null) {
-        setState(() {
-          _dateOfMarriageHasError = true;
-          _errorMessage = 'Date of Marriage is required.';
-        });
-        return false;
-      }
-      final marriageNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfMarriage, 'Date of Marriage');
-      if (marriageNotFuture != null) {
-        setState(() => _errorMessage = marriageNotFuture);
-        return false;
-      }
+    if (_coordinateDuplicateError != null) {
+      setState(() => _errorMessage = _coordinateDuplicateError);
+      _scrollToTop();
+      return false;
     }
+
+    final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+    if (bookError != null) {
+      setState(() => _errorMessage = bookError);
+      _scrollToTop();
+      return false;
+    }
+    final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+    if (pageError != null) {
+      setState(() => _errorMessage = pageError);
+      _scrollToTop();
+      return false;
+    }
+    final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+    if (lineError != null) {
+      setState(() => _errorMessage = lineError);
+      _scrollToTop();
+      return false;
+    }
+    final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
+    if (regDateError != null) {
+      setState(() => _errorMessage = regDateError);
+      _scrollToTop();
+      return false;
+    }
+
+    final groomDobError = SacramentalValidators.validateDateOfBirth(_groomDateOfBirth, isRequired: false);
+    if (groomDobError != null) {
+      setState(() => _errorMessage = 'Groom: $groomDobError');
+      _scrollToTop();
+      return false;
+    }
+
+    final brideDobError = SacramentalValidators.validateDateOfBirth(_brideDateOfBirth, isRequired: false);
+    if (brideDobError != null) {
+      setState(() => _errorMessage = 'Bride: $brideDobError');
+      _scrollToTop();
+      return false;
+    }
+
+    if (_dateOfMarriage == null) {
+      setState(() {
+        _dateOfMarriageHasError = true;
+        _errorMessage = 'Date of Marriage is required.';
+      });
+      _scrollToTop();
+      return false;
+    }
+
+    final marriageNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfMarriage, 'Date of Marriage');
+    if (marriageNotFuture != null) {
+      setState(() => _errorMessage = marriageNotFuture);
+      _scrollToTop();
+      return false;
+    }
+
     return true;
   }
 
-  void _goToNextStep() {
-    if (_validateStep(_currentStep)) {
-      if (_currentStep < _totalSteps - 1) {
-        setState(() {
-          _currentStep++;
-          _errorMessage = null;
-        });
-        _scrollToTop();
-      } else {
-        _submitForm();
-      }
-    }
-  }
+  /// Computes strict dynamic diff, excluding unchanged fields and uneditable audit metadata
+  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+    final diffs = <String, Map<String, dynamic>>{};
 
-  Future<void> _goToPreviousStep() async {
-    if (_currentStep > 0) {
-      setState(() {
-        _currentStep--;
-        _errorMessage = null;
-      });
-      _scrollToTop();
-    } else {
-      final shouldExit = await showDiscardConfirmationDialog(
-        context,
-        accentColor: _matrimonyBurgundy,
-      );
-      if (shouldExit && mounted) {
-        Navigator.pop(context);
-      }
-    }
-  }
+    final Map<String, String> fieldLabels = {
+      'book_number': 'Book No.',
+      'page_number': 'Page No.',
+      'line_number': 'Line No.',
+      'groom_first_name': 'Groom First Name',
+      'groom_middle_name': 'Groom Middle Name',
+      'groom_last_name': 'Groom Last Name',
+      'groom_suffix': 'Groom Suffix',
+      'groom_civil_status': 'Groom Civil Status',
+      'groom_age': 'Groom Age',
+      'groom_date_of_birth': 'Groom Date of Birth',
+      'groom_place_of_birth': 'Groom Birthplace',
+      'groom_address': 'Groom Residence',
+      'groom_father_first_name': 'Groom Father First Name',
+      'groom_father_middle_name': 'Groom Father Middle Name',
+      'groom_father_last_name': 'Groom Father Last Name',
+      'groom_mother_first_name': 'Groom Mother First Name',
+      'groom_mother_middle_name': 'Groom Mother Middle Name',
+      'groom_mother_maiden_last': 'Groom Mother Maiden Last Name',
+      'bride_first_name': 'Bride First Name',
+      'bride_middle_name': 'Bride Middle Name',
+      'bride_last_name': 'Bride Last Name',
+      'bride_suffix': 'Bride Suffix',
+      'bride_civil_status': 'Bride Civil Status',
+      'bride_age': 'Bride Age',
+      'bride_date_of_birth': 'Bride Date of Birth',
+      'bride_place_of_birth': 'Bride Birthplace',
+      'bride_address': 'Bride Residence',
+      'bride_father_first_name': 'Bride Father First Name',
+      'bride_father_middle_name': 'Bride Father Middle Name',
+      'bride_father_last_name': 'Bride Father Last Name',
+      'bride_mother_first_name': 'Bride Mother First Name',
+      'bride_mother_middle_name': 'Bride Mother Middle Name',
+      'bride_mother_maiden_last': 'Bride Mother Maiden Last Name',
+      'sponsor_1_first_name': 'Sponsor 1 First Name',
+      'sponsor_1_middle_name': 'Sponsor 1 Middle Name',
+      'sponsor_1_last_name': 'Sponsor 1 Last Name',
+      'sponsor_1_origin_address': 'Sponsor 1 Address',
+      'sponsor_2_first_name': 'Sponsor 2 First Name',
+      'sponsor_2_middle_name': 'Sponsor 2 Middle Name',
+      'sponsor_2_last_name': 'Sponsor 2 Last Name',
+      'sponsor_2_origin_address': 'Sponsor 2 Address',
+      'other_sponsors': 'Other Witnesses',
+      'date_of_marriage': 'Date of Marriage',
+      'marriage_type': 'Marriage Type',
+      'is_filipino_foreigner': 'Filipino / Foreigner Status',
+      'marriage_license_no': 'Marriage License No.',
+      'license_date_registered': 'License Date Registered',
+      'license_place_issued': 'License Place Issued',
+      'solemnizer_first_name': 'Priest First Name',
+      'solemnizer_middle_name': 'Priest Middle Name',
+      'solemnizer_last_name': 'Priest Last Name',
+      'crasm_number': 'CRASM Number',
+      'crasm_validity_date': 'CRASM Validity Date',
+      'stipend': 'Stipend',
+      'parish_name': 'Parish Name',
+      'remarks': 'Remarks',
+    };
 
-  void _scrollToTop() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _submitForm() async {
-    for (int s = 0; s < _totalSteps; s++) {
-      if (!_validateStep(s)) {
-        setState(() => _currentStep = s);
-        _scrollToTop();
+    newData.forEach((key, newVal) {
+      if (key == 'created_at' ||
+          key == 'date_encoded' ||
+          key == 'canonical_notes' ||
+          key == 'registry_date' ||
+          key == 'entry_status') {
         return;
       }
+
+      final oldVal = oldData[key];
+      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
+      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+
+      String normOld = oldStr;
+      String normNew = newStr;
+      if (oldStr.length >= 10 && DateTime.tryParse(oldStr) != null) {
+        normOld = oldStr.substring(0, 10);
+      }
+      if (newStr.length >= 10 && DateTime.tryParse(newStr) != null) {
+        normNew = newStr.substring(0, 10);
+      }
+
+      if (normOld != normNew) {
+        final label = fieldLabels[key] ?? key;
+        diffs[label] = {
+          'old': oldStr.isEmpty ? '—' : oldStr,
+          'new': newStr.isEmpty ? '—' : newStr,
+        };
+      }
+    });
+
+    return diffs.isNotEmpty ? jsonEncode(diffs) : '';
+  }
+
+  /// Verification & Review confirmation dialog before saving a new Matrimony record
+  Future<void> _promptSaveConfirmation() async {
+    if (!_validateAllFields()) return;
+
+    final groomName = [
+      _groomFirstNameController.text.trim(),
+      _groomMiddleNameController.text.trim(),
+      _groomLastNameController.text.trim(),
+      _groomSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final brideName = [
+      _brideFirstNameController.text.trim(),
+      _brideMiddleNameController.text.trim(),
+      _brideLastNameController.text.trim(),
+      _brideSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final sponsor1Name = [
+      _sponsor1FirstNameController.text.trim(),
+      _sponsor1MiddleNameController.text.trim(),
+      _sponsor1LastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final sponsor2Name = [
+      _sponsor2FirstNameController.text.trim(),
+      _sponsor2MiddleNameController.text.trim(),
+      _sponsor2LastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final priestName = [
+      'Rev. Fr.',
+      _solemnizerFirstNameController.text.trim(),
+      _solemnizerMiddleNameController.text.trim(),
+      _solemnizerLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final otherSponsors = _otherSponsorControllers
+        .map((c) => c.text.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _matrimonyBurgundy.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.fact_check_outlined, color: _matrimonyBurgundy, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Review & Verify Record',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      color: ParishColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Verify all fields before saving into Liber Matrimoniorum.',
+                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 580,
+          height: screenHeight * 0.70,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildReviewSection('1. Registry Coordinates', [
+                  _buildReviewRow('Book No.:', _bookNumberController.text.trim()),
+                  _buildReviewRow('Page No.:', _pageNumberController.text.trim()),
+                  _buildReviewRow('Line No.:', _lineNumberController.text.trim()),
+                  _buildReviewRow('Registry Date:', _registryDate.toIso8601String().substring(0, 10)),
+                  _buildReviewRow('Entry Status:', _entryStatus),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection("2. Groom's Information", [
+                  _buildReviewRow('Full Name:', groomName),
+                  _buildReviewRow('Age:', _groomAgeController.text.trim()),
+                  _buildReviewRow('Civil Status:', _groomCivilStatus),
+                  if (_groomDateOfBirth != null)
+                    _buildReviewRow('Date of Birth:', _groomDateOfBirth!.toIso8601String().substring(0, 10)),
+                  if (_groomPlaceOfBirthController.text.trim().isNotEmpty)
+                    _buildReviewRow('Birthplace:', _groomPlaceOfBirthController.text.trim()),
+                  _buildReviewRow('Residence:', _groomAddressController.text.trim()),
+                  _buildReviewRow('Father:', '${_groomFatherFirstNameController.text.trim()} ${_groomFatherLastNameController.text.trim()}'),
+                  _buildReviewRow('Mother Maiden Name:', '${_groomMotherFirstNameController.text.trim()} ${_groomMotherMaidenLastController.text.trim()}'),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection("3. Bride's Information", [
+                  _buildReviewRow('Full Name:', brideName),
+                  _buildReviewRow('Age:', _brideAgeController.text.trim()),
+                  _buildReviewRow('Civil Status:', _brideCivilStatus),
+                  if (_brideDateOfBirth != null)
+                    _buildReviewRow('Date of Birth:', _brideDateOfBirth!.toIso8601String().substring(0, 10)),
+                  if (_bridePlaceOfBirthController.text.trim().isNotEmpty)
+                    _buildReviewRow('Birthplace:', _bridePlaceOfBirthController.text.trim()),
+                  _buildReviewRow('Residence:', _brideAddressController.text.trim()),
+                  _buildReviewRow('Father:', '${_brideFatherFirstNameController.text.trim()} ${_brideFatherLastNameController.text.trim()}'),
+                  _buildReviewRow('Mother Maiden Name:', '${_brideMotherFirstNameController.text.trim()} ${_brideMotherMaidenLastController.text.trim()}'),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('4. Primary & Secondary Witnesses', [
+                  _buildReviewRow('Primary Sponsor 1:', sponsor1Name),
+                  _buildReviewRow('Primary Sponsor 2:', sponsor2Name),
+                  if (otherSponsors.isNotEmpty)
+                    _buildReviewRow('Additional Witnesses:', otherSponsors.join(', ')),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('5. Ceremony & Legal Details', [
+                  _buildReviewRow('Date of Marriage:', _dateOfMarriage?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow('Marriage Type:', _marriageType),
+                  _buildReviewRow('Solemnizing Priest:', priestName),
+                  if (_marriageLicenseNoController.text.trim().isNotEmpty)
+                    _buildReviewRow('Marriage License No.:', _marriageLicenseNoController.text.trim()),
+                  if (_crasmNumberController.text.trim().isNotEmpty)
+                    _buildReviewRow('CRASM Number:', _crasmNumberController.text.trim()),
+                  _buildReviewRow('Stipend / Offering:', _stipendController.text.trim().isNotEmpty ? '₱ ${_stipendController.text.trim()}' : '₱ 0.00'),
+                  if (_remarksController.text.trim().isNotEmpty)
+                    _buildReviewRow('Remarks / Notes:', _remarksController.text.trim()),
+                ]),
+              ],
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+        actions: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(130, 46),
+              side: BorderSide(color: ParishColors.borderGrey),
+            ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go Back and Edit'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(160, 46),
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check_circle, size: 18),
+            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _submitForm();
     }
+  }
+
+  Widget _buildReviewSection(String title, List<Widget> children) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: _matrimonyBurgundy,
+            ),
+          ),
+          const Divider(height: 14),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: ParishColors.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: ParishColors.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Prompts for confirmation and audit annotation before updating canonical records
+  Future<void> _promptUpdateConfirmation() async {
+    if (!_validateAllFields()) return;
+
+    final currentUser = AuthService.currentUser;
+    final currentUserName = currentUser != null
+        ? '${currentUser.firstName} ${currentUser.lastName}'.trim()
+        : 'Authorized Parish Personnel';
+    final userRole = currentUser?.userRole ?? 'Secretary';
+
+    final reasonController = TextEditingController(text: 'Correction of marriage record details');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _matrimonyBurgundy.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.security_update_good, color: _matrimonyBurgundy, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Confirm Record Update',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                  color: ParishColors.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 500,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You are modifying canonical entry ${widget.initialData!['record_id']} (${_groomLastNameController.text.trim()} & ${_brideLastNameController.text.trim()}).',
+                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ParishColors.borderGrey),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AUDIT LOG ATTRIBUTION',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Editor: $currentUserName ($userRole)',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _matrimonyBurgundy),
+                    ),
+                    Text(
+                      'Coordinates: Book ${_bookNumberController.text.trim()}, Page ${_pageNumberController.text.trim()}, Line ${_lineNumberController.text.trim()}',
+                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Reason for Correction *',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+              ),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: reasonController,
+                maxLines: 2,
+                style: const TextStyle(fontSize: 13.5),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Typographical error correction on bride surname or license details',
+                  filled: true,
+                  fillColor: ParishColors.backgroundLight,
+                  isDense: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+        actions: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(130, 44),
+              side: BorderSide(color: ParishColors.borderGrey),
+            ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go Back and Edit'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(160, 44),
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _submitForm(reasonForCorrection: reasonController.text.trim());
+    }
+  }
+
+  Future<void> _submitForm({String? reasonForCorrection}) async {
+    if (!isEditMode && !_validateAllFields()) return;
 
     setState(() => _isSubmitting = true);
 
@@ -534,12 +957,40 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           .where((t) => t.isNotEmpty)
           .toList();
 
+      final currentUser = AuthService.currentUser;
+      final currentUserId = currentUser?.userId ?? 'STAFF';
+      final currentUserName = currentUser != null
+          ? '${currentUser.firstName} ${currentUser.lastName}'.trim()
+          : 'Authorized Parish Personnel';
+      final now = DateTime.now();
+
+      String? compiledCanonicalNotes = _existingCanonicalNotes;
+      if (isEditMode) {
+        final reason = reasonForCorrection?.isNotEmpty == true
+            ? reasonForCorrection!
+            : 'Amended canonical ledger entry';
+        final editLogStamp =
+            '[Amended on ${now.toIso8601String().substring(0, 10)} by $currentUserName (${currentUser?.userRole ?? "Staff"})]: $reason';
+
+        if (compiledCanonicalNotes != null && compiledCanonicalNotes.trim().isNotEmpty) {
+          compiledCanonicalNotes = '$compiledCanonicalNotes\n$editLogStamp';
+        } else {
+          compiledCanonicalNotes = editLogStamp;
+        }
+      }
+
       final recordMap = {
         'book_number': _bookNumberController.text.trim(),
         'page_number': _pageNumberController.text.trim(),
         'line_number': _lineNumberController.text.trim(),
-        'registry_date': _registryDate.toIso8601String().substring(0, 10),
-        'entry_status': _entryStatus,
+        'registry_date': isEditMode
+            ? (widget.initialData!['registry_date']?.toString().substring(0, 10) ??
+            _registryDate.toIso8601String().substring(0, 10))
+            : _registryDate.toIso8601String().substring(0, 10),
+        'entry_status': isEditMode
+            ? (widget.initialData!['entry_status']?.toString() ?? 'ORIGINAL')
+            : 'CORRECTED',
+        'canonical_notes': compiledCanonicalNotes,
 
         // Groom
         'groom_first_name': _groomFirstNameController.text.trim(),
@@ -606,22 +1057,68 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       };
 
       if (isEditMode) {
-        await MatrimonyService.updateMatrimonyRecord(
-          widget.initialData!['record_id'].toString(),
-          recordMap,
-        );
+        final recordId = widget.initialData!['record_id'].toString();
+
+        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+
+        await MatrimonyService.updateMatrimonyRecord(recordId, recordMap);
+
+        if (changesJson.isNotEmpty) {
+          try {
+            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+              'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+              'record_id': recordId,
+              'sacrament_type': 'Matrimony',
+              'action_type': 'UPDATED',
+              'recipient_name': '${_groomLastNameController.text.trim()} & ${_brideLastNameController.text.trim()}',
+              'book_number': _bookNumberController.text.trim(),
+              'page_number': _pageNumberController.text.trim(),
+              'line_number': _lineNumberController.text.trim(),
+              'performed_by_id': currentUserId,
+              'performed_by_name': currentUserName,
+              'performed_by_role': currentUser?.userRole ?? 'Secretary',
+              'justification': reasonForCorrection ?? 'Correction of marriage record details',
+              'changes_summary': changesJson,
+              'created_at': now.toIso8601String(),
+            });
+          } catch (auditErr) {
+            debugPrint('[MatrimonyManualEntryPage] Audit log insertion notice: $auditErr');
+          }
+        }
       } else {
-        await MatrimonyService.insertManualMatrimonyRecord(recordMap);
+        final insertedRecord = await MatrimonyService.insertManualMatrimonyRecord(recordMap);
+
+        try {
+          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+            'record_id': insertedRecord.recordId,
+            'sacrament_type': 'Matrimony',
+            'action_type': 'CREATED',
+            'recipient_name': '${insertedRecord.groomFullName} & ${insertedRecord.brideFullName}',
+            'book_number': insertedRecord.bookNumber,
+            'page_number': insertedRecord.pageNumber,
+            'line_number': insertedRecord.lineNumber,
+            'performed_by_id': currentUserId,
+            'performed_by_name': currentUserName,
+            'performed_by_role': currentUser?.userRole ?? 'Secretary',
+            'justification': 'Initial marriage registry entry',
+            'changes_summary': '',
+            'created_at': now.toIso8601String(),
+          });
+        } catch (auditErr) {
+          debugPrint('[MatrimonyManualEntryPage] Audit log insertion notice: $auditErr');
+        }
       }
 
       if (!mounted) return;
+
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(isEditMode
-              ? 'Matrimony record updated successfully in Liber Matrimoniorum.'
-              : 'Matrimony record successfully registered in Liber Matrimoniorum.'),
+              ? 'Matrimony record updated and logged successfully.'
+              : 'Matrimony record registered successfully.'),
           backgroundColor: ParishColors.oliveGreen,
           duration: const Duration(seconds: 3),
         ),
@@ -632,6 +1129,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
+      _scrollToTop();
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -642,10 +1140,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
-    final borderGreyColor = ParishColors.borderGrey;
 
     return PopScope(
-      canPop: false,
+      canPop: !_isSubmitting,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         if (_isSubmitting) return;
@@ -685,265 +1182,136 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               ),
               Text(
                 isEditMode
-                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
+                    ? 'Editing Record: ${widget.initialData!['record_id']}'
                     : 'Canonical Registry Book (Liber Matrimoniorum)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
           ),
         ),
+        floatingActionButton: IgnorePointer(
+          ignoring: !_showBackToTop,
+          child: AnimatedOpacity(
+            opacity: _showBackToTop ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            child: Semantics(
+              button: true,
+              label: 'Back to top, button',
+              child: FocusableActionDetector(
+                onShowHoverHighlight: (hovered) {
+                  setState(() => _isBackToTopHovered = hovered);
+                },
+                actions: <Type, Action<Intent>>{
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) => _scrollToTop(),
+                  ),
+                },
+                child: AnimatedScale(
+                  scale: _isBackToTopHovered ? 1.05 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: SizedBox(
+                    height: 48,
+                    child: FloatingActionButton.extended(
+                      backgroundColor: _matrimonyBurgundy,
+                      foregroundColor: Colors.white,
+                      elevation: 4,
+                      onPressed: _scrollToTop,
+                      icon: const Icon(Icons.arrow_upward, size: 18),
+                      label: const Text(
+                        'Back to Top',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final double availableWidth = constraints.maxWidth;
-              final bool isMobile = availableWidth < 600;
-              final bool isSmallMobile = availableWidth < 480;
-              final double horizontalPadding = isMobile ? 16.0 : (availableWidth < 1024 ? 28.0 : 40.0);
+              final bool isWide = availableWidth >= 900;
+              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Column(
+              return Stack(
                 children: [
-                  Container(
-                    width: double.infinity,
-                    color: cardWhiteColor,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
+                  SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 960),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  isEditMode
-                                      ? 'EDITING SECTION ${_currentStep + 1} OF $_totalSteps'
-                                      : 'SECTION ${_currentStep + 1} OF $_totalSteps',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: _matrimonyBurgundy,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                Text(
-                                  '${((_currentStep + 1) / _totalSteps * 100).toInt()}% Completed',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: textMutedColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: (_currentStep + 1) / _totalSteps,
-                                minHeight: 6,
-                                backgroundColor: ParishColors.borderGrey.withOpacity(0.4),
-                                valueColor: const AlwaysStoppedAnimation<Color>(_matrimonyBurgundy),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Divider(height: 1, color: borderGreyColor),
+                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                        child: Form(
+                          key: _formKey,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildFormHeaderCard(),
+                              const SizedBox(height: 16),
 
-                  Expanded(
-                    child: SingleChildScrollView(
-                      controller: _scrollController,
-                      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 18),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 960),
-                          child: Form(
-                            key: _formKey,
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildGoogleFormsSectionHeader(
-                                  title: _stepTitles[_currentStep],
-                                  description: _stepDescriptions[_currentStep],
-                                  stepIndex: _currentStep,
-                                ),
-                                const SizedBox(height: 16),
-
-                                if (_errorMessage != null) ...[
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(14),
-                                    margin: const EdgeInsets.only(bottom: 16),
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.mercyRedSurface,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: ParishColors.mercyRed),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 22),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Text(
-                                            _errorMessage!,
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold,
-                                              color: ParishColors.mercyRed,
-                                            ),
+                              if (_errorMessage != null) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  decoration: BoxDecoration(
+                                    color: ParishColors.mercyRedSurface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: ParishColors.mercyRed),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          _errorMessage!,
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: ParishColors.mercyRed,
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-
-                                _buildActiveStepContent(isMobile: isMobile, isSmallMobile: isSmallMobile),
-                                const SizedBox(height: 24),
+                                ),
                               ],
-                            ),
+
+                              _buildSection1Coordinates(isWide: isWide),
+                              const SizedBox(height: 16),
+                              _buildSection2Groom(isWide: isWide),
+                              const SizedBox(height: 16),
+                              _buildSection3Bride(isWide: isWide),
+                              const SizedBox(height: 16),
+                              _buildSection4Sponsors(isWide: isWide),
+                              const SizedBox(height: 16),
+                              _buildSection5Ceremony(isWide: isWide),
+                              const SizedBox(height: 24),
+                              _buildBottomSubmissionBar(isWide: isWide),
+                              const SizedBox(height: 50),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
 
-                  // Bottom Action Bar
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: cardWhiteColor,
-                      border: Border(top: BorderSide(color: borderGreyColor)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 8,
-                          offset: const Offset(0, -3),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 960),
-                        child: isSmallMobile
-                            ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: (_coordinateDuplicateError != null)
-                                      ? ParishColors.mercyRed
-                                      : (_currentStep == _totalSteps - 1
-                                      ? ParishColors.oliveGreen
-                                      : _matrimonyBurgundy),
-                                  foregroundColor: Colors.white,
-                                  elevation: 1,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
-                                icon: _isSubmitting
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                                    : Icon(
-                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                  size: 20,
-                                ),
-                                label: Text(
-                                  _isSubmitting
-                                      ? (isEditMode ? 'Updating...' : 'Registering...')
-                                      : (_currentStep == _totalSteps - 1
-                                      ? (isEditMode ? 'Update Matrimony Record' : 'Save Matrimony Record')
-                                      : 'Continue / Next'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 44,
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(color: borderGreyColor, width: 1.5),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: _isSubmitting ? null : _goToPreviousStep,
-                                child: Text(
-                                  _currentStep == 0 ? 'Discard / Exit' : 'Back to Previous Page',
-                                  style: TextStyle(fontSize: 14, color: textMutedColor),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                            : Row(
-                          children: [
-                            SizedBox(
-                              width: isMobile ? 130 : 160,
-                              height: 48,
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(color: borderGreyColor, width: 1.5),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: _isSubmitting ? null : _goToPreviousStep,
-                                child: Text(
-                                  _currentStep == 0 ? 'Discard / Exit' : 'Back',
-                                  style: TextStyle(fontSize: 14, color: textMutedColor),
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            SizedBox(
-                              width: isMobile ? 210 : 270,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: (_coordinateDuplicateError != null)
-                                      ? ParishColors.mercyRed
-                                      : (_currentStep == _totalSteps - 1
-                                      ? ParishColors.oliveGreen
-                                      : _matrimonyBurgundy),
-                                  foregroundColor: Colors.white,
-                                  elevation: 1,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _goToNextStep,
-                                icon: _isSubmitting
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                                    : Icon(
-                                  _currentStep == _totalSteps - 1 ? Icons.check : Icons.arrow_forward,
-                                  size: 20,
-                                ),
-                                label: Text(
-                                  _isSubmitting
-                                      ? (isEditMode ? 'Updating...' : 'Registering...')
-                                      : (_currentStep == _totalSteps - 1
-                                      ? (isEditMode ? 'Update Matrimony Record' : 'Save Matrimony Record')
-                                      : 'Next Section'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                              ),
-                            ),
-                          ],
+                  if (_isSubmitting)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.55),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: ParishColors.goldAccent,
+                            strokeWidth: 4.5,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               );
             },
@@ -953,30 +1321,97 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  Widget _buildActiveStepContent({required bool isMobile, required bool isSmallMobile}) {
-    switch (_currentStep) {
-      case 0:
-        return _buildStep1CanonicalReference(isMobile: isMobile, isSmallMobile: isSmallMobile);
-      case 1:
-        return _buildStep2GroomInformation(isMobile: isMobile);
-      case 2:
-        return _buildStep3BrideInformation(isMobile: isMobile);
-      case 3:
-        return _buildStep4SponsorsInformation(isMobile: isMobile);
-      case 4:
-        return _buildStep5CeremonyAndLegal(isMobile: isMobile);
-      default:
-        return const SizedBox.shrink();
-    }
+  Widget _buildFormHeaderCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 9,
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: _matrimonyBurgundy,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'MATRIMONY REGISTER',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: _matrimonyBurgundy,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _matrimonyBurgundy.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Canonical Step',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _matrimonyBurgundy,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Holy Matrimony Record Entry',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Record canonical marriage details, spouses, witnesses, and civil license information.',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: ParishColors.textMuted,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _buildStep1CanonicalReference({required bool isMobile, required bool isSmallMobile}) {
+  Widget _buildSection1Coordinates({required bool isWide}) {
     final bool hasDup = _coordinateDuplicateError != null;
 
     return _buildSectionCard(
-      title: isEditMode
-          ? 'Canonical Ledger Designation (Coordinates Locked)'
-          : 'Canonical Ledger Designation',
+      title: '1. Registry Book, Page & Line Coordinates',
       icon: Icons.menu_book,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -986,7 +1421,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               padding: const EdgeInsets.all(10),
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: _burgundySurface,
+                color: _matrimonyBurgundy.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: _matrimonyBurgundy.withOpacity(0.3)),
               ),
@@ -996,7 +1431,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Book, Page, and Line coordinates are permanent canonical markers and cannot be altered.',
+                      'Book, Page, and Line coordinates are permanent physical coordinates and cannot be altered.',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _matrimonyBurgundy),
                     ),
                   ),
@@ -1017,12 +1452,12 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _coordinateDuplicateError!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
                         color: ParishColors.mercyRed,
@@ -1034,600 +1469,984 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             ),
           ],
 
-          isSmallMobile
-              ? Column(
-            children: [
-              _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateBookNumber),
-              _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validatePageNumber),
-              _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateLineNumber),
-            ],
-          )
-              : Row(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _buildTextFormField(controller: _bookNumberController, label: 'Book No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateBookNumber)),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _bookNumberController,
+                  label: 'Book No.',
+                  isRequired: true,
+                  enabled: !isEditMode,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  validator: SacramentalValidators.validateBookNumber,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _pageNumberController, label: 'Page No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validatePageNumber)),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _pageNumberController,
+                  label: 'Page No.',
+                  isRequired: true,
+                  enabled: !isEditMode,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  validator: SacramentalValidators.validatePageNumber,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextFormField(controller: _lineNumberController, label: 'Line No.', isRequired: true, enabled: !isEditMode, keyboardType: TextInputType.number, maxLength: 4, validator: SacramentalValidators.validateLineNumber)),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _lineNumberController,
+                  label: 'Line No.',
+                  isRequired: true,
+                  enabled: !isEditMode,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  validator: SacramentalValidators.validateLineNumber,
+                ),
+              ),
             ],
           ),
 
           if (_isCheckingCoordinateDuplicate)
             Padding(
-              padding: EdgeInsets.only(bottom: 8.0, left: 4.0),
+              padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
               child: Row(
                 children: [
-                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _matrimonyBurgundy)),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _matrimonyBurgundy)),
+                  const SizedBox(width: 8),
                   Text('Checking physical matrimony register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
                 ],
               ),
             ),
 
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildDropdownField(
-              label: 'Entry Status',
-              isRequired: true,
-              value: _entryStatus,
-              items: const ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'],
-              onChanged: (val) => setState(() => _entryStatus = val!),
-            ),
-            second: _buildDatePickerField(
-              label: 'Registry Date',
-              isRequired: true,
-              value: _registryDate,
-              hasError: false,
-              onTap: () => _selectDate(context, 0),
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: isEditMode
+                    ? _buildTextFormField(
+                  controller: TextEditingController(text: _entryStatus),
+                  label: 'Entry Status (Locked)',
+                  isRequired: false,
+                  enabled: false,
+                )
+                    : _buildDropdownField(
+                  label: 'Entry Status',
+                  isRequired: true,
+                  value: _entryStatus,
+                  items: const ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'],
+                  onChanged: (val) => setState(() => _entryStatus = val!),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: isEditMode
+                    ? _buildTextFormField(
+                  controller: TextEditingController(text: _registryDate.toIso8601String().substring(0, 10)),
+                  label: 'Registry Date (Locked)',
+                  isRequired: false,
+                  enabled: false,
+                )
+                    : _buildDatePickerField(
+                  label: 'Registry Date',
+                  isRequired: true,
+                  value: _registryDate,
+                  hasError: false,
+                  onTap: () => _selectDate(context, 0),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStep2GroomInformation({required bool isMobile}) {
+  Widget _buildSection2Groom({required bool isWide}) {
     final bool hasGroomDob = _groomDateOfBirth != null;
 
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: "Groom's Personal Particulars",
-          icon: Icons.male,
-          child: Column(
+    return _buildSectionCard(
+      title: "2. Groom's Information",
+      icon: Icons.male,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _groomFirstNameController,
+                    label: "Groom's First Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Groom's first name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _groomMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _groomLastNameController,
+                    label: "Groom's Last Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Groom's last name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _groomSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _groomFirstNameController,
+                    label: "Groom's First Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Groom's first name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _groomMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false, maxLength: 50),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _groomLastNameController,
+                    label: "Groom's Last Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Groom's last name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _groomSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _groomFirstNameController,
-                  label: "Groom's First Name",
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Groom's first name", isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _groomMiddleNameController,
-                  label: 'Middle Name',
-                  isRequired: false,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false, maxLength: 50),
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _groomLastNameController,
-                  label: "Groom's Last Name",
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Groom's last name", isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _groomSuffixController,
-                  label: 'Suffix',
-                  isRequired: false,
-                  maxLength: 15,
-                  validator: SacramentalValidators.validateSuffix,
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildDropdownField(
+              Expanded(
+                child: _buildDropdownField(
                   label: 'Civil Status',
                   isRequired: true,
                   value: _groomCivilStatus,
                   items: const ['Single', 'Widower', 'Annulled', 'Divorced'],
                   onChanged: (val) => setState(() => _groomCivilStatus = val!),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _groomAgeController,
-                  label: hasGroomDob ? "Groom's Age (Autocomputed)" : "Groom's Age",
+                  label: hasGroomDob ? "Groom's Age (Calculated)" : "Groom's Age",
                   isRequired: true,
-                  enabled: !hasGroomDob, // Editable only if birth is not indicated!
+                  enabled: !hasGroomDob,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
                   validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
                 ),
               ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildDatePickerField(
+            ],
+          ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildDatePickerField(
                   label: 'Date of Birth (Optional)',
                   isRequired: false,
                   value: _groomDateOfBirth,
                   hasError: false,
                   onTap: () => _selectDate(context, 1),
                 ),
-                second: _buildTextFormField(
-                  controller: _groomPlaceOfBirthController,
-                  label: 'Place of Birth',
-                  isRequired: false,
-                  maxLength: 100, // Length limit enforced
-                  validator: (val) => SacramentalValidators.validatePlace(val, "Groom's place of birth", isRequired: false, maxLength: 100),
-                ),
               ),
-              _buildTextFormField(
-                controller: _groomAddressController,
-                label: "Groom's Residential Address",
-                isRequired: true,
-                maxLength: 150, // Length limit enforced
-                validator: (val) => SacramentalValidators.validatePlace(val, "Groom's address", isRequired: true, maxLength: 150),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _groomPlaceOfBirthController,
+                  label: 'Birthplace / Hometown',
+                  isRequired: false,
+                  maxLength: 100,
+                  validator: (val) => SacramentalValidators.validatePlace(val, "Groom's birthplace", isRequired: false, maxLength: 100),
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-          title: "Groom's Parents",
-          icon: Icons.people,
-          child: Column(
+
+          _buildTextFormField(
+            controller: _groomAddressController,
+            label: "Groom's Residential Address",
+            isRequired: true,
+            maxLength: 150,
+            validator: (val) => SacramentalValidators.validatePlace(val, "Groom's address", isRequired: true, maxLength: 150),
+          ),
+
+          const Divider(height: 24),
+          const Text("Groom's Parents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
+          const SizedBox(height: 8),
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+              Expanded(
+                child: _buildTextFormField(
                   controller: _groomFatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: true,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _groomFatherMiddleNameController,
-                  label: "Father's Middle Name",
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
-              _buildTextFormField(
-                controller: _groomFatherLastNameController,
-                label: "Father's Last Name",
-                isRequired: true,
-                maxLength: 50,
-                validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
-              ),
-              const Divider(height: 24),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+            ],
+          ),
+          _buildTextFormField(
+            controller: _groomFatherLastNameController,
+            label: "Father's Last Name",
+            isRequired: true,
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
+          ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
                   controller: _groomMotherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: true,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _groomMotherMiddleNameController,
-                  label: "Mother's Middle Name",
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
-              _buildTextFormField(
-                controller: _groomMotherMaidenLastController,
-                label: "Mother's Maiden Last Name",
-                isRequired: true,
-                maxLength: 50,
-                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
-              ),
             ],
           ),
-        ),
-      ],
+          _buildTextFormField(
+            controller: _groomMotherMaidenLastController,
+            label: "Mother's Maiden Last Name",
+            isRequired: true,
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildStep3BrideInformation({required bool isMobile}) {
+  Widget _buildSection3Bride({required bool isWide}) {
     final bool hasBrideDob = _brideDateOfBirth != null;
 
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: "Bride's Personal Particulars",
-          icon: Icons.female,
-          child: Column(
+    return _buildSectionCard(
+      title: "3. Bride's Information",
+      icon: Icons.female,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isWide) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _brideFirstNameController,
+                    label: "Bride's First Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Bride's first name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _brideMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: _buildTextFormField(
+                    controller: _brideLastNameController,
+                    label: "Bride's Last Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Bride's last name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _brideSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _brideFirstNameController,
+                    label: "Bride's First Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Bride's first name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _brideMiddleNameController,
+                    label: 'Middle Name',
+                    isRequired: false,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false, maxLength: 50),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextFormField(
+                    controller: _brideLastNameController,
+                    label: "Bride's Last Name",
+                    isRequired: true,
+                    maxLength: 50,
+                    validator: (val) => SacramentalValidators.validateName(val, "Bride's last name", isRequired: true, maxLength: 50),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextFormField(
+                    controller: _brideSuffixController,
+                    label: 'Suffix',
+                    isRequired: false,
+                    maxLength: 15,
+                    validator: SacramentalValidators.validateSuffix,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _brideFirstNameController,
-                  label: "Bride's First Name",
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Bride's first name", isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _brideMiddleNameController,
-                  label: 'Middle Name',
-                  isRequired: false,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false, maxLength: 50),
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
-                  controller: _brideLastNameController,
-                  label: "Bride's Last Name",
-                  isRequired: true,
-                  maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Bride's last name", isRequired: true, maxLength: 50),
-                ),
-                second: _buildTextFormField(
-                  controller: _brideSuffixController,
-                  label: 'Suffix',
-                  isRequired: false,
-                  maxLength: 15,
-                  validator: SacramentalValidators.validateSuffix,
-                ),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildDropdownField(
+              Expanded(
+                child: _buildDropdownField(
                   label: 'Civil Status',
                   isRequired: true,
                   value: _brideCivilStatus,
                   items: const ['Single', 'Widow', 'Annulled', 'Divorced'],
                   onChanged: (val) => setState(() => _brideCivilStatus = val!),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _brideAgeController,
-                  label: hasBrideDob ? "Bride's Age (Autocomputed)" : "Bride's Age",
+                  label: hasBrideDob ? "Bride's Age (Calculated)" : "Bride's Age",
                   isRequired: true,
-                  enabled: !hasBrideDob, // Editable only if birth is not indicated!
+                  enabled: !hasBrideDob,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
                   validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
                 ),
               ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildDatePickerField(
+            ],
+          ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildDatePickerField(
                   label: 'Date of Birth (Optional)',
                   isRequired: false,
                   value: _brideDateOfBirth,
                   hasError: false,
                   onTap: () => _selectDate(context, 2),
                 ),
-                second: _buildTextFormField(
-                  controller: _bridePlaceOfBirthController,
-                  label: 'Place of Birth',
-                  isRequired: false,
-                  maxLength: 100, // Length limit enforced
-                  validator: (val) => SacramentalValidators.validatePlace(val, "Bride's place of birth", isRequired: false, maxLength: 100),
-                ),
               ),
-              _buildTextFormField(
-                controller: _brideAddressController,
-                label: "Bride's Residential Address",
-                isRequired: true,
-                maxLength: 150, // Length limit enforced
-                validator: (val) => SacramentalValidators.validatePlace(val, "Bride's address", isRequired: true, maxLength: 150),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _bridePlaceOfBirthController,
+                  label: 'Birthplace / Hometown',
+                  isRequired: false,
+                  maxLength: 100,
+                  validator: (val) => SacramentalValidators.validatePlace(val, "Bride's birthplace", isRequired: false, maxLength: 100),
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-          title: "Bride's Parents",
-          icon: Icons.people,
-          child: Column(
+
+          _buildTextFormField(
+            controller: _brideAddressController,
+            label: "Bride's Residential Address",
+            isRequired: true,
+            maxLength: 150,
+            validator: (val) => SacramentalValidators.validatePlace(val, "Bride's address", isRequired: true, maxLength: 150),
+          ),
+
+          const Divider(height: 24),
+          const Text("Bride's Parents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
+          const SizedBox(height: 8),
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+              Expanded(
+                child: _buildTextFormField(
                   controller: _brideFatherFirstNameController,
                   label: "Father's First Name",
                   isRequired: true,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _brideFatherMiddleNameController,
-                  label: "Father's Middle Name",
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
-              _buildTextFormField(
-                controller: _brideFatherLastNameController,
-                label: "Father's Last Name",
-                isRequired: true,
-                maxLength: 50,
-                validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
-              ),
-              const Divider(height: 24),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(
+            ],
+          ),
+          _buildTextFormField(
+            controller: _brideFatherLastNameController,
+            label: "Father's Last Name",
+            isRequired: true,
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
+          ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
                   controller: _brideMotherFirstNameController,
                   label: "Mother's First Name",
                   isRequired: true,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
                 ),
-                second: _buildTextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
                   controller: _brideMotherMiddleNameController,
-                  label: "Mother's Middle Name",
+                  label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
                   validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
                 ),
               ),
-              _buildTextFormField(
-                controller: _brideMotherMaidenLastController,
-                label: "Mother's Maiden Last Name",
-                isRequired: true,
-                maxLength: 50,
-                validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
-              ),
             ],
           ),
-        ),
-      ],
+          _buildTextFormField(
+            controller: _brideMotherMaidenLastController,
+            label: "Mother's Maiden Last Name",
+            isRequired: true,
+            maxLength: 50,
+            validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildStep4SponsorsInformation({required bool isMobile}) {
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: 'Primary Sponsors (Witnesses 1 & 2)',
-          icon: Icons.verified_user,
-          child: Column(
+  Widget _buildSection4Sponsors({required bool isWide}) {
+    return _buildSectionCard(
+      title: '4. Witnesses & Sponsors',
+      icon: Icons.people_outline,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Primary Witnesses (Ninong & Ninang)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: _matrimonyBurgundy)),
+          const SizedBox(height: 8),
+
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Primary Sponsor 1 (Ninong / Ninang)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _matrimonyBurgundy)),
-              const SizedBox(height: 8),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor1FirstNameController, label: 'First Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 first name', isRequired: true, maxLength: 50)),
-                second: _buildTextFormField(controller: _sponsor1MiddleNameController, label: 'Middle Name', isRequired: false, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 middle name', isRequired: false, maxLength: 50)),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _sponsor1FirstNameController,
+                  label: 'Sponsor 1 First Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
+                ),
               ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor1LastNameController, label: 'Last Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 last name', isRequired: true, maxLength: 50)),
-                second: _buildTextFormField(controller: _sponsor1OriginAddressController, label: 'Origin / Address', isRequired: false, maxLength: 150, validator: (v) => SacramentalValidators.validatePlace(v, 'Sponsor 1 address', isRequired: false, maxLength: 150)),
-              ),
-              const Divider(height: 28),
-              const Text('Primary Sponsor 2 (Ninong / Ninang)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _matrimonyBurgundy)),
-              const SizedBox(height: 8),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor2FirstNameController, label: 'First Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 first name', isRequired: true, maxLength: 50)),
-                second: _buildTextFormField(controller: _sponsor2MiddleNameController, label: 'Middle Name', isRequired: false, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 middle name', isRequired: false, maxLength: 50)),
-              ),
-              _buildAdaptivePair(
-                isStacked: isMobile,
-                first: _buildTextFormField(controller: _sponsor2LastNameController, label: 'Last Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 last name', isRequired: true, maxLength: 50)),
-                second: _buildTextFormField(controller: _sponsor2OriginAddressController, label: 'Origin / Address', isRequired: false, maxLength: 150, validator: (v) => SacramentalValidators.validatePlace(v, 'Sponsor 2 address', isRequired: false, maxLength: 150)),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-          title: 'Additional Secondary Sponsors / Witnesses',
-          icon: Icons.people_outline,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Click "[+] Add Witness / Sponsor" to include additional secondary sponsor names individually.',
-                style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-              ),
-              const SizedBox(height: 12),
-              ..._otherSponsorControllers.asMap().entries.map((entry) {
-                int idx = entry.key;
-                var controller = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: controller,
-                          maxLength: 60,
-                          buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                          style: const TextStyle(fontSize: 14),
-                          decoration: InputDecoration(
-                            labelText: 'Witness / Sponsor #${idx + 1} Full Name',
-                            filled: true,
-                            fillColor: ParishColors.backgroundLight,
-                            isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          validator: (val) => SacramentalValidators.validateName(val, 'Witness #${idx + 1}', isRequired: false, maxLength: 60),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, color: ParishColors.mercyRed),
-                        onPressed: () => _removeOtherSponsorField(idx),
-                        tooltip: 'Remove Witness',
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 4),
-              SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: _matrimonyBurgundy, width: 1.5),
-                    foregroundColor: _matrimonyBurgundy,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: _addOtherSponsorField,
-                  icon: const Icon(Icons.add_circle_outline, size: 18),
-                  label: const Text('Add Witness / Sponsor', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _sponsor1MiddleNameController,
+                  label: 'Middle Name',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
                 ),
               ),
             ],
           ),
-        ),
-      ],
+          _buildTextFormField(
+            controller: _sponsor1LastNameController,
+            label: 'Sponsor 1 Last Name',
+            isRequired: true,
+            maxLength: 50,
+            validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
+          ),
+
+          const Divider(height: 24),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _sponsor2FirstNameController,
+                  label: 'Sponsor 2 First Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 first name', isRequired: true, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _sponsor2MiddleNameController,
+                  label: 'Middle Name',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
+                ),
+              ),
+            ],
+          ),
+          _buildTextFormField(
+            controller: _sponsor2LastNameController,
+            label: 'Sponsor 2 Last Name',
+            isRequired: true,
+            maxLength: 50,
+            validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 last name', isRequired: true, maxLength: 50),
+          ),
+
+          const Divider(height: 26),
+
+          Text('Additional Secondary Sponsors / Witnesses', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          SizedBox(height: 4),
+          Text(
+            'Click "[+] Add Witness" to add additional secondary sponsor names individually.',
+            style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          ..._otherSponsorControllers.asMap().entries.map((entry) {
+            int idx = entry.key;
+            var controller = entry.value;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: controller,
+                      maxLength: 60,
+                      buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                      style: const TextStyle(fontSize: 14.5),
+                      decoration: InputDecoration(
+                        labelText: 'Witness #${idx + 1} Full Name',
+                        filled: true,
+                        fillColor: ParishColors.backgroundLight,
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      validator: (val) => SacramentalValidators.validateName(val, 'Witness #${idx + 1}', isRequired: false, maxLength: 60),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.remove_circle_outline, color: ParishColors.mercyRed),
+                    onPressed: () => _removeOtherSponsorField(idx),
+                    tooltip: 'Remove Witness',
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: isWide ? 220 : double.infinity,
+            height: 46,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: _matrimonyBurgundy, width: 1.5),
+                foregroundColor: _matrimonyBurgundy,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _addOtherSponsorField,
+              icon: const Icon(Icons.add_circle_outline, size: 20),
+              label: const Text('Add Witness', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildStep5CeremonyAndLegal({required bool isMobile}) {
+  Widget _buildSection5Ceremony({required bool isWide}) {
     return _buildSectionCard(
-      title: 'Marriage Ceremony, License & Officiating Minister',
+      title: '5. Ceremony, Legal Details & Officiating Priest',
       icon: Icons.church,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDatePickerField(
-            label: 'Date of Marriage',
-            isRequired: true,
-            value: _dateOfMarriage,
-            hasError: _dateOfMarriageHasError,
-            onTap: () => _selectDate(context, 3),
-          ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildDropdownField(
-              label: 'Marriage Type',
-              isRequired: true,
-              value: _marriageType,
-              items: const ['Between Catholics', 'Mixed Marriage', 'Disparity of Cults'],
-              onChanged: (val) => setState(() => _marriageType = val!),
-            ),
-            second: Padding(
-              padding: const EdgeInsets.only(top: 24.0),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                activeColor: _matrimonyBurgundy,
-                title: const Text('Filipino / Foreigner Status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                value: _isFilipinoForeigner,
-                onChanged: (val) => setState(() => _isFilipinoForeigner = val),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildDatePickerField(
+                  label: 'Date of Marriage',
+                  isRequired: true,
+                  value: _dateOfMarriage,
+                  hasError: _dateOfMarriageHasError,
+                  onTap: () => _selectDate(context, 3),
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDropdownField(
+                  label: 'Marriage Type',
+                  isRequired: true,
+                  value: _marriageType,
+                  items: const ['Between Catholics', 'Mixed Marriage', 'Disparity of Cults'],
+                  onChanged: (val) => setState(() => _marriageType = val!),
+                ),
+              ),
+            ],
           ),
+
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            activeColor: _matrimonyBurgundy,
+            title: const Text('Filipino / Foreigner Status', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+            value: _isFilipinoForeigner,
+            onChanged: (val) => setState(() => _isFilipinoForeigner = val),
+          ),
+
           const Divider(height: 24),
           const Text('Civil Marriage License Compliance', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
           const SizedBox(height: 10),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(controller: _marriageLicenseNoController, label: 'Marriage License No.', isRequired: false, maxLength: 50),
-            second: _buildDatePickerField(label: 'Date Registered', isRequired: false, value: _licenseDateRegistered, hasError: false, onTap: () => _selectDate(context, 4)),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _marriageLicenseNoController,
+                  label: 'Marriage License No. (Optional)',
+                  isRequired: false,
+                  maxLength: 50,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDatePickerField(
+                  label: 'License Date Registered',
+                  isRequired: false,
+                  value: _licenseDateRegistered,
+                  hasError: false,
+                  onTap: () => _selectDate(context, 4),
+                ),
+              ),
+            ],
           ),
           _buildTextFormField(
             controller: _licensePlaceIssuedController,
             label: 'Place Issued',
             isRequired: false,
-            maxLength: 100, // Length limit enforced
+            maxLength: 100,
             validator: (v) => SacramentalValidators.validatePlace(v, 'Place issued', isRequired: false, maxLength: 100),
           ),
+
           const Divider(height: 24),
-          const Text('Solemnizing Minister & CRASM', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
+          const Text('Solemnizing Priest & CRASM Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
           const SizedBox(height: 10),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(controller: _solemnizerFirstNameController, label: 'Minister First Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50)),
-            second: _buildTextFormField(controller: _solemnizerMiddleNameController, label: 'Middle Name', isRequired: false, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50)),
-          ),
-          _buildTextFormField(controller: _solemnizerLastNameController, label: 'Minister Last Name', isRequired: true, maxLength: 50, validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50)),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(controller: _crasmNumberController, label: 'CRASM Number', isRequired: false, maxLength: 50),
-            second: _buildDatePickerField(label: 'CRASM Validity Date', isRequired: false, value: _crasmValidityDate, hasError: false, onTap: () => _selectDate(context, 5)),
-          ),
-          _buildAdaptivePair(
-            isStacked: isMobile,
-            first: _buildTextFormField(
-              controller: _parishNameController,
-              label: 'Parish Name',
-              isRequired: true,
-              maxLength: 150, // Length limit enforced
-              validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
-            ),
-            second: _buildTextFormField(controller: _stipendController, label: 'Stipend (₱)', isRequired: false, maxLength: 12, keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: SacramentalValidators.validateStipend),
-          ),
-          _buildTextFormField(controller: _remarksController, label: 'Remarks / Marginal Notations', isRequired: false, maxLines: 2, maxLength: 255),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildGoogleFormsSectionHeader({required String title, required String description, required int stepIndex}) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ParishColors.borderGrey),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 8,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: _matrimonyBurgundy,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      isEditMode
-                          ? 'EDITING SECTION ${stepIndex + 1} OF $_totalSteps'
-                          : 'SECTION ${stepIndex + 1} OF $_totalSteps',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _matrimonyBurgundy, letterSpacing: 1.0),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: _burgundySurface, borderRadius: BorderRadius.circular(6)),
-                      child: Text(
-                        isEditMode ? 'Edit Record Mode' : 'Matrimony Register',
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _matrimonyBurgundy),
-                      ),
-                    ),
-                  ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: _buildTextFormField(
+                  controller: _solemnizerFirstNameController,
+                  label: 'Priest First Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Priest first name', isRequired: true, maxLength: 50),
                 ),
-                const SizedBox(height: 6),
-                Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-                const SizedBox(height: 4),
-                Text(description, style: TextStyle(fontSize: 13, color: ParishColors.textMuted, height: 1.3)),
-              ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: _buildTextFormField(
+                  controller: _solemnizerMiddleNameController,
+                  label: 'Middle Name (Optional)',
+                  isRequired: false,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Priest middle name', isRequired: false, maxLength: 50),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: _buildTextFormField(
+                  controller: _solemnizerLastNameController,
+                  label: 'Priest Last Name',
+                  isRequired: true,
+                  maxLength: 50,
+                  validator: (v) => SacramentalValidators.validateName(v, 'Priest last name', isRequired: true, maxLength: 50),
+                ),
+              ),
+            ],
+          ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildTextFormField(
+                  controller: _crasmNumberController,
+                  label: 'CRASM Number (Optional)',
+                  isRequired: false,
+                  maxLength: 50,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDatePickerField(
+                  label: 'CRASM Validity Date',
+                  isRequired: false,
+                  value: _crasmValidityDate,
+                  hasError: false,
+                  onTap: () => _selectDate(context, 5),
+                ),
+              ),
+            ],
+          ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: isWide ? 4 : 1,
+                child: _buildTextFormField(
+                  controller: _parishNameController,
+                  label: 'Parish Name',
+                  isRequired: true,
+                  maxLength: 150,
+                  validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: isWide ? 3 : 1,
+                child: _buildTextFormField(
+                  controller: _stipendController,
+                  label: 'Stipend / Offering (₱)',
+                  isRequired: false,
+                  maxLength: 12,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  validator: SacramentalValidators.validateStipend,
+                ),
+              ),
+            ],
+          ),
+
+          _buildTextFormField(
+            controller: _remarksController,
+            label: 'Remarks / Marginal Notes (Optional)',
+            isRequired: false,
+            maxLines: 2,
+            maxLength: 255,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomSubmissionBar({required bool isWide}) {
+    final borderGreyColor = ParishColors.borderGrey;
+    final textMutedColor = ParishColors.textMuted;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderGreyColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          SizedBox(
+            width: isWide ? 190 : 130,
+            height: 50,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: borderGreyColor, width: 1.4),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: _isSubmitting
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: _matrimonyBurgundy,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: Text(
+                'Discard & Exit',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: isWide ? 290 : 180,
+            height: 50,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: (_coordinateDuplicateError != null)
+                    ? ParishColors.mercyRed
+                    : (isEditMode ? _matrimonyBurgundy : ParishColors.oliveGreen),
+                foregroundColor: Colors.white,
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+                  ? null
+                  : () {
+                if (isEditMode) {
+                  _promptUpdateConfirmation();
+                } else {
+                  _promptSaveConfirmation();
+                }
+              },
+              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              label: Text(
+                isEditMode ? 'Update Matrimony' : 'Save Matrimony',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ),
           ),
         ],
@@ -1635,40 +2454,46 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     );
   }
 
-  Widget _buildAdaptivePair({required bool isStacked, required Widget first, required Widget second, int flexFirst = 1, int flexSecond = 1}) {
-    if (isStacked) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [first, second]);
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: flexFirst, child: first),
-        const SizedBox(width: 12),
-        Expanded(flex: flexSecond, child: second),
-      ],
-    );
-  }
-
-  Widget _buildSectionCard({required String title, required IconData icon, required Widget child}) {
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: _matrimonyBurgundy),
-              const SizedBox(width: 8),
-              Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: _matrimonyBurgundy)),
+              Icon(icon, size: 22, color: _matrimonyBurgundy),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.bold,
+                    color: _matrimonyBurgundy,
+                  ),
+                ),
+              ),
             ],
           ),
-          const Divider(height: 20),
+          const Divider(height: 22),
           child,
         ],
       ),
@@ -1680,10 +2505,22 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       padding: const EdgeInsets.only(bottom: 6),
       child: RichText(
         text: TextSpan(
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: ParishColors.textDark,
+          ),
           children: [
             TextSpan(text: label),
-            if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold, fontSize: 14)),
+            if (isRequired)
+              TextSpan(
+                text: ' *',
+                style: TextStyle(
+                  color: ParishColors.mercyRed,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
           ],
         ),
       ),
@@ -1701,7 +2538,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     String? Function(String?)? validator,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1714,18 +2551,37 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             maxLength: maxLength,
             buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
             validator: validator,
-            style: TextStyle(fontSize: 14, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
               fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _matrimonyBurgundy, width: 1.8)),
-              errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2)),
-              focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.8)),
-              errorStyle: const TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+                borderSide: BorderSide(color: _matrimonyBurgundy, width: 1.8),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+              ),
+              errorStyle: TextStyle(
+                color: ParishColors.mercyRed,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -1741,8 +2597,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     required VoidCallback onTap,
   }) {
     final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1751,7 +2608,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             onTap: onTap,
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              height: 48,
+              height: 50,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
@@ -1761,12 +2618,30 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD', style: TextStyle(fontSize: 14, color: value != null ? ParishColors.textDark : ParishColors.textMuted)),
-                  const Icon(Icons.calendar_month, size: 20, color: _matrimonyBurgundy),
+                  Text(
+                    value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      color: value != null ? ParishColors.textDark : ParishColors.textMuted,
+                    ),
+                  ),
+                  const Icon(
+                    Icons.calendar_month,
+                    size: 22,
+                    color: _matrimonyBurgundy,
+                  ),
                 ],
               ),
             ),
           ),
+          if (hasError)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 12),
+              child: Text(
+                'Date selection is required.',
+                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ),
         ],
       ),
     );
@@ -1780,24 +2655,41 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     required void Function(String?) onChanged,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildFieldLabel(label, isRequired: isRequired),
           DropdownButtonFormField<String>(
             value: value,
-            items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, style: TextStyle(fontSize: 13, color: ParishColors.textDark)))).toList(),
+            items: items.map((item) {
+              return DropdownMenuItem<String>(
+                value: item,
+                child: Text(
+                  item,
+                  style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                ),
+              );
+            }).toList(),
             onChanged: onChanged,
-            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+            style: TextStyle(fontSize: 14, color: ParishColors.textDark),
             decoration: InputDecoration(
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _matrimonyBurgundy, width: 1.8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+                borderSide: BorderSide(color: _matrimonyBurgundy, width: 1.8),
+              ),
             ),
           ),
         ],

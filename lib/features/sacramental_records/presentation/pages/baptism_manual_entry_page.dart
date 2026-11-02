@@ -3,8 +3,11 @@
 // =============================================================================
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../auth/services/auth_service.dart';
 import '../../services/baptism_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
@@ -27,6 +30,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
 
+  // Floating Back to Top state & micro-interactions
+  bool _showBackToTop = false;
+  bool _isBackToTopHovered = false;
+
   bool get isEditMode => widget.initialData != null;
 
   // Canonical options for Legitimacy
@@ -39,7 +46,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     'Others (Specify)',
   ];
 
-  // 1. Canonical Record Reference
+  // 1. Registry Coordinates
   final _bookNumberController = TextEditingController();
   final _pageNumberController = TextEditingController();
   final _lineNumberController = TextEditingController();
@@ -92,7 +99,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   // Dynamic Other Godparents List
   final List<TextEditingController> _otherGodparentControllers = [];
 
-  // 5. Baptism & Minister Details
+  // 5. Baptism & Priest Details
   final _parishChurchController = TextEditingController(text: 'St. John Paul II Parish');
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
@@ -100,6 +107,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   DateTime? _dateOfBaptism = DateTime.now();
   final _stipendController = TextEditingController();
   final _remarksController = TextEditingController();
+  String? _existingCanonicalNotes;
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -109,6 +117,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
 
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
@@ -119,12 +128,30 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     }
   }
 
+  void _onScroll() {
+    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    if (shouldShow != _showBackToTop) {
+      setState(() => _showBackToTop = shouldShow);
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   void _populateExistingData(Map<String, dynamic> data) {
     _bookNumberController.text = data['book_number']?.toString() ?? '';
     _pageNumberController.text = data['page_number']?.toString() ?? '';
     _lineNumberController.text = data['line_number']?.toString() ?? '';
     _entryStatus = data['entry_status']?.toString() ?? 'ORIGINAL';
     _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
+    _existingCanonicalNotes = data['canonical_notes']?.toString();
 
     _childFirstNameController.text = data['child_first_name']?.toString() ?? '';
     _childMiddleNameController.text = data['child_middle_name']?.toString() ?? '';
@@ -234,6 +261,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   @override
   void dispose() {
     _coordinateDebounce?.cancel();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _bookNumberController.removeListener(_onCoordinateChanged);
     _pageNumberController.removeListener(_onCoordinateChanged);
@@ -276,16 +304,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     _stipendController.dispose();
     _remarksController.dispose();
     super.dispose();
-  }
-
-  void _scrollToTop() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0.0,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeInOut,
-      );
-    }
   }
 
   void _recomputeAge() {
@@ -404,13 +422,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       return false;
     }
 
-    final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
-    if (regDateError != null) {
-      setState(() => _errorMessage = regDateError);
-      _scrollToTop();
-      return false;
-    }
-
     final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
     if (dobError != null) {
       setState(() {
@@ -452,8 +463,458 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     return true;
   }
 
-  Future<void> _submitForm() async {
+  /// Computes strict dynamic field-by-field diff, explicitly excluding unchanged fields
+  /// as well as uneditable canonical audit metadata (registry_date, entry_status, created_at, date_encoded)
+  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+    final diffs = <String, Map<String, dynamic>>{};
+
+    final Map<String, String> fieldLabels = {
+      'book_number': 'Book No.',
+      'page_number': 'Page No.',
+      'line_number': 'Line No.',
+      'child_first_name': 'Child First Name',
+      'child_middle_name': 'Child Middle Name',
+      'child_last_name': 'Child Last Name',
+      'child_suffix': 'Child Suffix',
+      'date_of_birth': 'Date of Birth',
+      'age': 'Age',
+      'place_of_birth': 'Place of Birth',
+      'gender': 'Gender',
+      'legitimacy': 'Legitimacy',
+      'father_first_name': 'Father First Name',
+      'father_middle_name': 'Father Middle Name',
+      'father_last_name': 'Father Last Name',
+      'father_place_of_birth': 'Father Place of Birth',
+      'mother_first_name': 'Mother First Name',
+      'mother_middle_name': 'Mother Middle Name',
+      'mother_maiden_last_name': 'Mother Maiden Last Name',
+      'mother_place_of_birth': 'Mother Place of Birth',
+      'parents_contact_number': 'Parents Contact Number',
+      'parents_residence': 'Parents Residence',
+      'sponsor_1_first_name': 'Sponsor 1 First Name',
+      'sponsor_1_middle_name': 'Sponsor 1 Middle Name',
+      'sponsor_1_last_name': 'Sponsor 1 Last Name',
+      'sponsor_1_residence': 'Sponsor 1 Residence',
+      'sponsor_2_first_name': 'Sponsor 2 First Name',
+      'sponsor_2_middle_name': 'Sponsor 2 Middle Name',
+      'sponsor_2_last_name': 'Sponsor 2 Last Name',
+      'sponsor_2_residence': 'Sponsor 2 Residence',
+      'other_godparents': 'Other Godparents',
+      'parish_name': 'Parish Name',
+      'minister_first_name': 'Priest First Name',
+      'minister_middle_name': 'Priest Middle Name',
+      'minister_last_name': 'Priest Last Name',
+      'date_of_baptism': 'Date of Baptism',
+      'place_of_baptism': 'Place of Baptism',
+      'stipend': 'Stipend',
+      'remarks': 'Remarks',
+    };
+
+    newData.forEach((key, newVal) {
+      if (key == 'created_at' ||
+          key == 'date_encoded' ||
+          key == 'canonical_notes' ||
+          key == 'registry_date' ||
+          key == 'entry_status') {
+        return;
+      }
+
+      final oldVal = oldData[key];
+      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
+      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+
+      String normOld = oldStr;
+      String normNew = newStr;
+      if (oldStr.length >= 10 && DateTime.tryParse(oldStr) != null) {
+        normOld = oldStr.substring(0, 10);
+      }
+      if (newStr.length >= 10 && DateTime.tryParse(newStr) != null) {
+        normNew = newStr.substring(0, 10);
+      }
+
+      if (normOld != normNew) {
+        final label = fieldLabels[key] ?? key;
+        diffs[label] = {
+          'old': oldStr.isEmpty ? '—' : oldStr,
+          'new': newStr.isEmpty ? '—' : newStr,
+        };
+      }
+    });
+
+    return diffs.isNotEmpty ? jsonEncode(diffs) : '';
+  }
+
+  /// Verification & Review confirmation dialog before executing the Save function for a new record
+  Future<void> _promptSaveConfirmation() async {
     if (!_validateAllFields()) return;
+
+    final childName = [
+      _childFirstNameController.text.trim(),
+      _childMiddleNameController.text.trim(),
+      _childLastNameController.text.trim(),
+      _childSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final fatherName = _fatherNotIndicated
+        ? 'Not Acknowledged in Birth Certificate'
+        : [
+      _fatherFirstNameController.text.trim(),
+      _fatherMiddleNameController.text.trim(),
+      _fatherLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final motherName = [
+      _motherFirstNameController.text.trim(),
+      _motherMiddleNameController.text.trim(),
+      _motherMaidenLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final sponsor1Name = [
+      _sponsor1FirstNameController.text.trim(),
+      _sponsor1MiddleNameController.text.trim(),
+      _sponsor1LastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final sponsor2Name = [
+      _sponsor2FirstNameController.text.trim(),
+      _sponsor2MiddleNameController.text.trim(),
+      _sponsor2LastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final priestName = [
+      'Rev. Fr.',
+      _ministerFirstNameController.text.trim(),
+      _ministerMiddleNameController.text.trim(),
+      _ministerLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    final otherGodparents = _otherGodparentControllers
+        .map((c) => c.text.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.fact_check_outlined, color: ParishColors.marianBlue, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Review & Verify Record',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      color: ParishColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Check all entered fields to ensure accurate registry archiving.',
+                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 580,
+          height: screenHeight * 0.70,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildReviewSection('1. Registry Book Coordinates', [
+                  _buildReviewRow('Book No.:', _bookNumberController.text.trim()),
+                  _buildReviewRow('Page No.:', _pageNumberController.text.trim()),
+                  _buildReviewRow('Line No.:', _lineNumberController.text.trim()),
+                  _buildReviewRow('Registry Date:', _registryDate.toIso8601String().substring(0, 10)),
+                  _buildReviewRow('Entry Status:', _entryStatus),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('2. Child Information', [
+                  _buildReviewRow('Full Name:', childName),
+                  _buildReviewRow('Date of Birth:', _dateOfBirth?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow('Age at Baptism:', _ageController.text.trim().isNotEmpty ? _ageController.text.trim() : '—'),
+                  _buildReviewRow('Place of Birth:', _placeOfBirthController.text.trim()),
+                  _buildReviewRow('Gender:', _gender),
+                  _buildReviewRow('Legitimacy:', _legitimacy == 'Others (Specify)' ? _legitimacyOtherController.text.trim() : _legitimacy),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('3. Parents & Residence', [
+                  _buildReviewRow('Father:', fatherName),
+                  if (!_fatherNotIndicated && _fatherPlaceOfBirthController.text.trim().isNotEmpty)
+                    _buildReviewRow('Father Birthplace:', _fatherPlaceOfBirthController.text.trim()),
+                  _buildReviewRow('Mother Maiden Name:', motherName),
+                  if (_motherPlaceOfBirthController.text.trim().isNotEmpty)
+                    _buildReviewRow('Mother Birthplace:', _motherPlaceOfBirthController.text.trim()),
+                  if (_parentsContactNumberController.text.trim().isNotEmpty)
+                    _buildReviewRow('Contact No.:', _parentsContactNumberController.text.trim()),
+                  if (_parentsResidenceController.text.trim().isNotEmpty)
+                    _buildReviewRow('Residence:', _parentsResidenceController.text.trim()),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('4. Godparents & Sponsors', [
+                  _buildReviewRow('Sponsor 1 (Ninong/Ninang):', sponsor1Name),
+                  if (_sponsor1ResidenceController.text.trim().isNotEmpty)
+                    _buildReviewRow('Sponsor 1 Residence:', _sponsor1ResidenceController.text.trim()),
+                  _buildReviewRow('Sponsor 2 (Ninong/Ninang):', sponsor2Name),
+                  if (_sponsor2ResidenceController.text.trim().isNotEmpty)
+                    _buildReviewRow('Sponsor 2 Residence:', _sponsor2ResidenceController.text.trim()),
+                  if (otherGodparents.isNotEmpty)
+                    _buildReviewRow('Additional Godparents:', otherGodparents.join(', ')),
+                ]),
+                const SizedBox(height: 12),
+                _buildReviewSection('5. Baptism Details & Priest', [
+                  _buildReviewRow('Church where Baptized:', _parishChurchController.text.trim()),
+                  _buildReviewRow('Officiating Priest:', priestName),
+                  _buildReviewRow('Date of Baptism:', _dateOfBaptism?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow('Stipend / Offering:', _stipendController.text.trim().isNotEmpty ? '₱ ${_stipendController.text.trim()}' : '₱ 0.00 (Gratis)'),
+                  if (_remarksController.text.trim().isNotEmpty)
+                    _buildReviewRow('Remarks / Notes:', _remarksController.text.trim()),
+                ]),
+              ],
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+        actions: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(130, 46),
+              side: BorderSide(color: ParishColors.borderGrey),
+            ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go Back and Edit'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(160, 46),
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check_circle, size: 18),
+            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _submitForm();
+    }
+  }
+
+  Widget _buildReviewSection(String title, List<Widget> children) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.marianBlue,
+            ),
+          ),
+          const Divider(height: 14),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: ParishColors.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: ParishColors.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Prompts for confirmation and audit annotation before updating canonical records
+  Future<void> _promptUpdateConfirmation() async {
+    if (!_validateAllFields()) return;
+
+    final currentUser = AuthService.currentUser;
+    final currentUserName = currentUser != null
+        ? '${currentUser.firstName} ${currentUser.lastName}'.trim()
+        : 'Authorized Parish Personnel';
+    final userRole = currentUser?.userRole ?? 'Secretary';
+
+    final reasonController = TextEditingController(text: 'Correction of record details');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.security_update_good, color: ParishColors.marianBlue, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Confirm Record Update',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                  color: ParishColors.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 500,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You are modifying canonical entry ${widget.initialData!['record_id']} (${_childFirstNameController.text.trim()} ${_childLastNameController.text.trim()}).',
+                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ParishColors.borderGrey),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AUDIT LOG ATTRIBUTION',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Editor: $currentUserName ($userRole)',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                    ),
+                    Text(
+                      'Coordinates: Book ${_bookNumberController.text.trim()}, Page ${_pageNumberController.text.trim()}, Line ${_lineNumberController.text.trim()}',
+                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Reason for Correction *',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+              ),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: reasonController,
+                maxLines: 2,
+                style: const TextStyle(fontSize: 13.5),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Typographical error correction on mother maiden name',
+                  filled: true,
+                  fillColor: ParishColors.backgroundLight,
+                  isDense: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+        actions: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(130, 44),
+              side: BorderSide(color: ParishColors.borderGrey),
+            ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go Back and Edit'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(160, 44),
+              backgroundColor: ParishColors.oliveGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _submitForm(reasonForCorrection: reasonController.text.trim());
+    }
+  }
+
+  Future<void> _submitForm({String? reasonForCorrection}) async {
+    if (!isEditMode && !_validateAllFields()) return;
 
     final String finalLegitimacy = _legitimacy == 'Others (Specify)'
         ? (_legitimacyOtherController.text.trim().isNotEmpty
@@ -470,12 +931,40 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
           .where((t) => t.isNotEmpty)
           .toList();
 
+      final currentUser = AuthService.currentUser;
+      final currentUserId = currentUser?.userId ?? 'STAFF';
+      final currentUserName = currentUser != null
+          ? '${currentUser.firstName} ${currentUser.lastName}'.trim()
+          : 'Authorized Parish Personnel';
+      final now = DateTime.now();
+
+      String? compiledCanonicalNotes = _existingCanonicalNotes;
+      if (isEditMode) {
+        final reason = reasonForCorrection?.isNotEmpty == true
+            ? reasonForCorrection!
+            : 'Amended canonical ledger entry';
+        final editLogStamp =
+            '[Amended on ${now.toIso8601String().substring(0, 10)} by $currentUserName (${currentUser?.userRole ?? "Staff"})]: $reason';
+
+        if (compiledCanonicalNotes != null && compiledCanonicalNotes.trim().isNotEmpty) {
+          compiledCanonicalNotes = '$compiledCanonicalNotes\n$editLogStamp';
+        } else {
+          compiledCanonicalNotes = editLogStamp;
+        }
+      }
+
       final recordMap = {
         'book_number': _bookNumberController.text.trim(),
         'page_number': _pageNumberController.text.trim(),
         'line_number': _lineNumberController.text.trim(),
-        'registry_date': _registryDate.toIso8601String().substring(0, 10),
-        'entry_status': _entryStatus,
+        'registry_date': isEditMode
+            ? (widget.initialData!['registry_date']?.toString().substring(0, 10) ??
+            _registryDate.toIso8601String().substring(0, 10))
+            : _registryDate.toIso8601String().substring(0, 10),
+        'entry_status': isEditMode
+            ? (widget.initialData!['entry_status']?.toString() ?? 'ORIGINAL')
+            : 'CORRECTED',
+        'canonical_notes': compiledCanonicalNotes,
 
         'child_first_name': _childFirstNameController.text.trim(),
         'child_middle_name': _childMiddleNameController.text.trim().isEmpty ? null : _childMiddleNameController.text.trim(),
@@ -527,12 +1016,57 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       };
 
       if (isEditMode) {
-        await BaptismService.updateBaptismRecord(
-          widget.initialData!['record_id'].toString(),
-          recordMap,
-        );
+        final recordId = widget.initialData!['record_id'].toString();
+
+        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+
+        await BaptismService.updateBaptismRecord(recordId, recordMap);
+
+        if (changesJson.isNotEmpty) {
+          try {
+            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+              'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+              'record_id': recordId,
+              'sacrament_type': 'Baptism',
+              'action_type': 'UPDATED',
+              'recipient_name': '${_childFirstNameController.text.trim()} ${_childLastNameController.text.trim()}',
+              'book_number': _bookNumberController.text.trim(),
+              'page_number': _pageNumberController.text.trim(),
+              'line_number': _lineNumberController.text.trim(),
+              'performed_by_id': currentUserId,
+              'performed_by_name': currentUserName,
+              'performed_by_role': currentUser?.userRole ?? 'Secretary',
+              'justification': reasonForCorrection ?? 'Correction of entry details',
+              'changes_summary': changesJson,
+              'created_at': now.toIso8601String(),
+            });
+          } catch (auditErr) {
+            debugPrint('[BaptismManualEntryPage] Audit log insertion notice: $auditErr');
+          }
+        }
       } else {
-        await BaptismService.insertManualBaptismRecord(recordMap);
+        final insertedRecord = await BaptismService.insertManualBaptismRecord(recordMap);
+
+        try {
+          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            'log_id': 'LOG-${now.millisecondsSinceEpoch}',
+            'record_id': insertedRecord.recordId,
+            'sacrament_type': 'Baptism',
+            'action_type': 'CREATED',
+            'recipient_name': insertedRecord.childFullName,
+            'book_number': insertedRecord.bookNumber,
+            'page_number': insertedRecord.pageNumber,
+            'line_number': insertedRecord.lineNumber,
+            'performed_by_id': currentUserId,
+            'performed_by_name': currentUserName,
+            'performed_by_role': currentUser?.userRole ?? 'Secretary',
+            'justification': 'Initial registry record creation',
+            'changes_summary': '',
+            'created_at': now.toIso8601String(),
+          });
+        } catch (auditErr) {
+          debugPrint('[BaptismManualEntryPage] Audit log insertion notice: $auditErr');
+        }
       }
 
       if (!mounted) return;
@@ -542,8 +1076,8 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(isEditMode
-              ? 'Baptism record updated successfully in Liber Baptismorum.'
-              : 'Baptism record registered successfully in Liber Baptismorum.'),
+              ? 'Baptism record updated and logged successfully.'
+              : 'Baptism record registered successfully.'),
           backgroundColor: ParishColors.oliveGreen,
           duration: const Duration(seconds: 3),
         ),
@@ -607,38 +1141,56 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
               Text(
                 isEditMode
-                    ? 'Modifying Canonical Record: ${widget.initialData!['record_id']}'
-                    : 'Canonical Registry Book (Liber Baptismorum)',
+                    ? 'Editing Record: ${widget.initialData!['record_id']}'
+                    : 'Parish Baptismal Register (Liber Baptismorum)',
                 style: TextStyle(fontSize: 12, color: textMutedColor),
               ),
             ],
           ),
-          actions: [
-            // Always-available Jump to Top button in AppBar
-            IconButton(
-              icon: Icon(Icons.vertical_align_top, color: ParishColors.marianBlue, size: 22),
-              tooltip: 'Jump to Top',
-              onPressed: _scrollToTop,
-            ),
-          ],
         ),
-        // Permanent Floating "Back to Top" Action Button (Guaranteed Visible)
-        floatingActionButton: FloatingActionButton.extended(
-          backgroundColor: ParishColors.marianBlue,
-          foregroundColor: Colors.white,
-          elevation: 3,
-          onPressed: _scrollToTop,
-          icon: const Icon(Icons.arrow_upward, size: 18),
-          label: const Text(
-            'Back to Top',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        floatingActionButton: IgnorePointer(
+          ignoring: !_showBackToTop,
+          child: AnimatedOpacity(
+            opacity: _showBackToTop ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            child: Semantics(
+              button: true,
+              label: 'Back to top, button',
+              child: FocusableActionDetector(
+                onShowHoverHighlight: (hovered) {
+                  setState(() => _isBackToTopHovered = hovered);
+                },
+                actions: <Type, Action<Intent>>{
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) => _scrollToTop(),
+                  ),
+                },
+                child: AnimatedScale(
+                  scale: _isBackToTopHovered ? 1.05 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: SizedBox(
+                    height: 48,
+                    child: FloatingActionButton.extended(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      elevation: 4,
+                      onPressed: _scrollToTop,
+                      icon: const Icon(Icons.arrow_upward, size: 18),
+                      label: const Text(
+                        'Back to Top',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final double availableWidth = constraints.maxWidth;
-              // Responsive wide breakpoint: $\ge 900$ expands field rows horizontally
               final bool isWide = availableWidth >= 900;
               final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
@@ -656,11 +1208,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // 1. Google Forms Header
-                              _buildGoogleFormsHeaderCard(),
+                              _buildFormHeaderCard(),
                               const SizedBox(height: 16),
 
-                              // Error Alert Banner
                               if (_errorMessage != null) ...[
                                 Container(
                                   width: double.infinity,
@@ -690,27 +1240,16 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                                 ),
                               ],
 
-                              // 2. Canonical Coordinates Card
                               _buildSection1Coordinates(isWide: isWide),
                               const SizedBox(height: 16),
-
-                              // 3. Child's Personal Info Card
                               _buildSection2Child(isWide: isWide),
                               const SizedBox(height: 16),
-
-                              // 4. Parents' Information Card (Father & Mother Unified)
                               _buildSection3Parents(isWide: isWide),
                               const SizedBox(height: 16),
-
-                              // 5. Sponsors & Godparents Card (Primary & Additional Unified)
                               _buildSection4Godparents(isWide: isWide),
                               const SizedBox(height: 16),
-
-                              // 6. Baptism Administration & Clergy Card
                               _buildSection5Administration(isWide: isWide),
                               const SizedBox(height: 24),
-
-                              // 7. Bottom Submission Bar (with explicit Back to Top button)
                               _buildBottomSubmissionBar(isWide: isWide),
                               const SizedBox(height: 50),
                             ],
@@ -720,7 +1259,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                     ),
                   ),
 
-                  // Non-Dismissible Focused Loading Overlay
                   if (_isSubmitting)
                     Positioned.fill(
                       child: Container(
@@ -742,11 +1280,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Section 1: Canonical Coordinates Card
-  // ===========================================================================
-
-  Widget _buildGoogleFormsHeaderCard() {
+  Widget _buildFormHeaderCard() {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -781,7 +1315,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'LIBER BAPTISMORUM',
+                      'BAPTISM REGISTER',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -796,7 +1330,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        isEditMode ? 'Edit Record Mode' : 'Canonical Registration Form',
+                        isEditMode ? 'Edit Mode' : 'New Entry',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -808,7 +1342,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Canonical Baptismal Entry',
+                  'Baptism Record Entry',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -817,7 +1351,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Complete all fields in accordance with Canon 535 and the physical church ledger. All sections flow naturally below.',
+                  'Enter all record details accurately according to the church registry book.',
                   style: TextStyle(
                     fontSize: 13.5,
                     color: ParishColors.textMuted,
@@ -836,7 +1370,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     final bool hasDup = _coordinateDuplicateError != null;
 
     return _buildSectionCard(
-      title: '1. Canonical Record Reference (Physical Ledger Coordinates)',
+      title: '1. Registry Book, Page & Line Coordinates',
       icon: Icons.menu_book,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -894,7 +1428,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             ),
           ],
 
-          // Book, Page, Line (3 Columns on Desktop/Tablet, Responsive on Phone)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -948,12 +1481,18 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
             ),
 
-          // Entry Status & Registry Date
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: _buildDropdownField(
+                child: isEditMode
+                    ? _buildTextFormField(
+                  controller: TextEditingController(text: _entryStatus),
+                  label: 'Entry Status (Locked)',
+                  isRequired: false,
+                  enabled: false,
+                )
+                    : _buildDropdownField(
                   label: 'Entry Status',
                   isRequired: true,
                   value: _entryStatus,
@@ -963,7 +1502,14 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildDatePickerField(
+                child: isEditMode
+                    ? _buildTextFormField(
+                  controller: TextEditingController(text: _registryDate.toIso8601String().substring(0, 10)),
+                  label: 'Registry Date (Locked)',
+                  isRequired: false,
+                  enabled: false,
+                )
+                    : _buildDatePickerField(
                   label: 'Registry Date',
                   isRequired: true,
                   value: _registryDate,
@@ -978,15 +1524,11 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Section 2: Child's Personal Information Card
-  // ===========================================================================
-
   Widget _buildSection2Child({required bool isWide}) {
     final bool hasBirthIndicated = _dateOfBirth != null;
 
     return _buildSectionCard(
-      title: "2. Child's Canonical Identification",
+      title: "2. Child's Information",
       icon: Icons.child_care,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1095,7 +1637,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             ),
           ],
 
-          // DOB, Age, Place of Birth
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1114,7 +1655,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 flex: isWide ? 2 : 1,
                 child: _buildTextFormField(
                   controller: _ageController,
-                  label: hasBirthIndicated ? 'Age (Autocomputed)' : 'Age at Baptism',
+                  label: hasBirthIndicated ? 'Age at Baptism (Calculated)' : 'Age at Baptism',
                   isRequired: false,
                   enabled: !hasBirthIndicated,
                   maxLength: 30,
@@ -1146,7 +1687,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
             ),
           ],
 
-          // Gender & Legitimacy
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1191,35 +1731,41 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Section 3: Parents' Lineage & Residence Card (Unified)
-  // ===========================================================================
-
   Widget _buildSection3Parents({required bool isWide}) {
     return _buildSectionCard(
-      title: "3. Parents' Lineage & Residence",
+      title: "3. Parents & Residence",
       icon: Icons.people,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text("Father's Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: ParishColors.marianBlue)),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
 
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            activeColor: ParishColors.marianBlue,
-            title: const Text(
-              'Father not indicated / acknowledged in COLB (Canon 877 §2)',
-              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: _fatherNotIndicated ? ParishColors.marianBlueSurface : ParishColors.backgroundLight,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _fatherNotIndicated ? ParishColors.marianBlue : ParishColors.borderGrey,
+                width: _fatherNotIndicated ? 1.6 : 1.0,
+              ),
             ),
-            subtitle: const Text(
-              'Fills canonical placeholder and displays "—" on issued certificates.',
-              style: TextStyle(fontSize: 12),
+            child: CheckboxListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              activeColor: ParishColors.marianBlue,
+              title: const Text(
+                'Father not acknowledged in the Birth Certificate',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              subtitle: const Text(
+                'Check this box if no father is listed on the child\'s birth certificate. Father fields will be handled automatically.',
+                style: TextStyle(fontSize: 12),
+              ),
+              value: _fatherNotIndicated,
+              onChanged: _onFatherNotIndicatedToggle,
             ),
-            value: _fatherNotIndicated,
-            onChanged: _onFatherNotIndicatedToggle,
           ),
-          const SizedBox(height: 6),
 
           if (isWide) ...[
             Row(
@@ -1265,11 +1811,11 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   flex: 3,
                   child: _buildTextFormField(
                     controller: _fatherPlaceOfBirthController,
-                    label: 'Place of Origin',
+                    label: 'Birthplace / Hometown',
                     isRequired: false,
                     enabled: !_fatherNotIndicated,
                     maxLength: 100,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's place of origin", isRequired: false, maxLength: 100) : null,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's birthplace", isRequired: false, maxLength: 100) : null,
                   ),
                 ),
               ],
@@ -1318,11 +1864,11 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 Expanded(
                   child: _buildTextFormField(
                     controller: _fatherPlaceOfBirthController,
-                    label: 'Place of Origin',
+                    label: 'Birthplace / Hometown',
                     isRequired: false,
                     enabled: !_fatherNotIndicated,
                     maxLength: 100,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's place of origin", isRequired: false, maxLength: 100) : null,
+                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's birthplace", isRequired: false, maxLength: 100) : null,
                   ),
                 ),
               ],
@@ -1375,10 +1921,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   flex: 3,
                   child: _buildTextFormField(
                     controller: _motherPlaceOfBirthController,
-                    label: 'Place of Origin',
+                    label: 'Birthplace / Hometown',
                     isRequired: false,
                     maxLength: 100,
-                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's place of origin", isRequired: false, maxLength: 100),
+                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's birthplace", isRequired: false, maxLength: 100),
                   ),
                 ),
               ],
@@ -1424,10 +1970,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 Expanded(
                   child: _buildTextFormField(
                     controller: _motherPlaceOfBirthController,
-                    label: 'Place of Origin',
+                    label: 'Birthplace / Hometown',
                     isRequired: false,
                     maxLength: 100,
-                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's place of origin", isRequired: false, maxLength: 100),
+                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's birthplace", isRequired: false, maxLength: 100),
                   ),
                 ),
               ],
@@ -1443,7 +1989,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 flex: isWide ? 4 : 1,
                 child: _buildTextFormField(
                   controller: _parentsContactNumberController,
-                  label: 'Parents Contact No. (11-digits)',
+                  label: 'Parents Contact No. (11 digits)',
                   isRequired: false,
                   keyboardType: TextInputType.phone,
                   maxLength: 11,
@@ -1468,19 +2014,15 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Section 4: Godparents & Sponsors Card (Unified)
-  // ===========================================================================
-
   Widget _buildSection4Godparents({required bool isWide}) {
     return _buildSectionCard(
-      title: '4. Godparents / Canonical Sponsors',
+      title: '4. Godparents & Sponsors',
       icon: Icons.people_outline,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Primary Sponsors (Canonically Required)',
+            'Primary Sponsors (Required)',
             style: TextStyle(fontSize: 13, color: ParishColors.marianBlue, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
@@ -1693,10 +2235,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
           const Divider(height: 26),
 
-          Text('Additional Secondary Godparents (Witnesses)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          Text('Additional Godparents & Witnesses', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
           const SizedBox(height: 4),
           Text(
-            'Click "[+] Add Godparent" to add additional secondary sponsor names individually.',
+            'Click "[+] Add Godparent" to add additional sponsor names individually.',
             style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
           ),
           const SizedBox(height: 12),
@@ -1753,23 +2295,19 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 
-  // ===========================================================================
-  // Section 5: Administration & Clergy Details Card
-  // ===========================================================================
-
   Widget _buildSection5Administration({required bool isWide}) {
     return _buildSectionCard(
-      title: '5. Baptism Administration & Clergy Details',
+      title: '5. Baptism Details & Officiating Priest',
       icon: Icons.church,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildTextFormField(
             controller: _parishChurchController,
-            label: 'Parish / Church of Baptism',
+            label: 'Church where Baptized',
             isRequired: true,
             maxLength: 150,
-            validator: (val) => SacramentalValidators.validatePlace(val, 'Parish / Church of baptism', isRequired: true, maxLength: 150),
+            validator: (val) => SacramentalValidators.validatePlace(val, 'Church where baptized', isRequired: true, maxLength: 150),
           ),
 
           Row(
@@ -1779,10 +2317,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 flex: 3,
                 child: _buildTextFormField(
                   controller: _ministerFirstNameController,
-                  label: 'Minister First Name',
+                  label: 'Priest First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(val, 'Priest first name', isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1793,7 +2331,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(val, 'Priest middle name', isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1801,10 +2339,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 flex: 3,
                 child: _buildTextFormField(
                   controller: _ministerLastNameController,
-                  label: 'Minister Last Name',
+                  label: 'Priest Last Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(val, 'Priest last name', isRequired: true, maxLength: 50),
                 ),
               ),
             ],
@@ -1828,7 +2366,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 flex: isWide ? 3 : 1,
                 child: _buildTextFormField(
                   controller: _stipendController,
-                  label: 'Stipend (₱)',
+                  label: 'Stipend / Offering (₱)',
                   isRequired: false,
                   maxLength: 12,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1840,7 +2378,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
           _buildTextFormField(
             controller: _remarksController,
-            label: 'Canonical Remarks / Marginal Notations',
+            label: 'Remarks / Marginal Notes (Optional)',
             isRequired: false,
             maxLines: 2,
             maxLength: 255,
@@ -1849,10 +2387,6 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
       ),
     );
   }
-
-  // ===========================================================================
-  // Bottom Submission Bar (With Explicit Back to Top)
-  // ===========================================================================
 
   Widget _buildBottomSubmissionBar({required bool isWide}) {
     final borderGreyColor = ParishColors.borderGrey;
@@ -1873,80 +2407,66 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
           ),
         ],
       ),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 12,
-        runSpacing: 12,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(130, 50),
-              side: BorderSide(color: borderGreyColor, width: 1.4),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: _isSubmitting
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: ParishColors.marianBlue,
-              );
-              if (shouldExit && mounted) {
-                Navigator.pop(context);
-              }
-            },
-            child: Text(
-              'Discard & Exit',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+          SizedBox(
+            width: isWide ? 190 : 130,
+            height: 50,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: borderGreyColor, width: 1.4),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: _isSubmitting
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: ParishColors.marianBlue,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: Text(
+                'Discard & Exit',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+              ),
             ),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Explicit Back to Top button in bottom bar
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(130, 50),
-                  side: BorderSide(color: ParishColors.marianBlue, width: 1.4),
-                  foregroundColor: ParishColors.marianBlue,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _scrollToTop,
-                icon: const Icon(Icons.arrow_upward, size: 18),
-                label: const Text(
-                  'Back to Top',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
-                ),
+          SizedBox(
+            width: isWide ? 290 : 180,
+            height: 50,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: (_coordinateDuplicateError != null)
+                    ? ParishColors.mercyRed
+                    : (isEditMode ? ParishColors.marianBlue : ParishColors.oliveGreen),
+                foregroundColor: Colors.white,
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  minimumSize: Size(isWide ? 260 : 180, 50),
-                  backgroundColor: (_coordinateDuplicateError != null)
-                      ? ParishColors.mercyRed
-                      : ParishColors.oliveGreen,
-                  foregroundColor: Colors.white,
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: (_isSubmitting || _coordinateDuplicateError != null) ? null : _submitForm,
-                icon: const Icon(Icons.check_circle_outline, size: 22),
-                label: Text(
-                  isEditMode ? 'Update Baptism Record' : 'Save Baptism Record',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
+              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+                  ? null
+                  : () {
+                if (isEditMode) {
+                  _promptUpdateConfirmation();
+                } else {
+                  _promptSaveConfirmation();
+                }
+              },
+              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              label: Text(
+                isEditMode ? 'Update Baptism Record' : 'Save Baptism Record',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
-
-  // ===========================================================================
-  // Reusable Form Field Component Builders
-  // ===========================================================================
 
   Widget _buildSectionCard({
     required String title,
@@ -2191,3 +2711,4 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 }
+

@@ -1,5 +1,11 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/sacrament_record_detail_page.dart
+// =============================================================================
+
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/certificate_issuance_model.dart';
 import '../../services/certificate_service.dart';
@@ -47,13 +53,24 @@ class SacramentRecordDetailPage extends StatefulWidget {
 }
 
 class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
+  // Pagination States
+  int _auditLogCurrentPage = 1;
+  final int _auditLogRowsPerPage = 5;
+
+  int _issuanceCurrentPage = 1;
+  final int _issuanceRowsPerPage = 5;
+
   List<CertificateIssuanceModel> _pastIssuances = [];
   bool _isLoadingIssuances = true;
+
+  List<Map<String, dynamic>> _auditLogs = [];
+  bool _isLoadingAuditLogs = true;
 
   @override
   void initState() {
     super.initState();
     _loadIssuances();
+    _loadAuditLogs();
   }
 
   Future<void> _loadIssuances() async {
@@ -64,9 +81,30 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
       setState(() {
         _pastIssuances = list;
         _isLoadingIssuances = false;
+        _issuanceCurrentPage = 1;
       });
     } catch (_) {
       if (mounted) setState(() => _isLoadingIssuances = false);
+    }
+  }
+
+  Future<void> _loadAuditLogs() async {
+    setState(() => _isLoadingAuditLogs = true);
+    try {
+      final response = await Supabase.instance.client
+          .from('sacramental_record_audit_logs')
+          .select()
+          .eq('record_id', widget.recordId)
+          .order('created_at', ascending: false);
+
+      if (!mounted) return;
+      setState(() {
+        _auditLogs = List<Map<String, dynamic>>.from(response as List);
+        _isLoadingAuditLogs = false;
+        _auditLogCurrentPage = 1;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingAuditLogs = false);
     }
   }
 
@@ -79,6 +117,8 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         initialData: widget.rawRecordData,
         onRecordSaved: () {
           widget.onRecordUpdated?.call();
+          _loadIssuances();
+          _loadAuditLogs();
           Navigator.pop(context);
         },
       );
@@ -87,6 +127,8 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         initialData: widget.rawRecordData,
         onRecordSaved: () {
           widget.onRecordUpdated?.call();
+          _loadIssuances();
+          _loadAuditLogs();
           Navigator.pop(context);
         },
       );
@@ -95,6 +137,8 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         initialData: widget.rawRecordData,
         onRecordSaved: () {
           widget.onRecordUpdated?.call();
+          _loadIssuances();
+          _loadAuditLogs();
           Navigator.pop(context);
         },
       );
@@ -103,6 +147,8 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         initialData: widget.rawRecordData,
         onRecordSaved: () {
           widget.onRecordUpdated?.call();
+          _loadIssuances();
+          _loadAuditLogs();
           Navigator.pop(context);
         },
       );
@@ -111,6 +157,8 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         initialData: widget.rawRecordData,
         onRecordSaved: () {
           widget.onRecordUpdated?.call();
+          _loadIssuances();
+          _loadAuditLogs();
           Navigator.pop(context);
         },
       );
@@ -119,6 +167,8 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         initialData: widget.rawRecordData,
         onRecordSaved: () {
           widget.onRecordUpdated?.call();
+          _loadIssuances();
+          _loadAuditLogs();
           Navigator.pop(context);
         },
       );
@@ -163,19 +213,16 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
   String _val(String key) {
     dynamic v = widget.rawRecordData[key];
 
-    // 1. Fallback to camelCase key if snake_case was requested
     if (v == null) {
       final camelKey = _toCamelCase(key);
       v = widget.rawRecordData[camelKey];
     }
 
-    // 2. Fallback to snake_case key if camelCase was requested
     if (v == null) {
       final snakeKey = _toSnakeCase(key);
       v = widget.rawRecordData[snakeKey];
     }
 
-    // 3. Fallback to known common database column aliases
     if (v == null) {
       if (key == 'entry_status' || key == 'entryStatus') {
         v = widget.rawRecordData['status'] ??
@@ -208,7 +255,6 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
     return str;
   }
 
-  /// Constructs a full name from separate database fields without trailing or misplaced dashes
   String _fullName(String prefix) {
     final f = _val('${prefix}_first_name');
     final m = _val('${prefix}_middle_name');
@@ -283,7 +329,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
@@ -327,7 +373,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                               children: [
                                 Text(
                                   widget.bookRef,
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor),
+                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDarkColor),
                                 ),
                                 InkWell(
                                   onTap: _copyReference,
@@ -344,7 +390,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                                       children: [
                                         Icon(Icons.copy, size: 12, color: widget.themeColor),
                                         const SizedBox(width: 4),
-                                        Text('Copy', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: widget.themeColor)),
+                                        Text('Copy', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: widget.themeColor)),
                                       ],
                                     ),
                                   ),
@@ -359,28 +405,59 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                 ),
                 const SizedBox(height: 24),
 
-                // 2. Sacrament-Specific Detailed Canonical View
-                Text(
-                  'Canonical Register Information',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+                // =============================================================
+                // SECTION 1: PRIMARY CANONICAL REGISTER INFORMATION
+                // =============================================================
+                _buildHIGSectionHeader(
+                  title: 'CANONICAL REGISTER INFORMATION',
+                  icon: Icons.article_outlined,
+                  action: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: widget.themeColor,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    ),
+                    onPressed: () => _openEditRecord(context),
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Edit Entry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildSacramentSpecificDetails(),
-                const SizedBox(height: 16),
-
-                // 3. Official Certificate Issuance History & Audit Trail
-                _buildIssuanceHistoryCard(cardWhiteColor, borderGreyColor, textDarkColor, textMutedColor),
                 const SizedBox(height: 20),
 
-                // 4. Primary Action: Launch Official Certificate Workflow Modal
+                // =============================================================
+                // SECTION 2: CANONICAL LEDGER STATUS & AUDIT TRAIL
+                // =============================================================
+                _buildHIGSectionHeader(
+                  title: 'CANONICAL LEDGER STATUS & AUDIT TRAIL',
+                  icon: Icons.history_edu_outlined,
+                ),
+                const SizedBox(height: 10),
+                _buildAuditTrailTimelineCard(cardWhiteColor, borderGreyColor, textDarkColor, textMutedColor),
+                const SizedBox(height: 24),
+
+                // =============================================================
+                // SECTION 3: OFFICIAL CERTIFICATE ISSUANCE HISTORY
+                // =============================================================
+                _buildHIGSectionHeader(
+                  title: 'OFFICIAL CERTIFICATE ISSUANCE HISTORY',
+                  icon: Icons.verified_outlined,
+                ),
+                const SizedBox(height: 10),
+                _buildIssuanceHistoryCard(cardWhiteColor, borderGreyColor, textDarkColor, textMutedColor),
+                const SizedBox(height: 26),
+
+                // =============================================================
+                // PRIMARY BOTTOM ACTION BAR
+                // =============================================================
                 SizedBox(
                   width: double.infinity,
-                  height: 56,
+                  height: 54,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.themeColor,
                       foregroundColor: Colors.white,
-                      elevation: 1,
+                      elevation: 1.5,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     onPressed: () => showGenerateCertificateModal(
@@ -393,16 +470,17 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                       onCertificateIssued: () {
                         widget.onRecordUpdated?.call();
                         _loadIssuances();
+                        _loadAuditLogs();
                       },
                     ),
                     icon: const Icon(Icons.print, size: 22),
                     label: Text(
                       'Generate Official ${widget.sacramentName} Certificate',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 36),
               ],
             ),
           ),
@@ -412,9 +490,523 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
   }
 
   // ===========================================================================
-  // Issuance History Card
+  // HIG Section Header Component
   // ===========================================================================
+
+  Widget _buildHIGSectionHeader({
+    required String title,
+    required IconData icon,
+    Widget? action,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: widget.themeColor),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.8,
+                  color: ParishColors.textDark.withOpacity(0.85),
+                ),
+              ),
+            ],
+          ),
+          if (action != null) action,
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Concise Timeline Trail History & Audit Details Dialog
+  // ===========================================================================
+
+  Widget _buildAuditTrailTimelineCard(Color cardWhite, Color borderGrey, Color textDark, Color textMuted) {
+    final entryStatus = _val('entry_status');
+    final isCorrected = entryStatus.toUpperCase() == 'CORRECTED';
+    final encodedBy = _val('encoded_by');
+    final dateEncoded = _val('date_encoded');
+
+    final statusColor = isCorrected ? ParishColors.goldAccent : ParishColors.oliveGreen;
+
+    // Pagination for Audit Trail
+    final totalAuditLogs = _auditLogs.length;
+    final totalAuditPages = (totalAuditLogs / _auditLogRowsPerPage).ceil() > 0 ? (totalAuditLogs / _auditLogRowsPerPage).ceil() : 1;
+    if (_auditLogCurrentPage > totalAuditPages) _auditLogCurrentPage = totalAuditPages;
+
+    final startIdx = (_auditLogCurrentPage - 1) * _auditLogRowsPerPage;
+    final endIdx = (startIdx + _auditLogRowsPerPage) > totalAuditLogs ? totalAuditLogs : (startIdx + _auditLogRowsPerPage);
+    final pagedAuditLogs = totalAuditLogs > 0 ? _auditLogs.sublist(startIdx, endIdx) : <Map<String, dynamic>>[];
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status Header Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(bottom: BorderSide(color: borderGrey)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.shield_outlined, size: 20, color: widget.themeColor),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Canonical Ledger Status',
+                      style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: statusColor.withOpacity(0.4)),
+                  ),
+                  child: Text(
+                    entryStatus.toUpperCase(),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: statusColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'AUDIT TRAIL HISTORY ($totalAuditLogs)',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted, letterSpacing: 0.8),
+                    ),
+                    Text(
+                      'Tap any trail item for details',
+                      style: TextStyle(fontSize: 11, color: widget.themeColor, fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                if (_isLoadingAuditLogs)
+                  const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2)))
+                else if (_auditLogs.isEmpty) ...[
+                  _buildTimelineNode(
+                    isFirst: true,
+                    isLast: true,
+                    actionTitle: 'Initial Canonical Registration',
+                    timestamp: dateEncoded != '—' ? dateEncoded : 'On File',
+                    userName: encodedBy != '—' ? encodedBy : 'Parish Secretariat',
+                    userRole: 'Encoder / Staff',
+                    details: 'Registered original entry in ${widget.sacramentName} register.',
+                    themeColor: ParishColors.oliveGreen,
+                    onTap: null,
+                  ),
+                ] else ...[
+                  ...pagedAuditLogs.asMap().entries.map((entry) {
+                    final int idx = entry.key;
+                    final Map<String, dynamic> log = entry.value;
+
+                    final createdAt = (log['created_at'] ?? '').toString();
+                    final dateStr = createdAt.isNotEmpty ? createdAt.substring(0, 16).replaceAll('T', ' ') : '—';
+                    final userName = log['performed_by_name']?.toString() ?? 'Authorized Personnel';
+                    final userRole = log['performed_by_role']?.toString() ?? 'Staff';
+                    final actionType = log['action_type']?.toString() ?? 'UPDATED';
+                    final justification = log['justification']?.toString() ?? 'Canonical record update';
+
+                    final bool isFirstNode = startIdx == 0 && idx == 0;
+                    final bool isLastNode = startIdx + idx == totalAuditLogs - 1;
+
+                    return _buildTimelineNode(
+                      isFirst: isFirstNode,
+                      isLast: isLastNode,
+                      actionTitle: actionType == 'CREATED' ? 'Initial Registration' : 'Record Modification ($actionType)',
+                      timestamp: dateStr,
+                      userName: userName,
+                      userRole: userRole,
+                      details: justification,
+                      themeColor: actionType == 'CREATED' ? ParishColors.oliveGreen : widget.themeColor,
+                      onTap: () => _showAuditDetailsModal(context, log),
+                    );
+                  }),
+
+                  // Pagination Toolbar for Audit Logs
+                  if (totalAuditLogs > _auditLogRowsPerPage) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Page $_auditLogCurrentPage of $totalAuditPages',
+                          style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.w600),
+                        ),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.chevron_left, size: 20),
+                              constraints: const BoxConstraints(),
+                              padding: EdgeInsets.zero,
+                              onPressed: _auditLogCurrentPage > 1 ? () => setState(() => _auditLogCurrentPage--) : null,
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_right, size: 20),
+                              constraints: const BoxConstraints(),
+                              padding: EdgeInsets.zero,
+                              onPressed: _auditLogCurrentPage < totalAuditPages ? () => setState(() => _auditLogCurrentPage++) : null,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimelineNode({
+    required bool isFirst,
+    required bool isLast,
+    required String actionTitle,
+    required String timestamp,
+    required String userName,
+    required String userRole,
+    required String details,
+    required Color themeColor,
+    VoidCallback? onTap,
+  }) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Left Timeline Line & Dot Indicator
+          SizedBox(
+            width: 28,
+            child: Column(
+              children: [
+                Container(
+                  width: 13,
+                  height: 13,
+                  decoration: BoxDecoration(
+                    color: themeColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: themeColor.withOpacity(0.3), blurRadius: 3, offset: const Offset(0, 1)),
+                    ],
+                  ),
+                ),
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      color: ParishColors.borderGrey,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+
+          // Right Concise Timeline Tile (Clickable for full inspection)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 14.0),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: ParishColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: ParishColors.borderGrey),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    actionTitle,
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                                  ),
+                                  Text(
+                                    timestamp,
+                                    style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '$userName ($userRole) • "$details"',
+                                style: TextStyle(fontSize: 12, color: ParishColors.textDark.withOpacity(0.85)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (onTap != null) ...[
+                          const SizedBox(width: 8),
+                          Icon(Icons.chevron_right, size: 18, color: ParishColors.textMuted),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Opens an Audit Trail Details Dialog showing complete log info & altered fields diff
+  void _showAuditDetailsModal(BuildContext context, Map<String, dynamic> log) {
+    final createdAt = (log['created_at'] ?? '').toString();
+    final dateStr = createdAt.isNotEmpty ? createdAt.substring(0, 19).replaceAll('T', ' ') : '—';
+    final userName = log['performed_by_name']?.toString() ?? 'Authorized Personnel';
+    final userRole = log['performed_by_role']?.toString() ?? 'Staff';
+    final actionType = log['action_type']?.toString() ?? 'UPDATED';
+    final justification = log['justification']?.toString() ?? 'No justification provided';
+    final changesSummary = log['changes_summary']?.toString();
+
+    Map<String, dynamic> parsedChanges = {};
+    if (changesSummary != null && changesSummary.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(changesSummary);
+        if (decoded is Map<String, dynamic>) {
+          parsedChanges = decoded;
+        }
+      } catch (_) {}
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.history_edu, color: widget.themeColor, size: 24),
+                const SizedBox(width: 10),
+                const Text(
+                  'Audit Log Inspection Details',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 540,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: ParishColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ParishColors.borderGrey),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildAuditDetailRow('Log ID:', log['log_id']?.toString() ?? '—'),
+                      _buildAuditDetailRow('Action Type:', actionType),
+                      _buildAuditDetailRow('Timestamp:', dateStr),
+                      _buildAuditDetailRow('Performed By:', '$userName ($userRole)'),
+                      _buildAuditDetailRow('Record ID:', log['record_id']?.toString() ?? widget.recordId),
+                      _buildAuditDetailRow('Coordinates:', 'Book ${log['book_number'] ?? "—"}, Page ${log['page_number'] ?? "—"}, Line ${log['line_number'] ?? "—"}'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Justification / Canonical Reason:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.textDark),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ParishColors.goldLight,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ParishColors.goldAccent.withOpacity(0.5)),
+                  ),
+                  child: Text(
+                    justification,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.35),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                Text(
+                  'Altered Informatiom:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.textDark),
+                ),
+                const SizedBox(height: 8),
+
+                if (parsedChanges.isEmpty)
+                  Text(
+                    changesSummary != null && changesSummary.trim().isNotEmpty
+                        ? changesSummary
+                        : 'No detailed field diff recorded for this action.',
+                    style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted, fontStyle: FontStyle.italic),
+                  )
+                else
+                  ...parsedChanges.entries.map((diffEntry) {
+                    final fieldName = diffEntry.key;
+                    final valMap = diffEntry.value;
+                    final oldVal = valMap is Map ? valMap['old']?.toString() ?? '—' : '—';
+                    final newVal = valMap is Map ? valMap['new']?.toString() ?? '—' : valMap.toString();
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: ParishColors.backgroundLight,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: ParishColors.borderGrey),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fieldName.toUpperCase(),
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Previous Value:', style: TextStyle(fontSize: 10, color: ParishColors.mercyRed)),
+                                    Text(oldVal, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.mercyRed)),
+                                  ],
+                                ),
+                              ),
+                              Icon(Icons.arrow_forward, size: 14, color: ParishColors.textMuted),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Updated Value:', style: TextStyle(fontSize: 10, color: ParishColors.oliveGreen)),
+                                    Text(newVal, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.oliveGreen)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close Inspection'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuditDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label, style: TextStyle(fontSize: 12, color: ParishColors.textMuted, fontWeight: FontWeight.w600)),
+          ),
+          Expanded(
+            child: Text(value, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Issuance History Card (With Pagination)
+  // ===========================================================================
+
   Widget _buildIssuanceHistoryCard(Color cardWhite, Color borderGrey, Color textDark, Color textMuted) {
+    final totalIssuances = _pastIssuances.length;
+    final totalIssuancePages = (totalIssuances / _issuanceRowsPerPage).ceil() > 0 ? (totalIssuances / _issuanceRowsPerPage).ceil() : 1;
+    if (_issuanceCurrentPage > totalIssuancePages) _issuanceCurrentPage = totalIssuancePages;
+
+    final startIdx = (_issuanceCurrentPage - 1) * _issuanceRowsPerPage;
+    final endIdx = (startIdx + _issuanceRowsPerPage) > totalIssuances ? totalIssuances : (startIdx + _issuanceRowsPerPage);
+    final pagedIssuances = totalIssuances > 0 ? _pastIssuances.sublist(startIdx, endIdx) : <CertificateIssuanceModel>[];
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -422,23 +1014,31 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
         color: cardWhite,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(Icons.history, color: widget.themeColor, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Official Certificate Issuance History',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: widget.themeColor),
-                  overflow: TextOverflow.ellipsis,
-                ),
+              Row(
+                children: [
+                  Icon(Icons.history, color: widget.themeColor, size: 22),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Issued Certificates ($totalIssuances)',
+                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: widget.themeColor),
+                  ),
+                ],
               ),
-              if (_pastIssuances.isNotEmpty) ...[
-                const SizedBox(width: 8),
+              if (_pastIssuances.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -446,93 +1046,124 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${_pastIssuances.length} Issued',
+                    '${_pastIssuances.length} Logged',
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: widget.themeColor),
                   ),
                 ),
-              ],
             ],
           ),
           const Divider(height: 20),
 
           if (_isLoadingIssuances)
-            const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+            const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2)))
           else if (_pastIssuances.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: Text(
                 'No official certificates have been issued yet for this canonical record.',
-                style: TextStyle(fontSize: 12.5, color: textMuted, fontStyle: FontStyle.italic),
+                style: TextStyle(fontSize: 13, color: textMuted, fontStyle: FontStyle.italic),
               ),
             )
-          else
-            ..._pastIssuances.map((issuance) {
-              final isValid = issuance.isValid;
-              final statusColor = isValid ? ParishColors.oliveGreen : ParishColors.mercyRed;
+          else ...[
+              ...pagedIssuances.map((issuance) {
+                final isValid = issuance.isValid;
+                final statusColor = isValid ? ParishColors.oliveGreen : ParishColors.mercyRed;
 
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: ParishColors.backgroundLight,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: borderGrey),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      isValid ? Icons.verified : Icons.cancel,
-                      size: 20,
-                      color: statusColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  issuance.issuanceId,
-                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  issuance.certificateStatus.toUpperCase(),
-                                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: statusColor),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text('Purpose: ${issuance.purpose}', style: TextStyle(fontSize: 12, color: textMuted)),
-                          Text(
-                            'Issued: ${issuance.issuedAt.toIso8601String().substring(0, 10)} • Signatory: ${issuance.signatoryName}',
-                            style: TextStyle(fontSize: 11, color: textMuted),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Token: ${issuance.verificationId}',
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                          ),
-                        ],
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ParishColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: borderGrey),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        isValid ? Icons.verified : Icons.cancel,
+                        size: 20,
+                        color: statusColor,
                       ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    issuance.issuanceId,
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    issuance.certificateStatus.toUpperCase(),
+                                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: statusColor),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text('Purpose: ${issuance.purpose}', style: TextStyle(fontSize: 12.5, color: textDark.withOpacity(0.85))),
+                            Text(
+                              'Issued: ${issuance.issuedAt.toIso8601String().substring(0, 10)} • Signatory: ${issuance.signatoryName}',
+                              style: TextStyle(fontSize: 11.5, color: textMuted),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Token: ${issuance.verificationId}',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              // Pagination for Issuance History
+              if (totalIssuances > _issuanceRowsPerPage) ...[
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Page $_issuanceCurrentPage of $totalIssuancePages',
+                      style: TextStyle(fontSize: 11.5, color: textMuted, fontWeight: FontWeight.w600),
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, size: 20),
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: _issuanceCurrentPage > 1 ? () => setState(() => _issuanceCurrentPage--) : null,
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, size: 20),
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: _issuanceCurrentPage < totalIssuancePages ? () => setState(() => _issuanceCurrentPage++) : null,
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              );
-            }),
+              ],
+            ],
         ],
       ),
     );
@@ -733,7 +1364,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
   Widget _buildDetailCard(String title, IconData icon, List<Widget> children) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 20),
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
