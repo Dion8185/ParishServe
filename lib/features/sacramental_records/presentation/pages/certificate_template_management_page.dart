@@ -1695,7 +1695,7 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           activeColor: ParishColors.marianBlue,
-                          title: const Text('Display Diocese Logo (Left)',
+                          title: const Text('Display Diocese Logo',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold, fontSize: 13)),
                           value: _showDioceseLogo,
@@ -1761,7 +1761,7 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           activeColor: ParishColors.marianBlue,
-                          title: const Text('Display Parish Seal (Right)',
+                          title: const Text('Display Parish Seal',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold, fontSize: 13)),
                           value: _showParishSeal,
@@ -2869,7 +2869,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                           if (isMobile) ...[
                             CheckboxListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: const Text('Diocese Logo (Left)',
+                              title: const Text('Diocese Logo',
                                   style: TextStyle(fontSize: 13)),
                               value: _showDioceseLogo,
                               onChanged: (v) =>
@@ -2877,7 +2877,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                             ),
                             CheckboxListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: const Text('Parish Seal (Right)',
+                              title: const Text('Parish Seal',
                                   style: TextStyle(fontSize: 13)),
                               value: _showParishSeal,
                               onChanged: (v) =>
@@ -2889,7 +2889,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                                 Expanded(
                                   child: CheckboxListTile(
                                     contentPadding: EdgeInsets.zero,
-                                    title: const Text('Diocese Logo (Left)',
+                                    title: const Text('Diocese Logo',
                                         style: TextStyle(fontSize: 13)),
                                     value: _showDioceseLogo,
                                     onChanged: (v) =>
@@ -2899,7 +2899,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
                                 Expanded(
                                   child: CheckboxListTile(
                                     contentPadding: EdgeInsets.zero,
-                                    title: const Text('Parish Seal (Right)',
+                                    title: const Text('Parish Seal',
                                         style: TextStyle(fontSize: 13)),
                                     value: _showParishSeal,
                                     onChanged: (v) =>

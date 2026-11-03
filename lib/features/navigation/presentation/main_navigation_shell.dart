@@ -310,9 +310,9 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 Container(
                   width: 52,
                   height: 52,
-                  padding: const EdgeInsets.all(2.5),
+                  padding: const EdgeInsets.all(3.0),
                   decoration: BoxDecoration(
-                    color: ParishColors.marianBlueSurface,
+                    color: ParishColors.cardWhite,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: ParishColors.goldAccent, width: 2),
                     boxShadow: [
@@ -323,11 +323,18 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       ),
                     ],
                   ),
-                  child: Center(
-                    child: Icon(
-                      Icons.church_rounded,
-                      size: 28,
-                      color: ParishColors.marianBlueAdaptive,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(13),
+                    child: Image.asset(
+                      'images/logo-jp2.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Icon(
+                          Icons.church_rounded,
+                          size: 28,
+                          color: ParishColors.marianBlueAdaptive,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -337,7 +344,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'St. John Paul II',
+                        'St. John Paul II Parish',
                         style: TextStyle(
                           fontSize: 16.5,
                           fontWeight: FontWeight.bold,
@@ -349,7 +356,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       ),
                       const SizedBox(height: 1),
                       Text(
-                        'Chancery Operations',
+                        'Office of the Parish Secretary',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -696,17 +703,24 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 Container(
                   width: 44,
                   height: 44,
-                  padding: const EdgeInsets.all(2),
+                  padding: const EdgeInsets.all(2.5),
                   decoration: BoxDecoration(
-                    color: ParishColors.marianBlueSurface,
+                    color: ParishColors.cardWhite,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: ParishColors.goldAccent, width: 1.8),
                   ),
-                  child: Center(
-                    child: Icon(
-                      Icons.church_rounded,
-                      size: 24,
-                      color: ParishColors.marianBlueAdaptive,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(9.5),
+                    child: Image.asset(
+                      'images/logo-jp2.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Icon(
+                          Icons.church_rounded,
+                          size: 24,
+                          color: ParishColors.marianBlueAdaptive,
+                        ),
+                      ),
                     ),
                   ),
                 ),
