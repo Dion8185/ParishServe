@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/appointments/presentation/dialogs/mass_intention_dialog.dart
+// =============================================================================
+
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
@@ -75,7 +79,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
     if (user != null && _isParishioner) {
       _requesterNameController.text = user.fullName;
       _emailController.text = user.email;
-      _paymentMethod = 'GCash'; // Locked to GCash for parishioners
+      _paymentMethod = 'GCash';
     } else {
       _paymentMethod = 'Cash (Walk-In Desk)';
     }
@@ -105,10 +109,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       if (mounted) setState(() => _isLoadingPaymentSettings = false);
     }
   }
-
-  // ===========================================================================
-  // Draft Persistence Lifecycle (Auto-save / Restore via SharedPreferences)
-  // ===========================================================================
 
   Future<void> _saveDraft() async {
     try {
@@ -182,6 +182,15 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                 _specialIntentionsControllers.add(TextEditingController(text: name.toString()));
               }
             }
+
+            if (map['date'] != null) {
+              final draftDate = DateTime.tryParse(map['date']);
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+              if (draftDate != null && !draftDate.isBefore(today)) {
+                _selectedDate = draftDate;
+              }
+            }
           });
         }
       }
@@ -196,10 +205,14 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
   }
 
   DateTime _getNextValidMassDate() {
-    var date = DateTime.now().add(const Duration(days: 1));
-    while (date.weekday != DateTime.wednesday &&
-        date.weekday != DateTime.friday &&
-        date.weekday != DateTime.sunday) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var date = today.add(const Duration(days: 1));
+
+    while (date.isBefore(today) ||
+        (date.weekday != DateTime.wednesday &&
+            date.weekday != DateTime.friday &&
+            date.weekday != DateTime.sunday)) {
       date = date.add(const Duration(days: 1));
     }
     return DateTime(date.year, date.month, date.day);
@@ -290,7 +303,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
   }
 
   void _recalculateDefaultStipend() {
-    // If OCR already extracted an amount from a valid receipt screenshot, preserve it
     if (_ocrResult?.amount != null && _ocrResult!.amount! > 0) return;
 
     final count = _extractCleanList(_thanksgivingControllers).length +
@@ -304,14 +316,14 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final firstValidDate = _selectedDate.isBefore(today) ? _selectedDate : today;
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
-      firstDate: firstValidDate,
+      initialDate: _selectedDate.isBefore(today) ? _getNextValidMassDate() : _selectedDate,
+      firstDate: today, // STRICTLY blocks picking past dates
       lastDate: today.add(const Duration(days: 365)),
       selectableDayPredicate: (DateTime day) {
+        if (day.isBefore(today)) return false;
         return day.weekday == DateTime.wednesday ||
             day.weekday == DateTime.friday ||
             day.weekday == DateTime.sunday;
@@ -326,10 +338,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
       _saveDraft();
     }
   }
-
-  // ===========================================================================
-  // Google ML Kit GCash Receipt Image Selection & Auto-Extraction
-  // ===========================================================================
 
   Future<void> _pickReceiptScreenshot() async {
     try {
@@ -362,7 +370,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
         _errorMessage = null;
       });
 
-      // Execute Google ML Kit OCR and multi-line GCash parsing
       final ocrRes = await GcashOcrService.processReceiptImage(
         filePath: file.path,
         imageBytes: bytes,
@@ -409,14 +416,108 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
     });
   }
 
-  // ===========================================================================
-  // Submission
-  // ===========================================================================
+  /// Interactive zoomable modal dialog to inspect uploaded GCash receipt screenshot
+  void _openReceiptPreviewDialog(Uint8List bytes, String fileName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 580, maxHeight: 680),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.receipt_long, color: Color(0xFF005CEE), size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'GCash Receipt Inspection',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: ParishColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: ParishColors.backgroundLight,
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: Image.memory(
+                          bytes,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      fileName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: ParishColors.textMuted,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF005CEE),
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Looks Good'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _submitMassIntention() async {
     setState(() => _errorMessage = null);
 
     if (!_formKey.currentState!.validate()) return;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final massDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+
+    if (massDay.isBefore(today)) {
+      setState(() => _errorMessage = 'Cannot schedule Mass intentions on past dates.');
+      return;
+    }
 
     final thanksgiving = _extractCleanList(_thanksgivingControllers);
     final repose = _extractCleanList(_reposeSoulsControllers);
@@ -485,7 +586,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
         ocrRawText: _ocrResult?.rawText,
       );
 
-      // Clear draft on confirmed commit
       await _clearDraft();
 
       if (!mounted) return;
@@ -662,7 +762,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                             ),
                           ],
 
-                          // Prominent Mass Schedule Banner
+                          // Schedule Banner
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(14),
@@ -698,7 +798,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Requester Full Name
                           _buildFieldLabel(_isParishioner
                               ? 'Requester Full Name (Account Linked)'
                               : 'Requester Full Name (Walk-In) *'),
@@ -720,7 +819,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                           ),
                           const SizedBox(height: 14),
 
-                          // Contact & Email Responsive Row
                           if (isCompact) ...[
                             _buildFieldLabel('Contact Number *'),
                             TextFormField(
@@ -810,7 +908,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                           ],
                           const SizedBox(height: 16),
 
-                          // Time Slot Options (For Sunday Masses)
                           if (isSunday) ...[
                             _buildFieldLabel('Sunday Mass Time Slot *'),
                             DropdownButtonFormField<String>(
@@ -839,7 +936,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
 
                           const Divider(height: 24),
 
-                          // Categorized Petitions
                           Text('Mass Intention Names & Petitions',
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDarkColor)),
                           Text('Enter names for altar mention (up to 10 entries per category).',
@@ -909,7 +1005,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
 
                           const Divider(height: 24),
 
-                          // Payment Method & Semi-Manual GCash QR Upload Section
                           Text(isStaff ? 'Offering Mode & Stipend' : 'GCash Offering & Receipt Upload',
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDarkColor)),
                           const SizedBox(height: 12),
@@ -945,7 +1040,6 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                             const SizedBox(height: 14),
                           ],
 
-                          // Stipend Amount & Ref Number Layout
                           if (isCompact) ...[
                             _buildFieldLabel('Stipend Offering Amount (PHP) *'),
                             TextFormField(
@@ -1148,6 +1242,7 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
           ),
           const SizedBox(height: 12),
 
+          // Uploaded Screenshot Box with Thumbnail & Interactive Zoom
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(10),
@@ -1199,27 +1294,122 @@ class _MassIntentionDialogState extends State<_MassIntentionDialog> {
                     ),
                   ),
                 ] else ...[
-                  Row(
-                    children: [
-                      const Icon(Icons.image, size: 18, color: ParishColors.oliveGreen),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          _receiptFileName ?? 'receipt.jpg',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
-                          overflow: TextOverflow.ellipsis,
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ParishColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: borderGrey.withValues(alpha: 0.6)),
+                    ),
+                    child: Row(
+                      children: [
+                        // Zoomable Thumbnail
+                        InkWell(
+                          onTap: () => _openReceiptPreviewDialog(
+                            _receiptBytes!,
+                            _receiptFileName ?? 'gcash_receipt.jpg',
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(
+                                  _receiptBytes!,
+                                  width: 58,
+                                  height: 58,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(6),
+                                    bottomRight: Radius.circular(8),
+                                  ),
+                                ),
+                                child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ParishColors.oliveGreenSurface,
-                          borderRadius: BorderRadius.circular(4),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _receiptFileName ?? 'receipt.jpg',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: ParishColors.oliveGreen,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: ParishColors.oliveGreenSurface,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text('SCANNED',
+                                        style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Tap thumbnail to zoom and inspect receipt details.',
+                                style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  InkWell(
+                                    onTap: () => _openReceiptPreviewDialog(
+                                      _receiptBytes!,
+                                      _receiptFileName ?? 'gcash_receipt.jpg',
+                                    ),
+                                    child: const Row(
+                                      children: [
+                                        Icon(Icons.remove_red_eye_outlined, size: 14, color: Color(0xFF005CEE)),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Inspect',
+                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF005CEE)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  InkWell(
+                                    onTap: _pickReceiptScreenshot,
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.sync, size: 14, color: ParishColors.textMuted),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Replace Image',
+                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                        child: const Text('SCANNED',
-                            style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ],

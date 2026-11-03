@@ -183,6 +183,15 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                 _specialIntentionsControllers.add(TextEditingController(text: name.toString()));
               }
             }
+
+            if (map['date'] != null) {
+              final draftDate = DateTime.tryParse(map['date']);
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+              if (draftDate != null && !draftDate.isBefore(today)) {
+                _selectedDate = draftDate;
+              }
+            }
           });
         }
       }
@@ -197,10 +206,14 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
   }
 
   DateTime _getNextValidMassDate() {
-    var date = DateTime.now().add(const Duration(days: 1));
-    while (date.weekday != DateTime.wednesday &&
-        date.weekday != DateTime.friday &&
-        date.weekday != DateTime.sunday) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var date = today.add(const Duration(days: 1));
+
+    while (date.isBefore(today) ||
+        (date.weekday != DateTime.wednesday &&
+            date.weekday != DateTime.friday &&
+            date.weekday != DateTime.sunday)) {
       date = date.add(const Duration(days: 1));
     }
     return DateTime(date.year, date.month, date.day);
@@ -291,14 +304,14 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final firstValidDate = _selectedDate.isBefore(today) ? _selectedDate : today;
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
-      firstDate: firstValidDate,
+      initialDate: _selectedDate.isBefore(today) ? _getNextValidMassDate() : _selectedDate,
+      firstDate: today, // STRICTLY blocks past dates
       lastDate: today.add(const Duration(days: 365)),
       selectableDayPredicate: (DateTime day) {
+        if (day.isBefore(today)) return false;
         return day.weekday == DateTime.wednesday ||
             day.weekday == DateTime.friday ||
             day.weekday == DateTime.sunday;
@@ -360,10 +373,107 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
     }
   }
 
+  void _openReceiptPreviewDialog(Uint8List bytes, String fileName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 680),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.receipt_long, color: Color(0xFF005CEE), size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'GCash Receipt Inspection',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: ParishColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: ParishColors.backgroundLight,
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: Image.memory(
+                          bytes,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      fileName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: ParishColors.textMuted,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF005CEE),
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Looks Good'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _submitMassIntention() async {
     setState(() => _errorMessage = null);
 
     if (!_formKey.currentState!.validate()) return;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final massDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+
+    if (massDay.isBefore(today)) {
+      setState(() => _errorMessage = 'Cannot schedule Mass intentions on past dates.');
+      return;
+    }
 
     final thanksgiving = _extractCleanList(_thanksgivingControllers);
     final repose = _extractCleanList(_reposeSoulsControllers);
@@ -779,6 +889,8 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                     ],
                   ),
                   const SizedBox(height: 10),
+
+                  // Upload / Attached Box with Zoom Preview
                   if (_receiptBytes == null)
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
@@ -792,24 +904,97 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                       label: Text(_isExtractingOcr ? 'Scanning with OCR...' : 'Upload Receipt Screenshot'),
                     )
                   else
-                    Row(
-                      children: [
-                        const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _receiptFileName ?? 'receipt.jpg',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: borderGrey.withValues(alpha: 0.6)),
+                      ),
+                      child: Row(
+                        children: [
+                          // Interactive Thumbnail
+                          InkWell(
+                            onTap: () => _openReceiptPreviewDialog(
+                              _receiptBytes!,
+                              _receiptFileName ?? 'receipt.jpg',
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Stack(
+                              alignment: Alignment.bottomRight,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    _receiptBytes!,
+                                    width: 54,
+                                    height: 54,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(6),
+                                      bottomRight: Radius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 16, color: ParishColors.mercyRed),
-                          onPressed: () => setState(() => _receiptBytes = null),
-                        ),
-                      ],
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _receiptFileName ?? 'receipt.jpg',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Tap thumbnail to inspect',
+                                  style: TextStyle(fontSize: 11, color: textMuted),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    InkWell(
+                                      onTap: () => _openReceiptPreviewDialog(
+                                        _receiptBytes!,
+                                        _receiptFileName ?? 'receipt.jpg',
+                                      ),
+                                      child: const Text(
+                                        'Inspect',
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF005CEE)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    InkWell(
+                                      onTap: _pickReceiptScreenshot,
+                                      child: Text(
+                                        'Replace',
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
+                            onPressed: () => setState(() => _receiptBytes = null),
+                          ),
+                        ],
+                      ),
                     ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _gcashRefController,
                     decoration: _inputDecoration(hint: 'GCash Ref Number'),
@@ -942,7 +1127,7 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8)),
+      focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10)), borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8)),
     );
   }
 }

@@ -158,6 +158,15 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   bool get _isParishioner =>
       AuthService.currentUser?.userRole.toLowerCase() == 'user';
 
+  bool get _isImageAttachment {
+    if (_attachedIdFileName == null) return false;
+    final lower = _attachedIdFileName!.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp');
+  }
+
   static const List<String> _keyboardWalks = [
     'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
     'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
@@ -256,12 +265,18 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
       _emailController.text = user.email;
     }
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
     if (widget.initialDate != null) {
       var target = DateTime(
         widget.initialDate!.year,
         widget.initialDate!.month,
         widget.initialDate!.day,
       );
+      if (target.isBefore(today)) {
+        target = _getInitialValidDate();
+      }
       if (_presets[_selectedService]?.isCommunityBaptism == true &&
           target.weekday != DateTime.saturday &&
           target.weekday != DateTime.sunday) {
@@ -394,6 +409,14 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
             if (map['idType'] != null && _philippineIdTypes.contains(map['idType'])) {
               _selectedIdType = map['idType'];
             }
+            if (map['date'] != null) {
+              final draftDate = DateTime.tryParse(map['date']);
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+              if (draftDate != null && !draftDate.isBefore(today)) {
+                _selectedDate = draftDate;
+              }
+            }
           });
         }
       }
@@ -408,10 +431,13 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   }
 
   DateTime _getInitialValidDate() {
-    var date = DateTime.now().add(const Duration(days: 1));
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var date = today.add(const Duration(days: 1));
     final isCommunity = _presets[_selectedService]?.isCommunityBaptism ?? false;
 
-    while (date.weekday == DateTime.monday ||
+    while (date.isBefore(today) ||
+        date.weekday == DateTime.monday ||
         LiturgicalCalendarService.isDateBlockedSync(date) ||
         (isCommunity &&
             date.weekday != DateTime.saturday &&
@@ -538,6 +564,94 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
     });
   }
 
+  void _openImagePreviewDialog(Uint8List bytes, String fileName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 640, maxHeight: 680),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.verified_user_outlined, color: ParishColors.marianBlue, size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Attached ID Inspection',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: ParishColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: ParishColors.backgroundLight,
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: Image.memory(
+                          bytes,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      fileName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: ParishColors.textMuted,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Looks Good'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _triggerDebouncedValidation() {
     _saveDraft();
     _debounceTimer?.cancel();
@@ -661,16 +775,16 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final firstValidDate = _selectedDate.isBefore(today) ? _selectedDate : today;
     final preset = _presets[_selectedService];
     final isCommunity = preset?.isCommunityBaptism ?? false;
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
-      firstDate: firstValidDate,
+      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
+      firstDate: today,
       lastDate: today.add(const Duration(days: 365)),
       selectableDayPredicate: (DateTime day) {
+        if (day.isBefore(today)) return false;
         if (day.weekday == DateTime.monday) return false;
         if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
         if (isCommunity &&
@@ -690,12 +804,14 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
 
   Future<void> _pickTime(bool isStart) async {
     final preset = _presets[_selectedService];
+    final minDuration = preset?.durationMinutes ?? 60;
 
     if (preset?.isCommunityBaptism == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Community Baptism ceremony strictly begins at 11:00 AM on Weekends.'),
           backgroundColor: ParishColors.goldAccent,
+          duration: Duration(seconds: 3),
         ),
       );
       return;
@@ -708,29 +824,76 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
     );
 
     if (picked != null) {
-      final totalMin = picked.hour * 60 + picked.minute;
+      final pickedMinutes = picked.hour * 60 + picked.minute;
 
-      if (totalMin < AppointmentService.operatingDayStartMin ||
-          totalMin > AppointmentService.operatingDayEndMin) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Parish appointments must be scheduled between 9:00 AM and 5:00 PM.'),
-            backgroundColor: ParishColors.mercyRed,
-          ),
-        );
-        return;
+      if (isStart) {
+        if (pickedMinutes < AppointmentService.operatingDayStartMin) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Parish appointments cannot be scheduled before 9:00 AM.'),
+              backgroundColor: ParishColors.mercyRed,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        if (pickedMinutes + minDuration > AppointmentService.operatingDayEndMin) {
+          final maxStartMinutes = AppointmentService.operatingDayEndMin - minDuration;
+          final maxStartTod = AppointmentService.minutesToTimeOfDay(maxStartMinutes);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$_selectedService requires $minDuration minutes and must conclude by 5:00 PM. Latest allowed start time is ${_formatTime12Hour(maxStartTod)}.',
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _startTime = picked;
+          _endTime = _addMinutes(picked, minDuration);
+        });
+      } else {
+        final startMinutes = _startTime.hour * 60 + _startTime.minute;
+
+        if (pickedMinutes > AppointmentService.operatingDayEndMin) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Appointment end time cannot exceed parish operating hours (5:00 PM).'),
+              backgroundColor: ParishColors.mercyRed,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        if (pickedMinutes - startMinutes < minDuration) {
+          final requiredEndTod = _addMinutes(_startTime, minDuration);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$_selectedService requires a minimum duration of $minDuration minutes. End time cannot be earlier than ${_formatTime12Hour(requiredEndTod)}.',
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _endTime = picked;
+        });
       }
 
-      setState(() {
-        if (isStart) {
-          _startTime = picked;
-          final duration = preset?.durationMinutes ?? 60;
-          _endTime = _addMinutes(picked, duration);
-        } else {
-          _endTime = picked;
-        }
-      });
       _saveDraft();
       _runLiveConflictCheck();
     }
@@ -744,12 +907,30 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
 
     if (!_formKey.currentState!.validate()) return;
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+
+    if (targetDay.isBefore(today)) {
+      setState(() => _errorMessage = 'Cannot schedule appointments for past dates.');
+      return;
+    }
+
     if (_isParishioner && _attachedIdFileBytes == null) {
       setState(() => _errorMessage = 'Please attach a photo or copy of your valid ID card.');
       return;
     }
 
     final preset = _presets[_selectedService];
+    final minDuration = preset?.durationMinutes ?? 60;
+    final startMinutes = _startTime.hour * 60 + _startTime.minute;
+    final endMinutes = _endTime.hour * 60 + _endTime.minute;
+
+    if (endMinutes - startMinutes < minDuration) {
+      setState(() => _errorMessage = '$_selectedService requires at least $minDuration minutes duration.');
+      return;
+    }
+
     if (preset?.isCommunityBaptism == true) {
       if (_selectedDate.weekday != DateTime.saturday &&
           _selectedDate.weekday != DateTime.sunday) {
@@ -760,11 +941,6 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
 
     final startStr = _formatTimeOfDay(_startTime);
     final endStr = _formatTimeOfDay(_endTime);
-
-    if (startStr.compareTo(endStr) >= 0) {
-      setState(() => _errorMessage = 'End Time must be later than Start Time.');
-      return;
-    }
 
     final dateStr =
         '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
@@ -1084,7 +1260,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
           ),
           const SizedBox(height: 10),
 
-          // File picker box
+          // File Upload Attachment Box with Thumbnail & Zoom Preview Modal
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -1098,44 +1274,167 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                     : (_idFileHasError ? ParishColors.mercyRed : borderGrey),
               ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  _attachedIdFileBytes != null ? Icons.check_circle : Icons.attach_file,
-                  color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : ParishColors.marianBlue,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _attachedIdFileBytes != null
-                            ? '${_attachedIdFileName!} (${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB)'
-                            : 'Attach valid ID photo (JPG, PNG, PDF up to 5MB)',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : textDark,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _attachedIdFileBytes != null ? Icons.check_circle : Icons.attach_file,
+                          color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : ParishColors.marianBlue,
+                          size: 18,
                         ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _attachedIdFileBytes != null
+                              ? 'Valid ID Document Attached'
+                              : 'Attach valid ID photo (JPG, PNG, PDF up to 5MB)',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_attachedIdFileBytes != null)
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
+                        onPressed: _removeAttachedIdDocument,
+                        tooltip: 'Remove',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                       ),
-                      Text(
-                        'Stored securely and verified during secretariat review.',
-                        style: TextStyle(fontSize: 11, color: textMuted),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-                if (_attachedIdFileBytes != null)
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
-                    onPressed: _removeAttachedIdDocument,
-                  )
-                else
-                  OutlinedButton(
-                    onPressed: _pickIdDocument,
-                    child: const Text('Choose File'),
+                const SizedBox(height: 8),
+                if (_attachedIdFileBytes == null) ...[
+                  Text(
+                    'Stored securely and verified during secretariat review.',
+                    style: TextStyle(fontSize: 11.5, color: textMuted),
                   ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _pickIdDocument,
+                    icon: const Icon(Icons.upload_file, size: 16),
+                    label: const Text('Choose File'),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: borderGrey.withValues(alpha: 0.6)),
+                    ),
+                    child: Row(
+                      children: [
+                        if (_isImageAttachment)
+                          InkWell(
+                            onTap: () => _openImagePreviewDialog(
+                              _attachedIdFileBytes!,
+                              _attachedIdFileName ?? 'valid_id.jpg',
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Stack(
+                              alignment: Alignment.bottomRight,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    _attachedIdFileBytes!,
+                                    width: 58,
+                                    height: 58,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(6),
+                                      bottomRight: Radius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            width: 58,
+                            height: 58,
+                            decoration: BoxDecoration(
+                              color: ParishColors.mercyRedSurface,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: ParishColors.mercyRed.withValues(alpha: 0.3)),
+                            ),
+                            child: const Icon(Icons.picture_as_pdf, color: ParishColors.mercyRed, size: 28),
+                          ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _attachedIdFileName ?? 'valid_id.jpg',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB • ${_isImageAttachment ? "Tap thumbnail to inspect" : "PDF document"}',
+                                style: TextStyle(fontSize: 11, color: textMuted),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  if (_isImageAttachment)
+                                    InkWell(
+                                      onTap: () => _openImagePreviewDialog(
+                                        _attachedIdFileBytes!,
+                                        _attachedIdFileName ?? 'valid_id.jpg',
+                                      ),
+                                      child: const Row(
+                                        children: [
+                                          Icon(Icons.remove_red_eye_outlined, size: 14, color: ParishColors.marianBlue),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Inspect',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  if (_isImageAttachment) const SizedBox(width: 14),
+                                  InkWell(
+                                    onTap: _pickIdDocument,
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.sync, size: 14, color: textMuted),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Change File',
+                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1160,7 +1459,6 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
 
     return Column(
       children: [
-        // Live Date & Time Slot Inspector
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -1216,7 +1514,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                             decoration: BoxDecoration(
                               color: currentPreset?.isCommunityBaptism == true
-                                  ? ParishColors.borderGrey.withOpacity(0.2)
+                                  ? ParishColors.borderGrey.withValues(alpha: 0.2)
                                   : ParishColors.backgroundLight,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: borderGrey),
@@ -1265,7 +1563,6 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
               ),
               const SizedBox(height: 14),
 
-              // Live Conflict Status
               if (_isLiveChecking)
                 const LinearProgressIndicator(minHeight: 2)
               else if (_liveConflictWarning != null) ...[
@@ -1318,7 +1615,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                   decoration: BoxDecoration(
                     color: ParishColors.oliveGreenSurface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
+                    border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.3)),
                   ),
                   child: const Row(
                     children: [
@@ -1372,7 +1669,6 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
               ),
               const SizedBox(height: 20),
 
-              // Action Submission Button
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -1421,7 +1717,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8)),
+      focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10)), borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8)),
     );
   }
 }
