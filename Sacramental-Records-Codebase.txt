@@ -31348,6 +31348,441 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         // Anti-Layout-Shift Skeleton Loader
         // ===========================================================================
 
+        Widget _buildHeroHeader(bool isMobile) {
+                final fade = ParishColors.cardWhite;
+
+                return ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Stack(
+                                children: [
+                                        // Background photo
+                                        Positioned.fill(
+                                                child: Image.asset(
+                                                        'images/jp2-bg.png',
+                                                        fit: BoxFit.cover,
+                                                        alignment: const Alignment(0.35, -0.55),
+                                                        errorBuilder: (_, __, ___) => Container(color: ParishColors.marianBlueSurface),
+                                                ),
+                                        ),
+                                        // Left-to-right fade so the title stays readable
+                                        Positioned.fill(
+                                                child: DecoratedBox(
+                                                        decoration: BoxDecoration(
+                                                                gradient: LinearGradient(
+                                                                        begin: Alignment.centerLeft,
+                                                                        end: Alignment.centerRight,
+                                                                        colors: [
+                                                                                fade.withOpacity(0.96),
+                                                                                fade.withOpacity(isMobile ? 0.85 : 0.80),
+                                                                                fade.withOpacity(isMobile ? 0.25 : 0.0),
+                                                                        ],
+                                                                        stops: [0.0, isMobile ? 0.6 : 0.42, isMobile ? 1.0 : 0.85],
+                                                                ),
+                                                        ),
+                                                ),
+                                        ),
+                                        // Soft bottom fade behind the sync pill
+                                        Positioned.fill(
+                                                child: DecoratedBox(
+                                                        decoration: BoxDecoration(
+                                                                gradient: LinearGradient(
+                                                                        begin: Alignment.topCenter,
+                                                                        end: Alignment.bottomCenter,
+                                                                        colors: [Colors.transparent, fade.withOpacity(0.55)],
+                                                                        stops: const [0.55, 1.0],
+                                                                ),
+                                                        ),
+                                                ),
+                                        ),
+                                        // Content
+                                        Padding(
+                                                padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 16 : 22, isMobile ? 12 : 16, 14),
+                                                child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                                Row(
+                                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                                        children: [
+                                                                                Expanded(
+                                                                                        child: Column(
+                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                                children: [
+                                                                                                        Container(
+                                                                                                                width: 56,
+                                                                                                                height: 3,
+                                                                                                                decoration: BoxDecoration(
+                                                                                                                        color: ParishColors.goldAccent,
+                                                                                                                        borderRadius: BorderRadius.circular(2),
+                                                                                                                ),
+                                                                                                        ),
+                                                                                                        const SizedBox(height: 12),
+                                                                                                        Text(
+                                                                                                                'Sacramental Registers',
+                                                                                                                style: TextStyle(
+                                                                                                                        fontFamily: 'Georgia',
+                                                                                                                        fontFamilyFallback: const ['Times New Roman', 'serif'],
+                                                                                                                        fontSize: isMobile ? 26 : 38,
+                                                                                                                        fontWeight: FontWeight.w800,
+                                                                                                                        height: 1.1,
+                                                                                                                        color: ParishColors.textDark,
+                                                                                                                ),
+                                                                                                        ),
+                                                                                                        const SizedBox(height: 6),
+                                                                                                        Text(
+                                                                                                                '$_totalRecordsCount records across 6 canonical books',
+                                                                                                                style: TextStyle(
+                                                                                                                        fontSize: isMobile ? 12.5 : 14,
+                                                                                                                        fontStyle: FontStyle.italic,
+                                                                                                                        color: ParishColors.textDark.withOpacity(0.8),
+                                                                                                                ),
+                                                                                                        ),
+                                                                                                ],
+                                                                                        ),
+                                                                                ),
+                                                                                _buildOverflowMenu(),
+                                                                        ],
+                                                                ),
+                                                                SizedBox(height: isMobile ? 44 : 64),
+                                                                _buildSyncStatusBar(isMobile),
+                                                        ],
+                                                ),
+                                        ),
+                                ],
+                        ),
+                );
+        }
+
+
+        Widget _buildOverflowMenu() {
+                return Container(
+                        decoration: BoxDecoration(
+                                color: ParishColors.cardWhite.withOpacity(0.9),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: ParishColors.borderGrey),
+                        ),
+                        child: PopupMenuButton<String>(
+                                icon: Icon(Icons.more_vert, color: ParishColors.textMuted, size: 22),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                color: ParishColors.cardWhite,
+                                onSelected: (val) {
+                                        if (val == 'download_pack') {
+                                                _showOfflinePackModal(context);
+                                        } else if (val == 'pabuklat') {
+                                                showPabuklatRequestsModal(context);
+                                        } else if (val == 'refresh') {
+                                                _loadSummaryStats();
+                                                RecordsSyncService.instance.checkConnectivity();
+                                        }
+                                },
+                                itemBuilder: (ctx) => [
+                                        const PopupMenuItem(
+                                                value: 'download_pack',
+                                                child: Row(
+                                                        children: [
+                                                                Icon(Icons.cloud_download_outlined, size: 18, color: ParishColors.marianBlue),
+                                                                SizedBox(width: 10),
+                                                                Text('Download Offline Pack', style: TextStyle(fontSize: 13)),
+                                                        ],
+                                                ),
+                                        ),
+                                        const PopupMenuItem(
+                                                value: 'pabuklat',
+                                                child: Row(
+                                                        children: [
+                                                                Icon(Icons.folder_shared_outlined, size: 18, color: ParishColors.oliveGreen),
+                                                                SizedBox(width: 10),
+                                                                Text('Pabuklat Search Requests', style: TextStyle(fontSize: 13)),
+                                                        ],
+                                                ),
+                                        ),
+                                        const PopupMenuItem(
+                                                value: 'refresh',
+                                                child: Row(
+                                                        children: [
+                                                                Icon(Icons.refresh, size: 18),
+                                                                SizedBox(width: 10),
+                                                                Text('Refresh Registers', style: TextStyle(fontSize: 13)),
+                                                        ],
+                                                ),
+                                        ),
+                                ],
+                        ),
+                );
+        }
+
+
+        Widget _buildSyncStatusBar(bool isMobile) {
+                return ValueListenableBuilder<RecordsSyncStatus>(
+                        valueListenable: RecordsSyncService.syncStatusNotifier,
+                        builder: (context, status, _) {
+                                return ValueListenableBuilder<int>(
+                                        valueListenable: RecordsSyncService.pendingSyncCountNotifier,
+                                        builder: (context, pendingCount, _) {
+                                                Color pillColor;
+                                                Color textColor;
+                                                IconData statusIcon;
+                                                String statusLabel;
+
+                                                if (status == RecordsSyncStatus.offline) {
+                                                        pillColor = Colors.amber.shade50;
+                                                        textColor = Colors.amber.shade900;
+                                                        statusIcon = Icons.cloud_off;
+                                                        statusLabel = pendingCount > 0
+                                                            ? 'Offline • Working Locally ($pendingCount pending)'
+                                                            : 'Offline • Working Locally';
+                                                } else if (status == RecordsSyncStatus.syncing) {
+                                                        pillColor = Colors.blue.shade50;
+                                                        textColor = Colors.blue.shade900;
+                                                        statusIcon = Icons.sync;
+                                                        statusLabel = 'Syncing records with Supabase cloud...';
+                                                } else if (pendingCount > 0) {
+                                                        pillColor = Colors.orange.shade50;
+                                                        textColor = Colors.orange.shade900;
+                                                        statusIcon = Icons.upload_file;
+                                                        statusLabel = 'Online • $pendingCount record(s) queued (Tap to Sync Now)';
+                                                } else {
+                                                        pillColor = const Color(0xFFE8F5E9);
+                                                        textColor = const Color(0xFF2E7D32);
+                                                        statusIcon = Icons.check_circle;
+                                                        statusLabel = 'Online • All records synchronized';
+                                                }
+
+                                                final canSync = pendingCount > 0 && status != RecordsSyncStatus.syncing;
+
+                                                return InkWell(
+                                                        onTap: canSync ? () => RecordsSyncService.instance.syncPendingChanges() : null,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        child: Container(
+                                                                width: double.infinity,
+                                                                height: 42,
+                                                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                                decoration: BoxDecoration(
+                                                                        color: pillColor.withOpacity(0.94),
+                                                                        borderRadius: BorderRadius.circular(12),
+                                                                        border: Border.all(color: textColor.withOpacity(0.3)),
+                                                                        boxShadow: [
+                                                                                BoxShadow(
+                                                                                        color: Colors.black.withOpacity(0.04),
+                                                                                        blurRadius: 6,
+                                                                                        offset: const Offset(0, 2),
+                                                                                ),
+                                                                        ],
+                                                                ),
+                                                                child: Row(
+                                                                        children: [
+                                                                                Icon(statusIcon, size: 18, color: textColor),
+                                                                                const SizedBox(width: 8),
+                                                                                Expanded(
+                                                                                        child: Text(
+                                                                                                statusLabel,
+                                                                                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: textColor),
+                                                                                                overflow: TextOverflow.ellipsis,
+                                                                                        ),
+                                                                                ),
+                                                                                if (!isMobile)
+                                                                                        ValueListenableBuilder<DateTime?>(
+                                                                                                valueListenable: RecordsSyncService.lastSyncedAtNotifier,
+                                                                                                builder: (context, lastSync, _) {
+                                                                                                        final text = lastSync != null
+                                                                                                            ? lastSync.toLocal().toString().substring(0, 16)
+                                                                                                            : 'Never';
+                                                                                                        return Padding(
+                                                                                                                padding: const EdgeInsets.only(left: 10),
+                                                                                                                child: Text(
+                                                                                                                        'Last sync: $text',
+                                                                                                                        style: TextStyle(fontSize: 11.5, color: textColor.withOpacity(0.85)),
+                                                                                                                ),
+                                                                                                        );
+                                                                                                },
+                                                                                        ),
+                                                                                const SizedBox(width: 10),
+                                                                                Icon(Icons.refresh, size: 17, color: textColor),
+                                                                        ],
+                                                                ),
+                                                        ),
+                                                );
+                                        },
+                                );
+                        },
+                );
+        }
+
+
+        Widget _buildSearchAndFilterRow(bool isMobile, bool isSearchActive) {
+                return Row(
+                        children: [
+                                Expanded(
+                                        child: Container(
+                                                height: 46,
+                                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                decoration: BoxDecoration(
+                                                        color: ParishColors.cardWhite,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        border: Border.all(color: ParishColors.borderGrey, width: 1),
+                                                        boxShadow: [
+                                                                BoxShadow(
+                                                                        color: Colors.black.withOpacity(0.03),
+                                                                        blurRadius: 6,
+                                                                        offset: const Offset(0, 2),
+                                                                ),
+                                                        ],
+                                                ),
+                                                child: Row(
+                                                        children: [
+                                                                const Icon(Icons.search, size: 21, color: ParishColors.marianBlue),
+                                                                const SizedBox(width: 10),
+                                                                Expanded(
+                                                                        child: TextField(
+                                                                                controller: _searchController,
+                                                                                focusNode: _searchFocusNode,
+                                                                                onChanged: _onSearchChanged,
+                                                                                style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                                                                                decoration: InputDecoration(
+                                                                                        hintText: isMobile
+                                                                                            ? 'Search name, parent, book or ID...'
+                                                                                            : 'Search every register by name, parent, book or ID...',
+                                                                                        hintStyle: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                                                                                        border: InputBorder.none,
+                                                                                        isDense: true,
+                                                                                ),
+                                                                        ),
+                                                                ),
+                                                                if (_isSearching)
+                                                                        const Padding(
+                                                                                padding: EdgeInsets.symmetric(horizontal: 4),
+                                                                                child: SizedBox(
+                                                                                        width: 16,
+                                                                                        height: 16,
+                                                                                        child: CircularProgressIndicator(strokeWidth: 2, color: ParishColors.marianBlue),
+                                                                                ),
+                                                                        )
+                                                                else if (isSearchActive)
+                                                                        IconButton(
+                                                                                icon: const Icon(Icons.clear, size: 17),
+                                                                                padding: EdgeInsets.zero,
+                                                                                constraints: const BoxConstraints(),
+                                                                                onPressed: () {
+                                                                                        _searchController.clear();
+                                                                                        setState(() {
+                                                                                                _searchResults = [];
+                                                                                                _isSearching = false;
+                                                                                                _currentPage = 1;
+                                                                                        });
+                                                                                },
+                                                                        ),
+                                                        ],
+                                                ),
+                                        ),
+                                ),
+                                const SizedBox(width: 10),
+                                InkWell(
+                                        onTap: _openFilterAndSortBottomSheet,
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                                height: 46,
+                                                padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
+                                                decoration: BoxDecoration(
+                                                        color: _hasActiveFilters ? ParishColors.marianBlueSurface : ParishColors.cardWhite,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        border: Border.all(
+                                                                color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.borderGrey,
+                                                        ),
+                                                ),
+                                                child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                                Icon(
+                                                                        Icons.tune,
+                                                                        size: 18,
+                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textDark,
+                                                                ),
+                                                                if (!isMobile || _hasActiveFilters) ...[
+                                                                        const SizedBox(width: 8),
+                                                                        Text(
+                                                                                _hasActiveFilters ? 'Filter ($_activeFilterCount)' : 'Filter',
+                                                                                style: TextStyle(
+                                                                                        fontSize: 13,
+                                                                                        fontWeight: FontWeight.w600,
+                                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textDark,
+                                                                                ),
+                                                                        ),
+                                                                ],
+                                                                const SizedBox(width: 4),
+                                                                Icon(
+                                                                        Icons.expand_more,
+                                                                        size: 18,
+                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
+                                                                ),
+                                                        ],
+                                                ),
+                                        ),
+                                ),
+                        ],
+                );
+        }
+
+
+        Widget _buildSectionHeader() {
+                return Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                                Container(
+                                        width: 4,
+                                        height: 38,
+                                        decoration: BoxDecoration(
+                                                color: ParishColors.goldAccent,
+                                                borderRadius: BorderRadius.circular(2),
+                                        ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                        child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                        Text(
+                                                                'Canonical Registers',
+                                                                style: TextStyle(
+                                                                        fontFamily: 'Georgia',
+                                                                        fontFamilyFallback: const ['Times New Roman', 'serif'],
+                                                                        fontSize: 20,
+                                                                        fontWeight: FontWeight.w800,
+                                                                        color: ParishColors.textDark,
+                                                                ),
+                                                        ),
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                                'Open a book to browse, filter, and issue certificates.',
+                                                                style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                                                        ),
+                                                ],
+                                        ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                        height: 36,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                        decoration: BoxDecoration(
+                                                color: ParishColors.cardWhite,
+                                                borderRadius: BorderRadius.circular(18),
+                                                border: Border.all(color: ParishColors.borderGrey),
+                                        ),
+                                        child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                        Icon(Icons.menu_book_outlined, size: 16, color: ParishColors.textDark),
+                                                        const SizedBox(width: 6),
+                                                        Text(
+                                                                '6 registers',
+                                                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+                                                        ),
+                                                ],
+                                        ),
+                                ),
+                        ],
+                );
+        }
+
+
         Widget _buildSkeletonLoading() {
                 return AnimatedBuilder(
                         animation: _skeletonOpacityAnimation,
@@ -31460,294 +31895,35 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 child: Column(
                                                                         crossAxisAlignment: CrossAxisAlignment.start,
                                                                         children: [
-                                                                                // 1. Header with title, record tally & overflow popup menu
-                                                                                Row(
-                                                                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                        children: [
-                                                                                                Expanded(
-                                                                                                        child: Column(
-                                                                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                                                children: [
-                                                                                                                        Text(
-                                                                                                                                'Sacramental Registers',
-                                                                                                                                style: TextStyle(
-                                                                                                                                        fontSize: isMobile ? 20 : 25,
-                                                                                                                                        fontWeight: FontWeight.bold,
-                                                                                                                                        color: textDarkColor,
-                                                                                                                                ),
-                                                                                                                        ),
-                                                                                                                        const SizedBox(height: 4),
-                                                                                                                        Text(
-                                                                                                                                '$_totalRecordsCount records across 6 canonical books',
-                                                                                                                                style: TextStyle(
-                                                                                                                                        fontSize: 13,
-                                                                                                                                        color: ParishColors.textMuted,
-                                                                                                                                ),
-                                                                                                                        ),
-                                                                                                                ],
-                                                                                                        ),
-                                                                                                ),
-                                                                                                PopupMenuButton<String>(
-                                                                                                        icon: Icon(Icons.more_vert, color: ParishColors.textMuted, size: 22),
-                                                                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                                                                                        color: cardWhiteColor,
-                                                                                                        onSelected: (val) {
-                                                                                                                if (val == 'download_pack') {
-                                                                                                                        _showOfflinePackModal(context);
-                                                                                                                } else if (val == 'pabuklat') {
-                                                                                                                        showPabuklatRequestsModal(context);
-                                                                                                                } else if (val == 'refresh') {
-                                                                                                                        _loadSummaryStats();
-                                                                                                                        RecordsSyncService.instance.checkConnectivity();
-                                                                                                                }
-                                                                                                        },
-                                                                                                        itemBuilder: (ctx) => [
-                                                                                                                const PopupMenuItem(
-                                                                                                                        value: 'download_pack',
-                                                                                                                        child: Row(
-                                                                                                                                children: [
-                                                                                                                                        Icon(Icons.cloud_download_outlined, size: 18, color: ParishColors.marianBlue),
-                                                                                                                                        SizedBox(width: 10),
-                                                                                                                                        Text('Download Offline Pack', style: TextStyle(fontSize: 13)),
-                                                                                                                                ],
-                                                                                                                        ),
-                                                                                                                ),
-                                                                                                                const PopupMenuItem(
-                                                                                                                        value: 'pabuklat',
-                                                                                                                        child: Row(
-                                                                                                                                children: [
-                                                                                                                                        Icon(Icons.folder_shared_outlined, size: 18, color: ParishColors.oliveGreen),
-                                                                                                                                        SizedBox(width: 10),
-                                                                                                                                        Text('Pabuklat Search Requests', style: TextStyle(fontSize: 13)),
-                                                                                                                                ],
-                                                                                                                        ),
-                                                                                                                ),
-                                                                                                                const PopupMenuItem(
-                                                                                                                        value: 'refresh',
-                                                                                                                        child: Row(
-                                                                                                                                children: [
-                                                                                                                                        Icon(Icons.refresh, size: 18),
-                                                                                                                                        SizedBox(width: 10),
-                                                                                                                                        Text('Refresh Registers', style: TextStyle(fontSize: 13)),
-                                                                                                                                ],
-                                                                                                                        ),
-                                                                                                                ),
-                                                                                                        ],
-                                                                                                ),
-                                                                                        ],
-                                                                                ),
-                                                                                const SizedBox(height: 12),
-
-                                                                                // 2. Connectivity & Sync Status Bar
-                                                                                ValueListenableBuilder<RecordsSyncStatus>(
-                                                                                        valueListenable: RecordsSyncService.syncStatusNotifier,
-                                                                                        builder: (context, status, _) {
-                                                                                                return ValueListenableBuilder<int>(
-                                                                                                        valueListenable: RecordsSyncService.pendingSyncCountNotifier,
-                                                                                                        builder: (context, pendingCount, _) {
-                                                                                                                Color pillColor;
-                                                                                                                Color textColor;
-                                                                                                                IconData statusIcon;
-                                                                                                                String statusLabel;
-
-                                                                                                                if (status == RecordsSyncStatus.offline) {
-                                                                                                                        pillColor = Colors.amber.shade50;
-                                                                                                                        textColor = Colors.amber.shade900;
-                                                                                                                        statusIcon = Icons.cloud_off;
-                                                                                                                        statusLabel = pendingCount > 0
-                                                                                                                            ? 'Offline Mode • Working Locally ($pendingCount pending changes)'
-                                                                                                                            : 'Offline Mode • Working Locally';
-                                                                                                                } else if (status == RecordsSyncStatus.syncing) {
-                                                                                                                        pillColor = Colors.blue.shade50;
-                                                                                                                        textColor = Colors.blue.shade900;
-                                                                                                                        statusIcon = Icons.sync;
-                                                                                                                        statusLabel = 'Syncing records with Supabase cloud...';
-                                                                                                                } else if (pendingCount > 0) {
-                                                                                                                        pillColor = Colors.orange.shade50;
-                                                                                                                        textColor = Colors.orange.shade900;
-                                                                                                                        statusIcon = Icons.upload_file;
-                                                                                                                        statusLabel = 'Online • $pendingCount record(s) queued for upload (Tap to Sync Now)';
-                                                                                                                } else {
-                                                                                                                        pillColor = const Color(0xFFE8F5E9);
-                                                                                                                        textColor = const Color(0xFF2E7D32);
-                                                                                                                        statusIcon = Icons.cloud_done;
-                                                                                                                        statusLabel = 'Online • all records synchronized';
-                                                                                                                }
-
-                                                                                                                return InkWell(
-                                                                                                                        onTap: pendingCount > 0 && status != RecordsSyncStatus.syncing
-                                                                                                                            ? () => RecordsSyncService.instance.syncPendingChanges()
-                                                                                                                            : null,
-                                                                                                                        borderRadius: BorderRadius.circular(8),
-                                                                                                                        child: Container(
-                                                                                                                                width: double.infinity,
-                                                                                                                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                                                                                                                decoration: BoxDecoration(
-                                                                                                                                        color: pillColor,
-                                                                                                                                        borderRadius: BorderRadius.circular(8),
-                                                                                                                                        border: Border.all(color: textColor.withOpacity(0.3)),
-                                                                                                                                ),
-                                                                                                                                child: Row(
-                                                                                                                                        children: [
-                                                                                                                                                Icon(statusIcon, size: 16, color: textColor),
-                                                                                                                                                const SizedBox(width: 8),
-                                                                                                                                                Expanded(
-                                                                                                                                                        child: Text(
-                                                                                                                                                                statusLabel,
-                                                                                                                                                                style: TextStyle(
-                                                                                                                                                                        fontSize: 12,
-                                                                                                                                                                        fontWeight: FontWeight.w600,
-                                                                                                                                                                        color: textColor,
-                                                                                                                                                                ),
-                                                                                                                                                                overflow: TextOverflow.ellipsis,
-                                                                                                                                                        ),
-                                                                                                                                                ),
-                                                                                                                                                if (pendingCount > 0 && status != RecordsSyncStatus.syncing) ...[
-                                                                                                                                                        const SizedBox(width: 8),
-                                                                                                                                                        Icon(Icons.refresh, size: 15, color: textColor),
-                                                                                                                                                ],
-                                                                                                                                        ],
-                                                                                                                                ),
-                                                                                                                        ),
-                                                                                                                );
-                                                                                                        },
-                                                                                                );
-                                                                                        },
-                                                                                ),
+                                                                                // 1. Hero header (image background + title + sync pill)
+                                                                                _buildHeroHeader(isMobile),
                                                                                 const SizedBox(height: 16),
 
-                                                                                // 3. Action Cards Row (Aligned with Register Grid Columns)
+                                                                                // 2. Action cards
                                                                                 _buildActionCardsRow(isDesktop),
                                                                                 const SizedBox(height: 16),
 
-                                                                                // 4. Search Bar (Exact Reference UI: Height 48, Marian Blue Icon, Rounded Border 12)
-                                                                                Container(
-                                                                                        width: double.infinity,
-                                                                                        height: 48,
-                                                                                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                                                                                        decoration: BoxDecoration(
-                                                                                                color: cardWhiteColor,
-                                                                                                borderRadius: BorderRadius.circular(12),
-                                                                                                border: Border.all(
-                                                                                                        color: borderGreyColor,
-                                                                                                        width: 1,
-                                                                                                ),
-                                                                                        ),
-                                                                                        child: Row(
-                                                                                                children: [
-                                                                                                        const Icon(
-                                                                                                                Icons.search,
-                                                                                                                size: 21,
-                                                                                                                color: ParishColors.marianBlue,
-                                                                                                        ),
-                                                                                                        const SizedBox(width: 10),
-                                                                                                        Expanded(
-                                                                                                                child: TextField(
-                                                                                                                        controller: _searchController,
-                                                                                                                        focusNode: _searchFocusNode,
-                                                                                                                        onChanged: _onSearchChanged,
-                                                                                                                        style: TextStyle(
-                                                                                                                                fontSize: 14,
-                                                                                                                                color: textDarkColor,
-                                                                                                                        ),
-                                                                                                                        decoration: InputDecoration(
-                                                                                                                                hintText: 'Search every register by name, parent, book or ID...',
-                                                                                                                                hintStyle: TextStyle(
-                                                                                                                                        fontSize: 13,
-                                                                                                                                        color: ParishColors.textMuted,
-                                                                                                                                ),
-                                                                                                                                border: InputBorder.none,
-                                                                                                                                isDense: true,
-                                                                                                                        ),
-                                                                                                                ),
-                                                                                                        ),
-                                                                                                        if (_isSearching)
-                                                                                                                const Padding(
-                                                                                                                        padding: EdgeInsets.symmetric(horizontal: 4),
-                                                                                                                        child: SizedBox(
-                                                                                                                                width: 16,
-                                                                                                                                height: 16,
-                                                                                                                                child: CircularProgressIndicator(
-                                                                                                                                        strokeWidth: 2,
-                                                                                                                                        color: ParishColors.marianBlue,
-                                                                                                                                ),
-                                                                                                                        ),
-                                                                                                                )
-                                                                                                        else if (isSearchActive)
-                                                                                                                IconButton(
-                                                                                                                        icon: const Icon(Icons.clear, size: 17),
-                                                                                                                        padding: EdgeInsets.zero,
-                                                                                                                        constraints: const BoxConstraints(),
-                                                                                                                        onPressed: () {
-                                                                                                                                _searchController.clear();
-                                                                                                                                setState(() {
-                                                                                                                                        _searchResults = [];
-                                                                                                                                        _isSearching = false;
-                                                                                                                                        _currentPage = 1;
-                                                                                                                                });
-                                                                                                                        },
-                                                                                                                ),
-                                                                                                ],
-                                                                                        ),
-                                                                                ),
-                                                                                const SizedBox(height: 24),
+                                                                                // 3. Search + Filter
+                                                                                _buildSearchAndFilterRow(isMobile, isSearchActive),
+                                                                                const SizedBox(height: 22),
 
-                                                                                // 5. Dynamic Section Switcher: Search Results vs Canonical Registers Grid
+                                                                                // 4. Search results vs canonical registers
                                                                                 if (_isSearching)
                                                                                         _buildSkeletonLoading()
                                                                                 else if (isSearchActive) ...[
-                                                                                        // Search Results Header & Filter Bar
                                                                                         Row(
                                                                                                 children: [
-                                                                                                        InkWell(
-                                                                                                                onTap: _openFilterAndSortBottomSheet,
-                                                                                                                borderRadius: BorderRadius.circular(8),
-                                                                                                                child: Container(
-                                                                                                                        height: 36,
-                                                                                                                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                                                                                                                        decoration: BoxDecoration(
-                                                                                                                                color: _hasActiveFilters ? ParishColors.marianBlueSurface : cardWhiteColor,
-                                                                                                                                borderRadius: BorderRadius.circular(8),
-                                                                                                                                border: Border.all(
-                                                                                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : borderGreyColor,
-                                                                                                                                ),
-                                                                                                                        ),
-                                                                                                                        child: Row(
-                                                                                                                                mainAxisSize: MainAxisSize.min,
-                                                                                                                                children: [
-                                                                                                                                        Icon(
-                                                                                                                                                Icons.tune,
-                                                                                                                                                size: 16,
-                                                                                                                                                color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
-                                                                                                                                        ),
-                                                                                                                                        const SizedBox(width: 6),
-                                                                                                                                        Text(
-                                                                                                                                                _hasActiveFilters
-                                                                                                                                                    ? 'Filter & Sort ($_activeFilterCount)'
-                                                                                                                                                    : 'Filter & Sort',
-                                                                                                                                                style: TextStyle(
-                                                                                                                                                        fontSize: 12,
-                                                                                                                                                        fontWeight: FontWeight.bold,
-                                                                                                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : textDarkColor,
-                                                                                                                                                ),
-                                                                                                                                        ),
-                                                                                                                                ],
-                                                                                                                        ),
-                                                                                                                ),
-                                                                                                        ),
-                                                                                                        const Spacer(),
                                                                                                         Text(
                                                                                                                 '${_filteredSearchResults.length} matches found',
                                                                                                                 style: TextStyle(
-                                                                                                                        fontSize: 12,
+                                                                                                                        fontSize: 13,
                                                                                                                         fontWeight: FontWeight.w600,
                                                                                                                         color: ParishColors.textMuted,
                                                                                                                 ),
                                                                                                         ),
-                                                                                                        const SizedBox(width: 12),
+                                                                                                        const Spacer(),
                                                                                                         Container(
-                                                                                                                height: 32,
+                                                                                                                height: 34,
                                                                                                                 decoration: BoxDecoration(
                                                                                                                         color: cardWhiteColor,
                                                                                                                         borderRadius: BorderRadius.circular(8),
@@ -31759,13 +31935,15 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                                 _viewMode == RecordsViewDisplayMode.table,
                                                                                                                         ],
                                                                                                                         onPressed: (idx) => setState(() {
-                                                                                                                                _viewMode = idx == 0 ? RecordsViewDisplayMode.cards : RecordsViewDisplayMode.table;
+                                                                                                                                _viewMode = idx == 0
+                                                                                                                                    ? RecordsViewDisplayMode.cards
+                                                                                                                                    : RecordsViewDisplayMode.table;
                                                                                                                         }),
                                                                                                                         borderRadius: BorderRadius.circular(7),
                                                                                                                         selectedColor: Colors.white,
                                                                                                                         fillColor: ParishColors.marianBlue,
                                                                                                                         color: ParishColors.textMuted,
-                                                                                                                        constraints: const BoxConstraints(minHeight: 30, minWidth: 36),
+                                                                                                                        constraints: const BoxConstraints(minHeight: 32, minWidth: 38),
                                                                                                                         children: const [
                                                                                                                                 Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 16)),
                                                                                                                                 Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 16)),
@@ -31777,26 +31955,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                         const SizedBox(height: 14),
                                                                                         _buildUniversalSearchResultsView(constraints.maxWidth),
                                                                                 ] else ...[
-                                                                                        // Standard Canonical Registers Section Title
-                                                                                        Text(
-                                                                                                'Canonical Registers',
-                                                                                                style: TextStyle(
-                                                                                                        fontSize: 18,
-                                                                                                        fontWeight: FontWeight.bold,
-                                                                                                        color: textDarkColor,
-                                                                                                ),
-                                                                                        ),
-                                                                                        const SizedBox(height: 3),
-                                                                                        Text(
-                                                                                                'Open a book to browse, filter, and issue certificates.',
-                                                                                                style: TextStyle(
-                                                                                                        fontSize: 13,
-                                                                                                        color: ParishColors.textMuted,
-                                                                                                ),
-                                                                                        ),
+                                                                                        _buildSectionHeader(),
                                                                                         const SizedBox(height: 16),
-
-                                                                                        // Responsive Grid of 6 Canonical Registers
                                                                                         _buildCanonicalRegistersGrid(isDesktop, isTablet),
                                                                                 ],
 
@@ -31816,7 +31976,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         // ===========================================================================
 
         Widget _buildCanonicalRegistersGrid(bool isDesktop, bool isTablet) {
-                final int crossAxisCount = isDesktop ? 3 : (isTablet ? 2 : 1);
+                final int crossAxisCount = isDesktop ? 3 : 2;
 
                 final registerCards = [
                         _buildRegisterCard(
@@ -31828,12 +31988,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 themeColor: const Color(0xFF164E87),
                                 surfaceColor: const Color(0xFFEDF4FB),
                                 sacramentName: 'Baptism',
-                                onQuickAdd: () {
-                                        Navigator.push(
-                                                context,
-                                                MaterialPageRoute(builder: (_) => BaptismManualEntryPage(onRecordSaved: _loadSummaryStats)),
-                                        );
-                                },
+                                onQuickAdd: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => BaptismManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                ),
                         ),
                         _buildRegisterCard(
                                 title: 'Confirmation',
@@ -31844,12 +32002,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 themeColor: const Color(0xFFB91C1C),
                                 surfaceColor: const Color(0xFFFDF2F2),
                                 sacramentName: 'Confirmation',
-                                onQuickAdd: () {
-                                        Navigator.push(
-                                                context,
-                                                MaterialPageRoute(builder: (_) => ConfirmationManualEntryPage(onRecordSaved: _loadSummaryStats)),
-                                        );
-                                },
+                                onQuickAdd: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => ConfirmationManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                ),
                         ),
                         _buildRegisterCard(
                                 title: 'First Communion',
@@ -31860,12 +32016,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 themeColor: const Color(0xFFD49B18),
                                 surfaceColor: const Color(0xFFFFF7E6),
                                 sacramentName: 'First Communion',
-                                onQuickAdd: () {
-                                        Navigator.push(
-                                                context,
-                                                MaterialPageRoute(builder: (_) => FirstCommunionManualEntryPage(onRecordSaved: _loadSummaryStats)),
-                                        );
-                                },
+                                onQuickAdd: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => FirstCommunionManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                ),
                         ),
                         _buildRegisterCard(
                                 title: 'Matrimony',
@@ -31876,12 +32030,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 themeColor: const Color(0xFF9D174D),
                                 surfaceColor: const Color(0xFFFCE7F3),
                                 sacramentName: 'Matrimony',
-                                onQuickAdd: () {
-                                        Navigator.push(
-                                                context,
-                                                MaterialPageRoute(builder: (_) => MatrimonyManualEntryPage(onRecordSaved: _loadSummaryStats)),
-                                        );
-                                },
+                                onQuickAdd: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => MatrimonyManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                ),
                         ),
                         _buildRegisterCard(
                                 title: 'Death & Burial',
@@ -31892,12 +32044,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 themeColor: const Color(0xFF6B21A8),
                                 surfaceColor: const Color(0xFFF3E8FF),
                                 sacramentName: 'Death',
-                                onQuickAdd: () {
-                                        Navigator.push(
-                                                context,
-                                                MaterialPageRoute(builder: (_) => DeathManualEntryPage(onRecordSaved: _loadSummaryStats)),
-                                        );
-                                },
+                                onQuickAdd: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => DeathManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                ),
                         ),
                         _buildRegisterCard(
                                 title: 'Conversion',
@@ -31908,34 +32058,30 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 themeColor: const Color(0xFF2D6A4F),
                                 surfaceColor: const Color(0xFFEDF7F2),
                                 sacramentName: 'Conversion',
-                                onQuickAdd: () {
-                                        Navigator.push(
-                                                context,
-                                                MaterialPageRoute(builder: (_) => ConversionManualEntryPage(onRecordSaved: _loadSummaryStats)),
-                                        );
-                                },
+                                onQuickAdd: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => ConversionManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                ),
                         ),
                 ];
 
                 if (crossAxisCount == 1) {
                         return Column(
-                                children: registerCards.map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: c)).toList(),
+                                children: registerCards
+                                    .map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: c))
+                                    .toList(),
                         );
                 }
 
                 return LayoutBuilder(
                         builder: (context, gridConstraints) {
-                                final double itemWidth = (gridConstraints.maxWidth - ((crossAxisCount - 1) * 16)) / crossAxisCount;
+                                final double itemWidth =
+                                    (gridConstraints.maxWidth - ((crossAxisCount - 1) * 16)) / crossAxisCount;
 
                                 return Wrap(
                                         spacing: 16,
                                         runSpacing: 16,
-                                        children: registerCards.map((card) {
-                                                return SizedBox(
-                                                        width: itemWidth,
-                                                        child: card,
-                                                );
-                                        }).toList(),
+                                        children: registerCards.map((card) => SizedBox(width: itemWidth, child: card)).toList(),
                                 );
                         },
                 );
@@ -31954,6 +32100,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         }) {
                 final textDark = ParishColors.textDark;
                 final textMuted = ParishColors.textMuted;
+                final bool compact = MediaQuery.sizeOf(context).width < 650;
 
                 return Container(
                         decoration: BoxDecoration(
@@ -31987,7 +32134,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 ).then((_) => _loadSummaryStats());
                                         },
                                         child: Padding(
-                                                padding: const EdgeInsets.all(18),
+                                                padding: EdgeInsets.all(compact ? 12 : 18),
                                                 child: Column(
                                                         crossAxisAlignment: CrossAxisAlignment.start,
                                                         mainAxisSize: MainAxisSize.min,
@@ -32005,7 +32152,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 borderRadius: BorderRadius.circular(12),
                                                                                                 border: Border.all(color: themeColor.withOpacity(0.25), width: 1.0),
                                                                                         ),
-                                                                                        child: Icon(icon, color: themeColor, size: 22),
+                                                                                        child: Icon(icon, color: themeColor, size: compact ? 19 : 22),
                                                                                 ),
                                                                                 Column(
                                                                                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -32013,7 +32160,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 Text(
                                                                                                         '$count',
                                                                                                         style: TextStyle(
-                                                                                                                fontSize: 22,
+                                                                                                                fontSize: compact ? 19 : 22,
                                                                                                                 fontWeight: FontWeight.bold,
                                                                                                                 color: themeColor,
                                                                                                                 height: 1.1,
@@ -32021,19 +32168,19 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 ),
                                                                                                 Text(
                                                                                                         'records',
-                                                                                                        style: TextStyle(fontSize: 11, color: textMuted),
+                                                                                                        style: TextStyle(fontSize: compact ? 10 : 11, color: textMuted),
                                                                                                 ),
                                                                                         ],
                                                                                 ),
                                                                         ],
                                                                 ),
-                                                                const SizedBox(height: 14),
+                                                                SizedBox(height: compact ? 10 : 14),
 
                                                                 // Title & Subtitle Nomenclature
                                                                 Text(
                                                                         title,
                                                                         style: TextStyle(
-                                                                                fontSize: 16.5,
+                                                                                fontSize: compact ? 14 : 16.5,
                                                                                 fontWeight: FontWeight.bold,
                                                                                 color: textDark,
                                                                         ),
@@ -32042,7 +32189,7 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 Text(
                                                                         latinTitle,
                                                                         style: TextStyle(
-                                                                                fontSize: 12,
+                                                                                fontSize: compact ? 10.5 : 12,
                                                                                 fontStyle: FontStyle.italic,
                                                                                 color: textMuted,
                                                                         ),
@@ -32051,13 +32198,13 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 Text(
                                                                         description,
                                                                         style: TextStyle(
-                                                                                fontSize: 12,
+                                                                                fontSize: compact ? 10.5 : 12,
                                                                                 color: textDark.withOpacity(0.8),
                                                                         ),
                                                                         maxLines: 1,
                                                                         overflow: TextOverflow.ellipsis,
                                                                 ),
-                                                                const SizedBox(height: 16),
+                                                                SizedBox(height: compact ? 10 : 16),
 
                                                                 // Bottom Row: "Open register ->" and Quick Add (+) Button
                                                                 Row(
@@ -32068,17 +32215,17 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 Text(
                                                                                                         'Open register',
                                                                                                         style: TextStyle(
-                                                                                                                fontSize: 12.5,
+                                                                                                                fontSize: compact ? 10.5 : 12.5,
                                                                                                                 fontWeight: FontWeight.bold,
                                                                                                                 color: themeColor,
                                                                                                         ),
                                                                                                 ),
                                                                                                 const SizedBox(width: 4),
-                                                                                                Icon(Icons.arrow_forward, size: 14, color: themeColor),
+                                                                                                Icon(Icons.arrow_forward, size: compact ? 12 : 14, color: themeColor),
                                                                                         ],
                                                                                 ),
                                                                                 IconButton(
-                                                                                        icon: Icon(Icons.add_circle_outline, color: themeColor, size: 22),
+                                                                                        icon: Icon(Icons.add_circle_outline, color: themeColor, size: compact ? 19 : 22),
                                                                                         padding: EdgeInsets.zero,
                                                                                         constraints: const BoxConstraints(),
                                                                                         tooltip: 'Encode $title Record',

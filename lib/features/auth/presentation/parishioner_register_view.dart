@@ -514,7 +514,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                   child: Opacity(
                     opacity: 0.07,
                     child: Image.asset(
-                      'images/jp2-bg2.png',
+                      'images/jp2-bg2.jpg',
                       fit: BoxFit.cover,
                       alignment: Alignment.center,
                       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
