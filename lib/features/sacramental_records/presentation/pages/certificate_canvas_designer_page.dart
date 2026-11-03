@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/sacramental_records/presentation/pages/certificate_canvas_designer_page.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/certificate_canvas_element.dart';
@@ -27,6 +31,9 @@ class _CertificateCanvasDesignerPageState
   MobileToolPanel _activeMobilePanel = MobileToolPanel.none;
   final TransformationController _transformationController = TransformationController();
 
+  // WYSIWYG Sample Data Toggle: Preview real text wrapping vs raw {Tags}
+  bool _previewWithSampleData = true;
+
   // Undo & Redo History Stacks
   final List<List<CertificateCanvasElement>> _undoStack = [];
   final List<List<CertificateCanvasElement>> _redoStack = [];
@@ -49,6 +56,71 @@ class _CertificateCanvasDesignerPageState
     {'name': 'Pentecost Red', 'hex': '#B91C1C', 'color': Color(0xFFB91C1C)},
     {'name': 'Pure Black', 'hex': '#000000', 'color': Colors.black},
   ];
+
+  static const Map<String, String> _samplePlaceholderData = {
+    '{Full Name}': 'Juan Dela Cruz',
+    '{First Name}': 'Juan',
+    '{Middle Name}': 'Santos',
+    '{Last Name}': 'Dela Cruz',
+    '{Date of Birth}': 'May 15, 2005',
+    '{Place of Birth}': 'Santa Cruz, Laguna',
+    '{Gender}': 'Male',
+    '{Legitimacy}': 'Catholic (Cath.)',
+    '{Father\'s Name}': 'Roberto Dela Cruz',
+    '{Mother\'s Name}': 'Teresa Mendoza',
+    '{Godfather\'s Name}': 'Pedro Reyes',
+    '{Godmother\'s Name}': 'Elena Ramos',
+    '{Sponsor 1}': 'Pedro Reyes',
+    '{Sponsor 2}': 'Elena Ramos',
+    '{Other Sponsors}': 'Mateo Gonzales, Sofia Ramirez',
+    '{Date of Baptism}': 'June 20, 2005',
+    '{Place of Baptism}': 'Saint John Paul II Parish',
+    '{Church of Baptism}': 'Saint John Paul II Parish',
+    '{Date of Confirmation}': 'October 12, 2017',
+    '{Place of Confirmation}': 'Saint John Paul II Parish',
+    '{Date of Communion}': 'April 18, 2014',
+    '{Date of First Communion}': 'April 18, 2014',
+    '{Place of First Communion}': 'Saint John Paul II Parish',
+    '{Groom Name}': 'Juan Dela Cruz',
+    '{Groom Age}': '28',
+    '{Groom Civil Status}': 'Single',
+    '{Groom Father\'s Name}': 'Roberto Dela Cruz',
+    '{Groom Mother\'s Name}': 'Teresa Mendoza',
+    '{Bride Name}': 'Maria Santos',
+    '{Bride Age}': '26',
+    '{Bride Civil Status}': 'Single',
+    '{Bride Father\'s Name}': 'Fernando Santos',
+    '{Bride Mother\'s Name}': 'Lucia Aquino',
+    '{Marriage Type}': 'Between Catholics',
+    '{Date of Marriage}': 'February 14, 2024',
+    '{Place of Marriage}': 'Saint John Paul II Parish',
+    '{Marriage License Number}': 'ML-2024-08912',
+    '{Solemnizer Name}': 'Rev. Fr. Roy G. Reyes',
+    '{Date of Death}': 'March 01, 2026',
+    '{Date of Burial}': 'March 04, 2026',
+    '{Place of Death}': 'Santa Cruz, Laguna',
+    '{Place of Burial}': 'Sta. Cruz Catholic Cemetery',
+    '{Cause of Death}': 'Cardiorespiratory Arrest',
+    '{Spouse\'s Name}': 'Maria Santos',
+    '{Date of Reception}': 'August 15, 2025',
+    '{Place of Reception}': 'Saint John Paul II Parish',
+    '{Prior Church}': 'Lutheran Church of the Philippines',
+    '{Prior Baptism Date}': 'January 10, 2000',
+    '{Witness 1}': 'Pedro Reyes',
+    '{Witness 2}': 'Elena Ramos',
+    '{Minister Name}': 'Rev. Fr. Roy G. Reyes',
+    '{Book Number}': '14',
+    '{Page Number}': '82',
+    '{Line Number}': '03',
+    '{Registry Reference}': 'Book 14, Page 82, Line 03',
+    '{Purpose}': 'For Legal / Personal Records',
+    '{Date Issued}': 'November 03, 2026',
+    '{Year}': '2026',
+    '{Record Number}': 'FCM-2026-0001',
+    '{Age}': '19',
+    '{Civil Status}': 'Single',
+    '{Residence}': 'Santa Cruz, Laguna',
+  };
 
   @override
   void initState() {
@@ -73,6 +145,7 @@ class _CertificateCanvasDesignerPageState
   // ===========================================================================
   // Undo & Redo History Management
   // ===========================================================================
+
   void _pushHistorySnapshot() {
     final snapshot = _elements.map((e) => e.copyWith()).toList();
     _undoStack.add(snapshot);
@@ -228,7 +301,7 @@ class _CertificateCanvasDesignerPageState
         x: 0.50,
         y: 0.48,
         width: 0.84,
-        height: 0.32,
+        height: 0.30,
         fontSize: tpl.styleConfig.bodyFontSize,
         fontWeight: 'normal',
         fontFamily: _globalFontFamily,
@@ -279,7 +352,7 @@ class _CertificateCanvasDesignerPageState
           text: 'QR Verification Token',
           x: 0.22,
           y: 0.86,
-          width: 0.18,
+          width: 0.20,
           fontSize: 8.0,
           fontWeight: 'normal',
           fontFamily: _globalFontFamily,
@@ -320,7 +393,7 @@ class _CertificateCanvasDesignerPageState
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Applied "${_getFontName(fontFamily)}" to all elements.'),
+        content: Text('Applied "${_getFontName(fontFamily)}" across all elements.'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -338,8 +411,8 @@ class _CertificateCanvasDesignerPageState
     if (current == null) return;
     _pushHistorySnapshot();
     _updateSelectedElement(current.copyWith(
-      x: (current.x + dx).clamp(0.04, 0.96),
-      y: (current.y + dy).clamp(0.04, 0.96),
+      x: (current.x + dx).clamp(0.02, 0.98),
+      y: (current.y + dy).clamp(0.02, 0.98),
     ));
   }
 
@@ -390,8 +463,8 @@ class _CertificateCanvasDesignerPageState
     final newId = 'elem_${DateTime.now().millisecondsSinceEpoch}';
     final clone = current.copyWith(
       id: newId,
-      x: (current.x + 0.03).clamp(0.06, 0.94),
-      y: (current.y + 0.03).clamp(0.06, 0.94),
+      x: (current.x + 0.03).clamp(0.04, 0.96),
+      y: (current.y + 0.03).clamp(0.04, 0.96),
     );
 
     setState(() {
@@ -411,8 +484,9 @@ class _CertificateCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // HIG Grouped Placeholders & Text Editor Dialog
+  // Tag Insertion & Text Editor Modal
   // ===========================================================================
+
   Future<void> _openTextEditorModal(CertificateCanvasElement element) async {
     final controller = TextEditingController(text: element.text);
     final allTags = PlaceholderRegistry.getPlaceholdersFor(widget.template.sacramentType);
@@ -426,9 +500,9 @@ class _CertificateCanvasDesignerPageState
       final t = tag.toLowerCase();
       if (t.contains('father') || t.contains('mother') || t.contains('godfather') || t.contains('godmother') || t.contains('sponsor') || t.contains('spouse')) {
         familyTags.add(tag);
-      } else if (t.contains('date of baptism') || t.contains('date of confirmation') || t.contains('date of communion') || t.contains('date of marriage') || t.contains('date of death') || t.contains('minister') || t.contains('church') || t.contains('place of')) {
+      } else if (t.contains('date of') || t.contains('minister') || t.contains('church') || t.contains('place of')) {
         liturgyTags.add(tag);
-      } else if (t.contains('book') || t.contains('page') || t.contains('line') || t.contains('reference') || t.contains('purpose') || t.contains('date issued') || t.contains('record') || t.contains('year')) {
+      } else if (t.contains('book') || t.contains('page') || t.contains('line') || t.contains('reference') || t.contains('purpose') || t.contains('issued') || t.contains('year') || t.contains('record')) {
         registryTags.add(tag);
       } else {
         personalTags.add(tag);
@@ -502,7 +576,7 @@ class _CertificateCanvasDesignerPageState
                     const SizedBox(height: 12),
 
                     Text(
-                      'Tap to insert $activeTab tags into text box:',
+                      'Tap to insert canonical $activeTab tags:',
                       style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
@@ -515,7 +589,7 @@ class _CertificateCanvasDesignerPageState
                           return ActionChip(
                             label: Text(tag, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                             backgroundColor: ParishColors.goldLight,
-                            side: BorderSide(color: ParishColors.goldAccent.withValues(alpha: 0.6)),
+                            side: BorderSide(color: ParishColors.goldAccent.withOpacity(0.6)),
                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                             onPressed: () {
                               final text = controller.text;
@@ -533,7 +607,7 @@ class _CertificateCanvasDesignerPageState
                       maxLines: 5,
                       style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
                       decoration: const InputDecoration(
-                        labelText: 'Text Content (Auto-wraps inside box)',
+                        labelText: 'Text Content (Auto-wraps identically to PDF)',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -551,7 +625,7 @@ class _CertificateCanvasDesignerPageState
                   _updateSelectedElement(element.copyWith(text: controller.text));
                   Navigator.pop(ctx);
                 },
-                child: const Text('Apply Text'),
+                child: const Text('Apply Changes'),
               ),
             ],
           );
@@ -603,6 +677,15 @@ class _CertificateCanvasDesignerPageState
     }
   }
 
+  String _resolveDisplayText(String rawText) {
+    if (!_previewWithSampleData) return rawText;
+    return PlaceholderRegistry.renderTemplate(rawText, _samplePlaceholderData);
+  }
+
+  // ===========================================================================
+  // Typography Matching with PDF Engine
+  // ===========================================================================
+
   TextStyle _resolveCanvasTextStyle({
     required CertificateCanvasElement element,
     required Color textColor,
@@ -614,39 +697,36 @@ class _CertificateCanvasDesignerPageState
 
     switch (element.fontFamily.toLowerCase()) {
       case 'sans':
-        fontFamily = 'Arial';
-        fontFallback = const ['Helvetica', 'Roboto', 'Segoe UI', 'sans-serif'];
+      case 'trebuchet':
+        fontFamily = 'Arimo';
+        fontFallback = const ['Arial', 'Helvetica', 'Roboto', 'sans-serif'];
         break;
       case 'courier':
-        fontFamily = 'Courier New';
-        fontFallback = const ['Courier', 'Lucida Console', 'monospace'];
+        fontFamily = 'Cousine';
+        fontFallback = const ['Courier New', 'Courier', 'monospace'];
         break;
       case 'georgia':
         fontFamily = 'Georgia';
         fontFallback = const ['Times New Roman', 'Times', 'serif'];
         break;
       case 'garamond':
-        fontFamily = 'Garamond';
-        fontFallback = const ['Baskerville', 'Times New Roman', 'serif'];
+        fontFamily = 'EBGaramond';
+        fontFallback = const ['Garamond', 'Baskerville', 'Times New Roman', 'serif'];
         break;
       case 'cinzel':
-        fontFamily = 'Palatino Linotype';
-        fontFallback = const ['Palatino', 'Book Antiqua', 'Georgia', 'serif'];
+        fontFamily = 'Cinzel';
+        fontFallback = const ['Palatino Linotype', 'Palatino', 'Georgia', 'serif'];
         letterSpacing = 2.0;
         break;
       case 'script':
-        fontFamily = 'Brush Script MT';
-        fontFallback = const ['Lucida Calligraphy', 'Zapfino', 'Segoe Script', 'cursive'];
+        fontFamily = 'Caveat';
+        fontFallback = const ['Brush Script MT', 'Lucida Calligraphy', 'cursive'];
         fontStyle = FontStyle.italic;
-        break;
-      case 'trebuchet':
-        fontFamily = 'Trebuchet MS';
-        fontFallback = const ['Arial', 'Helvetica', 'sans-serif'];
         break;
       case 'serif':
       default:
-        fontFamily = 'Times New Roman';
-        fontFallback = const ['Times', 'Georgia', 'serif'];
+        fontFamily = 'Tinos';
+        fontFallback = const ['Times New Roman', 'Times', 'Georgia', 'serif'];
         break;
     }
 
@@ -658,22 +738,7 @@ class _CertificateCanvasDesignerPageState
       fontFamily: fontFamily,
       fontFamilyFallback: fontFallback,
       color: textColor,
-      height: 1.35,
-    );
-  }
-
-  TextStyle _resolveFontPreviewStyle(String fontId, Color color) {
-    return _resolveCanvasTextStyle(
-      element: CertificateCanvasElement(
-        id: 'preview',
-        elementType: 'text',
-        text: '',
-        x: 0,
-        y: 0,
-        fontFamily: fontId,
-        fontSize: 12.5,
-      ),
-      textColor: color,
+      height: 1.35, // Perfectly mirrors PDF lineSpacing calculation (fontSize * 0.35)
     );
   }
 
@@ -692,8 +757,9 @@ class _CertificateCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // Phone Navigation & Dedicated Non-Blocking Control Bar
+  // Mobile Palette Sheets
   // ===========================================================================
+
   void _openMobileAddElementSheet() {
     final tpl = widget.template;
 
@@ -811,7 +877,7 @@ class _CertificateCanvasDesignerPageState
                         color: Colors.grey.shade700,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _addNewElement('qr', 'QR Verification', 0.86, defaultX: 0.22, width: 0.18, fontSize: 8);
+                          _addNewElement('qr', 'QR Verification Token', 0.86, defaultX: 0.22, width: 0.20, fontSize: 8);
                         },
                       ),
                     ],
@@ -859,7 +925,6 @@ class _CertificateCanvasDesignerPageState
     );
   }
 
-  /// Mobile Font Selection Sheet (Scroll-Controlled to prevent bottom overflow)
   void _openMobileFontSheet(CertificateCanvasElement? selected) {
     final textDark = ParishColors.textDark;
 
@@ -910,7 +975,14 @@ class _CertificateCanvasDesignerPageState
                       return ListTile(
                         dense: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                        title: Text(f['name']!, style: _resolveFontPreviewStyle(f['id']!, textDark)),
+                        title: Text(
+                          f['name']!,
+                          style: TextStyle(
+                            fontFamily: f['id'] == 'cinzel' ? 'Cinzel' : (f['id'] == 'script' ? 'Caveat' : null),
+                            fontSize: 13,
+                            color: textDark,
+                          ),
+                        ),
                         trailing: isSelected ? const Icon(Icons.check, color: ParishColors.marianBlue, size: 20) : null,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         tileColor: isSelected ? ParishColors.marianBlueSurface : null,
@@ -938,6 +1010,7 @@ class _CertificateCanvasDesignerPageState
   // ===========================================================================
   // Build Method
   // ===========================================================================
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
@@ -997,14 +1070,26 @@ class _CertificateCanvasDesignerPageState
               ],
             ),
             actions: [
-              // UNDO BUTTON
+              // WYSIWYG Preview Toggle: Real Data vs Tags
+              Tooltip(
+                message: _previewWithSampleData ? 'Switch to Raw {Tags}' : 'Switch to WYSIWYG Sample Data',
+                child: IconButton(
+                  icon: Icon(_previewWithSampleData ? Icons.visibility : Icons.visibility_off, color: ParishColors.marianBlue),
+                  onPressed: () {
+                    setState(() => _previewWithSampleData = !_previewWithSampleData);
+                  },
+                ),
+              ),
+
+              // Undo
               IconButton(
                 icon: const Icon(Icons.undo),
                 color: _undoStack.isNotEmpty ? ParishColors.marianBlue : Colors.grey.shade400,
                 tooltip: 'Undo',
                 onPressed: _undoStack.isNotEmpty ? _undo : null,
               ),
-              // REDO BUTTON
+
+              // Redo
               IconButton(
                 icon: const Icon(Icons.redo),
                 color: _redoStack.isNotEmpty ? ParishColors.marianBlue : Colors.grey.shade400,
@@ -1083,6 +1168,7 @@ class _CertificateCanvasDesignerPageState
                 // Interactive Workspace
                 Expanded(
                   child: GestureDetector(
+                    // Tapping background deselects elements
                     onTap: () => setState(() {
                       _selectedElementId = null;
                       _activeMobilePanel = MobileToolPanel.none;
@@ -1165,6 +1251,7 @@ class _CertificateCanvasDesignerPageState
   // ===========================================================================
   // Desktop Toolbar
   // ===========================================================================
+
   Widget _buildDesktopContextualToolbar({
     required double pageWidth,
     required double pageHeight,
@@ -1182,7 +1269,7 @@ class _CertificateCanvasDesignerPageState
           children: [
             const Icon(Icons.text_format, size: 18, color: ParishColors.marianBlue),
             const SizedBox(width: 8),
-            const Text('Certificate Font: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            const Text('Default Font: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             DropdownButton<String>(
               value: _availableFonts.any((f) => f['id'] == _globalFontFamily)
                   ? _globalFontFamily
@@ -1191,7 +1278,7 @@ class _CertificateCanvasDesignerPageState
               items: _availableFonts.map((f) {
                 return DropdownMenuItem(
                   value: f['id'],
-                  child: Text(f['name']!, style: _resolveFontPreviewStyle(f['id']!, textDark)),
+                  child: Text(f['name']!, style: TextStyle(fontSize: 12.5, color: textDark)),
                 );
               }).toList(),
               onChanged: (val) {
@@ -1201,6 +1288,17 @@ class _CertificateCanvasDesignerPageState
             const Spacer(),
             Row(
               children: [
+                Text(
+                  _previewWithSampleData ? 'Preview: Canonical Data' : 'Preview: {Tags}',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 6),
+                Switch(
+                  value: _previewWithSampleData,
+                  activeColor: ParishColors.marianBlue,
+                  onChanged: (val) => setState(() => _previewWithSampleData = val),
+                ),
+                const VerticalDivider(width: 20, indent: 10, endIndent: 10),
                 Text(_backgroundMode == 'None' ? 'Border: Plain' : 'Border: Frame', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                 Switch(
                   value: _backgroundMode != 'None',
@@ -1283,7 +1381,7 @@ class _CertificateCanvasDesignerPageState
               items: _availableFonts.map((f) {
                 return DropdownMenuItem(
                   value: f['id'],
-                  child: Text(f['name']!, style: _resolveFontPreviewStyle(f['id']!, textDark)),
+                  child: Text(f['name']!, style: TextStyle(fontSize: 12.5, color: textDark)),
                 );
               }).toList(),
               onChanged: (val) {
@@ -1443,13 +1541,13 @@ class _CertificateCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // Mobile Docked Controls (Non-Obtrusive, Real-Time Canvas View)
+  // Mobile Docked Controls
   // ===========================================================================
+
   Widget _buildMobileDockedControls(
       BuildContext context, double pageWidth, double pageHeight) {
     final selected = _selectedElement;
 
-    // A. When NO element is selected
     if (selected == null) {
       return Container(
         height: 60,
@@ -1510,7 +1608,6 @@ class _CertificateCanvasDesignerPageState
 
     final bool isSeal = selected.elementType.contains('seal');
 
-    // B. Contextual Tools for Selected Element
     return Container(
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
@@ -1525,7 +1622,6 @@ class _CertificateCanvasDesignerPageState
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Dynamic Non-blocking Subpanel
           if (_activeMobilePanel != MobileToolPanel.none)
             Container(
               height: 52,
@@ -1538,7 +1634,6 @@ class _CertificateCanvasDesignerPageState
               child: _buildMobileSubpanelContent(selected),
             ),
 
-          // Main Action Dock with Large Tap Targets
           Container(
             height: 58,
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1596,7 +1691,6 @@ class _CertificateCanvasDesignerPageState
                     isActive: false,
                     onTap: () => _openMobileFontSheet(selected),
                   ),
-                // Non-blocking live nudge tool
                 _buildMobileDockIconBtn(
                   icon: Icons.control_camera,
                   label: 'Nudge',
@@ -1850,8 +1944,9 @@ class _CertificateCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // Interactive Draggable Element (Pinned Resize Anchors & Nudge Support)
+  // Interactive Canvas Element Renderer: Selection-Enforced Dragging
   // ===========================================================================
+
   Widget _buildInteractiveDraggableElement({
     required CertificateCanvasElement element,
     required double pageWidth,
@@ -1884,19 +1979,15 @@ class _CertificateCanvasDesignerPageState
     if (element.elementType == 'qr') {
       contentWidget = _buildQrPlaceholderDisplay();
     } else if (element.elementType == 'signature_line') {
-      contentWidget = Column(
-        children: [
-          Container(width: elementWidth, height: 1.2, color: textColor),
-        ],
-      );
+      contentWidget = _buildSignatureLineDisplay(elementWidth, textColor);
     } else if (element.elementType == 'signatory') {
       contentWidget = Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(width: 170, height: 1.0, color: Colors.black87),
+          Container(width: 180, height: 1.0, color: Colors.black87),
           const SizedBox(height: 4),
           Text(
-            element.text,
+            _resolveDisplayText(element.text),
             textAlign: TextAlign.center,
             style: _resolveCanvasTextStyle(element: element, textColor: textColor),
           ),
@@ -1907,14 +1998,14 @@ class _CertificateCanvasDesignerPageState
     } else if (element.elementType == 'diocese_seal') {
       contentWidget = _buildCleanSealDisplay(isParish: false, element: element, color: textColor);
     } else if (element.elementType == 'title') {
-      contentWidget = _buildTitleBannerDisplay(element, textColor);
+      contentWidget = _buildTitleBannerDisplay(element, elementWidth, textColor);
     } else {
       contentWidget = Container(
         width: elementWidth,
         height: elementHeight,
         alignment: _resolveBoxAlignment(element.textAlign, element.verticalAlign),
         child: Text(
-          element.text,
+          _resolveDisplayText(element.text),
           textAlign: align,
           softWrap: true,
           overflow: TextOverflow.clip,
@@ -1928,30 +2019,35 @@ class _CertificateCanvasDesignerPageState
     final double boxWidth = isSeal ? sealSize : elementWidth;
     final double boxHeight = isSeal
         ? sealSize
-        : (elementHeight ?? (element.fontSize * 1.6));
+        : (elementHeight ?? (element.fontSize * 1.5));
 
-    final double left = isSeal ? pixelCenterX - (sealSize / 2) : pixelCenterX - (boxWidth / 2);
-    final double top = isSeal ? pixelCenterY - (sealSize / 2) : pixelCenterY - (boxHeight / 2);
+    final double left = pixelCenterX - (boxWidth / 2);
+    final double top = pixelCenterY - (boxHeight / 2);
 
     return Positioned(
       left: left,
       top: top,
       width: boxWidth,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // Selection behavior: Tap selects element. Touching/swiping unselected DOES NOT MOVE.
         onTap: () {
           setState(() {
             _selectedElementId = element.id;
             _toolMode = CanvasToolMode.select;
           });
         },
-        onPanStart: (_) => _pushHistorySnapshot(),
-        onPanUpdate: _toolMode == CanvasToolMode.select
+        // Intentional Movement: ONLY occurs when element is already selected
+        onPanStart: (isSelected && _toolMode == CanvasToolMode.select)
+            ? (_) => _pushHistorySnapshot()
+            : null,
+        onPanUpdate: (isSelected && _toolMode == CanvasToolMode.select)
             ? (details) {
           final deltaX = (details.delta.dx / scaleFactor) / pageWidth;
           final deltaY = (details.delta.dy / scaleFactor) / pageHeight;
 
-          final newX = (element.x + deltaX).clamp(0.04, 0.96);
-          final newY = (element.y + deltaY).clamp(0.04, 0.96);
+          final newX = (element.x + deltaX).clamp(0.02, 0.98);
+          final newY = (element.y + deltaY).clamp(0.02, 0.98);
 
           _updateSelectedElement(element.copyWith(x: newX, y: newY));
         }
@@ -1959,38 +2055,60 @@ class _CertificateCanvasDesignerPageState
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            Container(
-              decoration: BoxDecoration(
-                border: isSelected
-                    ? Border.all(color: const Color(0xFF0284C7), width: 1.8)
-                    : Border.all(color: Colors.transparent),
-                borderRadius: BorderRadius.circular(4),
-                color: isSelected ? const Color(0xFF0284C7).withOpacity(0.05) : Colors.transparent,
-              ),
-              padding: const EdgeInsets.all(2),
+            // Pure content without padding displacement (matching PDF bounds exactly)
+            SizedBox(
+              width: boxWidth,
+              height: isSeal ? boxHeight : elementHeight,
               child: contentWidget,
             ),
 
+            // Selection Outline Overlay (Zero displacement on element text)
+            if (isSelected)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFF0284C7), width: 1.5),
+                      borderRadius: BorderRadius.circular(2),
+                      color: const Color(0xFF0284C7).withOpacity(0.04),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Designated MOVE Handle Anchor
             if (isSelected)
               Positioned(
                 top: -24,
                 left: (boxWidth / 2) - 34,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0284C7),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.open_with, size: 12, color: Colors.white),
-                      SizedBox(width: 4),
-                      Text('MOVE', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white)),
-                    ],
+                child: GestureDetector(
+                  onPanStart: (_) => _pushHistorySnapshot(),
+                  onPanUpdate: (details) {
+                    final deltaX = (details.delta.dx / scaleFactor) / pageWidth;
+                    final deltaY = (details.delta.dy / scaleFactor) / pageHeight;
+
+                    final newX = (element.x + deltaX).clamp(0.02, 0.98);
+                    final newY = (element.y + deltaY).clamp(0.02, 0.98);
+
+                    _updateSelectedElement(element.copyWith(x: newX, y: newY));
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.open_with, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('MOVE', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2007,7 +2125,7 @@ class _CertificateCanvasDesignerPageState
                     final currentW = element.width ?? 0.84;
                     final newW = (currentW + deltaW).clamp(0.12, 0.96);
                     final actualDeltaW = newW - currentW;
-                    final newX = (element.x + (actualDeltaW / 2)).clamp(0.04, 0.96);
+                    final newX = (element.x + (actualDeltaW / 2)).clamp(0.02, 0.98);
                     _updateSelectedElement(element.copyWith(width: newW, x: newX));
                   },
                   child: Container(
@@ -2022,7 +2140,7 @@ class _CertificateCanvasDesignerPageState
                 ),
               ),
 
-            // Pinned Top Edge Height Handle
+            // Pinned Bottom Edge Height Handle
             if (isSelected && !isSeal && element.elementType != 'signature_line')
               Positioned(
                 bottom: -8,
@@ -2034,7 +2152,7 @@ class _CertificateCanvasDesignerPageState
                     final currentH = element.height ?? 0.18;
                     final newH = (currentH + deltaH).clamp(0.04, 0.85);
                     final actualDeltaH = newH - currentH;
-                    final newY = (element.y + (actualDeltaH / 2)).clamp(0.04, 0.96);
+                    final newY = (element.y + (actualDeltaH / 2)).clamp(0.02, 0.98);
                     _updateSelectedElement(element.copyWith(height: newH, y: newY));
                   },
                   child: Container(
@@ -2065,8 +2183,8 @@ class _CertificateCanvasDesignerPageState
                     final newH = (currentH + deltaH).clamp(0.04, 0.85);
                     final actualDeltaW = newW - currentW;
                     final actualDeltaH = newH - currentH;
-                    final newX = (element.x + (actualDeltaW / 2)).clamp(0.04, 0.96);
-                    final newY = (element.y + (actualDeltaH / 2)).clamp(0.04, 0.96);
+                    final newX = (element.x + (actualDeltaW / 2)).clamp(0.02, 0.98);
+                    final newY = (element.y + (actualDeltaH / 2)).clamp(0.02, 0.98);
                     _updateSelectedElement(element.copyWith(
                       width: newW,
                       height: newH,
@@ -2091,27 +2209,47 @@ class _CertificateCanvasDesignerPageState
     );
   }
 
-  Widget _buildTitleBannerDisplay(CertificateCanvasElement element, Color color) {
-    return Column(
-      children: [
-        Container(
-          width: 340,
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          decoration: _backgroundMode == 'None'
-              ? null
-              : const BoxDecoration(
-            border: Border(bottom: BorderSide(color: ParishColors.goldAccent, width: 2.0)),
-          ),
-          child: Text(
-            element.text.toUpperCase(),
-            textAlign: TextAlign.center,
-            style: _resolveCanvasTextStyle(
-              element: element,
-              textColor: color,
-            ).copyWith(letterSpacing: 2.0),
-          ),
+  Widget _buildTitleBannerDisplay(CertificateCanvasElement element, double width, Color color) {
+    return Center(
+      child: Container(
+        width: width,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        decoration: _backgroundMode == 'None'
+            ? null
+            : const BoxDecoration(
+          border: Border(bottom: BorderSide(color: ParishColors.goldAccent, width: 2.0)),
         ),
-      ],
+        child: Text(
+          _resolveDisplayText(element.text).toUpperCase(),
+          textAlign: TextAlign.center,
+          style: _resolveCanvasTextStyle(
+            element: element,
+            textColor: color,
+          ).copyWith(letterSpacing: 2.0),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSignatureLineDisplay(double elementWidth, Color textColor) {
+    final sigUrl = widget.template.signatureImageUrl;
+
+    return SizedBox(
+      width: elementWidth,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (sigUrl != null && sigUrl.isNotEmpty)
+            Container(
+              height: 30,
+              margin: const EdgeInsets.only(bottom: 2),
+              child: Image.network(sigUrl, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const SizedBox(height: 30)),
+            )
+          else
+            const SizedBox(height: 24),
+          Container(width: elementWidth, height: 1.0, color: textColor),
+        ],
+      ),
     );
   }
 
@@ -2144,7 +2282,7 @@ class _CertificateCanvasDesignerPageState
     return Container(
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Center(
         child: Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
@@ -2154,20 +2292,24 @@ class _CertificateCanvasDesignerPageState
 
   Widget _buildQrPlaceholderDisplay() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 58,
           height: 58,
+          padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: Colors.grey.shade400, width: 0.8),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: const Icon(Icons.qr_code_2, size: 46, color: ParishColors.marianBlue),
+          child: const Icon(Icons.qr_code_2, size: 50, color: ParishColors.marianBlue),
         ),
         const SizedBox(height: 3),
-        const Text('QR VERIFICATION', style: TextStyle(fontSize: 7.0, fontWeight: FontWeight.bold, color: Colors.grey)),
+        const Text('Verification Token:', style: TextStyle(fontSize: 6.5, color: Colors.grey)),
+        const Text('VERIFY-SAMPLE-TOKEN', style: TextStyle(fontSize: 7.0, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+        const Text('Scan QR to verify canonical authenticity', style: TextStyle(fontSize: 6.0, color: Colors.grey)),
       ],
     );
   }
@@ -2196,10 +2338,10 @@ class _CertificateCanvasDesignerPageState
         padding: const EdgeInsets.all(16.0),
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(color: ParishColors.goldAccent, width: 2.2),
+            border: Border.all(color: ParishColors.goldAccent, width: 2.5),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(4.0),
+            padding: const EdgeInsets.all(4.5),
             child: Container(
               decoration: BoxDecoration(
                 border: Border.all(color: ParishColors.marianBlue, width: 1.0),
@@ -2214,6 +2356,7 @@ class _CertificateCanvasDesignerPageState
   // ===========================================================================
   // Desktop Bottom Palette
   // ===========================================================================
+
   Widget _buildDesktopBottomPalette(BuildContext context) {
     final tpl = widget.template;
 
@@ -2265,7 +2408,7 @@ class _CertificateCanvasDesignerPageState
           _buildQuickActionChip(
             icon: Icons.qr_code,
             label: '+ QR Verification',
-            onTap: () => _addNewElement('qr', 'QR Verification Token', 0.86, defaultX: 0.22, width: 0.18, fontSize: 8),
+            onTap: () => _addNewElement('qr', 'QR Verification Token', 0.86, defaultX: 0.22, width: 0.20, fontSize: 8),
           ),
         ],
       ),

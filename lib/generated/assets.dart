@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 class Assets {
   Assets._();
 
+  static const $AssetsAssetsGen assets = $AssetsAssetsGen();
   static const $AssetsImagesGen images = $AssetsImagesGen();
   static const $AssetsLibGen lib = $AssetsLibGen();
 }
@@ -39,34 +40,52 @@ class $AssetsPresentationGen {
 
   final $AssetsDialogsGen dialogs = const $AssetsDialogsGen();
   final $AssetsWidgetsGen widgets = const $AssetsWidgetsGen();
-  final String receiptsView =
-      'lib/features/receipts/presentation/receipts_view.dart';
+  final String receiptsView = 'lib/features/receipts/presentation/receipts_view.dart';
 }
 
 class $AssetsDialogsGen {
   const $AssetsDialogsGen();
 
-  final String manageParticularsDialog =
-      'lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart';
-  final String newTransactionDialog =
-      'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
-  final String receiptDetailDialog =
-      'lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart';
-  final String remittanceReportDialog =
-      'lib/features/receipts/presentation/dialogs/remittance_report_dialog.dart';
+  final String manageParticularsDialog = 'lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart';
+  final String newTransactionDialog = 'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
+  final String receiptDetailDialog = 'lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart';
+  final String remittanceReportDialog = 'lib/features/receipts/presentation/dialogs/remittance_report_dialog.dart';
 }
 
 class $AssetsWidgetsGen {
   const $AssetsWidgetsGen();
 
-  final String receiptCard =
-      'lib/features/receipts/presentation/widgets/receipt_card.dart';
+  final String receiptCard = 'lib/features/receipts/presentation/widgets/receipt_card.dart';
+}
+
+class $AssetsAssetsGen {
+  const $AssetsAssetsGen();
+
+  final $AssetsFontsGen fonts = const $AssetsFontsGen();
+}
+
+class $AssetsFontsGen {
+  const $AssetsFontsGen();
+
+  final String arimoBold = 'assets/fonts/Arimo-Bold.ttf';
+  final String arimoRegular = 'assets/fonts/Arimo-Regular.ttf';
+  final String caveatBold = 'assets/fonts/Caveat-Bold.ttf';
+  final String caveatRegular = 'assets/fonts/Caveat-Regular.ttf';
+  final String cinzelBold = 'assets/fonts/Cinzel-Bold.ttf';
+  final String cinzelRegular = 'assets/fonts/Cinzel-Regular.ttf';
+  final String cousineBold = 'assets/fonts/Cousine-Bold.ttf';
+  final String cousineRegular = 'assets/fonts/Cousine-Regular.ttf';
+  final String eBGaramondBold = 'assets/fonts/EBGaramond-Bold.ttf';
+  final String eBGaramondRegular = 'assets/fonts/EBGaramond-Regular.ttf';
+  final String tinosBold = 'assets/fonts/Tinos-Bold.ttf';
+  final String tinosRegular = 'assets/fonts/Tinos-Regular.ttf';
 }
 
 class AssetGenImage {
   const AssetGenImage(this._assetName, {this.size, this.flavors = const {}});
 
   final String _assetName;
+
 
   final Size? size;
   final Set<String> flavors;
@@ -124,8 +143,15 @@ class AssetGenImage {
     );
   }
 
-  ImageProvider provider({AssetBundle? bundle, String? package}) {
-    return AssetImage(_assetName, bundle: bundle, package: package);
+  ImageProvider provider({
+    AssetBundle? bundle,
+    String? package,
+  }) {
+    return AssetImage(
+      _assetName,
+      bundle: bundle,
+      package: package,
+    );
   }
 
   Widget custom({
@@ -142,3 +168,4 @@ class AssetGenImage {
 
   String get keyName => _assetName;
 }
+

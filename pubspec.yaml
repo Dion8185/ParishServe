@@ -49,6 +49,7 @@ dependencies:
   firebase_core: ^5.1.0
   firebase_database: ^13.0.1
   google_mlkit_text_recognition: ^0.17.1
+  google_fonts: ^6.2.1
 
 
 dev_dependencies:
@@ -93,29 +94,47 @@ flutter:
     - lib/features/receipts/presentation/
     - lib/features/receipts/presentation/dialogs/
     - lib/features/receipts/presentation/widgets/
+    - assets/fonts/
 
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
+  fonts:
+      # Classical Inscription (Title Banners)
+      - family: Cinzel
+        fonts:
+          - asset: assets/fonts/Cinzel-Regular.ttf
+          - asset: assets/fonts/Cinzel-Bold.ttf
+            weight: 700
 
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
+      # Chancery / Cursive Script
+      - family: Caveat
+        fonts:
+          - asset: assets/fonts/Caveat-Regular.ttf
+          - asset: assets/fonts/Caveat-Bold.ttf
+            weight: 700
 
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
+      # Classical Times / Ecclesiastical Serif
+      - family: Tinos
+        fonts:
+          - asset: assets/fonts/Tinos-Regular.ttf
+          - asset: assets/fonts/Tinos-Bold.ttf
+            weight: 700
+
+      # Modern Sans / Helvetica equivalent
+      - family: Arimo
+        fonts:
+          - asset: assets/fonts/Arimo-Regular.ttf
+          - asset: assets/fonts/Arimo-Bold.ttf
+            weight: 700
+
+      # Traditional Literary Serif
+      - family: EBGaramond
+        fonts:
+          - asset: assets/fonts/EBGaramond-Regular.ttf
+          - asset: assets/fonts/EBGaramond-Bold.ttf
+            weight: 700
+
+      # Typewriter / Monospace
+      - family: Cousine
+        fonts:
+          - asset: assets/fonts/Cousine-Regular.ttf
+          - asset: assets/fonts/Cousine-Bold.ttf
+            weight: 700
