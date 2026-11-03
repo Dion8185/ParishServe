@@ -295,53 +295,85 @@ class _DashboardViewState extends State<DashboardView> {
               _buildCompactActionLaunchpad(context, isDesktop, isMobile),
               const SizedBox(height: 20),
 
-              // 3. 2-Column Responsive Layout
-              if (isDesktop)
+              // 3. Parish dashboard overview
+              Padding(
+                padding: const EdgeInsets.only(left: 2, bottom: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 19,
+                      decoration: BoxDecoration(
+                        color: ParishColors.goldAccent,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Text(
+                      'PARISH OVERVIEW',
+                      style: TextStyle(
+                        color: ParishColors.textDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.15,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'Today at a glance',
+                      style: TextStyle(fontSize: 11, color: textMutedColor),
+                    ),
+                  ],
+                ),
+              ),
+              if (isDesktop) ...[
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // LEFT COLUMN (50%): Unified Calendar Card & IoT Telemetry
                     Expanded(
+                      flex: 11,
+                      child: _buildUnifiedCalendarCard(context, isDesktop: true),
+                    ),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      flex: 9,
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildUnifiedCalendarCard(context, isDesktop: true),
-                          const SizedBox(height: 20),
+                          const DailyReadingsCard(),
+                          const SizedBox(height: 18),
                           _buildArchiveTelemetryCard(context),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 20),
-                    // RIGHT COLUMN (50%): Daily Readings, Liturgy & Office Hours
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const DailyReadingsCard(),
-                          const SizedBox(height: 20),
-                          _buildLiturgicalScheduleCard(textDarkColor, borderGreyColor, cardWhiteColor),
-                          const SizedBox(height: 20),
-                          _buildOfficeHoursNotice(textDarkColor, textMutedColor, borderGreyColor),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
-              else
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const DailyReadingsCard(),
-                    const SizedBox(height: 20),
-                    _buildUnifiedCalendarCard(context, isDesktop: false),
-                    const SizedBox(height: 20),
-                    _buildArchiveTelemetryCard(context),
-                    const SizedBox(height: 18),
-                    _buildLiturgicalScheduleCard(textDarkColor, borderGreyColor, cardWhiteColor),
-                    const SizedBox(height: 18),
-                    _buildOfficeHoursNotice(textDarkColor, textMutedColor, borderGreyColor),
                   ],
                 ),
+                const SizedBox(height: 18),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 11,
+                      child: _buildLiturgicalScheduleCard(textDarkColor, borderGreyColor, cardWhiteColor),
+                    ),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      flex: 9,
+                      child: _buildOfficeHoursNotice(textDarkColor, textMutedColor, borderGreyColor),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                const DailyReadingsCard(),
+                const SizedBox(height: 18),
+                _buildUnifiedCalendarCard(context, isDesktop: false),
+                const SizedBox(height: 18),
+                _buildArchiveTelemetryCard(context),
+                const SizedBox(height: 18),
+                _buildLiturgicalScheduleCard(textDarkColor, borderGreyColor, cardWhiteColor),
+                const SizedBox(height: 14),
+                _buildOfficeHoursNotice(textDarkColor, textMutedColor, borderGreyColor),
+              ],
 
               const SizedBox(height: 28),
 
@@ -380,80 +412,173 @@ class _DashboardViewState extends State<DashboardView> {
   // Greeting Banner
   // ---------------------------------------------------------------------------
   Widget _buildGreetingBanner(String greeting, String displayName, String roleDisplay, bool isDesktop) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(isDesktop ? 18 : 14),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.borderGrey),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+    final initials = displayName.trim().isEmpty
+        ? 'S'
+        : displayName.trim().split(RegExp(r'\s+')).take(2).map((part) => part[0]).join().toUpperCase();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF102F52), Color(0xFF174D7A), Color(0xFF236A91)],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: isDesktop ? 22 : 18,
-            backgroundColor: ParishColors.marianBlueSurface,
-            child: Text(
-              displayName.isNotEmpty ? displayName[0].toUpperCase() : 'S',
-              style: TextStyle(
-                fontSize: isDesktop ? 18 : 15,
-                fontWeight: FontWeight.bold,
-                color: ParishColors.marianBlue,
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -42,
+              top: -76,
+              child: Container(
+                width: 220,
+                height: 220,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.08), width: 28),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$greeting, $displayName!',
-                  style: TextStyle(
-                    fontSize: isDesktop ? 18 : 15.5,
-                    fontWeight: FontWeight.bold,
-                    color: ParishColors.textDark,
-                  ),
+            Positioned(
+              right: 95,
+              bottom: -100,
+              child: Container(
+                width: 180,
+                height: 180,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ParishColors.goldAccent.withOpacity(0.08),
                 ),
-                const SizedBox(height: 2),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: ParishColors.goldLight,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: ParishColors.goldAccent.withOpacity(0.4)),
-                      ),
-                      child: Text(
-                        roleDisplay,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.goldAccent,
-                        ),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isDesktop ? 28 : 20,
+                vertical: isDesktop ? 24 : 20,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: isDesktop ? 58 : 50,
+                    height: isDesktop ? 58 : 50,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.13),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: ParishColors.goldAccent.withOpacity(0.8), width: 1.4),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      initials,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: isDesktop ? 21 : 18,
+                        letterSpacing: 0.5,
                       ),
                     ),
-                    Text(
-                      _formatTodayDate(),
-                      style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFE5BD63),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            const Text(
+                              'PARISHSERVE  •  PARISH OPERATIONS',
+                              style: TextStyle(
+                                color: Color(0xFFD8E7F2),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.25,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          '$greeting, $displayName',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: isDesktop ? 23 : 19,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.35,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: ParishColors.goldAccent.withOpacity(0.18),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: ParishColors.goldAccent.withOpacity(0.55)),
+                              ),
+                              child: Text(
+                                roleDisplay,
+                                style: const TextStyle(
+                                  color: Color(0xFFFFE7AD),
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _formatTodayDate(),
+                              style: const TextStyle(color: Color(0xFFD3E1EB), fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isDesktop) ...[
+                    const SizedBox(width: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: Colors.white.withOpacity(0.14)),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('TOTUS TUUS', style: TextStyle(
+                            color: Color(0xFFFFE7AD), fontFamily: 'serif',
+                            fontStyle: FontStyle.italic, fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2, fontSize: 11,
+                          )),
+                          SizedBox(height: 2),
+                          Text('Serving the parish', style: TextStyle(
+                            color: Color(0xFFD3E1EB), fontSize: 9.5,
+                          )),
+                        ],
+                      ),
                     ),
                   ],
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -765,8 +890,11 @@ class _DashboardViewState extends State<DashboardView> {
     return Container(
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.borderGrey, width: 1.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFF18334D).withOpacity(0.05), blurRadius: 18, offset: const Offset(0, 7)),
+        ],
       ),
       child: Column(
         children: [
@@ -1049,116 +1177,173 @@ class _DashboardViewState extends State<DashboardView> {
           }
         }
 
-        return InkWell(
-          onTap: () => showSensorDetailModal(
-            context,
-            roomTitle: 'Sacramental Archive Room',
-            nodeId: nodeId,
-            temperature: '${temp.toStringAsFixed(1)} °C',
-            humidity: '${hum.toStringAsFixed(1)} %',
-            isWarning: isWarning,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: ParishColors.cardWhite,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isWarning ? ParishColors.mercyRed : ParishColors.borderGrey,
-                width: isWarning ? 1.6 : 1.2,
-              ),
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => showSensorDetailModal(
+              context,
+              roomTitle: 'Sacramental Archive Room',
+              nodeId: nodeId,
+              temperature: '${temp.toStringAsFixed(1)} °C',
+              humidity: '${hum.toStringAsFixed(1)} %',
+              isWarning: isWarning,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.sensors, color: ParishColors.marianBlue, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'Archive Telemetry',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: ParishColors.cardWhite,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isWarning ? ParishColors.mercyRed.withOpacity(0.55) : ParishColors.borderGrey,
+                ),
+                boxShadow: [
+                  BoxShadow(color: const Color(0xFF18334D).withOpacity(0.055), blurRadius: 18, offset: const Offset(0, 7)),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: ParishColors.marianBlueSurface,
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        child: const Icon(Icons.sensors_rounded, color: ParishColors.marianBlue, size: 20),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Environmental monitoring', style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted)),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isWarning ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.circle, size: 6, color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen),
+                            const SizedBox(width: 5),
+                            Text(
+                              isWarning ? 'Attention' : 'Within range',
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 17),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTelemetryMetric(
+                          icon: Icons.thermostat_rounded,
+                          label: 'Temperature',
+                          value: '${temp.toStringAsFixed(1)}°',
+                          unit: 'C',
+                          color: ParishColors.goldAccent,
+                          progress: (temp / 40).clamp(0.0, 1.0),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildTelemetryMetric(
+                          icon: Icons.water_drop_rounded,
+                          label: 'Humidity',
+                          value: hum.toStringAsFixed(1),
+                          unit: '%',
+                          color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
+                          progress: (hum / 100).clamp(0.0, 1.0),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.only(top: 11),
+                    decoration: BoxDecoration(border: Border(top: BorderSide(color: ParishColors.borderGrey.withOpacity(0.8)))),
+                    child: Row(
+                      children: [
+                        Icon(Icons.memory_rounded, size: 13, color: ParishColors.textMuted),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(nodeId, style: TextStyle(fontSize: 10, color: ParishColors.textMuted, fontWeight: FontWeight.w600)),
+                        ),
+                        Text('View sensor details', style: TextStyle(fontSize: 10, color: ParishColors.marianBlue, fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 3),
+                        const Icon(Icons.arrow_forward_rounded, size: 12, color: ParishColors.marianBlue),
                       ],
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: isWarning ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen.withOpacity(0.5),
-                        ),
-                      ),
-                      child: Text(
-                        isWarning ? 'ALERT (>60%)' : 'SAFE (ESP32)',
-                        style: TextStyle(
-                          color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.thermostat, size: 20, color: ParishColors.goldAccent),
-                          const SizedBox(width: 6),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Temp', style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted)),
-                              Text('${temp.toStringAsFixed(1)} °C', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(height: 24, width: 1, color: ParishColors.borderGrey),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.water_drop_outlined,
-                            size: 20,
-                            color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
-                          ),
-                          const SizedBox(width: 6),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Humidity', style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted)),
-                              Text(
-                                '${hum.toStringAsFixed(1)} %',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: isWarning ? ParishColors.mercyRed : ParishColors.textDark,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTelemetryMetric({
+    required IconData icon,
+    required String label,
+    required String value,
+    required String unit,
+    required Color color,
+    required double progress,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 5),
+              Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: ParishColors.textMuted, fontWeight: FontWeight.w600))),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+
+              const SizedBox(width: 3),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(unit, style: TextStyle(fontSize: 10, color: ParishColors.textMuted, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: color.withOpacity(0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1167,57 +1352,79 @@ class _DashboardViewState extends State<DashboardView> {
   // ---------------------------------------------------------------------------
   Widget _buildLiturgicalScheduleCard(Color textDark, Color borderGrey, Color cardWhite) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderGrey, width: 1.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderGrey),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFF18334D).withOpacity(0.045), blurRadius: 16, offset: const Offset(0, 6)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.church, color: ParishColors.marianBlue, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Regular Liturgical Schedule',
-                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: ParishColors.goldLight, borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.church_rounded, color: ParishColors.goldAccent, size: 20),
               ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Liturgical Schedule', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: textDark)),
+                    Text('Regular parish services', style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted)),
+                  ],
+                ),
+              ),
+
             ],
           ),
-          const Divider(height: 18),
+          const SizedBox(height: 15),
           _buildScheduleRow('Sunday Holy Masses', '8:00 AM • 4:00 PM (Main Altar)', Icons.wb_sunny_outlined),
-          const SizedBox(height: 8),
-          _buildScheduleRow('Weekday Holy Masses', 'Wednesday & Friday 5:30 PM', Icons.schedule),
-          const SizedBox(height: 8),
-          _buildScheduleRow('Confessions & Anointing', 'By appointment or Saturday 4:00 PM', Icons.favorite_border),
+          _buildScheduleRow('Weekday Holy Masses', 'Wednesday & Friday 5:30 PM', Icons.schedule_rounded),
+          _buildScheduleRow('Confessions & Anointing', 'By appointment or Saturday 4:00 PM', Icons.favorite_border_rounded),
         ],
       ),
     );
   }
 
   Widget _buildScheduleRow(String title, String timing, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 15, color: ParishColors.marianBlue),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-              ),
-              Text(
-                timing,
-                style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
-              ),
-            ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: ParishColors.marianBlueSurface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 16, color: ParishColors.marianBlue),
           ),
-        ),
-      ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+
+                  const SizedBox(height: 3),
+                  Text(timing, style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted, height: 1.3)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1227,33 +1434,70 @@ class _DashboardViewState extends State<DashboardView> {
   Widget _buildOfficeHoursNotice(Color textDark, Color textMuted, Color borderGrey) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: ParishColors.backgroundLight,
-        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF4F7FA), Color(0xFFEAF1F7)],
+        ),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: borderGrey),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, color: ParishColors.marianBlue, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.business_outlined, color: ParishColors.marianBlue, size: 20),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Parish Office Hours', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: textDark)),
+                    Text('Secretariat & administration', style: TextStyle(fontSize: 10.5, color: textMuted)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.8), borderRadius: BorderRadius.circular(13)),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Parish Office & Administration Hours',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textDark),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '• Tuesday to Sunday: 8:00 AM – 12:00 PM | 1:30 PM – 5:00 PM\n'
-                      '• Monday: Closed (Canonical Clergy Rest Day & Sanctification)',
-                  style: TextStyle(fontSize: 11.5, color: textMuted, height: 1.35),
+                const Icon(Icons.schedule_rounded, size: 17, color: ParishColors.marianBlue),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'Tuesday to Sunday\\n8:00 AM – 12:00 PM  |  1:30 PM – 5:00 PM',
+                    style: TextStyle(fontSize: 11, color: textDark, height: 1.5, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline_rounded, size: 15, color: ParishColors.goldAccent),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'Monday: Closed for Canonical Clergy Rest Day & Sanctification',
+                  style: TextStyle(fontSize: 10.5, color: textMuted, height: 1.35),
+                ),
+              ),
+            ],
           ),
         ],
       ),
