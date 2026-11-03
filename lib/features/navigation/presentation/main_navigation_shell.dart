@@ -243,13 +243,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: ParishColors.goldAccent, width: 2.5),
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15.5),
-              child: Image.asset(
-                'images/logo-jp2.png',
-                fit: BoxFit.cover,
-              ),
-            ),
+            child: const Icon(Icons.church, size: 34, color: ParishColors.marianBlue),
           ),
           const SizedBox(height: 14),
           Text(
@@ -511,12 +505,10 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: ParishColors.goldAccent, width: 2),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.asset(
-                      'images/logo-jp2.png',
-                      fit: BoxFit.cover,
-                    ),
+                  child: const Icon(
+                    Icons.church,
+                    size: 28,
+                    color: ParishColors.marianBlue,
                   ),
                 ),
                 const SizedBox(width: 12),
