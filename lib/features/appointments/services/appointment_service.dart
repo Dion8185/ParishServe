@@ -19,6 +19,20 @@ class AppointmentService {
   static const int operatingDayStartMin = 540; // 09:00 AM
   static const int operatingDayEndMin = 1020;  // 05:00 PM
 
+  /// Canonical minimum duration (in minutes) required per sacrament or pastoral service
+  static int getMinimumDurationMinutes(String serviceType) {
+    final s = serviceType.toLowerCase();
+    if (s.contains('wedding') || s.contains('nuptial')) return 90;
+    if (s.contains('community baptism') || s.contains('baptism')) return 60;
+    if (s.contains('funeral')) return 60;
+    if (s.contains('thanksgiving')) return 60;
+    if (s.contains('canonical interview') || s.contains('pre-cana')) return 45;
+    if (s.contains('anointing') || s.contains('sick')) return 45;
+    if (s.contains('blessing')) return 45;
+    if (s.contains('confession') || s.contains('spiritual direction')) return 30;
+    return 30; // Fallback minimum
+  }
+
   /// Converts time strings ("10:00:00", "10:00") to minutes from midnight (0–1439)
   static int _timeToMinutes(String timeStr) {
     try {
@@ -105,7 +119,10 @@ class AppointmentService {
         String? whereClause;
         List<dynamic>? whereArgs;
 
-        if (userIdFilter != null && userIdFilter.trim().isNotEmpty && statusFilter != null && statusFilter.toLowerCase() != 'all') {
+        if (userIdFilter != null &&
+            userIdFilter.trim().isNotEmpty &&
+            statusFilter != null &&
+            statusFilter.toLowerCase() != 'all') {
           whereClause = 'created_by = ? AND appointment_status = ?';
           whereArgs = [userIdFilter.trim(), statusFilter.toLowerCase()];
         } else if (userIdFilter != null && userIdFilter.trim().isNotEmpty) {
@@ -309,7 +326,7 @@ class AppointmentService {
   }
 
   /// Finds the earliest non-conflicting time slot for a given day within 9:00 AM – 5:00 PM.
-  /// Supports both online and offline lookups.
+  /// Supports both online and offline lookups and strictly respects minimum sacrament duration.
   static Future<Map<String, TimeOfDay>?> findNextAvailableSlot({
     required String date,
     required int durationMinutes,
@@ -322,10 +339,19 @@ class AppointmentService {
     final parsedDate = DateTime.tryParse(date);
     if (parsedDate == null) return null;
 
-    if (parsedDate.weekday == DateTime.monday ||
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
+
+    if (targetDay.isBefore(today) ||
+        parsedDate.weekday == DateTime.monday ||
         LiturgicalCalendarService.isDateBlockedSync(parsedDate)) {
       return null;
     }
+
+    final effectiveDuration = durationMinutes > 0
+        ? durationMinutes
+        : getMinimumDurationMinutes(serviceType ?? '');
 
     // Community Baptism is strictly locked to 11:00 AM on Weekends
     if (serviceType != null && serviceType.toLowerCase().contains('community baptism')) {
@@ -386,7 +412,6 @@ class AppointmentService {
 
     for (final b in activeBookings) {
       final sType = (b['service_type'] ?? '').toString().toLowerCase();
-      // Ignore other community baptisms since they are batched
       if (sType.contains('community baptism')) continue;
 
       bookedIntervals.add({
@@ -403,7 +428,7 @@ class AppointmentService {
     Map<String, TimeOfDay>? slot = _scanForFreeSlot(
       candidateStart: candidateStart,
       limitMin: operatingDayEndMin,
-      durationMinutes: durationMinutes,
+      durationMinutes: effectiveDuration,
       bookedIntervals: bookedIntervals,
     );
 
@@ -411,7 +436,7 @@ class AppointmentService {
       slot = _scanForFreeSlot(
         candidateStart: operatingDayStartMin,
         limitMin: candidateStart,
-        durationMinutes: durationMinutes,
+        durationMinutes: effectiveDuration,
         bookedIntervals: bookedIntervals,
       );
     }
@@ -450,8 +475,7 @@ class AppointmentService {
     return null;
   }
 
-  /// Automated Conflict Checking, Operating Hours (9 AM – 5 PM), and Batch Baptism Logic.
-  /// Works seamlessly online or offline with local SQLite.
+  /// Automated Conflict Checking, Operating Hours (9 AM – 5 PM), Duration Threshold, and Past-Date Protection
   static Future<void> checkScheduleConflict({
     required String date,       // YYYY-MM-DD
     required String startTime,  // HH:mm:ss
@@ -463,6 +487,15 @@ class AppointmentService {
   }) async {
     final parsedDate = DateTime.tryParse(date);
     if (parsedDate != null) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final targetDay = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
+
+      // 0. Past Date Enforcement
+      if (targetDay.isBefore(today)) {
+        throw 'Schedule Error: Appointments cannot be scheduled or moved to past dates ($date).';
+      }
+
       // 1. Mondays are strictly forbidden (Clergy Rest Day)
       if (parsedDate.weekday == DateTime.monday) {
         throw 'Paramount Rule Violation: Mondays are designated Clergy Rest Days and Parish Office closure. No appointments can be scheduled on Mondays.';
@@ -479,11 +512,16 @@ class AppointmentService {
 
     final newStartMinutes = _timeToMinutes(startTime);
     final newEndMinutes = _timeToMinutes(endTime);
+    final minDuration = getMinimumDurationMinutes(serviceType ?? '');
+    final actualDuration = newEndMinutes - newStartMinutes;
     final bool isCommunityBaptism = serviceType != null &&
         serviceType.toLowerCase().contains('community baptism');
 
-    // 3. Operating Hours Enforcement:
-    // Community Baptism is strictly locked at 11:00 AM on Weekends
+    // 3. Minimum Duration & Operating Hours Enforcement
+    if (actualDuration < minDuration) {
+      throw 'Duration Violation: "$serviceType" requires a minimum of $minDuration minutes for canonical rites. The requested duration of $actualDuration minutes is invalid.';
+    }
+
     if (isCommunityBaptism) {
       if (parsedDate != null &&
           parsedDate.weekday != DateTime.saturday &&
@@ -494,9 +532,15 @@ class AppointmentService {
         throw 'Schedule Restriction: Community Baptisms are strictly scheduled starting at 11:00 AM.';
       }
     } else {
-      // All other sacramental services must fall within 9:00 AM to 5:00 PM
-      if (newStartMinutes < operatingDayStartMin || newEndMinutes > operatingDayEndMin) {
-        throw 'Outside Parish Office Operating Hours: Parish services must be scheduled between 9:00 AM and 5:00 PM.';
+      if (newStartMinutes < operatingDayStartMin) {
+        throw 'Outside Parish Operating Hours: Parish services cannot start earlier than 9:00 AM.';
+      }
+      if (newEndMinutes > operatingDayEndMin) {
+        final latestStartMin = operatingDayEndMin - minDuration;
+        final latestStartTod = minutesToTimeOfDay(latestStartMin);
+        final h = latestStartTod.hour.toString().padLeft(2, '0');
+        final m = latestStartTod.minute.toString().padLeft(2, '0');
+        throw 'Outside Parish Operating Hours: "$serviceType" ($minDuration mins) must conclude by 5:00 PM. Latest possible start time is ${formatTime12Hour("$h:$m:00")}.';
       }
     }
 
@@ -566,9 +610,8 @@ class AppointmentService {
         final bool existingIsCommunityBaptism =
         existingService.toLowerCase().contains('community baptism');
 
-        // BAPTISM BATCH ALLOWANCE: If both are community baptisms at 11:00 AM, allow same time & venue
         if (isCommunityBaptism && existingIsCommunityBaptism) {
-          continue; // Allowed: Batch baptism ceremony
+          continue; // Batch baptism ceremony allowance
         }
 
         final formattedExistStart = formatTime12Hour(existingStartStr);
@@ -577,7 +620,7 @@ class AppointmentService {
         final formattedNewEnd = formatTime12Hour(endTime);
 
         if (existingVenue.toLowerCase() == venue.toLowerCase()) {
-          throw 'Venue Conflict: Venue "$venue" is already booked for "$existingService" ($existingRequester) from $formattedExistStart to $formattedExistEnd. Your requested window ($formattedNewStart – $formattedNewEnd) overlaps with it.';
+          throw 'Venue Conflict: "$venue" is already booked for "$existingService" ($existingRequester) from $formattedExistStart to $formattedExistEnd. Your requested window ($formattedNewStart – $formattedNewEnd) overlaps with it.';
         }
 
         if (existingOfficiant.toLowerCase() == officiant.toLowerCase()) {
@@ -589,8 +632,7 @@ class AppointmentService {
     }
   }
 
-  /// Rescheduling Method with Role-Aware Re-Approval & Operating Bounds.
-  /// Works online or queues offline for auto-sync.
+  /// Rescheduling Method with Role-Aware Re-Approval, Duration Check, & Operating Bounds.
   static Future<void> rescheduleAppointment({
     required String appointmentId,
     required String newDate,      // YYYY-MM-DD

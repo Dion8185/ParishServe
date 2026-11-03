@@ -1,8 +1,7 @@
 // =============================================================================
-// FILE: lib/features/dashboard/presentation/pages/parish_calendar_page.dart (PART 1 OF 2)
+// FILE: lib/features/dashboard/presentation/pages/parish_calendar_page.dart
 // =============================================================================
 
-import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../appointments/models/appointment_model.dart';
@@ -51,6 +50,16 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     if (_isParishioner) 'Certificate Pickups',
   ];
 
+  DateTime get _today {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  bool _isPastDate(DateTime date) {
+    final target = DateTime(date.year, date.month, date.day);
+    return target.isBefore(_today);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -68,7 +77,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       List<Map<String, dynamic>> requestsData = [];
 
       if (_isParishioner) {
-        // Load bookings and certificate requests for the current parishioner
         final results = await Future.wait([
           AppointmentService.getMyAppointments(),
           UserService.getMyServiceRequests(),
@@ -125,7 +133,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     return allFeasts;
   }
 
-  /// Extracts certificate pickup events scheduled for this specific date
   List<Map<String, dynamic>> _certificatePickupsForDate(DateTime date) {
     if (!_isParishioner) return [];
     if (_selectedCategory == 'Global Liturgical' ||
@@ -268,6 +275,42 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     );
   }
 
+  void _openBookingForDate(DateTime date) {
+    if (_isPastDate(date)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot book or request services for past dates.'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
+      );
+      return;
+    }
+    if (date.weekday == DateTime.monday) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The Parish Office is closed on Mondays (Clergy Rest Day).'),
+          backgroundColor: ParishColors.goldAccent,
+        ),
+      );
+      return;
+    }
+    if (LiturgicalCalendarService.isDateBlockedSync(date)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Appointments are restricted on this day due to a major liturgical celebration.'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
+      );
+      return;
+    }
+
+    showScheduleAppointmentModal(
+      context,
+      initialDate: date,
+      onAppointmentSaved: _loadData,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textColorDark = ParishColors.textDark;
@@ -354,27 +397,13 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
               ),
             ],
           ),
-          floatingActionButton: FloatingActionButton.extended(
-            backgroundColor: ParishColors.marianBlue,
-            foregroundColor: Colors.white,
-            icon: const Icon(Icons.add),
-            label: Text(
-              _isParishioner ? 'Request Service' : 'Schedule Service',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            onPressed: () => showScheduleAppointmentModal(
-              context,
-              initialDate: _selectedDate.weekday == DateTime.monday ? null : _selectedDate,
-              onAppointmentSaved: _loadData,
-            ),
-          ),
         );
       },
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Top Control Header: Month / Week / Day Switcher & Month Navigation
+  // Top Control Header
   // ---------------------------------------------------------------------------
   Widget _buildControlHeader(bool isDesktop) {
     return Container(
@@ -603,9 +632,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       ],
     );
   }
-// =============================================================================
-// FILE: lib/features/dashboard/presentation/pages/parish_calendar_page.dart (PART 2 OF 2)
-// =============================================================================
 
   // ---------------------------------------------------------------------------
   // Master View Switcher
@@ -622,7 +648,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 1. DESKTOP MONTH VIEW: Side-by-Side Split Screen with Pickup Events
+  // 1. DESKTOP MONTH VIEW
   // ===========================================================================
   Widget _buildDesktopSplitMonthView() {
     final selectedDayEvents = _appointmentsForDate(_selectedDate);
@@ -630,13 +656,16 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     final selectedDayPickups = _certificatePickupsForDate(_selectedDate);
     final isSelectedMonday = _selectedDate.weekday == DateTime.monday;
     final isSelectedTuesday = _selectedDate.weekday == DateTime.tuesday;
+    final isPast = _isPastDate(_selectedDate);
+    final isBlocked = LiturgicalCalendarService.isDateBlockedSync(_selectedDate);
+    final bool canSchedule = !isPast && !isSelectedMonday && !isBlocked;
 
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // LEFT PANEL (58% Width): Month Grid
+          // LEFT PANEL (58%): Month Grid
           Expanded(
             flex: 58,
             child: Container(
@@ -663,7 +692,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           ),
           const SizedBox(width: 24),
 
-          // RIGHT PANEL (42% Width): Real-time Selected Date Schedule Details
+          // RIGHT PANEL (42%): Real-time Selected Date Schedule Details
           Expanded(
             flex: 42,
             child: Container(
@@ -737,11 +766,15 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     ),
                     const Divider(height: 24),
 
+                    if (isPast) ...[
+                      _buildPastDateNotice(),
+                      const SizedBox(height: 12),
+                    ],
                     if (isSelectedMonday) ...[
                       _buildMondayBanner(),
                       const SizedBox(height: 12),
                     ],
-                    if (isSelectedTuesday) ...[
+                    if (isSelectedTuesday && !isPast) ...[
                       _buildTuesdayBanner(),
                       const SizedBox(height: 12),
                     ],
@@ -761,16 +794,57 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     ...selectedDayFeasts.map((f) => _buildLiturgicalEventCard(f)),
 
                     const SizedBox(height: 8),
-                    Text(
-                      _isParishioner ? 'My Scheduled Appointments' : 'Pastoral Ceremonies & Appointments',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _isParishioner ? 'My Scheduled Appointments' : 'Pastoral Ceremonies & Appointments',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                        ),
+                        if (canSchedule && selectedDayEvents.isNotEmpty)
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            onPressed: () => _openBookingForDate(_selectedDate),
+                            icon: const Icon(Icons.add, size: 15),
+                            label: Text(_isParishioner ? 'Request' : 'Schedule', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 10),
 
                     if (selectedDayEvents.isEmpty && selectedDayPickups.isEmpty)
-                      _buildEmptyDayCard(isMonday: isSelectedMonday)
-                    else
+                      _buildEmptyDayCard(
+                        isMonday: isSelectedMonday,
+                        isPast: isPast,
+                        isBlocked: isBlocked,
+                      )
+                    else ...[
                       ...selectedDayEvents.map((a) => _buildAppointmentCard(a)),
+                      if (canSchedule) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 40,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: ParishColors.marianBlue.withOpacity(0.5)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => _openBookingForDate(_selectedDate),
+                            icon: const Icon(Icons.add_task, size: 16),
+                            label: Text(
+                              _isParishioner
+                                  ? '+ Request Another Service on This Date'
+                                  : '+ Schedule Another Service on This Date',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ),
@@ -788,6 +862,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     final selectedDayPickups = _certificatePickupsForDate(_selectedDate);
     final isSelectedMonday = _selectedDate.weekday == DateTime.monday;
     final isSelectedTuesday = _selectedDate.weekday == DateTime.tuesday;
+    final isPast = _isPastDate(_selectedDate);
+    final isBlocked = LiturgicalCalendarService.isDateBlockedSync(_selectedDate);
+    final bool canSchedule = !isPast && !isSelectedMonday && !isBlocked;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -809,16 +886,19 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           ),
           const SizedBox(height: 16),
 
+          if (isPast) ...[
+            _buildPastDateNotice(),
+            const SizedBox(height: 12),
+          ],
           if (isSelectedMonday) ...[
             _buildMondayBanner(),
             const SizedBox(height: 12),
           ],
-          if (isSelectedTuesday) ...[
+          if (isSelectedTuesday && !isPast) ...[
             _buildTuesdayBanner(),
             const SizedBox(height: 12),
           ],
 
-          // Certificate Pickups for Mobile
           if (selectedDayPickups.isNotEmpty) ...[
             Text(
               'Certificate Pickups on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
@@ -836,8 +916,8 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             children: [
               Text(
                 _isParishioner
-                    ? 'My Bookings on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}'
-                    : 'Appointments on ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
+                    ? 'My Bookings (${_selectedDate.month}/${_selectedDate.day})'
+                    : 'Appointments (${_selectedDate.month}/${_selectedDate.day})',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.textDark),
               ),
               Container(
@@ -856,9 +936,35 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           const SizedBox(height: 10),
 
           if (selectedDayEvents.isEmpty && selectedDayPickups.isEmpty)
-            _buildEmptyDayCard(isMonday: isSelectedMonday)
-          else
+            _buildEmptyDayCard(
+              isMonday: isSelectedMonday,
+              isPast: isPast,
+              isBlocked: isBlocked,
+            )
+          else ...[
             ...selectedDayEvents.map((a) => _buildAppointmentCard(a)),
+            if (canSchedule) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: ParishColors.marianBlue.withOpacity(0.5)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => _openBookingForDate(_selectedDate),
+                  icon: const Icon(Icons.add_task, size: 16),
+                  label: Text(
+                    _isParishioner
+                        ? '+ Request Another Service on This Date'
+                        : '+ Schedule Another Service on This Date',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -921,6 +1027,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           final thisDate = DateTime(_selectedDate.year, _selectedDate.month, dayNum);
           final isMonday = thisDate.weekday == DateTime.monday;
           final isSelected = dayNum == _selectedDate.day;
+          final isPast = _isPastDate(thisDate);
 
           final dayAppointments = _appointmentsForDate(thisDate);
           final dayFeasts = _liturgicalFeastsForDate(thisDate);
@@ -968,7 +1075,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                               : FontWeight.normal,
                           color: isSelected
                               ? Colors.white
-                              : (isMonday ? const Color(0xFF94A3B8) : ParishColors.textDark),
+                              : (isPast
+                              ? ParishColors.textMuted.withOpacity(0.5)
+                              : (isMonday ? const Color(0xFF94A3B8) : ParishColors.textDark)),
                         ),
                       ),
                       if (isMonday) ...[
@@ -997,7 +1106,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 2. WEEK VIEW: 7-Column Board on Desktop, Stacked on Mobile
+  // 2. WEEK VIEW
   // ===========================================================================
   Widget _buildDesktopWeekBoard() {
     final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday % 7));
@@ -1012,6 +1121,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           final day = weekDays[index];
           final isMonday = day.weekday == DateTime.monday;
           final isSelected = day.day == _selectedDate.day && day.month == _selectedDate.month;
+          final isPast = _isPastDate(day);
 
           final dayAppointments = _appointmentsForDate(day);
           final dayFeasts = _liturgicalFeastsForDate(day);
@@ -1031,7 +1141,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Day Column Header
                   InkWell(
                     onTap: () => setState(() => _selectedDate = day),
                     child: Container(
@@ -1060,7 +1169,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: isSelected ? Colors.white : ParishColors.textDark,
+                              color: isSelected
+                                  ? Colors.white
+                                  : (isPast ? ParishColors.textMuted.withOpacity(0.5) : ParishColors.textDark),
                             ),
                           ),
                         ],
@@ -1068,7 +1179,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     ),
                   ),
 
-                  // Feasts, Pickups & Appointments
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(8),
@@ -1130,7 +1240,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                             Padding(
                               padding: const EdgeInsets.only(top: 12.0),
                               child: Text(
-                                isMonday ? 'Rest Day' : (_isParishioner ? 'No Bookings' : 'Open'),
+                                isPast
+                                    ? 'Archived'
+                                    : (isMonday ? 'Rest Day' : (_isParishioner ? 'No Bookings' : 'Open')),
                                 style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
                               ),
                             )
@@ -1187,6 +1299,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
         final day = weekDays[index];
         final isMonday = day.weekday == DateTime.monday;
         final isSelected = day.day == _selectedDate.day && day.month == _selectedDate.month;
+        final isPast = _isPastDate(day);
 
         final dayAppointments = _appointmentsForDate(day);
         final dayFeasts = _liturgicalFeastsForDate(day);
@@ -1227,7 +1340,11 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                         const SizedBox(width: 8),
                         Text(
                           '${day.month}/${day.day}',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: isPast ? ParishColors.textMuted.withOpacity(0.6) : ParishColors.textDark,
+                          ),
                         ),
                         if (isMonday) ...[
                           const SizedBox(width: 8),
@@ -1289,7 +1406,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 Padding(
                   padding: const EdgeInsets.all(12.0),
                   child: Text(
-                    isMonday ? 'Closed for Pastoral Rest Day.' : 'No events scheduled.',
+                    isPast
+                        ? 'Past date recorded.'
+                        : (isMonday ? 'Closed for Pastoral Rest Day.' : 'No events scheduled.'),
                     style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
                   ),
                 )
@@ -1306,11 +1425,12 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 3. DAY VIEW: Desktop Split vs Mobile Stack with Pickup Schedule
+  // 3. DAY VIEW
   // ===========================================================================
   Widget _buildDayView(bool isDesktop) {
     final isMonday = _selectedDate.weekday == DateTime.monday;
     final isTuesday = _selectedDate.weekday == DateTime.tuesday;
+    final isPast = _isPastDate(_selectedDate);
     final dayAppointments = _appointmentsForDate(_selectedDate);
     final dayFeasts = _liturgicalFeastsForDate(_selectedDate);
     final dayPickups = _certificatePickupsForDate(_selectedDate);
@@ -1338,8 +1458,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                     ),
                     const SizedBox(height: 14),
 
+                    if (isPast) _buildPastDateNotice(),
                     if (isMonday) _buildMondayBanner(),
-                    if (isTuesday) _buildTuesdayBanner(),
+                    if (isTuesday && !isPast) _buildTuesdayBanner(),
 
                     if (dayPickups.isNotEmpty) ...[
                       Text('Certificate Pickups Scheduled Today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
@@ -1357,7 +1478,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             Expanded(
               flex: 6,
               child: ListView(
-                children: hours.map((hour) => _buildHourSlot(hour, dayAppointments, isMonday)).toList(),
+                children: hours.map((hour) => _buildHourSlot(hour, dayAppointments, isMonday, isPast)).toList(),
               ),
             ),
           ],
@@ -1368,8 +1489,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (isPast) _buildPastDateNotice(),
         if (isMonday) _buildMondayBanner(),
-        if (isTuesday) _buildTuesdayBanner(),
+        if (isTuesday && !isPast) _buildTuesdayBanner(),
         if (dayPickups.isNotEmpty) ...[
           Text('Certificate Pickups Scheduled Today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
           const SizedBox(height: 8),
@@ -1378,12 +1500,12 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
         ],
         ...dayFeasts.map((f) => _buildLiturgicalEventCard(f)),
         const SizedBox(height: 10),
-        ...hours.map((hour) => _buildHourSlot(hour, dayAppointments, isMonday)),
+        ...hours.map((hour) => _buildHourSlot(hour, dayAppointments, isMonday, isPast)),
       ],
     );
   }
 
-  Widget _buildHourSlot(int hour, List<AppointmentModel> dayAppointments, bool isMonday) {
+  Widget _buildHourSlot(int hour, List<AppointmentModel> dayAppointments, bool isMonday, bool isPast) {
     final timeLabel = hour < 12
         ? '${hour.toString().padLeft(2, '0')}:00 AM'
         : (hour == 12 ? '12:00 PM' : '${(hour - 12).toString().padLeft(2, '0')}:00 PM');
@@ -1415,32 +1537,28 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: isMonday ? const Color(0xFFF8FAFC) : ParishColors.cardWhite,
+              color: (isMonday || isPast) ? const Color(0xFFF8FAFC) : ParishColors.cardWhite,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isMonday ? const Color(0xFFE2E8F0) : ParishColors.borderGrey),
+              border: Border.all(color: (isMonday || isPast) ? const Color(0xFFE2E8F0) : ParishColors.borderGrey),
             ),
             child: slotAppointments.isEmpty
                 ? InkWell(
-              onTap: isMonday
-                  ? null
-                  : () => showScheduleAppointmentModal(
-                context,
-                initialDate: _selectedDate,
-                onAppointmentSaved: _loadData,
-              ),
+              onTap: (isMonday || isPast) ? null : () => _openBookingForDate(_selectedDate),
               child: Row(
                 children: [
                   Icon(
-                    isMonday ? Icons.block : Icons.add_circle_outline,
+                    isMonday || isPast ? Icons.block : Icons.add_circle_outline,
                     size: 16,
-                    color: isMonday ? const Color(0xFF94A3B8) : colorAppointments,
+                    color: isMonday || isPast ? const Color(0xFF94A3B8) : colorAppointments,
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    isMonday ? 'Monday Locked' : 'Available (Tap to book)',
+                    isPast
+                        ? 'Past Slot (Archived)'
+                        : (isMonday ? 'Monday Locked' : 'Available (Tap to book)'),
                     style: TextStyle(
                       fontSize: 12,
-                      color: isMonday ? const Color(0xFF94A3B8) : ParishColors.textMuted,
+                      color: isMonday || isPast ? const Color(0xFF94A3B8) : ParishColors.textMuted,
                     ),
                   ),
                 ],
@@ -1515,6 +1633,40 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             Icon(Icons.arrow_forward_ios, size: 12, color: ParishColors.textMuted),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPastDateNotice() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.history, color: Color(0xFF64748B), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Past Date (Historical Ledger)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF334155)),
+                ),
+                Text(
+                  'This date has passed. Bookings are only accepted for today and future calendar dates.',
+                  style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1745,48 +1897,67 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     );
   }
 
-  Widget _buildEmptyDayCard({bool isMonday = false}) {
+  Widget _buildEmptyDayCard({
+    bool isMonday = false,
+    bool isPast = false,
+    bool isBlocked = false,
+  }) {
+    IconData icon = Icons.event_available;
+    String title = _isParishioner ? 'No Personal Bookings' : 'No Appointments Booked';
+    String message = 'This day is open for bookings within 9:00 AM – 5:00 PM.';
+
+    if (isPast) {
+      icon = Icons.history;
+      title = 'Past Date (Archived)';
+      message = 'This date has passed. Bookings are only accepted for today and future calendar dates.';
+    } else if (isMonday) {
+      icon = Icons.lock_clock;
+      title = 'Pastoral Rest Day';
+      message = 'The Parish Office is closed on Mondays for Clergy Rest and Sanctuary Care.';
+    } else if (isBlocked) {
+      icon = Icons.church;
+      title = 'Liturgical Solemnity';
+      message = 'Pastoral bookings are restricted today due to a major Catholic solemnity.';
+    }
+
+    final bool canBook = !isPast && !isMonday && !isBlocked;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: isMonday ? const Color(0xFFF1F5F9) : ParishColors.backgroundLight,
+        color: (isMonday || isPast) ? const Color(0xFFF1F5F9) : ParishColors.backgroundLight,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: isMonday ? const Color(0xFFCBD5E1) : ParishColors.borderGrey),
+        border: Border.all(color: (isMonday || isPast) ? const Color(0xFFCBD5E1) : ParishColors.borderGrey),
       ),
       child: Column(
         children: [
           Icon(
-            isMonday ? Icons.lock_clock : Icons.event_available,
+            icon,
             size: 36,
-            color: isMonday ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive,
+            color: (isMonday || isPast) ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive,
           ),
           const SizedBox(height: 8),
           Text(
-            isMonday ? 'Pastoral Rest Day' : (_isParishioner ? 'No Personal Bookings Today' : 'No Appointments Booked'),
+            title,
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
-            isMonday
-                ? 'The Parish Office is closed on Mondays.'
-                : 'This day is open for bookings within 9:00 AM – 5:00 PM.',
+            message,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
           ),
-          if (!isMonday) ...[
-            const SizedBox(height: 12),
+          if (canBook) ...[
+            const SizedBox(height: 14),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: ParishColors.marianBlue,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
-              onPressed: () => showScheduleAppointmentModal(
-                context,
-                initialDate: _selectedDate,
-                onAppointmentSaved: _loadData,
-              ),
+              onPressed: () => _openBookingForDate(_selectedDate),
               icon: const Icon(Icons.add, size: 16),
               label: Text(_isParishioner ? 'Request This Date' : 'Book This Day'),
             ),

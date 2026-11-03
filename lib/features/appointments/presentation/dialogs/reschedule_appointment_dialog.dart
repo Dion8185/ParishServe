@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/appointments/presentation/dialogs/reschedule_appointment_dialog.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
@@ -85,10 +89,21 @@ class _RescheduleAppointmentDialogState
   void initState() {
     super.initState();
     final a = widget.appointment;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final minDuration = AppointmentService.getMinimumDurationMinutes(a.serviceType);
+
     var target = a.requestedDate.add(const Duration(days: 7));
-    while (target.weekday == DateTime.monday ||
+    if (target.isBefore(today)) {
+      target = today.add(const Duration(days: 1));
+    }
+
+    while (target.isBefore(today) ||
+        target.weekday == DateTime.monday ||
         LiturgicalCalendarService.isDateBlockedSync(target) ||
-        (_isCommunityBaptism && target.weekday != DateTime.saturday && target.weekday != DateTime.sunday)) {
+        (_isCommunityBaptism &&
+            target.weekday != DateTime.saturday &&
+            target.weekday != DateTime.sunday)) {
       target = target.add(const Duration(days: 1));
     }
     _newDate = target;
@@ -98,12 +113,21 @@ class _RescheduleAppointmentDialogState
       _newEndTime = const TimeOfDay(hour: 12, minute: 0);
     } else {
       _newStartTime = _parseTimeOfDay(a.requestedTime);
-      _newEndTime = _parseTimeOfDay(a.endTime);
+      final startMin = _newStartTime.hour * 60 + _newStartTime.minute;
+
+      if (startMin < AppointmentService.operatingDayStartMin) {
+        _newStartTime = const TimeOfDay(hour: 10, minute: 0);
+      } else if (startMin + minDuration > AppointmentService.operatingDayEndMin) {
+        final maxStart = AppointmentService.operatingDayEndMin - minDuration;
+        _newStartTime = AppointmentService.minutesToTimeOfDay(maxStart);
+      }
+
+      _newEndTime = _addMinutes(_newStartTime, minDuration);
     }
 
     _venue = a.venue;
 
-    // Normalize officiant string to prevent dropdown assertion failures from legacy records
+    // Normalize officiant string to prevent dropdown assertion failures
     final rawOfficiant = a.officiantName.trim();
     if (_officiants.contains(rawOfficiant)) {
       _officiant = rawOfficiant;
@@ -187,10 +211,12 @@ class _RescheduleAppointmentDialogState
 
     if (warning != null) {
       final duration = _getDurationMinutes(_newStartTime, _newEndTime);
+      final minDuration =
+      AppointmentService.getMinimumDurationMinutes(widget.appointment.serviceType);
 
       final nextSlot = await AppointmentService.findNextAvailableSlot(
         date: dateStr,
-        durationMinutes: duration > 0 ? duration : 60,
+        durationMinutes: duration >= minDuration ? duration : minDuration,
         venue: _venue,
         officiant: _officiant,
         preferredStartTime: _newStartTime,
@@ -225,15 +251,21 @@ class _RescheduleAppointmentDialogState
   Future<void> _pickDate() async {
     await LiturgicalCalendarService.getCalendarForYear(_newDate.year);
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _newDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: _newDate.isBefore(today) ? today : _newDate,
+      firstDate: today, // STRICTLY blocks picking past dates
+      lastDate: today.add(const Duration(days: 365)),
       selectableDayPredicate: (DateTime day) {
+        if (day.isBefore(today)) return false;
         if (day.weekday == DateTime.monday) return false;
         if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
-        if (_isCommunityBaptism && day.weekday != DateTime.saturday && day.weekday != DateTime.sunday) {
+        if (_isCommunityBaptism &&
+            day.weekday != DateTime.saturday &&
+            day.weekday != DateTime.sunday) {
           return false;
         }
         return true;
@@ -246,6 +278,9 @@ class _RescheduleAppointmentDialogState
   }
 
   Future<void> _pickTime(bool isStart) async {
+    final minDuration =
+    AppointmentService.getMinimumDurationMinutes(widget.appointment.serviceType);
+
     if (_isCommunityBaptism) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -262,34 +297,80 @@ class _RescheduleAppointmentDialogState
       context: context,
       initialTime: initial,
     );
-    if (picked != null) {
-      final totalMin = picked.hour * 60 + picked.minute;
 
-      // Operating Hours Enforcement: 9:00 AM to 5:00 PM
-      if (totalMin < AppointmentService.operatingDayStartMin ||
-          totalMin > AppointmentService.operatingDayEndMin) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Parish appointments must be scheduled between 9:00 AM and 5:00 PM.'),
-            backgroundColor: ParishColors.mercyRed,
-            duration: Duration(seconds: 3),
-          ),
-        );
-        return;
+    if (picked != null) {
+      final pickedMinutes = picked.hour * 60 + picked.minute;
+
+      if (isStart) {
+        if (pickedMinutes < AppointmentService.operatingDayStartMin) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Parish appointments must be scheduled between 9:00 AM and 5:00 PM.'),
+              backgroundColor: ParishColors.mercyRed,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        // Start time + duration cannot exceed 5:00 PM closing
+        if (pickedMinutes + minDuration > AppointmentService.operatingDayEndMin) {
+          final maxStart = AppointmentService.operatingDayEndMin - minDuration;
+          final maxStartTod = AppointmentService.minutesToTimeOfDay(maxStart);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${widget.appointment.serviceType} ($minDuration mins) must conclude by 5:00 PM. Latest start time is ${_formatTime12Hour(maxStartTod)}.',
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _newStartTime = picked;
+          _newEndTime = _addMinutes(picked, minDuration); // Automatically keeps end time aligned
+        });
+      } else {
+        final startMinutes = _newStartTime.hour * 60 + _newStartTime.minute;
+
+        if (pickedMinutes > AppointmentService.operatingDayEndMin) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('End time cannot exceed parish operating hours (5:00 PM).'),
+              backgroundColor: ParishColors.mercyRed,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        // Prohibit manual end time adjustments shorter than sacrament threshold
+        if (pickedMinutes - startMinutes < minDuration) {
+          final requiredEndTod = _addMinutes(_newStartTime, minDuration);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${widget.appointment.serviceType} requires at least $minDuration minutes. End time cannot be earlier than ${_formatTime12Hour(requiredEndTod)}.',
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _newEndTime = picked;
+        });
       }
 
-      setState(() {
-        if (isStart) {
-          _newStartTime = picked;
-          final durationMinutes =
-          _getDurationMinutes(_newStartTime, _newEndTime);
-          _newEndTime = _addMinutes(
-              picked, durationMinutes > 0 ? durationMinutes : 60);
-        } else {
-          _newEndTime = picked;
-        }
-      });
       _runLiveConflictCheck();
     }
   }
@@ -338,6 +419,30 @@ class _RescheduleAppointmentDialogState
     setState(() => _errorMessage = null);
 
     if (!_formKey.currentState!.validate()) return;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(_newDate.year, _newDate.month, _newDate.day);
+
+    if (targetDay.isBefore(today)) {
+      const msg = 'Cannot reschedule appointments to past dates.';
+      setState(() => _errorMessage = msg);
+      _showConflictPromptDialog(msg);
+      return;
+    }
+
+    final minDuration =
+    AppointmentService.getMinimumDurationMinutes(widget.appointment.serviceType);
+    final startMin = _newStartTime.hour * 60 + _newStartTime.minute;
+    final endMin = _newEndTime.hour * 60 + _newEndTime.minute;
+
+    if (endMin - startMin < minDuration) {
+      final msg =
+          '${widget.appointment.serviceType} requires at least $minDuration minutes duration.';
+      setState(() => _errorMessage = msg);
+      _showConflictPromptDialog(msg);
+      return;
+    }
 
     final startStr = _formatTimeOfDay(_newStartTime);
     final endStr = _formatTimeOfDay(_newEndTime);
@@ -490,7 +595,11 @@ class _RescheduleAppointmentDialogState
                               Expanded(
                                 child: Text(
                                   _errorMessage!,
-                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.mercyRed,
+                                  ),
                                 ),
                               ),
                             ],
@@ -510,10 +619,19 @@ class _RescheduleAppointmentDialogState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('CURRENT SCHEDULE:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted)),
+                            Text(
+                              'CURRENT SCHEDULE:',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
+                            ),
                             const SizedBox(height: 2),
-                            Text('${a.formattedDate} • ${a.formattedTimeRange}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                            Text('Venue: ${a.venue} • Presider: ${a.officiantName}', style: TextStyle(fontSize: 12, color: textMuted)),
+                            Text(
+                              '${a.formattedDate} • ${a.formattedTimeRange}',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                            ),
+                            Text(
+                              'Venue: ${a.venue} • Presider: ${a.officiantName}',
+                              style: TextStyle(fontSize: 12, color: textMuted),
+                            ),
                           ],
                         ),
                       ),
@@ -585,7 +703,10 @@ class _RescheduleAppointmentDialogState
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(_isCommunityBaptism ? 'New Start Time (Locked)' : 'New Start Time (9AM–5PM) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                Text(
+                                  _isCommunityBaptism ? 'New Start Time (Locked)' : 'New Start Time (9AM–5PM) *',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                ),
                                 const SizedBox(height: 6),
                                 InkWell(
                                   onTap: () => _pickTime(true),
@@ -602,7 +723,10 @@ class _RescheduleAppointmentDialogState
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(_formatTime12Hour(_newStartTime), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                        Text(
+                                          _formatTime12Hour(_newStartTime),
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                        ),
                                         Icon(
                                           _isCommunityBaptism ? Icons.lock_outline : Icons.access_time,
                                           size: 18,
@@ -620,7 +744,10 @@ class _RescheduleAppointmentDialogState
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('New End Time *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                Text(
+                                  'New End Time *',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                ),
                                 const SizedBox(height: 6),
                                 InkWell(
                                   onTap: () => _pickTime(false),
@@ -635,7 +762,10 @@ class _RescheduleAppointmentDialogState
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(_formatTime12Hour(_newEndTime), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                        Text(
+                                          _formatTime12Hour(_newEndTime),
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                        ),
                                         Icon(Icons.access_time, size: 18, color: ParishColors.marianBlueAdaptive),
                                       ],
                                     ),
@@ -730,7 +860,11 @@ class _RescheduleAppointmentDialogState
                                 _isCommunityBaptism
                                     ? 'Community Baptism 11:00 AM slot is open.'
                                     : 'Reschedule slot is open and available (9AM–5PM).',
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: ParishColors.oliveGreen,
+                                ),
                               ),
                             ],
                           ),
@@ -739,13 +873,23 @@ class _RescheduleAppointmentDialogState
                       const SizedBox(height: 14),
 
                       // Venue Selector
-                      Text(_isParishioner ? 'Parish Venue (Staff Assigned)' : 'Parish Venue *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                      Text(
+                        _isParishioner ? 'Parish Venue (Staff Assigned)' : 'Parish Venue *',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                      ),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
                         value: _venue,
                         isExpanded: true,
-                        items: _venues.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
-                        onChanged: _isParishioner ? null : (val) {
+                        items: _venues
+                            .map((v) => DropdownMenuItem(
+                          value: v,
+                          child: Text(v, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                        ))
+                            .toList(),
+                        onChanged: _isParishioner
+                            ? null
+                            : (val) {
                           if (val != null) {
                             setState(() => _venue = val);
                             _runLiveConflictCheck();
@@ -753,15 +897,25 @@ class _RescheduleAppointmentDialogState
                         },
                         decoration: InputDecoration(
                           filled: true,
-                          fillColor: _isParishioner ? ParishColors.borderGrey.withOpacity(0.15) : ParishColors.backgroundLight,
+                          fillColor: _isParishioner
+                              ? ParishColors.borderGrey.withOpacity(0.15)
+                              : ParishColors.backgroundLight,
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderGrey)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: borderGrey),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 14),
 
                       // Presiding Clergy
-                      Text(_isParishioner ? 'Presiding Clergy (Parish Assigned: Rev. Fr. Roy)' : 'Presiding Clergy *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                      Text(
+                        _isParishioner
+                            ? 'Presiding Clergy (Parish Assigned: Rev. Fr. Roy)'
+                            : 'Presiding Clergy *',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                      ),
                       const SizedBox(height: 6),
                       _isParishioner
                           ? TextFormField(
@@ -773,13 +927,21 @@ class _RescheduleAppointmentDialogState
                           fillColor: ParishColors.borderGrey.withOpacity(0.15),
                           prefixIcon: Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderGrey)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: borderGrey),
+                          ),
                         ),
                       )
                           : DropdownButtonFormField<String>(
                         value: _officiants.contains(_officiant) ? _officiant : 'Rev. Fr. Roy',
                         isExpanded: true,
-                        items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                        items: _officiants
+                            .map((o) => DropdownMenuItem(
+                          value: o,
+                          child: Text(o, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                        ))
+                            .toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setState(() => _officiant = val);
@@ -790,12 +952,18 @@ class _RescheduleAppointmentDialogState
                           filled: true,
                           fillColor: ParishColors.backgroundLight,
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderGrey)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: borderGrey),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
 
-                      Text('Reason for Rescheduling *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                      Text(
+                        'Reason for Rescheduling *',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                      ),
                       const SizedBox(height: 6),
                       Wrap(
                         spacing: 6,
@@ -824,7 +992,10 @@ class _RescheduleAppointmentDialogState
                           hintText: 'Tap a chip above or type custom reason...',
                           filled: true,
                           fillColor: ParishColors.backgroundLight,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderGrey)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: borderGrey),
+                          ),
                         ),
                       ),
                     ],
@@ -862,7 +1033,10 @@ class _RescheduleAppointmentDialogState
                       ),
                       onPressed: _isSubmitting ? null : _confirmReschedule,
                       icon: _isSubmitting
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.check, size: 20),
                       label: Text(
                         _isSubmitting

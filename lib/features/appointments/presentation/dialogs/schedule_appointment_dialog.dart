@@ -1,5 +1,5 @@
 // =============================================================================
-// FILE: lib/features/appointments/presentation/dialogs/schedule_appointment_dialog.dart (PART 1 OF 2)
+// FILE: lib/features/appointments/presentation/dialogs/schedule_appointment_dialog.dart
 // =============================================================================
 
 import 'dart:async';
@@ -110,884 +110,1028 @@ class _ScheduleAppointmentDialog extends StatefulWidget {
   });
 
   @override
-  State<_ScheduleAppointmentDialog> createState() => _ScheduleAppointmentDialogState();
+  State<_ScheduleAppointmentDialog> createState() =>
+      _ScheduleAppointmentDialogState();
 }
 
 class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> {
-final _formKey = GlobalKey<FormState>();
-
-final _requesterNameController = TextEditingController();
-final _contactNumberController = TextEditingController();
-final _emailController = TextEditingController();
-final _idNumberController = TextEditingController();
-final _remarksController = TextEditingController();
-
-final FocusNode _nameFocusNode = FocusNode();
-final FocusNode _contactFocusNode = FocusNode();
-final FocusNode _emailFocusNode = FocusNode();
-
-String _selectedService = 'Nuptial Mass (Wedding)';
-String _selectedVenue = 'Main Church Altar';
-String _selectedOfficiant = 'Rev. Fr. Roy';
-String _selectedIdType = 'Philippine National ID (PhilID / ePhilID)';
-
-// In-Memory Temporary Image File State (Zero storage writes until submission)
-Uint8List? _attachedIdFileBytes;
-String? _attachedIdFileName;
-int? _attachedIdFileSize;
-bool _idFileHasError = false;
-
-// Upload & File Picker Rate Limiter State
-DateTime? _lastFilePickAttemptTime;
-final List<DateTime> _recentAttachmentAttempts = [];
-static const int _maxAttachmentAttemptsPerWindow = 5;
-static const Duration _rateLimitWindow = Duration(minutes: 5);
-static const Duration _pickCooldown = Duration(seconds: 3);
-
-late DateTime _selectedDate;
-TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
-late TimeOfDay _endTime;
-
-bool _isSubmitting = false;
-String? _errorMessage;
-
-// Live Validation & Smart Conflict State
-bool _isLiveChecking = false;
-String? _liveConflictWarning;
-String? _duplicateRequesterWarning;
-Map<String, TimeOfDay>? _suggestedSlot;
-Timer? _debounceTimer;
-
-static const String _draftStorageKey = 'parishserve_draft_appointment_form';
-
-bool get _isParishioner =>
-AuthService.currentUser?.userRole.toLowerCase() == 'user';
-
-static const List<String> _keyboardWalks = [
-'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
-'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
-'zxcv', 'xcvb', 'cvbn', 'vbnm',
-'fdsa', 'gfds', 'hgfd', 'jhgf', 'kjhg', 'lkjh',
-'rewq', 'trew', 'ytre', 'uytr', 'iuyt', 'poiuy',
-'vcxz', 'bvcx', 'nbvc', 'mnbv',
-];
-
-final List<String> _philippineIdTypes = const [
-'Philippine National ID (PhilID / ePhilID)',
-'Driver\'s License (LTO)',
-'UMID (SSS / GSIS)',
-'Passport (DFA)',
-'Postal ID (PhilPost)',
-'Senior Citizen ID',
-'Voter\'s ID / Certification (COMELEC)',
-'Barangay ID / Certificate of Residency',
-'PRC Professional ID',
-'Solo Parent / PWD ID',
-];
-
-final Map<String, _ServicePreset> _presets = const {
-'Nuptial Mass (Wedding)': _ServicePreset(
-durationMinutes: 90,
-defaultVenue: 'Main Church Altar',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '1 hr 30 mins',
-),
-'Community Baptism': _ServicePreset(
-durationMinutes: 60,
-defaultVenue: 'Baptistery & Main Altar',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '1 hour (11:00 AM Batch)',
-isCommunityBaptism: true,
-),
-'Funeral Mass & Blessing': _ServicePreset(
-durationMinutes: 60,
-defaultVenue: 'Main Church Altar',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '1 hour',
-),
-'Anointing of the Sick & Viaticum': _ServicePreset(
-durationMinutes: 45,
-defaultVenue: 'Off-site / Home Visit',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '45 mins',
-),
-'House / Business Blessing': _ServicePreset(
-durationMinutes: 45,
-defaultVenue: 'Off-site / Home Visit',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '45 mins',
-),
-'Thanksgiving Mass Intention': _ServicePreset(
-durationMinutes: 60,
-defaultVenue: 'Main Church Altar',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '1 hour',
-),
-'Canonical Interview / Pre-Cana': _ServicePreset(
-durationMinutes: 45,
-defaultVenue: 'Sanctuary / Sacristy',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '45 mins',
-),
-'Confession & Spiritual Direction': _ServicePreset(
-durationMinutes: 30,
-defaultVenue: 'Sanctuary / Sacristy',
-defaultOfficiant: 'Rev. Fr. Roy',
-durationLabel: '30 mins',
-),
-};
-
-final List<String> _venues = [
-'Main Church Altar',
-'Baptistery & Main Altar',
-'Parish Hall',
-'Mortuary Chapel',
-'Sanctuary / Sacristy',
-'Off-site / Home Visit',
-];
-
-final List<String> _officiants = [
-'Rev. Fr. Roy',
-'Guest Priest / Visiting Clergy',
-];
-
-@override
-void initState() {
-super.initState();
-
-final user = AuthService.currentUser;
-if (user != null && _isParishioner) {
-_requesterNameController.text = user.fullName;
-_emailController.text = user.email;
-}
-
-if (widget.initialDate != null) {
-var target = DateTime(
-widget.initialDate!.year,
-widget.initialDate!.month,
-widget.initialDate!.day,
-);
-if (_presets[_selectedService]?.isCommunityBaptism == true &&
-target.weekday != DateTime.saturday &&
-target.weekday != DateTime.sunday) {
-target = _getInitialValidDate();
-}
-_selectedDate = target;
-} else {
-_selectedDate = _getInitialValidDate();
-}
-
-_applyPresetInitialTimes();
-LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
-
-_nameFocusNode.addListener(() => setState(() {}));
-_contactFocusNode.addListener(() => setState(() {}));
-_emailFocusNode.addListener(() => setState(() {}));
-
-_restoreDraft();
-_runLiveConflictCheck();
-}
-
-// ===========================================================================
-// Robust Full Name Validation Rules (Anti-Spam & Anti-Gibberish)
-// ===========================================================================
-
-String? _validateFullName(String? value) {
-if (value == null || value.trim().isEmpty) {
-return 'Requester full name is required.';
-}
-if (value.startsWith(' ')) {
-return 'Name cannot begin with a space.';
-}
-if (value.endsWith(' ')) {
-return 'Name cannot end with a trailing space.';
-}
-if (value.contains(RegExp(r'\s{2,}'))) {
-return 'Name cannot contain consecutive spaces.';
-}
-
-final trimmed = value.trim();
-if (trimmed.length < 2) {
-return 'Name must be at least 2 characters.';
-}
-if (trimmed.length > 70) {
-return 'Name cannot exceed 70 characters.';
-}
-
-final nameRegex = RegExp(r"^[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s.\-’']+$");
-if (!nameRegex.hasMatch(trimmed)) {
-return 'Name contains invalid characters (letters, hyphens, and spaces only).';
-}
-
-final lower = trimmed.toLowerCase();
-
-// 1. Reject 3 or more identical letters consecutively (e.g. aaaaa, bbbb)
-if (RegExp(r'(.)\1{2,}', caseSensitive: false).hasMatch(trimmed)) {
-return 'Name cannot contain 3 or more identical letters consecutively.';
-}
-
-// 2. Reject repetitive patterns (e.g. asdasdasd, hahahaha, qweqwe)
-if (RegExp(r'(.{2,4})\1{2,}', caseSensitive: false).hasMatch(lower)) {
-return 'Please enter a genuine name (repetitive text pattern detected).';
-}
-
-// 3. Reject QWERTY keyboard walks
-for (final walk in _keyboardWalks) {
-if (lower.contains(walk)) {
-return 'Please enter a genuine name (keyboard sequence detected).';
-}
-}
-
-// 4. Pronounceability / Vowel check for names with 3+ letters
-final onlyLetters = lower.replaceAll(RegExp(r'[^a-zà-ÿñ]'), '');
-if (onlyLetters.length >= 3) {
-final hasVowel = RegExp(r'[aeiouyà-ÿ]').hasMatch(onlyLetters);
-if (!hasVowel) {
-return 'Name must contain at least one vowel sound.';
-}
-
-// Reject 5+ consecutive consonants
-if (RegExp(r'[bcdfghjklmnpqrstvwxz]{5,}').hasMatch(onlyLetters)) {
-return 'Name contains too many consecutive consonants.';
-}
-}
-
-return null;
-}
-
-bool get _isNameValid {
-return _validateFullName(_requesterNameController.text) == null;
-}
-
-bool get _isPhoneValid {
-return SacramentalValidators.validatePhoneNumber(_contactNumberController.text) == null &&
-_contactNumberController.text.trim().isNotEmpty;
-}
-
-bool get _isEmailValid {
-final text = _emailController.text.trim();
-if (text.isEmpty) return !_isParishioner;
-return RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(text);
-}
-
-// ===========================================================================
-// Draft Persistence Lifecycle
-// ===========================================================================
-
-Future<void> _saveDraft() async {
-try {
-final prefs = await SharedPreferences.getInstance();
-final draftMap = {
-'service': _selectedService,
-'requesterName': _requesterNameController.text.trim(),
-'contact': _contactNumberController.text.trim(),
-'email': _emailController.text.trim(),
-'idType': _selectedIdType,
-'idNumber': _idNumberController.text.trim(),
-'remarks': _remarksController.text.trim(),
-'venue': _selectedVenue,
-'officiant': _selectedOfficiant,
-'date': _selectedDate.toIso8601String(),
-'startHour': _startTime.hour,
-'startMinute': _startTime.minute,
-};
-await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
-} catch (_) {}
-}
-
-Future<void> _restoreDraft() async {
-try {
-final prefs = await SharedPreferences.getInstance();
-final raw = prefs.getString(_draftStorageKey);
-if (raw != null && raw.isNotEmpty) {
-final map = jsonDecode(raw) as Map<String, dynamic>;
-if (mounted) {
-setState(() {
-if (!_isParishioner && map['requesterName'] != null && (map['requesterName'] as String).isNotEmpty) {
-_requesterNameController.text = map['requesterName'];
-}
-if (_contactNumberController.text.isEmpty && map['contact'] != null) {
-_contactNumberController.text = map['contact'];
-}
-if (!_isParishioner && map['email'] != null && (map['email'] as String).isNotEmpty) {
-_emailController.text = map['email'];
-}
-if (map['idNumber'] != null) _idNumberController.text = map['idNumber'];
-if (map['remarks'] != null) _remarksController.text = map['remarks'];
-if (map['service'] != null && _presets.containsKey(map['service'])) {
-_selectedService = map['service'];
-}
-if (map['venue'] != null && _venues.contains(map['venue'])) {
-_selectedVenue = map['venue'];
-}
-if (map['officiant'] != null && _officiants.contains(map['officiant'])) {
-_selectedOfficiant = _isParishioner ? 'Rev. Fr. Roy' : map['officiant'];
-}
-if (map['idType'] != null && _philippineIdTypes.contains(map['idType'])) {
-_selectedIdType = map['idType'];
-}
-});
-}
-}
-} catch (_) {}
-}
-
-Future<void> _clearDraft() async {
-try {
-final prefs = await SharedPreferences.getInstance();
-await prefs.remove(_draftStorageKey);
-} catch (_) {}
-}
-
-DateTime _getInitialValidDate() {
-var date = DateTime.now().add(const Duration(days: 1));
-final isCommunity = _presets[_selectedService]?.isCommunityBaptism ?? false;
-
-while (date.weekday == DateTime.monday ||
-LiturgicalCalendarService.isDateBlockedSync(date) ||
-(isCommunity && date.weekday != DateTime.saturday && date.weekday != DateTime.sunday)) {
-date = date.add(const Duration(days: 1));
-}
-return DateTime(date.year, date.month, date.day);
-}
-
-@override
-void dispose() {
-_debounceTimer?.cancel();
-_requesterNameController.dispose();
-_contactNumberController.dispose();
-_emailController.dispose();
-_idNumberController.dispose();
-_remarksController.dispose();
-_nameFocusNode.dispose();
-_contactFocusNode.dispose();
-_emailFocusNode.dispose();
-super.dispose();
-}
-
-TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
-final totalMinutes = (time.hour * 60) + time.minute + minutesToAdd;
-final newHour = (totalMinutes ~/ 60) % 24;
-final newMinute = totalMinutes % 60;
-return TimeOfDay(hour: newHour, minute: newMinute);
-}
-
-void _applyPresetInitialTimes() {
-final preset = _presets[_selectedService]!;
-if (preset.isCommunityBaptism) {
-_startTime = const TimeOfDay(hour: 11, minute: 0);
-} else {
-if (_startTime.hour < 9 || _startTime.hour >= 17) {
-_startTime = const TimeOfDay(hour: 10, minute: 0);
-}
-}
-_endTime = _addMinutes(_startTime, preset.durationMinutes);
-}
-
-String _formatTimeOfDay(TimeOfDay time) {
-final h = time.hour.toString().padLeft(2, '0');
-final m = time.minute.toString().padLeft(2, '0');
-return '$h:$m:00';
-}
-
-String _formatTime12Hour(TimeOfDay time) {
-final hour = time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
-final period = time.hour >= 12 ? 'PM' : 'AM';
-final minute = time.minute.toString().padLeft(2, '0');
-return '$hour:$minute $period';
-}
-
-// ===========================================================================
-// Rate-Limited In-Memory Image Selection (Zero Cloud Upload on Pick)
-// ===========================================================================
-
-Future<void> _pickIdDocument() async {
-final now = DateTime.now();
-
-// 1. Enforce short cooldown between picker taps
-if (_lastFilePickAttemptTime != null &&
-now.difference(_lastFilePickAttemptTime!) < _pickCooldown) {
-final waitSec = _pickCooldown.inSeconds - now.difference(_lastFilePickAttemptTime!).inSeconds;
-if (!mounted) return;
-ScaffoldMessenger.of(context).showSnackBar(
-SnackBar(
-content: Text('Please wait $waitSec second(s) before choosing another file.'),
-backgroundColor: ParishColors.goldAccent,
-duration: const Duration(seconds: 2),
-),
-);
-return;
-}
-
-// 2. Enforce sliding-window rate limit
-_recentAttachmentAttempts.removeWhere((t) => now.difference(t) > _rateLimitWindow);
-if (_recentAttachmentAttempts.length >= _maxAttachmentAttemptsPerWindow) {
-if (!mounted) return;
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(
-content: Text('Rate limit reached: Maximum 5 file selections per 5 minutes. Please wait a moment.'),
-backgroundColor: ParishColors.mercyRed,
-duration: const Duration(seconds: 4),
-),
-);
-return;
-}
-
-_lastFilePickAttemptTime = now;
-_recentAttachmentAttempts.add(now);
-
-try {
-final PlatformFile? file = await FilePicker.pickFile(
-type: FileType.custom,
-allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-);
-
-if (file != null) {
-final int fileSize = (await file.length()) ?? 0;
-if (fileSize > 5 * 1024 * 1024) {
-if (!mounted) return;
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(
-content: Text('File size exceeds 5MB limit. Please attach a smaller image or compressed PDF.'),
-backgroundColor: ParishColors.mercyRed,
-),
-);
-return;
-}
-
-final Uint8List bytes = await file.readAsBytes();
-
-// Kept purely in memory without sending network bytes to Supabase Storage
-setState(() {
-_attachedIdFileBytes = bytes;
-_attachedIdFileName = file.name;
-_attachedIdFileSize = fileSize;
-_idFileHasError = false;
-});
-
-if (mounted) {
-ScaffoldMessenger.of(context).showSnackBar(
-SnackBar(
-content: Text('"${file.name}" attached locally. It will be uploaded securely upon booking confirmation.'),
-backgroundColor: ParishColors.oliveGreen,
-duration: const Duration(seconds: 2),
-),
-);
-}
-}
-} catch (e) {
-debugPrint('Error picking ID file: $e');
-}
-}
-
-void _removeAttachedIdDocument() {
-setState(() {
-_attachedIdFileBytes = null;
-_attachedIdFileName = null;
-_attachedIdFileSize = null;
-});
-}
-
-void _triggerDebouncedValidation() {
-_saveDraft();
-_debounceTimer?.cancel();
-_debounceTimer = Timer(const Duration(milliseconds: 400), () {
-_runLiveConflictCheck();
-_runDuplicateRequesterCheck();
-});
-}
-
-Future<void> _runDuplicateRequesterCheck() async {
-final name = _requesterNameController.text.trim();
-if (name.length < 3) {
-if (_duplicateRequesterWarning != null) {
-setState(() => _duplicateRequesterWarning = null);
-}
-return;
-}
-
-final dateStr = '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-final warning = await AppointmentService.checkDuplicateRequester(
-requesterName: name,
-date: dateStr,
-serviceType: _selectedService,
-);
-
-if (mounted) {
-setState(() => _duplicateRequesterWarning = warning);
-}
-}
-
-Future<void> _runLiveConflictCheck() async {
-if (!mounted) return;
-setState(() {
-_isLiveChecking = true;
-_liveConflictWarning = null;
-_suggestedSlot = null;
-});
-
-final dateStr = '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-final startStr = _formatTimeOfDay(_startTime);
-final endStr = _formatTimeOfDay(_endTime);
-
-final warning = await AppointmentService.checkScheduleConflictSilent(
-date: dateStr,
-startTime: startStr,
-endTime: endStr,
-venue: _selectedVenue,
-officiant: _selectedOfficiant,
-serviceType: _selectedService,
-);
-
-if (!mounted) return;
-
-if (warning != null) {
-final preset = _presets[_selectedService];
-final duration = preset?.durationMinutes ?? 60;
-
-final nextSlot = await AppointmentService.findNextAvailableSlot(
-date: dateStr,
-durationMinutes: duration,
-venue: _selectedVenue,
-officiant: _selectedOfficiant,
-preferredStartTime: _startTime,
-serviceType: _selectedService,
-);
-
-setState(() {
-_isLiveChecking = false;
-_liveConflictWarning = warning;
-_suggestedSlot = nextSlot;
-});
-} else {
-setState(() {
-_isLiveChecking = false;
-_liveConflictWarning = null;
-_suggestedSlot = null;
-});
-}
-}
-
-void _applySuggestedSlot() {
-if (_suggestedSlot != null) {
-setState(() {
-_startTime = _suggestedSlot!['start']!;
-_endTime = _suggestedSlot!['end']!;
-});
-_runLiveConflictCheck();
-}
-}
-
-void _onServiceSelected(String service) {
-setState(() {
-_selectedService = service;
-final preset = _presets[service];
-if (preset != null) {
-_selectedVenue = preset.defaultVenue;
-_selectedOfficiant = 'Rev. Fr. Roy';
-
-if (preset.isCommunityBaptism) {
-_startTime = const TimeOfDay(hour: 11, minute: 0);
-if (_selectedDate.weekday != DateTime.saturday && _selectedDate.weekday != DateTime.sunday) {
-_selectedDate = _getInitialValidDate();
-}
-} else {
-if (_startTime.hour < 9 || _startTime.hour >= 17) {
-_startTime = const TimeOfDay(hour: 10, minute: 0);
-}
-}
-
-_endTime = _addMinutes(_startTime, preset.durationMinutes);
-}
-});
-_saveDraft();
-_runLiveConflictCheck();
-}
-
-Future<void> _pickDate() async {
-await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
-
-final now = DateTime.now();
-final today = DateTime(now.year, now.month, now.day);
-final firstValidDate = _selectedDate.isBefore(today) ? _selectedDate : today;
-final preset = _presets[_selectedService];
-final isCommunity = preset?.isCommunityBaptism ?? false;
-
-final picked = await showDatePicker(
-context: context,
-initialDate: _selectedDate,
-firstDate: firstValidDate,
-lastDate: today.add(const Duration(days: 365)),
-selectableDayPredicate: (DateTime day) {
-if (day.weekday == DateTime.monday) return false;
-if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
-if (isCommunity && day.weekday != DateTime.saturday && day.weekday != DateTime.sunday) {
-return false;
-}
-return true;
-},
-);
-if (picked != null) {
-setState(() => _selectedDate = picked);
-_saveDraft();
-_runLiveConflictCheck();
-}
-}
-
-Future<void> _pickTime(bool isStart) async {
-final preset = _presets[_selectedService];
-
-if (preset?.isCommunityBaptism == true) {
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(
-content: Text('Community Baptism ceremony strictly begins at 11:00 AM on Weekends.'),
-backgroundColor: ParishColors.goldAccent,
-duration: Duration(seconds: 3),
-),
-);
-return;
-}
-
-final initial = isStart ? _startTime : _endTime;
-final picked = await showTimePicker(
-context: context,
-initialTime: initial,
-);
-
-if (picked != null) {
-final totalMin = picked.hour * 60 + picked.minute;
-
-if (totalMin < AppointmentService.operatingDayStartMin ||
-totalMin > AppointmentService.operatingDayEndMin) {
-if (!mounted) return;
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(
-content: Text('Parish appointments must be scheduled between 9:00 AM and 5:00 PM.'),
-backgroundColor: ParishColors.mercyRed,
-duration: Duration(seconds: 3),
-),
-);
-return;
-}
-
-setState(() {
-if (isStart) {
-_startTime = picked;
-final duration = preset?.durationMinutes ?? 60;
-_endTime = _addMinutes(picked, duration);
-} else {
-_endTime = picked;
-}
-});
-_saveDraft();
-_runLiveConflictCheck();
-}
-}
-
-void _showErrorPromptDialog(String message) {
-showDialog(
-context: context,
-builder: (ctx) => AlertDialog(
-shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-backgroundColor: ParishColors.cardWhite,
-title: Row(
-children: [
-Icon(
-message.toLowerCase().contains('conflict')
-? Icons.warning_amber_rounded
-: Icons.error_outline,
-color: ParishColors.mercyRed,
-size: 28,
-),
-const SizedBox(width: 10),
-Expanded(
-child: Text(
-message.toLowerCase().contains('conflict')
-? 'Schedule Conflict Detected'
-: 'Booking Notice',
-style: const TextStyle(
-fontWeight: FontWeight.bold,
-fontSize: 17,
-color: ParishColors.mercyRed,
-),
-),
-),
-],
-),
-content: Text(
-message,
-style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
-),
-actions: [
-ElevatedButton(
-style: ElevatedButton.styleFrom(
-backgroundColor: ParishColors.marianBlue,
-foregroundColor: Colors.white,
-shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-),
-onPressed: () => Navigator.pop(ctx),
-child: const Text('Understood'),
-),
-],
-),
-);
-}
-
-// ===========================================================================
-// Submission with Pre-Flight Conflict Check & Atomic Rollback
-// ===========================================================================
-
-Future<void> _submitAppointment() async {
-setState(() {
-_errorMessage = null;
-_idFileHasError = _isParishioner && _attachedIdFileBytes == null;
-});
-
-// 1. Local Field Validation
-if (!_formKey.currentState!.validate()) return;
-
-if (_isParishioner && _attachedIdFileBytes == null) {
-setState(() => _errorMessage = 'Please attach a photo or copy of your valid identification card.');
-return;
-}
-
-final preset = _presets[_selectedService];
-if (preset?.isCommunityBaptism == true) {
-if (_selectedDate.weekday != DateTime.saturday && _selectedDate.weekday != DateTime.sunday) {
-setState(() => _errorMessage = 'Community Baptism is strictly restricted to Weekends (Saturday & Sunday).');
-return;
-}
-}
-
-final startStr = _formatTimeOfDay(_startTime);
-final endStr = _formatTimeOfDay(_endTime);
-
-if (startStr.compareTo(endStr) >= 0) {
-setState(() => _errorMessage = 'End Time must be later than Start Time.');
-_showErrorPromptDialog('End Time must be later than Start Time.');
-return;
-}
-
-final dateStr = '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-final emailValue = _emailController.text.trim();
-final requesterNameVal = _requesterNameController.text.trim();
-
-setState(() => _isSubmitting = true);
-
-// 2. Pre-Flight Remote Checks: Run conflict & duplicate checks BEFORE uploading to Storage!
-try {
-final duplicateWarning = await AppointmentService.checkDuplicateRequester(
-requesterName: requesterNameVal,
-date: dateStr,
-serviceType: _selectedService,
-);
-if (duplicateWarning != null) {
-setState(() {
-_errorMessage = duplicateWarning;
-_isSubmitting = false;
-});
-_showErrorPromptDialog(duplicateWarning);
-return;
-}
-
-final conflictWarning = await AppointmentService.checkScheduleConflictSilent(
-date: dateStr,
-startTime: startStr,
-endTime: endStr,
-venue: _selectedVenue,
-officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
-serviceType: _selectedService,
-);
-if (conflictWarning != null) {
-setState(() {
-_errorMessage = conflictWarning;
-_isSubmitting = false;
-});
-_showErrorPromptDialog(conflictWarning);
-return;
-}
-} catch (preCheckError) {
-setState(() {
-_errorMessage = preCheckError.toString().replaceFirst('Exception: ', '');
-_isSubmitting = false;
-});
-return;
-}
-
-// 3. Upload File to Supabase Storage only after all pre-flight checks pass
-String? uploadedDocumentPath;
-final tempId = 'APT-${DateTime.now().millisecondsSinceEpoch % 1000000}';
-
-try {
-if (_attachedIdFileBytes != null && _attachedIdFileName != null) {
-uploadedDocumentPath = await AppointmentService.uploadIdDocument(
-appointmentId: tempId,
-fileBytes: _attachedIdFileBytes!,
-fileName: _attachedIdFileName!,
-);
-}
-
-// 4. Insert into Database
-final createdAppointment = await AppointmentService.createAppointment(
-serviceType: _selectedService,
-requesterName: requesterNameVal,
-contactNumber: _contactNumberController.text.trim(),
-email: emailValue,
-date: dateStr,
-startTime: startStr,
-endTime: endStr,
-venue: _selectedVenue,
-officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
-idType: _selectedIdType,
-idNumber: _idNumberController.text.trim(),
-idDocumentUrl: uploadedDocumentPath,
-remarks: _remarksController.text.trim(),
-);
-
-// Clear draft on confirmed database commit
-await _clearDraft();
-
-if (!mounted) return;
-
-Navigator.pop(context);
-
-showAppointmentSubmissionSuccessModal(
-context,
-appointment: createdAppointment,
-userEmail: emailValue,
-);
-
-widget.onAppointmentSaved?.call();
-} catch (e) {
-// 5. Atomic Rollback: Purge orphaned storage file if database insert fails
-if (uploadedDocumentPath != null) {
-try {
-await Supabase.instance.client.storage
-.from('appointment-documents')
-.remove([uploadedDocumentPath]);
-debugPrint('[Atomic Rollback] Deleted orphaned storage file: $uploadedDocumentPath');
-} catch (rollbackError) {
-debugPrint('[Atomic Rollback Notice] Could not remove orphaned file: $rollbackError');
-}
-}
-
-final cleanError = e.toString().replaceFirst('Exception: ', '');
-setState(() {
-_errorMessage = cleanError;
-});
-_showErrorPromptDialog(cleanError);
-} finally {
-if (mounted) {
-setState(() => _isSubmitting = false);
-}
-}
-}
-
-// --- END OF PART 1 ---
-
-// =============================================================================
-// FILE: lib/features/appointments/presentation/dialogs/schedule_appointment_dialog.dart (PART 2 OF 2)
-// =============================================================================
+  final _formKey = GlobalKey<FormState>();
+
+  final _requesterNameController = TextEditingController();
+  final _contactNumberController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _idNumberController = TextEditingController();
+  final _remarksController = TextEditingController();
+
+  final FocusNode _nameFocusNode = FocusNode();
+  final FocusNode _contactFocusNode = FocusNode();
+  final FocusNode _emailFocusNode = FocusNode();
+
+  String _selectedService = 'Nuptial Mass (Wedding)';
+  String _selectedVenue = 'Main Church Altar';
+  String _selectedOfficiant = 'Rev. Fr. Roy';
+  String _selectedIdType = 'Philippine National ID (PhilID / ePhilID)';
+
+  // In-Memory Temporary Image File State
+  Uint8List? _attachedIdFileBytes;
+  String? _attachedIdFileName;
+  int? _attachedIdFileSize;
+  bool _idFileHasError = false;
+
+  // Upload & File Picker Rate Limiter State
+  DateTime? _lastFilePickAttemptTime;
+  final List<DateTime> _recentAttachmentAttempts = [];
+  static const int _maxAttachmentAttemptsPerWindow = 5;
+  static const Duration _rateLimitWindow = Duration(minutes: 5);
+  static const Duration _pickCooldown = Duration(seconds: 3);
+
+  late DateTime _selectedDate;
+  TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
+  late TimeOfDay _endTime;
+
+  bool _isSubmitting = false;
+  String? _errorMessage;
+
+  // Live Validation & Smart Conflict State
+  bool _isLiveChecking = false;
+  String? _liveConflictWarning;
+  String? _duplicateRequesterWarning;
+  Map<String, TimeOfDay>? _suggestedSlot;
+  Timer? _debounceTimer;
+
+  static const String _draftStorageKey = 'parishserve_draft_appointment_form';
+
+  bool get _isParishioner =>
+      AuthService.currentUser?.userRole.toLowerCase() == 'user';
+
+  bool get _isImageAttachment {
+    if (_attachedIdFileName == null) return false;
+    final lower = _attachedIdFileName!.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp');
+  }
+
+  static const List<String> _keyboardWalks = [
+    'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
+    'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
+    'zxcv', 'xcvb', 'cvbn', 'vbnm',
+    'fdsa', 'gfds', 'hgfd', 'jhgf', 'kjhg', 'lkjh',
+    'rewq', 'trew', 'ytre', 'uytr', 'iuyt', 'poiuy',
+    'vcxz', 'bvcx', 'nbvc', 'mnbv',
+  ];
+
+  final List<String> _philippineIdTypes = const [
+    'Philippine National ID (PhilID / ePhilID)',
+    'Driver\'s License (LTO)',
+    'UMID (SSS / GSIS)',
+    'Passport (DFA)',
+    'Postal ID (PhilPost)',
+    'Senior Citizen ID',
+    'Voter\'s ID / Certification (COMELEC)',
+    'Barangay ID / Certificate of Residency',
+    'PRC Professional ID',
+    'Solo Parent / PWD ID',
+  ];
+
+  final Map<String, _ServicePreset> _presets = const {
+    'Nuptial Mass (Wedding)': _ServicePreset(
+      durationMinutes: 90,
+      defaultVenue: 'Main Church Altar',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '1 hr 30 mins',
+    ),
+    'Community Baptism': _ServicePreset(
+      durationMinutes: 60,
+      defaultVenue: 'Baptistery & Main Altar',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '1 hour (11:00 AM Batch)',
+      isCommunityBaptism: true,
+    ),
+    'Funeral Mass & Blessing': _ServicePreset(
+      durationMinutes: 60,
+      defaultVenue: 'Main Church Altar',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '1 hour',
+    ),
+    'Anointing of the Sick & Viaticum': _ServicePreset(
+      durationMinutes: 45,
+      defaultVenue: 'Off-site / Home Visit',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '45 mins',
+    ),
+    'House / Business Blessing': _ServicePreset(
+      durationMinutes: 45,
+      defaultVenue: 'Off-site / Home Visit',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '45 mins',
+    ),
+    'Thanksgiving Mass Intention': _ServicePreset(
+      durationMinutes: 60,
+      defaultVenue: 'Main Church Altar',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '1 hour',
+    ),
+    'Canonical Interview / Pre-Cana': _ServicePreset(
+      durationMinutes: 45,
+      defaultVenue: 'Sanctuary / Sacristy',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '45 mins',
+    ),
+    'Confession & Spiritual Direction': _ServicePreset(
+      durationMinutes: 30,
+      defaultVenue: 'Sanctuary / Sacristy',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '30 mins',
+    ),
+  };
+
+  final List<String> _venues = [
+    'Main Church Altar',
+    'Baptistery & Main Altar',
+    'Parish Hall',
+    'Mortuary Chapel',
+    'Sanctuary / Sacristy',
+    'Off-site / Home Visit',
+  ];
+
+  final List<String> _officiants = [
+    'Rev. Fr. Roy',
+    'Guest Priest / Visiting Clergy',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+
+    final user = AuthService.currentUser;
+    if (user != null && _isParishioner) {
+      _requesterNameController.text = user.fullName;
+      _emailController.text = user.email;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    if (widget.initialDate != null) {
+      var target = DateTime(
+        widget.initialDate!.year,
+        widget.initialDate!.month,
+        widget.initialDate!.day,
+      );
+      if (target.isBefore(today)) {
+        target = _getInitialValidDate();
+      }
+      if (_presets[_selectedService]?.isCommunityBaptism == true &&
+          target.weekday != DateTime.saturday &&
+          target.weekday != DateTime.sunday) {
+        target = _getInitialValidDate();
+      }
+      _selectedDate = target;
+    } else {
+      _selectedDate = _getInitialValidDate();
+    }
+
+    _applyPresetInitialTimes();
+    LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
+
+    _nameFocusNode.addListener(() => setState(() {}));
+    _contactFocusNode.addListener(() => setState(() {}));
+    _emailFocusNode.addListener(() => setState(() {}));
+
+    _restoreDraft();
+    _runLiveConflictCheck();
+  }
+
+  String? _validateFullName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Requester full name is required.';
+    }
+    if (value.startsWith(' ')) {
+      return 'Name cannot begin with a space.';
+    }
+    if (value.endsWith(' ')) {
+      return 'Name cannot end with a trailing space.';
+    }
+    if (value.contains(RegExp(r'\s{2,}'))) {
+      return 'Name cannot contain consecutive spaces.';
+    }
+
+    final trimmed = value.trim();
+    if (trimmed.length < 2) {
+      return 'Name must be at least 2 characters.';
+    }
+    if (trimmed.length > 70) {
+      return 'Name cannot exceed 70 characters.';
+    }
+
+    final nameRegex = RegExp(r"^[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s.\-’']+$");
+    if (!nameRegex.hasMatch(trimmed)) {
+      return 'Name contains invalid characters (letters, hyphens, and spaces only).';
+    }
+
+    final lower = trimmed.toLowerCase();
+
+    if (RegExp(r'(.)\1{2,}', caseSensitive: false).hasMatch(trimmed)) {
+      return 'Name cannot contain 3 or more identical letters consecutively.';
+    }
+
+    if (RegExp(r'(.{2,4})\1{2,}', caseSensitive: false).hasMatch(lower)) {
+      return 'Please enter a genuine name (repetitive text pattern detected).';
+    }
+
+    for (final walk in _keyboardWalks) {
+      if (lower.contains(walk)) {
+        return 'Please enter a genuine name (keyboard sequence detected).';
+      }
+    }
+
+    final onlyLetters = lower.replaceAll(RegExp(r'[^a-zà-ÿñ]'), '');
+    if (onlyLetters.length >= 3) {
+      final hasVowel = RegExp(r'[aeiouyà-ÿ]').hasMatch(onlyLetters);
+      if (!hasVowel) {
+        return 'Name must contain at least one vowel sound.';
+      }
+
+      if (RegExp(r'[bcdfghjklmnpqrstvwxz]{5,}').hasMatch(onlyLetters)) {
+        return 'Name contains too many consecutive consonants.';
+      }
+    }
+
+    return null;
+  }
+
+  bool get _isNameValid => _validateFullName(_requesterNameController.text) == null;
+
+  bool get _isPhoneValid =>
+      SacramentalValidators.validatePhoneNumber(_contactNumberController.text) == null &&
+          _contactNumberController.text.trim().isNotEmpty;
+
+  bool get _isEmailValid {
+    final text = _emailController.text.trim();
+    if (text.isEmpty) return !_isParishioner;
+    return RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(text);
+  }
+
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draftMap = {
+        'service': _selectedService,
+        'requesterName': _requesterNameController.text.trim(),
+        'contact': _contactNumberController.text.trim(),
+        'email': _emailController.text.trim(),
+        'idType': _selectedIdType,
+        'idNumber': _idNumberController.text.trim(),
+        'remarks': _remarksController.text.trim(),
+        'venue': _selectedVenue,
+        'officiant': _selectedOfficiant,
+        'date': _selectedDate.toIso8601String(),
+        'startHour': _startTime.hour,
+        'startMinute': _startTime.minute,
+      };
+      await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
+    } catch (_) {}
+  }
+
+  Future<void> _restoreDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_draftStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            if (!_isParishioner &&
+                map['requesterName'] != null &&
+                (map['requesterName'] as String).isNotEmpty) {
+              _requesterNameController.text = map['requesterName'];
+            }
+            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
+              _contactNumberController.text = map['contact'];
+            }
+            if (!_isParishioner &&
+                map['email'] != null &&
+                (map['email'] as String).isNotEmpty) {
+              _emailController.text = map['email'];
+            }
+            if (map['idNumber'] != null) _idNumberController.text = map['idNumber'];
+            if (map['remarks'] != null) _remarksController.text = map['remarks'];
+            if (map['service'] != null && _presets.containsKey(map['service'])) {
+              _selectedService = map['service'];
+            }
+            if (map['venue'] != null && _venues.contains(map['venue'])) {
+              _selectedVenue = map['venue'];
+            }
+            if (map['officiant'] != null && _officiants.contains(map['officiant'])) {
+              _selectedOfficiant = _isParishioner ? 'Rev. Fr. Roy' : map['officiant'];
+            }
+            if (map['idType'] != null && _philippineIdTypes.contains(map['idType'])) {
+              _selectedIdType = map['idType'];
+            }
+            if (map['date'] != null) {
+              final draftDate = DateTime.tryParse(map['date']);
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+              if (draftDate != null && !draftDate.isBefore(today)) {
+                _selectedDate = draftDate;
+              }
+            }
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _clearDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftStorageKey);
+    } catch (_) {}
+  }
+
+  DateTime _getInitialValidDate() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var date = today.add(const Duration(days: 1));
+    final isCommunity = _presets[_selectedService]?.isCommunityBaptism ?? false;
+
+    while (date.isBefore(today) ||
+        date.weekday == DateTime.monday ||
+        LiturgicalCalendarService.isDateBlockedSync(date) ||
+        (isCommunity && date.weekday != DateTime.saturday && date.weekday != DateTime.sunday)) {
+      date = date.add(const Duration(days: 1));
+    }
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _requesterNameController.dispose();
+    _contactNumberController.dispose();
+    _emailController.dispose();
+    _idNumberController.dispose();
+    _remarksController.dispose();
+    _nameFocusNode.dispose();
+    _contactFocusNode.dispose();
+    _emailFocusNode.dispose();
+    super.dispose();
+  }
+
+  TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
+    final totalMinutes = (time.hour * 60) + time.minute + minutesToAdd;
+    final newHour = (totalMinutes ~/ 60) % 24;
+    final newMinute = totalMinutes % 60;
+    return TimeOfDay(hour: newHour, minute: newMinute);
+  }
+
+  void _applyPresetInitialTimes() {
+    final preset = _presets[_selectedService]!;
+    if (preset.isCommunityBaptism) {
+      _startTime = const TimeOfDay(hour: 11, minute: 0);
+    } else {
+      if (_startTime.hour < 9 || _startTime.hour >= 17) {
+        _startTime = const TimeOfDay(hour: 10, minute: 0);
+      }
+    }
+    _endTime = _addMinutes(_startTime, preset.durationMinutes);
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m:00';
+  }
+
+  String _formatTime12Hour(TimeOfDay time) {
+    final hour = time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute $period';
+  }
+
+  Future<void> _pickIdDocument() async {
+    final now = DateTime.now();
+
+    if (_lastFilePickAttemptTime != null &&
+        now.difference(_lastFilePickAttemptTime!) < _pickCooldown) {
+      final waitSec = _pickCooldown.inSeconds - now.difference(_lastFilePickAttemptTime!).inSeconds;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please wait $waitSec second(s) before choosing another file.'),
+          backgroundColor: ParishColors.goldAccent,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    _recentAttachmentAttempts.removeWhere((t) => now.difference(t) > _rateLimitWindow);
+    if (_recentAttachmentAttempts.length >= _maxAttachmentAttemptsPerWindow) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Rate limit reached: Maximum 5 file selections per 5 minutes. Please wait a moment.'),
+          backgroundColor: ParishColors.mercyRed,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    _lastFilePickAttemptTime = now;
+    _recentAttachmentAttempts.add(now);
+
+    try {
+      final PlatformFile? file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      );
+
+      if (file != null) {
+        final int fileSize = (await file.length()) ?? 0;
+        if (fileSize > 5 * 1024 * 1024) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('File size exceeds 5MB limit. Please attach a smaller image or compressed PDF.'),
+              backgroundColor: ParishColors.mercyRed,
+            ),
+          );
+          return;
+        }
+
+        final Uint8List bytes = await file.readAsBytes();
+
+        setState(() {
+          _attachedIdFileBytes = bytes;
+          _attachedIdFileName = file.name;
+          _attachedIdFileSize = fileSize;
+          _idFileHasError = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('"${file.name}" attached locally. It will be uploaded securely upon booking confirmation.'),
+              backgroundColor: ParishColors.oliveGreen,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking ID file: $e');
+    }
+  }
+
+  void _removeAttachedIdDocument() {
+    setState(() {
+      _attachedIdFileBytes = null;
+      _attachedIdFileName = null;
+      _attachedIdFileSize = null;
+    });
+  }
+
+  /// Interactive zoomable modal dialog to inspect attached ID photo
+  void _openImagePreviewDialog(Uint8List bytes, String fileName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 680),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.verified_user_outlined, color: ParishColors.marianBlue, size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Attached ID Inspection',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: ParishColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: ParishColors.backgroundLight,
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: Image.memory(
+                          bytes,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      fileName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: ParishColors.textMuted,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Looks Good'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _triggerDebouncedValidation() {
+    _saveDraft();
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+      _runLiveConflictCheck();
+      _runDuplicateRequesterCheck();
+    });
+  }
+
+  Future<void> _runDuplicateRequesterCheck() async {
+    final name = _requesterNameController.text.trim();
+    if (name.length < 3) {
+      if (_duplicateRequesterWarning != null) {
+        setState(() => _duplicateRequesterWarning = null);
+      }
+      return;
+    }
+
+    final dateStr =
+        '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+    final warning = await AppointmentService.checkDuplicateRequester(
+      requesterName: name,
+      date: dateStr,
+      serviceType: _selectedService,
+    );
+
+    if (mounted) {
+      setState(() => _duplicateRequesterWarning = warning);
+    }
+  }
+
+  Future<void> _runLiveConflictCheck() async {
+    if (!mounted) return;
+    setState(() {
+      _isLiveChecking = true;
+      _liveConflictWarning = null;
+      _suggestedSlot = null;
+    });
+
+    final dateStr =
+        '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+    final startStr = _formatTimeOfDay(_startTime);
+    final endStr = _formatTimeOfDay(_endTime);
+
+    final warning = await AppointmentService.checkScheduleConflictSilent(
+      date: dateStr,
+      startTime: startStr,
+      endTime: endStr,
+      venue: _selectedVenue,
+      officiant: _selectedOfficiant,
+      serviceType: _selectedService,
+    );
+
+    if (!mounted) return;
+
+    if (warning != null) {
+      final preset = _presets[_selectedService];
+      final duration = preset?.durationMinutes ?? 60;
+
+      final nextSlot = await AppointmentService.findNextAvailableSlot(
+        date: dateStr,
+        durationMinutes: duration,
+        venue: _selectedVenue,
+        officiant: _selectedOfficiant,
+        preferredStartTime: _startTime,
+        serviceType: _selectedService,
+      );
+
+      setState(() {
+        _isLiveChecking = false;
+        _liveConflictWarning = warning;
+        _suggestedSlot = nextSlot;
+      });
+    } else {
+      setState(() {
+        _isLiveChecking = false;
+        _liveConflictWarning = null;
+        _suggestedSlot = null;
+      });
+    }
+  }
+
+  void _applySuggestedSlot() {
+    if (_suggestedSlot != null) {
+      setState(() {
+        _startTime = _suggestedSlot!['start']!;
+        _endTime = _suggestedSlot!['end']!;
+      });
+      _runLiveConflictCheck();
+    }
+  }
+
+  void _onServiceSelected(String service) {
+    setState(() {
+      _selectedService = service;
+      final preset = _presets[service];
+      if (preset != null) {
+        _selectedVenue = preset.defaultVenue;
+        _selectedOfficiant = 'Rev. Fr. Roy';
+
+        if (preset.isCommunityBaptism) {
+          _startTime = const TimeOfDay(hour: 11, minute: 0);
+          if (_selectedDate.weekday != DateTime.saturday &&
+              _selectedDate.weekday != DateTime.sunday) {
+            _selectedDate = _getInitialValidDate();
+          }
+        } else {
+          if (_startTime.hour < 9 || _startTime.hour >= 17) {
+            _startTime = const TimeOfDay(hour: 10, minute: 0);
+          }
+        }
+
+        _endTime = _addMinutes(_startTime, preset.durationMinutes);
+      }
+    });
+    _saveDraft();
+    _runLiveConflictCheck();
+  }
+
+  Future<void> _pickDate() async {
+    await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final preset = _presets[_selectedService];
+    final isCommunity = preset?.isCommunityBaptism ?? false;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365)),
+      selectableDayPredicate: (DateTime day) {
+        if (day.isBefore(today)) return false;
+        if (day.weekday == DateTime.monday) return false;
+        if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
+        if (isCommunity &&
+            day.weekday != DateTime.saturday &&
+            day.weekday != DateTime.sunday) {
+          return false;
+        }
+        return true;
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+      _saveDraft();
+      _runLiveConflictCheck();
+    }
+  }
+
+  Future<void> _pickTime(bool isStart) async {
+    final preset = _presets[_selectedService];
+    final minDuration = preset?.durationMinutes ?? 60;
+
+    if (preset?.isCommunityBaptism == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Community Baptism ceremony strictly begins at 11:00 AM on Weekends.'),
+          backgroundColor: ParishColors.goldAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    final initial = isStart ? _startTime : _endTime;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+    );
+
+    if (picked != null) {
+      final pickedMinutes = picked.hour * 60 + picked.minute;
+
+      if (isStart) {
+        if (pickedMinutes < AppointmentService.operatingDayStartMin) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Parish appointments cannot be scheduled before 9:00 AM.'),
+              backgroundColor: ParishColors.mercyRed,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        if (pickedMinutes + minDuration > AppointmentService.operatingDayEndMin) {
+          final maxStartMinutes = AppointmentService.operatingDayEndMin - minDuration;
+          final maxStartTod = AppointmentService.minutesToTimeOfDay(maxStartMinutes);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$_selectedService requires $minDuration minutes and must conclude by 5:00 PM. Latest allowed start time is ${_formatTime12Hour(maxStartTod)}.',
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _startTime = picked;
+          _endTime = _addMinutes(picked, minDuration);
+        });
+      } else {
+        final startMinutes = _startTime.hour * 60 + _startTime.minute;
+
+        if (pickedMinutes > AppointmentService.operatingDayEndMin) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Appointment end time cannot exceed parish operating hours (5:00 PM).'),
+              backgroundColor: ParishColors.mercyRed,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        if (pickedMinutes - startMinutes < minDuration) {
+          final requiredEndTod = _addMinutes(_startTime, minDuration);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$_selectedService requires a minimum of $minDuration minutes. End time cannot be earlier than ${_formatTime12Hour(requiredEndTod)}.',
+              ),
+              backgroundColor: ParishColors.mercyRed,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _endTime = picked;
+        });
+      }
+
+      _saveDraft();
+      _runLiveConflictCheck();
+    }
+  }
+
+  void _showErrorPromptDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        title: Row(
+          children: [
+            Icon(
+              message.toLowerCase().contains('conflict')
+                  ? Icons.warning_amber_rounded
+                  : Icons.error_outline,
+              color: ParishColors.mercyRed,
+              size: 28,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message.toLowerCase().contains('conflict')
+                    ? 'Schedule Conflict Detected'
+                    : 'Booking Notice',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                  color: ParishColors.mercyRed,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Understood'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitAppointment() async {
+    setState(() {
+      _errorMessage = null;
+      _idFileHasError = _isParishioner && _attachedIdFileBytes == null;
+    });
+
+    if (!_formKey.currentState!.validate()) return;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+
+    if (targetDay.isBefore(today)) {
+      setState(() => _errorMessage = 'Cannot schedule appointments on past dates.');
+      return;
+    }
+
+    if (_isParishioner && _attachedIdFileBytes == null) {
+      setState(() => _errorMessage = 'Please attach a photo or copy of your valid identification card.');
+      return;
+    }
+
+    final preset = _presets[_selectedService];
+    final minDuration = preset?.durationMinutes ?? 60;
+    final startMinutes = _startTime.hour * 60 + _startTime.minute;
+    final endMinutes = _endTime.hour * 60 + _endTime.minute;
+
+    if (endMinutes - startMinutes < minDuration) {
+      setState(() => _errorMessage = '$_selectedService requires at least $minDuration minutes duration.');
+      return;
+    }
+
+    if (preset?.isCommunityBaptism == true) {
+      if (_selectedDate.weekday != DateTime.saturday &&
+          _selectedDate.weekday != DateTime.sunday) {
+        setState(() => _errorMessage = 'Community Baptism is strictly restricted to Weekends (Saturday & Sunday).');
+        return;
+      }
+    }
+
+    final startStr = _formatTimeOfDay(_startTime);
+    final endStr = _formatTimeOfDay(_endTime);
+
+    final dateStr =
+        '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+    final emailValue = _emailController.text.trim();
+    final requesterNameVal = _requesterNameController.text.trim();
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final duplicateWarning = await AppointmentService.checkDuplicateRequester(
+        requesterName: requesterNameVal,
+        date: dateStr,
+        serviceType: _selectedService,
+      );
+      if (duplicateWarning != null) {
+        setState(() {
+          _errorMessage = duplicateWarning;
+          _isSubmitting = false;
+        });
+        _showErrorPromptDialog(duplicateWarning);
+        return;
+      }
+
+      final conflictWarning = await AppointmentService.checkScheduleConflictSilent(
+        date: dateStr,
+        startTime: startStr,
+        endTime: endStr,
+        venue: _selectedVenue,
+        officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
+        serviceType: _selectedService,
+      );
+      if (conflictWarning != null) {
+        setState(() {
+          _errorMessage = conflictWarning;
+          _isSubmitting = false;
+        });
+        _showErrorPromptDialog(conflictWarning);
+        return;
+      }
+    } catch (preCheckError) {
+      setState(() {
+        _errorMessage = preCheckError.toString().replaceFirst('Exception: ', '');
+        _isSubmitting = false;
+      });
+      return;
+    }
+
+    String? uploadedDocumentPath;
+    final tempId = 'APT-${DateTime.now().millisecondsSinceEpoch % 1000000}';
+
+    try {
+      if (_attachedIdFileBytes != null && _attachedIdFileName != null) {
+        uploadedDocumentPath = await AppointmentService.uploadIdDocument(
+          appointmentId: tempId,
+          fileBytes: _attachedIdFileBytes!,
+          fileName: _attachedIdFileName!,
+        );
+      }
+
+      final createdAppointment = await AppointmentService.createAppointment(
+        serviceType: _selectedService,
+        requesterName: requesterNameVal,
+        contactNumber: _contactNumberController.text.trim(),
+        email: emailValue,
+        date: dateStr,
+        startTime: startStr,
+        endTime: endStr,
+        venue: _selectedVenue,
+        officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
+        idType: _selectedIdType,
+        idNumber: _idNumberController.text.trim(),
+        idDocumentUrl: uploadedDocumentPath,
+        remarks: _remarksController.text.trim(),
+      );
+
+      await _clearDraft();
+
+      if (!mounted) return;
+
+      Navigator.pop(context);
+
+      showAppointmentSubmissionSuccessModal(
+        context,
+        appointment: createdAppointment,
+        userEmail: emailValue,
+      );
+
+      widget.onAppointmentSaved?.call();
+    } catch (e) {
+      if (uploadedDocumentPath != null) {
+        try {
+          await Supabase.instance.client.storage
+              .from('appointment-documents')
+              .remove([uploadedDocumentPath]);
+        } catch (_) {}
+      }
+
+      final cleanError = e.toString().replaceFirst('Exception: ', '');
+      setState(() {
+        _errorMessage = cleanError;
+      });
+      _showErrorPromptDialog(cleanError);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1042,7 +1186,9 @@ setState(() => _isSubmitting = false);
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: currentPreset?.isCommunityBaptism == true ? FontWeight.bold : FontWeight.normal,
-                            color: currentPreset?.isCommunityBaptism == true ? ParishColors.marianBlueAdaptive : textMutedColor,
+                            color: currentPreset?.isCommunityBaptism == true
+                                ? ParishColors.marianBlueAdaptive
+                                : textMutedColor,
                           ),
                         ),
                       ],
@@ -1099,7 +1245,12 @@ setState(() => _isSubmitting = false);
                       DropdownButtonFormField<String>(
                         value: _selectedService,
                         isExpanded: true,
-                        items: _presets.keys.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis))).toList(),
+                        items: _presets.keys
+                            .map((s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(s, style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis),
+                        ))
+                            .toList(),
                         onChanged: (val) {
                           if (val != null) _onServiceSelected(val);
                         },
@@ -1124,7 +1275,11 @@ setState(() => _isSubmitting = false);
                                   currentPreset.isCommunityBaptism
                                       ? 'Preset: Community Baptism (Weekends Strictly 11:00 AM • Baptistery)'
                                       : 'Preset: ${currentPreset.durationLabel} • Operating window 9:00 AM – 5:00 PM.',
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.marianBlueAdaptive),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: ParishColors.marianBlueAdaptive,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1133,7 +1288,6 @@ setState(() => _isSubmitting = false);
                       ],
                       const SizedBox(height: 14),
 
-                      // Requester Full Name (with canonical anti-spam & anti-gibberish validation)
                       _buildFieldLabel(_isParishioner
                           ? 'Requester Full Name (Account Linked)'
                           : 'Requester Full Name *'),
@@ -1190,7 +1344,6 @@ setState(() => _isSubmitting = false);
                       ],
                       const SizedBox(height: 14),
 
-                      // Contact & Email Fields
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1273,7 +1426,6 @@ setState(() => _isSubmitting = false);
                       ),
                       const SizedBox(height: 16),
 
-                      // Valid ID Section
                       _buildFieldLabel(_isParishioner
                           ? 'Identification Document for Verification * (Required)'
                           : 'Identification Document for Verification *'),
@@ -1309,7 +1461,9 @@ setState(() => _isSubmitting = false);
                       ),
                       const SizedBox(height: 10),
 
-                      // File Upload Attachment Box (Held in Memory with Rate Limiting)
+                      // =======================================================
+                      // Valid ID Attachment Box with Thumbnail & Zoom Preview
+                      // =======================================================
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
@@ -1345,7 +1499,7 @@ setState(() => _isSubmitting = false);
                                     const SizedBox(width: 8),
                                     Text(
                                       _attachedIdFileBytes != null
-                                          ? 'Valid ID Document Selected (In-Memory Hold)'
+                                          ? 'Valid ID Document Attached'
                                           : (_isParishioner ? 'Attach Valid ID Photo * (Required)' : 'Attach Valid ID Photo (Optional)'),
                                       style: TextStyle(
                                         fontSize: 12.5,
@@ -1367,13 +1521,13 @@ setState(() => _isSubmitting = false);
                                   ),
                               ],
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 8),
                             if (_attachedIdFileBytes == null) ...[
                               Text(
-                                'Select a front photo of your ID (JPG, PNG, or PDF, max 5MB). File upload is deferred until booking submission to prevent orphaned storage bloat.',
+                                'Select a clear front photo of your ID (JPG, PNG, or PDF, max 5MB). File upload is deferred until booking confirmation to save storage.',
                                 style: TextStyle(fontSize: 11.5, color: textMutedColor),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
                               SizedBox(
                                 height: 38,
                                 child: OutlinedButton.icon(
@@ -1388,18 +1542,120 @@ setState(() => _isSubmitting = false);
                                 ),
                               ),
                             ] else ...[
-                              Row(
-                                children: [
-                                  const Icon(Icons.insert_drive_file, size: 16, color: ParishColors.oliveGreen),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      '${_attachedIdFileName ?? 'valid_id.jpg'} (${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB) - Held locally',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.oliveGreen),
-                                      overflow: TextOverflow.ellipsis,
+                              // Preview Container
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: borderGreyColor.withValues(alpha: 0.6)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    if (_isImageAttachment) ...[
+                                      // Image Thumbnail (Tap to zoom)
+                                      InkWell(
+                                        onTap: () => _openImagePreviewDialog(
+                                          _attachedIdFileBytes!,
+                                          _attachedIdFileName ?? 'valid_id.jpg',
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Stack(
+                                          alignment: Alignment.bottomRight,
+                                          children: [
+                                            ClipRRect(
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Image.memory(
+                                                _attachedIdFileBytes!,
+                                                width: 58,
+                                                height: 58,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                            Container(
+                                              padding: const EdgeInsets.all(3),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(alpha: 0.6),
+                                                borderRadius: const BorderRadius.only(
+                                                  topLeft: Radius.circular(6),
+                                                  bottomRight: Radius.circular(8),
+                                                ),
+                                              ),
+                                              child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      // PDF Document Placeholder
+                                      Container(
+                                        width: 58,
+                                        height: 58,
+                                        decoration: BoxDecoration(
+                                          color: ParishColors.mercyRedSurface,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: ParishColors.mercyRed.withValues(alpha: 0.3)),
+                                        ),
+                                        child: const Icon(Icons.picture_as_pdf, color: ParishColors.mercyRed, size: 28),
+                                      ),
+                                    ],
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _attachedIdFileName ?? 'valid_id.jpg',
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB • ${_isImageAttachment ? "Tap thumbnail to inspect" : "PDF document"}',
+                                            style: TextStyle(fontSize: 11, color: textMutedColor),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              if (_isImageAttachment)
+                                                InkWell(
+                                                  onTap: () => _openImagePreviewDialog(
+                                                    _attachedIdFileBytes!,
+                                                    _attachedIdFileName ?? 'valid_id.jpg',
+                                                  ),
+                                                  child: const Row(
+                                                    children: [
+                                                      Icon(Icons.remove_red_eye_outlined, size: 14, color: ParishColors.marianBlue),
+                                                      SizedBox(width: 4),
+                                                      Text(
+                                                        'Inspect',
+                                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              if (_isImageAttachment) const SizedBox(width: 14),
+                                              InkWell(
+                                                onTap: _pickIdDocument,
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.sync, size: 14, color: textMutedColor),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      'Change File',
+                                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMutedColor),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ],
                           ],
@@ -1407,7 +1663,6 @@ setState(() => _isSubmitting = false);
                       ),
                       const SizedBox(height: 14),
 
-                      // Scheduled Date
                       _buildFieldLabel(currentPreset?.isCommunityBaptism == true
                           ? 'Scheduled Date * (Weekends Only for Baptism)'
                           : 'Scheduled Date * (Mondays & Solemnities Restricted)'),
@@ -1470,7 +1725,7 @@ setState(() => _isSubmitting = false);
                       ],
                       const SizedBox(height: 14),
 
-                      // Time Pickers (Locked at 11:00 AM for Community Baptism)
+                      // Time Pickers
                       Row(
                         children: [
                           Expanded(
@@ -1485,7 +1740,7 @@ setState(() => _isSubmitting = false);
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
                                     decoration: BoxDecoration(
                                       color: currentPreset?.isCommunityBaptism == true
-                                          ? ParishColors.borderGrey.withOpacity(0.15)
+                                          ? ParishColors.borderGrey.withValues(alpha: 0.15)
                                           : ParishColors.backgroundLight,
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(color: hasConflict ? ParishColors.mercyRed : borderGreyColor),
@@ -1609,7 +1864,7 @@ setState(() => _isSubmitting = false);
                           decoration: BoxDecoration(
                             color: ParishColors.oliveGreenSurface,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
+                            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.3)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1632,7 +1887,12 @@ setState(() => _isSubmitting = false);
                       DropdownButtonFormField<String>(
                         value: _selectedVenue,
                         isExpanded: true,
-                        items: _venues.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                        items: _venues
+                            .map((v) => DropdownMenuItem(
+                          value: v,
+                          child: Text(v, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                        ))
+                            .toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setState(() => _selectedVenue = val);
@@ -1644,7 +1904,6 @@ setState(() => _isSubmitting = false);
                       ),
                       const SizedBox(height: 14),
 
-                      // Presiding Clergy: Locked to Rev. Fr. Roy for parishioners, selectable for staff
                       _buildFieldLabel(_isParishioner
                           ? 'Presiding Clergy (Parish Assigned: Rev. Fr. Roy)'
                           : 'Presiding Clergy *'),
@@ -1656,13 +1915,18 @@ setState(() => _isSubmitting = false);
                         decoration: _inputDecoration(
                           prefixIcon: Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive),
                         ).copyWith(
-                          fillColor: ParishColors.borderGrey.withOpacity(0.15),
+                          fillColor: ParishColors.borderGrey.withValues(alpha: 0.15),
                         ),
                       )
                           : DropdownButtonFormField<String>(
                         value: _selectedOfficiant,
                         isExpanded: true,
-                        items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                        items: _officiants
+                            .map((o) => DropdownMenuItem(
+                          value: o,
+                          child: Text(o, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                        ))
+                            .toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setState(() => _selectedOfficiant = val);
@@ -1674,7 +1938,6 @@ setState(() => _isSubmitting = false);
                       ),
                       const SizedBox(height: 14),
 
-                      // Remarks
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [

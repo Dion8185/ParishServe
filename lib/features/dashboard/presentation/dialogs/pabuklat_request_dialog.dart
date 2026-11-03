@@ -1,5 +1,5 @@
 // =============================================================================
-// FILE: lib/features/dashboard/presentation/dialogs/pabuklat_request_dialog.dart (PART 1 OF 2)
+// FILE: lib/features/dashboard/presentation/dialogs/pabuklat_request_dialog.dart
 // =============================================================================
 
 import 'dart:convert';
@@ -168,6 +168,15 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
   bool _isSubmitting = false;
   String? _errorMessage;
 
+  bool get _isImageAttachment {
+    if (_attachedIdFileName == null) return false;
+    final lower = _attachedIdFileName!.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp');
+  }
+
   static const List<String> _keyboardSequences = [
     'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
     'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
@@ -224,10 +233,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     }
     return _selectedPurpose;
   }
-
-  // ===========================================================================
-  // Draft Persistence Lifecycle (SharedPreferences)
-  // ===========================================================================
 
   Future<void> _saveDraftState() async {
     try {
@@ -347,10 +352,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     } catch (_) {}
   }
 
-  // ===========================================================================
-  // Live Input Validation & Anti-Gibberish Engine
-  // ===========================================================================
-
   String? _validateNameField(String? value, String label, {bool isRequired = true, int min = 2, int max = 60, bool isFullName = false}) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) {
@@ -369,36 +370,30 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     if (text.length < min) return '$label must be at least $min characters.';
     if (text.length > max) return '$label cannot exceed $max characters.';
 
-    // Allowed letters, accents, periods, apostrophes, and spaces
     final namePattern = RegExp(r"^[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s\.\-\'’]+$");
     if (!namePattern.hasMatch(text)) {
       return '$label contains invalid characters.';
     }
 
-    // For Full Names, require at least First Name and Last Name
     if (isFullName && !text.contains(' ')) {
       return 'Please enter both first and last name.';
     }
 
-    // Reject 3+ repetitive identical characters (e.g. aaaaa, bbb)
     if (RegExp(r'(.)\1{2,}', caseSensitive: false).hasMatch(text)) {
       return '$label cannot contain repetitive characters.';
     }
 
-    // Reject repetitive syllable mashing (e.g. asdasdasd, hahahaha)
     final lower = text.toLowerCase();
     if (RegExp(r'(.{2,4})\1{2,}', caseSensitive: false).hasMatch(lower)) {
       return 'Please enter a valid $label.';
     }
 
-    // Reject keyboard sequence walks
     for (final seq in _keyboardSequences) {
       if (lower.contains(seq)) {
         return '$label cannot contain keyboard sequence "$seq".';
       }
     }
 
-    // Pronounceability & Vowel presence for names with 3+ characters
     final words = lower.split(' ').where((w) => w.length >= 3);
     for (final word in words) {
       final onlyLetters = word.replaceAll(RegExp(r'[^a-zà-ÿñ]'), '');
@@ -431,10 +426,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
 
     return null;
   }
-
-  // ===========================================================================
-  // Search & Match Action
-  // ===========================================================================
 
   Future<void> _handleSearchRecord() async {
     setState(() => _errorMessage = null);
@@ -498,13 +489,14 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         setState(() {
           _matchedRecord = match;
           _isSearching = false;
-          _currentStep = 1; // Transitions to Record Found State
+          _currentStep = 1;
         });
         _saveDraftState();
       } else {
         setState(() {
           _isSearching = false;
-          _errorMessage = 'No matching sacramental record found matching at least 2 pieces of your submitted information. Please check the spelling of names and dates.';
+          _errorMessage =
+          'No matching sacramental record found matching at least 2 pieces of your submitted information. Please check the spelling of names and dates.';
         });
       }
     } catch (e) {
@@ -515,10 +507,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
       });
     }
   }
-
-  // ===========================================================================
-  // Valid ID Attachment
-  // ===========================================================================
 
   Future<void> _pickIdDocument() async {
     try {
@@ -561,9 +549,94 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     });
   }
 
-  // ===========================================================================
-  // Final Request Submission
-  // ===========================================================================
+  /// Interactive zoomable modal dialog to inspect attached requestor ID photo
+  void _openIdPreviewDialog(Uint8List bytes, String fileName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 680),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.verified_user_outlined, color: ParishColors.marianBlue, size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Requestor ID Inspection',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: ParishColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: ParishColors.backgroundLight,
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: Image.memory(
+                          bytes,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      fileName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: ParishColors.textMuted,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Looks Clear'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _handleSubmitRequest() async {
     setState(() => _errorMessage = null);
@@ -628,10 +701,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
       });
     }
   }
-
-// =============================================================================
-// FILE: lib/features/dashboard/presentation/dialogs/pabuklat_request_dialog.dart (PART 2 OF 2)
-// =============================================================================
 
   Future<void> _handleDiscardAndClose() async {
     final confirmed = await showDiscardConfirmationDialog(
@@ -722,7 +791,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 ),
               ),
 
-              // Scrollable Body with Live Validation
+              // Scrollable Body
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(22),
@@ -758,9 +827,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                           ),
                         ],
 
-                        // =======================================================
-                        // STEP 0: REQUEST INFORMATION
-                        // =======================================================
+                        // STEP 0: RECORD INFORMATION
                         if (_currentStep == 0) ...[
                           _buildFieldLabel('Select Certificate / Sacrament Type', isRequired: true),
                           DropdownButtonFormField<String>(
@@ -792,16 +859,12 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                           ],
                         ]
 
-                        // =======================================================
                         // STEP 1: RECORD FOUND STATE
-                        // =======================================================
                         else if (_currentStep == 1) ...[
                           _buildRecordFoundState(),
                         ]
 
-                        // =======================================================
                         // STEP 2: REQUESTOR INFORMATION
-                        // =======================================================
                         else ...[
                             _buildRequestorInfoSection(),
                           ],
@@ -811,7 +874,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                 ),
               ),
 
-              // Bottom Action Controls
+              // Bottom Actions
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
                 decoration: BoxDecoration(
@@ -898,14 +961,10 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     );
   }
 
-  // ===========================================================================
-  // UI Section: Single Recipient Form (Baptism, Confirmation, Death, etc.)
-  // ===========================================================================
   Widget _buildSingleRecipientFormSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // One Single Full Name Field
         _buildFieldLabel('Recipient / Subject Full Name', isRequired: true),
         TextFormField(
           controller: _recipientFullNameController,
@@ -930,7 +989,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 14),
 
-        // Birthdate (Strictly Required for Matching)
         _buildFieldLabel('Birthdate', isRequired: true),
         InkWell(
           onTap: () async {
@@ -972,7 +1030,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 14),
 
-        // Possible Date of Sacrament (Optional)
         _buildFieldLabel('Possible Date of Sacrament (Optional)', isRequired: false),
         InkWell(
           onTap: () async {
@@ -1015,7 +1072,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 18),
 
-        // Mother: 3 Separate Fields
         const Text(
           "Mother's Information",
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.marianBlue),
@@ -1079,7 +1135,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 16),
 
-        // Father: 3 Separate Fields
         const Text(
           "Father's Information",
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.marianBlue),
@@ -1145,16 +1200,12 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     );
   }
 
-  // ===========================================================================
-  // UI Section: Clearly Separated Marriage Form (Bride vs Groom)
-  // ===========================================================================
   Widget _buildMarriageFormSection() {
     final borderGrey = ParishColors.borderGrey;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Groom Section
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1259,7 +1310,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 16),
 
-        // Bride Section
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1402,9 +1452,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     );
   }
 
-  // ===========================================================================
-  // UI Section: Step 1 - Affirmative Record Found State (No Internal Coordinates Exposed)
-  // ===========================================================================
   Widget _buildRecordFoundState() {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
@@ -1474,9 +1521,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
     );
   }
 
-  // ===========================================================================
-  // UI Section: Step 2 - Requestor Information with Purpose Dropdown & ID Upload
-  // ===========================================================================
   Widget _buildRequestorInfoSection() {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
@@ -1552,7 +1596,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ),
         const SizedBox(height: 14),
 
-        // Purpose Selection Dropdown
         _buildFieldLabel('Purpose of Certificate Request', isRequired: true),
         DropdownButtonFormField<String>(
           value: _selectedPurpose,
@@ -1572,7 +1615,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
           },
         ),
 
-        // Custom Purpose Input Field when 'Other / Custom Purpose' is selected
         if (_selectedPurpose == 'Other / Custom Purpose') ...[
           const SizedBox(height: 10),
           TextFormField(
@@ -1598,7 +1640,9 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
         ],
         const SizedBox(height: 18),
 
-        // Valid Government ID Upload Box
+        // =====================================================================
+        // Valid Government ID Attachment Box with Thumbnail & Zoom Preview
+        // =====================================================================
         _buildFieldLabel('Valid Government / Official ID', isRequired: true),
         Container(
           width: double.infinity,
@@ -1645,7 +1689,7 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                     ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               if (_attachedIdBytes == null) ...[
                 Text(
                   'Upload a clear photo or document of your valid ID (Passport, UMID, PhilID, Driver\'s License, Senior ID). Max size: 5MB.',
@@ -1665,18 +1709,117 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
                   ),
                 ),
               ] else ...[
-                Row(
-                  children: [
-                    const Icon(Icons.insert_drive_file, size: 16, color: ParishColors.oliveGreen),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        '${_attachedIdFileName ?? "valid_id.jpg"} (${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB)',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.oliveGreen),
-                        overflow: TextOverflow.ellipsis,
+                // Thumbnail + Zoom Preview Container
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: borderGrey.withValues(alpha: 0.6)),
+                  ),
+                  child: Row(
+                    children: [
+                      if (_isImageAttachment)
+                        InkWell(
+                          onTap: () => _openIdPreviewDialog(
+                            _attachedIdBytes!,
+                            _attachedIdFileName ?? 'valid_id.jpg',
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(
+                                  _attachedIdBytes!,
+                                  width: 58,
+                                  height: 58,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(6),
+                                    bottomRight: Radius.circular(8),
+                                  ),
+                                ),
+                                child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            color: ParishColors.mercyRedSurface,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: ParishColors.mercyRed.withValues(alpha: 0.3)),
+                          ),
+                          child: const Icon(Icons.picture_as_pdf, color: ParishColors.mercyRed, size: 28),
+                        ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _attachedIdFileName ?? 'valid_id.jpg',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB • ${_isImageAttachment ? "Tap thumbnail to inspect" : "PDF document"}',
+                              style: TextStyle(fontSize: 11, color: textMuted),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                if (_isImageAttachment)
+                                  InkWell(
+                                    onTap: () => _openIdPreviewDialog(
+                                      _attachedIdBytes!,
+                                      _attachedIdFileName ?? 'valid_id.jpg',
+                                    ),
+                                    child: const Row(
+                                      children: [
+                                        Icon(Icons.remove_red_eye_outlined, size: 14, color: ParishColors.marianBlue),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Inspect',
+                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (_isImageAttachment) const SizedBox(width: 14),
+                                InkWell(
+                                  onTap: _pickIdDocument,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.sync, size: 14, color: textMuted),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Change File',
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ],
@@ -1685,10 +1828,6 @@ class _PabuklatRequestDialogState extends State<_PabuklatRequestDialog> {
       ],
     );
   }
-
-  // ===========================================================================
-  // UI Helpers
-  // ===========================================================================
 
   Widget _buildFieldLabel(String label, {bool isRequired = false}) {
     return Padding(
