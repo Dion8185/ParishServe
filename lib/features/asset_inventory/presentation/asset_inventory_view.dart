@@ -40,7 +40,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   String? _errorMessage;
 
   String _searchQuery = '';
-  String _selectedCategory = 'All'; // Classification filter
+  String _selectedCategory = 'All';
   String _selectedLocation = 'All';
   String _selectedCondition = 'All';
   String _selectedOperationalStatus = 'All';
@@ -51,7 +51,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
   final List<String> _sortOptions = [
     'Control Number',
-    'Asset Name',
+    'Item Name',
     'Price / Unit',
     'Total Cost',
     'Acquisition Year',
@@ -179,10 +179,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
     // 1. Tab Bar Segregation (Active Sections vs Dedicated Archive Tab)
     if (_sectionTabController.index == 3) {
-      // Tab 3: Dedicated Archived & Decommissioned Quarantine
       list = list.where((a) => _isAssetArchived(a)).toList();
     } else {
-      // Tabs 0, 1, 2: Active Inventory Only (Strictly Excludes Archived/Decom)
       list = list.where((a) => !_isAssetArchived(a)).toList();
 
       if (_sectionTabController.index == 1) {
@@ -192,7 +190,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       }
     }
 
-    // 2. Category / Classification Filter
+    // 2. Category Filter
     if (_selectedCategory != 'All') {
       list = list
           .where((a) =>
@@ -201,7 +199,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           .toList();
     }
 
-    // 3. Location Filter
+    // 3. Storage Location Filter
     if (_selectedLocation != 'All') {
       list = list
           .where((a) =>
@@ -228,7 +226,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           .toList();
     }
 
-    // 6. Search Query (Searches control number, name, RFID, model, color)
+    // 6. Search Query
     if (_searchQuery.trim().isNotEmpty) {
       final q = _searchQuery.toLowerCase().trim();
       list = list.where((a) {
@@ -249,7 +247,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         case 'Control Number':
           comparison = _compareControlNumbers(a.controlNumber, b.controlNumber);
           break;
-        case 'Asset Name':
+        case 'Item Name':
           comparison =
               a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
           break;
@@ -333,7 +331,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (list.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No assets available to print under the current filter.'),
+          content: Text('No items match the current filter to print.'),
           backgroundColor: ParishColors.goldAccent,
         ),
       );
@@ -398,7 +396,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Filter & Sort Inventory',
+                        'Filter & Sort Items',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -425,9 +423,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const Divider(height: 14),
 
-                  // 1. Sort Sequence
+                  // 1. Sort Order
                   Text(
-                    'Sort Sequence',
+                    'Sort Order',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.bold,
@@ -484,9 +482,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const SizedBox(height: 14),
 
-                  // 2. Classification Filter
+                  // 2. Category Filter
                   Text(
-                    'Property Classification',
+                    'Category',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.bold,
@@ -505,7 +503,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                     items: [
                       const DropdownMenuItem(
-                          value: 'All', child: Text('All Classifications')),
+                          value: 'All', child: Text('All Categories')),
                       ..._classifications.map((c) => DropdownMenuItem(
                           value: c.acronym,
                           child: Text('${c.classificationName} (${c.acronym})'))),
@@ -554,9 +552,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const SizedBox(height: 14),
 
-                  // 4. Physical Condition Filter
+                  // 4. Item Condition Filter
                   Text(
-                    'Physical Condition',
+                    'Item Condition',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.bold,
@@ -592,10 +590,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const SizedBox(height: 14),
 
-                  // 5. Operational Status Filter (Only when in active tabs)
+                  // 5. Item Status Filter
                   if (_sectionTabController.index != 3) ...[
                     Text(
-                      'Operational Status',
+                      'Item Status',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
@@ -712,7 +710,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    // 1. Header Title & Actions
+                    // Header Title & Actions
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -732,13 +730,13 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                             IconButton(
                               icon: const Icon(Icons.settings_suggest_outlined,
                                   color: ParishColors.marianBlue, size: 20),
-                              tooltip: 'Manage Locations & Classifications',
+                              tooltip: 'Manage Locations & Categories',
                               onPressed: _openManageReferencesPage,
                             ),
                             IconButton(
                               icon: const Icon(Icons.refresh,
                                   color: ParishColors.marianBlue, size: 20),
-                              tooltip: 'Reload Records',
+                              tooltip: 'Refresh Items',
                               onPressed: _loadAllData,
                             ),
                           ],
@@ -747,15 +745,15 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                     const SizedBox(height: 12),
 
-                    // 2. Primary Action Hub Toolbar
+                    // Primary Action Hub Toolbar
                     _buildActionButtons(isMobile),
                     const SizedBox(height: 12),
 
-                    // 3. Compact Stats Bar
+                    // Compact Stats Bar
                     _buildCompactStatsRow(),
                     const SizedBox(height: 14),
 
-                    // 4. TabBar (All Active, Sec I, Sec II, Archived/Decom)
+                    // TabBar (All Active, Sec I, Sec II, Archived/Decom)
                     Container(
                       height: 40,
                       decoration: BoxDecoration(
@@ -816,7 +814,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                     const SizedBox(height: 10),
 
-                    // 5. Search Bar
+                    // Search Bar
                     Container(
                       width: double.infinity,
                       height: 44,
@@ -840,7 +838,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                               }),
                               style: TextStyle(fontSize: 13, color: textDark),
                               decoration: InputDecoration(
-                                hintText: 'Search by Control #, asset name, RFID...',
+                                hintText: 'e.g. C-FF 2026-001 or Church Pew',
                                 hintStyle:
                                 TextStyle(fontSize: 12, color: textMuted),
                                 border: InputBorder.none,
@@ -867,7 +865,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                     const SizedBox(height: 10),
 
-                    // 6. Filter & Sort Bar with View Mode Switcher
+                    // Filter & Sort Bar with View Mode Switcher
                     Row(
                       children: [
                         InkWell(
@@ -956,7 +954,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       ],
                     ),
 
-                    // 7. Active Filter Chips Row
+                    // Active Filter Chips Row
                     if (_hasActiveFilters) ...[
                       const SizedBox(height: 8),
                       Wrap(
@@ -965,15 +963,15 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           if (_selectedCategory != 'All')
-                            _buildActiveFilterChip('Cat: $_selectedCategory', () {
+                            _buildActiveFilterChip('Category: $_selectedCategory', () {
                               setState(() => _selectedCategory = 'All');
                             }),
                           if (_selectedLocation != 'All')
-                            _buildActiveFilterChip('Loc: $_selectedLocation', () {
+                            _buildActiveFilterChip('Location: $_selectedLocation', () {
                               setState(() => _selectedLocation = 'All');
                             }),
                           if (_selectedCondition != 'All')
-                            _buildActiveFilterChip('Cond: $_selectedCondition', () {
+                            _buildActiveFilterChip('Condition: $_selectedCondition', () {
                               setState(() => _selectedCondition = 'All');
                             }),
                           if (_selectedOperationalStatus != 'All' && _sectionTabController.index != 3)
@@ -1005,7 +1003,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ],
                     const SizedBox(height: 12),
 
-                    // 8. Main Content View / Anti-Shift Skeleton Loader
+                    // Main Content View
                     if (_isLoading)
                       _buildSkeletonLoading(constraints.maxWidth)
                     else if (_errorMessage != null)
@@ -1061,7 +1059,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             onPressed: _openRegisterAssetPage,
             icon: const Icon(Icons.add, size: 18),
             label: const Text(
-              '+ Register Asset',
+              'Register Item',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
           ),
@@ -1101,7 +1099,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   onPressed: _openBatchPrintPage,
                   icon: const Icon(Icons.print_outlined, size: 17),
                   label: const Text(
-                    'Batch Print',
+                    'Batch Print Tags',
                     style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -1127,7 +1125,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               onPressed: _openRegisterAssetPage,
               icon: const Icon(Icons.add, size: 18),
               label: const Text(
-                '+ Register Asset',
+                'Register Item',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1148,7 +1146,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               onPressed: _openAuditScannerPage,
               icon: const Icon(Icons.qr_code_scanner, size: 18),
               label: const Text(
-                'Field Audit Scanner',
+                'Audit Scanner',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1168,7 +1166,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               onPressed: _openBatchPrintPage,
               icon: const Icon(Icons.print_outlined, size: 18),
               label: const Text(
-                'Batch Tag Print',
+                'Batch Print Tags',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1378,12 +1376,12 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               horizontalMargin: 16,
               columns: [
                 DataColumn(label: _buildSortableColumnLabel('Control Number', 'Control Number')),
-                DataColumn(label: _buildSortableColumnLabel('Asset Name', 'Asset Name')),
+                DataColumn(label: _buildSortableColumnLabel('Item Name', 'Item Name')),
                 const DataColumn(label: Text('Qty')),
-                const DataColumn(label: Text('Classification')),
-                const DataColumn(label: Text('Location')),
+                const DataColumn(label: Text('Category')),
+                const DataColumn(label: Text('Storage Location')),
                 DataColumn(label: _buildSortableColumnLabel('Year', 'Acquisition Year')),
-                DataColumn(label: _buildSortableColumnLabel('Price / Unit', 'Price / Unit')),
+                DataColumn(label: _buildSortableColumnLabel('Unit Price', 'Price / Unit')),
                 DataColumn(label: _buildSortableColumnLabel('Total Cost', 'Total Cost')),
                 const DataColumn(label: Text('Condition')),
                 const DataColumn(label: Text('Status')),
@@ -1557,15 +1555,15 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           const SizedBox(height: 12),
           Text(
             _searchQuery.isNotEmpty
-                ? 'No registered assets match your search.'
-                : 'No assets registered under this inventory section yet.',
+                ? 'No items match your search.'
+                : 'No items registered under this section yet.',
             style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
                 color: ParishColors.textDark),
           ),
           const SizedBox(height: 4),
-          Text('Tap "+ Register Asset" above to record parish properties.',
+          Text('Tap "+ Register Item" above to add parish properties.',
               style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
         ],
       ),

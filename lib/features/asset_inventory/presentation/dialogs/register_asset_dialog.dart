@@ -165,9 +165,9 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
   String get _determinedInventorySection {
     if (_parsedUnitPrice >= 10000.0) {
-      return 'Section 1 — 10,000.00 and Above';
+      return 'Section 1 — ₱10,000.00 and Above';
     } else {
-      return 'Section 2 — Below 10,000.00';
+      return 'Section 2 — Below ₱10,000.00';
     }
   }
 
@@ -251,12 +251,12 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
           } catch (_) {}
 
           if (rawBytes != null) {
-            await _processAndWatermarkImage(rawBytes, name ?? 'asset_upload.jpg');
+            await _processAndWatermarkImage(rawBytes, name ?? 'asset_photo.jpg');
           }
         }
       }
     } catch (e) {
-      debugPrint('Error selecting image from device: $e');
+      debugPrint('Error selecting image: $e');
     }
   }
 
@@ -270,18 +270,10 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
       if (photo != null) {
         final Uint8List rawBytes = await photo.readAsBytes();
-        await _processAndWatermarkImage(rawBytes, photo.name.isNotEmpty ? photo.name : 'camera_capture.jpg');
+        await _processAndWatermarkImage(rawBytes, photo.name.isNotEmpty ? photo.name : 'camera_photo.jpg');
       }
     } catch (e) {
-      debugPrint('Error capturing photo from camera: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Camera error: $e. You can upload an image using "Upload Image".'),
-            backgroundColor: ParishColors.goldAccent,
-          ),
-        );
-      }
+      debugPrint('Camera error: $e');
     }
   }
 
@@ -308,13 +300,13 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Security watermark embedded successfully! Tap the photo to inspect preview.'),
+          content: Text('Security watermark applied. Tap preview to inspect full size.'),
           backgroundColor: ParishColors.oliveGreen,
           duration: Duration(seconds: 3),
         ),
       );
     } catch (e) {
-      debugPrint('Error applying security watermark: $e');
+      debugPrint('Watermarking note: $e');
       if (!mounted) return;
       setState(() {
         _watermarkedPhotoBytes = rawBytes;
@@ -331,7 +323,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       imageProvider: MemoryImage(_watermarkedPhotoBytes!),
       title: _itemNameController.text.trim().isNotEmpty
           ? _itemNameController.text.trim()
-          : 'Asset Image Preview',
+          : 'Item Photo',
       controlNumber: _previewControlNumber,
     );
   }
@@ -341,17 +333,17 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
     if (!_formKey.currentState!.validate()) return;
     if (_selectedLocation == null) {
-      setState(() => _errorMessage = 'Please select an asset location.');
+      setState(() => _errorMessage = 'Please select a storage location.');
       return;
     }
     if (_selectedClassification == null) {
-      setState(() => _errorMessage = 'Please select an asset classification.');
+      setState(() => _errorMessage = 'Please select an item category.');
       return;
     }
 
     final int qty = _parsedQuantity;
     if (qty <= 0) {
-      setState(() => _errorMessage = 'Quantity must be a positive whole number (at least 1).');
+      setState(() => _errorMessage = 'Quantity must be at least 1.');
       return;
     }
 
@@ -398,8 +390,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       widget.onAssetSaved?.call();
 
       final summaryText = qty > 1
-          ? 'Asset registered successfully! Control #: ${createdAsset.controlNumber} ($qty units).'
-          : 'Asset registered successfully! Control #: ${createdAsset.controlNumber}';
+          ? 'Registered successfully: ${createdAsset.itemName} ($qty units) • Control #: ${createdAsset.controlNumber}'
+          : 'Registered successfully: ${createdAsset.itemName} • Control #: ${createdAsset.controlNumber}';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -432,7 +424,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
         constraints: const BoxConstraints(maxHeight: 820),
         child: Column(
           children: [
-            // Modal Header Banner
+            // Header Banner
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
               decoration: BoxDecoration(
@@ -448,7 +440,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       color: ParishColors.marianBlue,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.add_business, color: Colors.white, size: 22),
+                    child: const Icon(Icons.add_box_outlined, color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -456,11 +448,11 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Register Diocesan Parish Property / Asset',
+                          'Register New Item',
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
-                          'Assign standardized Diocesan Control Number with total valuation and unit count',
+                          'Record parish property with a standardized control number and quantity count',
                           style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
@@ -510,7 +502,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                         ),
                       ],
 
-                      // Live Auto Control Number Preview Card
+                      // Control Number Preview Card
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
@@ -528,7 +520,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'Diocesan Control Number Preview:',
+                                    'Generated Control Number:',
                                     style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
                                   ),
                                   const SizedBox(height: 2),
@@ -544,17 +536,17 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 18),
 
-                      // Asset Name
-                      _buildLabel('Asset Name / Designation *'),
+                      // Item Name
+                      _buildLabel('Item Name *'),
                       TextFormField(
                         controller: _itemNameController,
-                        validator: (v) => (v?.trim().isEmpty ?? true) ? 'Asset name is required.' : null,
+                        validator: (v) => (v?.trim().isEmpty ?? true) ? 'Please enter the item name.' : null,
                         style: TextStyle(fontSize: 14, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Church Pew, Wooden Conference Chair, Monoblock'),
+                        decoration: _inputDecoration(hint: 'e.g. Wooden Church Pew, Monoblock Chair, Wireless Mic'),
                       ),
                       const SizedBox(height: 16),
 
-                      // Quantity & Unit Price Valuation Container
+                      // Quantity & Pricing Card
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -568,8 +560,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  'Quantity & Valuation Parameters',
+                                const Text(
+                                  'Quantity & Value',
                                   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                                 ),
                                 Container(
@@ -601,7 +593,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Units sharing the same designation and acquisition details are managed under 1 Control Number with specified quantity.',
+                              'Multiple units sharing the same specifications share 1 Control Number.',
                               style: TextStyle(fontSize: 11.5, color: textMuted),
                             ),
                             const Divider(height: 20),
@@ -621,12 +613,12 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                         validator: (v) {
                                           final num = int.tryParse(v?.trim() ?? '');
-                                          if (num == null || num <= 0) return 'Must be ≥ 1';
+                                          if (num == null || num <= 0) return 'Min 1';
                                           return null;
                                         },
                                         onChanged: (_) => _updateLiveControlNumberPreview(),
                                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
-                                        decoration: _inputDecoration(hint: '1'),
+                                        decoration: _inputDecoration(hint: 'e.g. 16'),
                                       ),
                                     ],
                                   ),
@@ -637,14 +629,14 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel('Acquisition Price per Unit (₱)'),
+                                      _buildLabel('Price per Unit (₱)'),
                                       TextFormField(
                                         controller: _unitPriceController,
                                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                         inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
                                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
                                         decoration: _inputDecoration(
-                                          hint: 'e.g. 15,000.00',
+                                          hint: 'e.g. 2,500.00',
                                           prefixIcon: const Padding(
                                             padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                             child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
@@ -672,7 +664,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                   Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Total Acquisition Cost:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: textMuted)),
+                                      Text('Total Cost:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: textMuted)),
                                       Text('$_parsedQuantity unit(s) × ₱ ${AssetModel.formatCurrency(_parsedUnitPrice)}', style: TextStyle(fontSize: 11, color: textMuted)),
                                     ],
                                   ),
@@ -688,7 +680,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Classification & Location Selectors
+                      // Category & Storage Location
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -696,7 +688,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Classification *'),
+                                _buildLabel('Category *'),
                                 DropdownButtonFormField<AssetClassificationModel>(
                                   value: _selectedClassification,
                                   isExpanded: true,
@@ -734,7 +726,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Parish Location *'),
+                                _buildLabel('Storage Location *'),
                                 DropdownButtonFormField<AssetLocationModel>(
                                   value: _selectedLocation,
                                   isExpanded: true,
@@ -763,14 +755,14 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Acquisition Date & Mode
+                      // Acquisition Date & How Acquired
                       Row(
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Date of Acquisition *'),
+                                _buildLabel('Acquisition Date *'),
                                 InkWell(
                                   onTap: _pickDateOfAcquisition,
                                   borderRadius: BorderRadius.circular(10),
@@ -801,7 +793,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Mode of Acquisition *'),
+                                _buildLabel('How Acquired *'),
                                 DropdownButtonFormField<String>(
                                   value: _modeOfAcquisition,
                                   isExpanded: true,
@@ -817,7 +809,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       const SizedBox(height: 14),
 
                       // RFID Tag (Optional)
-                      _buildLabel('RFID / NFC Tag ID (Optional)'),
+                      _buildLabel('Wireless RFID / NFC Tag (Optional)'),
                       TextFormField(
                         controller: _rfidTagController,
                         style: TextStyle(fontSize: 13.5, color: textDark),
@@ -828,14 +820,14 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Condition & Operational Status
+                      // Condition & Status
                       Row(
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Physical Condition *'),
+                                _buildLabel('Item Condition *'),
                                 DropdownButtonFormField<String>(
                                   value: _conditionStatus,
                                   isExpanded: true,
@@ -851,7 +843,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Operational Status *'),
+                                _buildLabel('Item Status *'),
                                 DropdownButtonFormField<String>(
                                   value: _operationalStatus,
                                   isExpanded: true,
@@ -873,8 +865,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Dimensions / Size (Optional)'),
-                                TextFormField(controller: _dimensionsController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. 10ft L x 3ft H')),
+                                _buildLabel('Size / Dimensions (Optional)'),
+                                TextFormField(controller: _dimensionsController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. 10 ft x 3 ft')),
                               ],
                             ),
                           ),
@@ -884,7 +876,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildLabel('Color'),
-                                TextFormField(controller: _colorController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Brown')),
+                                TextFormField(controller: _colorController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Dark Walnut')),
                               ],
                             ),
                           ),
@@ -893,8 +885,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Model / Brand'),
-                                TextFormField(controller: _modelController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Custom')),
+                                _buildLabel('Brand / Model'),
+                                TextFormField(controller: _modelController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Custom Woodcraft')),
                               ],
                             ),
                           ),
@@ -902,11 +894,11 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 18),
 
-                      // Watermarked Photo Capture Section
+                      // Photo Section
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _buildLabel('Asset Documentation Photo & Security Watermark'),
+                          _buildLabel('Item Photo'),
                           if (_watermarkedPhotoBytes != null)
                             InkWell(
                               onTap: _openInteractiveImagePreview,
@@ -961,7 +953,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    _watermarkedPhotoBytes != null ? 'Security Watermark Embedded' : 'Attach or Capture Asset Photo',
+                                    _watermarkedPhotoBytes != null ? 'Security Watermark Embedded' : 'Take or Upload Item Photo',
                                     style: TextStyle(
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.bold,
@@ -970,7 +962,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    'Images are automatically stamped with an immutable parish watermark including date, time, and Diocesan Control number.',
+                                    'Photos are stamped with permanent control number and timestamp.',
                                     style: TextStyle(fontSize: 11, color: textMuted, height: 1.35),
                                   ),
                                   const SizedBox(height: 10),
@@ -986,7 +978,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                         ),
                                         onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
                                         icon: const Icon(Icons.camera_alt, size: 16),
-                                        label: const Text('Take Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                        label: const Text('Camera', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                       ),
                                       OutlinedButton.icon(
                                         style: OutlinedButton.styleFrom(
@@ -1008,12 +1000,12 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 16),
 
-                      _buildLabel('Other Specifications / Inscriptions'),
-                      TextFormField(controller: _othersController, maxLines: 2, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Inscribed "Donated by Family"')),
+                      _buildLabel('Additional Details / Markings'),
+                      TextFormField(controller: _othersController, maxLines: 2, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Inscribed "Donated by Santos Family"')),
                       const SizedBox(height: 14),
 
-                      _buildLabel('Remarks & Maintenance Notes'),
-                      TextFormField(controller: _remarksController, maxLines: 2, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Stored inside main nave')),
+                      _buildLabel('Notes & Maintenance Remarks'),
+                      TextFormField(controller: _remarksController, maxLines: 2, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Inspected and placed in main church nave')),
                     ],
                   ),
                 ),
@@ -1050,7 +1042,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.check, size: 20),
                       label: Text(
-                        _isSaving ? 'Registering...' : 'Save & Register Asset',
+                        _isSaving ? 'Registering...' : 'Save & Register Item',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                     ),

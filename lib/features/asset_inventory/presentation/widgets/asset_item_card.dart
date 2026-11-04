@@ -94,7 +94,7 @@ class AssetItemCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Row 1: Control Number, Quantity Tag & Condition Pill
+                    // Control Number, Quantity Tag & Condition Pill
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

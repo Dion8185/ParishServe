@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/asset_inventory/models/asset_audit_log_model.dart
+// =============================================================================
+
 class AssetAuditLogModel {
   final String auditId;
   final String assetId;
@@ -14,6 +18,12 @@ class AssetAuditLogModel {
   final String? auditNotes;
   final DateTime auditedAt;
 
+  // Quantity Tracking and Adjustment History
+  final int? previousQuantity;
+  final int? newQuantity;
+  final int? quantityChange;
+  final String? quantityChangeReason;
+
   const AssetAuditLogModel({
     required this.auditId,
     required this.assetId,
@@ -29,7 +39,28 @@ class AssetAuditLogModel {
     this.auditMethod = 'QR_SCAN',
     this.auditNotes,
     required this.auditedAt,
+    this.previousQuantity,
+    this.newQuantity,
+    this.quantityChange,
+    this.quantityChangeReason,
   });
+
+  bool get hasQuantityAdjustment =>
+      quantityChange != null && quantityChange != 0;
+
+  String get formattedQuantityChange {
+    if (!hasQuantityAdjustment) return 'No quantity change';
+    final sign = quantityChange! > 0 ? '+${quantityChange!}' : '${quantityChange!}';
+    return '$sign units (from $previousQuantity to $newQuantity)';
+  }
+
+  /// Clean user notes without the automated quantity adjustment tracking header
+  String get cleanNotes {
+    if (auditNotes == null) return '';
+    return auditNotes!
+        .replaceAll(RegExp(r'\[QTY_ADJUST:.*?\]\n?'), '')
+        .trim();
+  }
 
   String get formattedAuditedAt {
     return '${auditedAt.year}-${auditedAt.month.toString().padLeft(2, '0')}-${auditedAt.day.toString().padLeft(2, '0')} '
@@ -41,6 +72,27 @@ class AssetAuditLogModel {
     if (map['users'] is Map) {
       final u = map['users'];
       auditor = '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
+    }
+
+    final rawNotes = map['audit_notes']?.toString();
+
+    // Parse automated quantity adjustment metadata from audit notes if present
+    int? prevQty;
+    int? nextQty;
+    int? changeQty;
+    String? reasonQty;
+
+    if (rawNotes != null && rawNotes.contains('[QTY_ADJUST:')) {
+      final match = RegExp(
+        r'\[QTY_ADJUST: from (\d+) to (\d+) \(([+-]?\d+)\) \| REASON: (.*?)\]',
+      ).firstMatch(rawNotes);
+
+      if (match != null) {
+        prevQty = int.tryParse(match.group(1) ?? '');
+        nextQty = int.tryParse(match.group(2) ?? '');
+        changeQty = int.tryParse(match.group(3) ?? '');
+        reasonQty = match.group(4)?.trim();
+      }
     }
 
     return AssetAuditLogModel(
@@ -56,8 +108,12 @@ class AssetAuditLogModel {
       previousLocation: map['previous_location']?.toString(),
       newLocation: map['new_location']?.toString(),
       auditMethod: map['audit_method']?.toString() ?? 'QR_SCAN',
-      auditNotes: map['audit_notes']?.toString(),
+      auditNotes: rawNotes,
       auditedAt: DateTime.tryParse(map['audited_at']?.toString() ?? '') ?? DateTime.now(),
+      previousQuantity: prevQty,
+      newQuantity: nextQty,
+      quantityChange: changeQty,
+      quantityChangeReason: reasonQty,
     );
   }
 

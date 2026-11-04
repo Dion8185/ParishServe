@@ -242,7 +242,7 @@ class AssetService {
     }
   }
 
-  /// Registers a parish asset with a single Control Number and specified quantity (e.g., 16 units)
+  /// Registers a parish asset with a single Control Number and specified quantity
   static Future<AssetModel> registerAsset({
     required String itemName,
     required int quantity,
@@ -266,8 +266,8 @@ class AssetService {
     String operationalStatus = 'Active',
   }) async {
     final cleanItemName = itemName.trim();
-    if (cleanItemName.isEmpty) throw 'Asset designation / item name is required.';
-    if (quantity <= 0) throw 'Quantity must be a positive whole number (at least 1).';
+    if (cleanItemName.isEmpty) throw 'Item name is required.';
+    if (quantity <= 0) throw 'Quantity must be at least 1.';
 
     final validUserId = await _resolveValidUserId();
     final int acquisitionYear = dateOfAcquisition.year;
@@ -433,7 +433,7 @@ class AssetService {
     required String operationalStatus,
   }) async {
     final cleanItemName = itemName.trim();
-    if (cleanItemName.isEmpty) throw 'Asset designation / item name is required.';
+    if (cleanItemName.isEmpty) throw 'Item name is required.';
 
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
@@ -477,7 +477,7 @@ class AssetService {
     return AssetModel.fromMap(response);
   }
 
-  /// Records an audit inspection for an asset and its units
+  /// Records an audit inspection with quantity adjustment tracking and accountability reasons
   static Future<void> recordAuditScan({
     required String assetId,
     required String controlNumber,
@@ -489,12 +489,39 @@ class AssetService {
     String? newLocation,
     String auditMethod = 'QR_SCAN',
     String? auditNotes,
+    int? previousQuantity,
+    int? newQuantity,
+    String? quantityChangeReason,
     bool auditEntireGroup = false,
     List<String> groupAssetIds = const [],
   }) async {
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
 
+    // Check if quantity has changed
+    final bool hasQtyChange = previousQuantity != null &&
+        newQuantity != null &&
+        previousQuantity != newQuantity;
+
+    String combinedNotes = '';
+
+    if (hasQtyChange) {
+      final change = newQuantity - previousQuantity;
+      final sign = change > 0 ? '+$change' : '$change';
+      final reason = (quantityChangeReason != null && quantityChangeReason.trim().isNotEmpty)
+          ? quantityChangeReason.trim()
+          : 'Quantity updated during inspection';
+
+      combinedNotes += '[QTY_ADJUST: from $previousQuantity to $newQuantity ($sign) | REASON: $reason]\n';
+    }
+
+    if (auditNotes != null && auditNotes.trim().isNotEmpty) {
+      combinedNotes += auditNotes.trim();
+    }
+
+    final finalNotes = combinedNotes.trim().isEmpty ? null : combinedNotes.trim();
+
+    // Insert log entry
     await _client.from('asset_audit_logs').insert({
       'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
       'asset_id': assetId,
@@ -507,17 +534,39 @@ class AssetService {
       'previous_location': previousLocation,
       'new_location': newLocation,
       'audit_method': auditMethod,
-      'audit_notes': auditNotes?.trim().isEmpty ?? true ? null : auditNotes!.trim(),
+      'audit_notes': finalNotes,
       'audited_at': now.toIso8601String(),
     });
 
-    await _client.from('parish_assets').update({
+    // Update asset record: condition, status, audit timestamp, and updated quantity if changed
+    final Map<String, dynamic> assetUpdates = {
       'condition_status': newCondition,
       'operational_status': newStatus,
       'last_audited_at': now.toIso8601String(),
       'audited_by': validUserId,
       'updated_at': now.toIso8601String(),
-    }).eq('asset_id', assetId);
+    };
+
+    if (hasQtyChange && newQuantity > 0) {
+      assetUpdates['quantity'] = newQuantity;
+
+      // Recalculate total cost based on unit price
+      try {
+        final current = await _client
+            .from('parish_assets')
+            .select('unit_price')
+            .eq('asset_id', assetId)
+            .maybeSingle();
+
+        if (current != null && current['unit_price'] != null) {
+          final double uPrice = double.tryParse(current['unit_price'].toString()) ?? 0.0;
+          assetUpdates['total_cost'] = newQuantity * uPrice;
+          assetUpdates['cost'] = newQuantity * uPrice;
+        }
+      } catch (_) {}
+    }
+
+    await _client.from('parish_assets').update(assetUpdates).eq('asset_id', assetId);
   }
 
   static Future<List<AssetAuditLogModel>> getAssetAuditHistory(String assetId) async {

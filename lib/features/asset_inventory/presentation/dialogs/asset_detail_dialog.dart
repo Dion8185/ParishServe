@@ -37,6 +37,7 @@ class _AssetDetailDialog extends StatefulWidget {
   final VoidCallback? onAssetUpdated;
 
   const _AssetDetailDialog({
+    super.key,
     required this.initialAsset,
     this.onAssetUpdated,
   });
@@ -107,8 +108,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   String get _editDeterminedSection {
     return _editUnitPrice >= 10000.0
-        ? 'Section 1 — 10,000.00 and Above'
-        : 'Section 2 — Below 10,000.00';
+        ? 'Section 1 — ₱10,000.00 and Above'
+        : 'Section 2 — Below ₱10,000.00';
   }
 
   @override
@@ -247,7 +248,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         final Uint8List rawBytes = await photo.readAsBytes();
         await _processAndWatermarkNewImage(
           rawBytes,
-          photo.name.isNotEmpty ? photo.name : 'camera_capture.jpg',
+          photo.name.isNotEmpty ? photo.name : 'camera_photo.jpg',
         );
       }
     } catch (e) {
@@ -344,8 +345,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_operationalStatus == 'Decommissioned'
-              ? 'Asset marked as Decommissioned and moved to Archive quarantine.'
-              : 'Asset record updated successfully.'),
+              ? 'Item marked as Decommissioned and moved to Archive.'
+              : 'Item record updated successfully.'),
           backgroundColor: _operationalStatus == 'Decommissioned'
               ? ParishColors.goldAccent
               : ParishColors.oliveGreen,
@@ -366,7 +367,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Archive Diocesan Asset?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: const Text('Archive Parish Item?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,7 +376,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             const SizedBox(height: 14),
             TextField(
               controller: reasonController,
-              decoration: const InputDecoration(labelText: 'Reason for Archiving *', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Reason for Archiving *',
+                hintText: 'e.g. Broken beyond repair, replaced by newer unit',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
@@ -435,7 +440,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             constraints: const BoxConstraints(maxHeight: 840),
             child: Column(
               children: [
-                // Dialog Header Banner
+                // Header Banner
                 Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: isMobile ? 14 : 20,
@@ -648,13 +653,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'ARCHIVED / DECOMMISSIONED PROPERTY',
+                        'ARCHIVED ITEM',
                         style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
                       ),
                       Text(
                         _asset.archiveReason != null && _asset.archiveReason!.isNotEmpty
                             ? 'Reason: ${_asset.archiveReason}'
-                            : 'This asset is decommissioned from active parish operations.',
+                            : 'This item has been decommissioned from active parish operations.',
                         style: TextStyle(fontSize: 11, color: textDark),
                       ),
                     ],
@@ -711,9 +716,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             ),
             child: Column(
               children: [
-                _buildDataRow(Icons.category_outlined, 'Classification', _asset.displayClassification),
-                _buildDataRow(Icons.location_on_outlined, 'Location', _asset.displayLocation),
-                _buildDataRow(Icons.calendar_today_outlined, 'Acquisition', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
+                _buildDataRow(Icons.category_outlined, 'Category', _asset.displayClassification),
+                _buildDataRow(Icons.location_on_outlined, 'Storage Location', _asset.displayLocation),
+                _buildDataRow(Icons.calendar_today_outlined, 'Acquisition Date', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
                 if (_asset.rfidTag != null && _asset.rfidTag!.isNotEmpty)
                   _buildDataRow(Icons.nfc, 'RFID / NFC Tag', _asset.rfidTag!),
               ],
@@ -734,9 +739,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                       style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: textDark),
                     ),
                     const SizedBox(height: 6),
-                    _buildDataRow(Icons.category_outlined, 'Classification', _asset.displayClassification),
-                    _buildDataRow(Icons.location_on_outlined, 'Location', _asset.displayLocation),
-                    _buildDataRow(Icons.calendar_today_outlined, 'Acquisition', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
+                    _buildDataRow(Icons.category_outlined, 'Category', _asset.displayClassification),
+                    _buildDataRow(Icons.location_on_outlined, 'Storage Location', _asset.displayLocation),
+                    _buildDataRow(Icons.calendar_today_outlined, 'Acquisition Date', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
                     _buildDataRow(Icons.menu_book, 'Book of Inventory', _asset.inventorySection),
                     if (_asset.rfidTag != null && _asset.rfidTag!.isNotEmpty)
                       _buildDataRow(Icons.nfc, 'RFID / NFC Tag', _asset.rfidTag!),
@@ -801,20 +806,20 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _buildSpecItem('Dimensions / Size', _asset.dimensions ?? '—')),
+                  Expanded(child: _buildSpecItem('Size / Dimensions', _asset.dimensions ?? '—')),
                   const SizedBox(width: 8),
-                  Expanded(child: _buildSpecItem('Primary Color', _asset.color ?? '—')),
+                  Expanded(child: _buildSpecItem('Color', _asset.color ?? '—')),
                 ],
               ),
               const SizedBox(height: 10),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _buildSpecItem('Model / Brand', _asset.model ?? '—')),
+                  Expanded(child: _buildSpecItem('Brand / Model', _asset.model ?? '—')),
                   const SizedBox(width: 8),
                   Expanded(
                     child: _buildSpecItem(
-                      'Operational Status',
+                      'Item Status',
                       _asset.operationalStatus,
                       highlightRed: _asset.operationalStatus == 'Decommissioned',
                     ),
@@ -823,11 +828,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               ),
               if (_asset.others != null && _asset.others!.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                Text('Inscriptions / Specs: ${_asset.others}', style: TextStyle(fontSize: 12, color: textDark)),
+                Text('Markings / Details: ${_asset.others}', style: TextStyle(fontSize: 12, color: textDark)),
               ],
               if (_asset.remarks != null && _asset.remarks!.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text('Remarks: ${_asset.remarks}', style: TextStyle(fontSize: 11.5, color: textMuted)),
+                Text('Notes: ${_asset.remarks}', style: TextStyle(fontSize: 11.5, color: textMuted)),
               ],
             ],
           ),
@@ -836,8 +841,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Audit Inspection History', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark)),
-            Text('${_auditHistory.length} entries', style: TextStyle(fontSize: 11.5, color: textMuted)),
+            Text('Audit & Adjustment History', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark)),
+            Text('${_auditHistory.length} record(s)', style: TextStyle(fontSize: 11.5, color: textMuted)),
           ],
         ),
         const SizedBox(height: 8),
@@ -853,7 +858,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               border: Border.all(color: borderGrey),
             ),
             child: Center(
-              child: Text('No field audit records logged yet.', style: TextStyle(fontSize: 12, color: textMuted)),
+              child: Text('No audit or quantity change records logged yet.', style: TextStyle(fontSize: 12, color: textMuted)),
             ),
           )
         else
@@ -869,7 +874,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
     return Tooltip(
       message: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
-          ? 'Tap to preview photo with security watermark'
+          ? 'Tap to inspect photo with security watermark'
           : 'No photo uploaded',
       child: InkWell(
         onTap: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
@@ -934,48 +939,114 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     final textMuted = ParishColors.textMuted;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: ParishColors.backgroundLight,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ParishColors.borderGrey),
+        color: log.hasQuantityAdjustment
+            ? ParishColors.goldLight.withValues(alpha: 0.5)
+            : ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: log.hasQuantityAdjustment
+              ? ParishColors.goldAccent.withValues(alpha: 0.6)
+              : ParishColors.borderGrey,
+        ),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            log.auditMethod == 'RFID_NFC' ? Icons.nfc : Icons.qr_code_scanner,
-            size: 16,
-            color: ParishColors.marianBlue,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                log.auditMethod == 'RFID_NFC' ? Icons.nfc : Icons.qr_code_scanner,
+                size: 16,
+                color: ParishColors.marianBlue,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Condition: ${log.newCondition}',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Condition: ${log.newCondition}',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
+                        ),
+                        Text(
+                          log.formattedAuditedAt,
+                          style: TextStyle(fontSize: 10.5, color: textMuted),
+                        ),
+                      ],
                     ),
-                    Text(
-                      log.formattedAuditedAt,
-                      style: TextStyle(fontSize: 10.5, color: textMuted),
-                    ),
+                    if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text('Status: ${log.newStatus}', style: TextStyle(fontSize: 11, color: textMuted)),
+                    ],
+                    if (log.newLocation != null && log.newLocation!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text('Location: ${log.newLocation}', style: TextStyle(fontSize: 11, color: textMuted)),
+                    ],
                   ],
                 ),
-                if (log.newLocation != null && log.newLocation!.isNotEmpty)
-                  Text('Location: ${log.newLocation}', style: TextStyle(fontSize: 11, color: textMuted)),
-                if (log.auditNotes != null && log.auditNotes!.isNotEmpty)
-                  Text('Notes: ${log.auditNotes}', style: TextStyle(fontSize: 11, color: textDark)),
-                if (log.auditorName != null)
-                  Text('Audited By: ${log.auditorName}', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: textMuted)),
-              ],
-            ),
+              ),
+            ],
           ),
+
+          // Traceable Quantity Change Details
+          if (log.hasQuantityAdjustment) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ParishColors.goldAccent.withValues(alpha: 0.4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        (log.quantityChange ?? 0) > 0 ? Icons.add_circle : Icons.remove_circle,
+                        size: 14,
+                        color: (log.quantityChange ?? 0) > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Quantity Adjustment: ${log.formattedQuantityChange}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: (log.quantityChange ?? 0) > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (log.quantityChangeReason != null && log.quantityChangeReason!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      'Reason: ${log.quantityChangeReason}',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textDark),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
+          if (log.cleanNotes.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Notes: ${log.cleanNotes}', style: TextStyle(fontSize: 11, color: textDark)),
+          ],
+
+          if (log.auditorName != null) ...[
+            const SizedBox(height: 4),
+            Text('Audited by: ${log.auditorName}', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: textMuted)),
+          ],
         ],
       ),
     );
@@ -1003,14 +1074,14 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Diocesan Control Number (${_asset.controlNumber}) and Classification are permanently locked to protect inventory integrity.',
+                  'Control Number (${_asset.controlNumber}) and Category are locked to preserve records.',
                   style: const TextStyle(fontSize: 11.5, color: ParishColors.marianBlue, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
           ),
         ),
-        Text('Asset Documentation Photo & Security Watermark', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text('Item Photo', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
         Container(
           padding: const EdgeInsets.all(12),
@@ -1104,9 +1175,12 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ),
         ),
         const SizedBox(height: 14),
-        Text('Asset Designation / Item Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text('Item Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
-        TextFormField(controller: _nameController, decoration: _inputDecoration()),
+        TextFormField(
+          controller: _nameController,
+          decoration: _inputDecoration(hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
+        ),
         const SizedBox(height: 12),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1122,7 +1196,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     controller: _quantityController,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: _inputDecoration(),
+                    decoration: _inputDecoration(hint: 'e.g. 16'),
                   ),
                 ],
               ),
@@ -1133,13 +1207,14 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Unit Price (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Price per Unit (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: _unitPriceController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
                     decoration: _inputDecoration(
+                      hint: 'e.g. 2,500.00',
                       prefixIcon: const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                         child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1181,7 +1256,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Classification (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
+                  Text('Category (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
                   const SizedBox(height: 6),
                   TextFormField(initialValue: _asset.displayClassification, enabled: false, decoration: _inputDecoration()),
                 ],
@@ -1192,7 +1267,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Location (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
+                  Text('Storage Location (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
                   const SizedBox(height: 6),
                   TextFormField(initialValue: _asset.displayLocation, enabled: false, decoration: _inputDecoration()),
                 ],
@@ -1207,7 +1282,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Condition *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Item Condition *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     value: _conditionStatus,
@@ -1229,13 +1304,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Status *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Item Status *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     value: _operationalStatus,
                     decoration: _inputDecoration(),
                     items: const [
-                      DropdownMenuItem(value: 'Active', child: Text('Active')),
+                      DropdownMenuItem(value: 'Active', child: Text('Available / Active')),
                       DropdownMenuItem(value: 'In Storage', child: Text('In Storage')),
                       DropdownMenuItem(value: 'Under Maintenance', child: Text('Under Maintenance')),
                       DropdownMenuItem(value: 'Decommissioned', child: Text('Decommissioned')),
@@ -1248,7 +1323,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ],
         ),
         const SizedBox(height: 12),
-        _buildLabel('RFID / NFC Tag ID (Optional)'),
+        _buildLabel('Wireless RFID / NFC Tag (Optional)'),
         TextFormField(controller: _rfidController, decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C')),
         const SizedBox(height: 12),
         Row(
@@ -1257,9 +1332,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Dimensions / Size', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Size / Dimensions', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
-                  TextFormField(controller: _dimensionsController, decoration: _inputDecoration()),
+                  TextFormField(controller: _dimensionsController, decoration: _inputDecoration(hint: 'e.g. 10 ft x 3 ft')),
                 ],
               ),
             ),
@@ -1270,7 +1345,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                 children: [
                   Text('Color', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
-                  TextFormField(controller: _colorController, decoration: _inputDecoration()),
+                  TextFormField(controller: _colorController, decoration: _inputDecoration(hint: 'e.g. Dark Walnut')),
                 ],
               ),
             ),
@@ -1279,22 +1354,30 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Model / Brand', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Brand / Model', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
-                  TextFormField(controller: _modelController, decoration: _inputDecoration()),
+                  TextFormField(controller: _modelController, decoration: _inputDecoration(hint: 'e.g. Custom Woodcraft')),
                 ],
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        Text('Other Specifications / Inscriptions', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text('Additional Details / Markings', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
-        TextFormField(controller: _othersController, maxLines: 2, decoration: _inputDecoration()),
+        TextFormField(
+          controller: _othersController,
+          maxLines: 2,
+          decoration: _inputDecoration(hint: 'e.g. Inscribed "Donated by Santos Family"'),
+        ),
         const SizedBox(height: 12),
-        Text('Remarks & Maintenance Notes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text('Notes & Maintenance Remarks', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
-        TextFormField(controller: _remarksController, maxLines: 2, decoration: _inputDecoration()),
+        TextFormField(
+          controller: _remarksController,
+          maxLines: 2,
+          decoration: _inputDecoration(hint: 'e.g. Inspected and placed in main church nave'),
+        ),
       ],
     );
   }
