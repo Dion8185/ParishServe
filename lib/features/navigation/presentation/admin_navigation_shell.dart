@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/theme_controller.dart';
@@ -44,6 +45,50 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     ];
   }
 
+  Future<bool?> _showExitConfirmationDialog(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.exit_to_app_rounded, color: ParishColors.marianBlueAdaptive, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text('Exit ParishServe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to exit the application?',
+          style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: ParishColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Exit', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
@@ -72,50 +117,68 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AppThemeController.themeModeNotifier,
-      builder: (context, currentMode, _) {
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final bool isDesktop = constraints.maxWidth >= 900;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
 
-            if (isDesktop) {
-              return Scaffold(
-                backgroundColor: ParishColors.backgroundLight,
-                body: Row(
-                  children: [
-                    _buildDesktopSidebar(),
-                    Expanded(
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1400),
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(30),
-                              bottomLeft: Radius.circular(30),
-                            ),
-                            child: Container(
-                              color: ParishColors.backgroundLight,
-                              child: _views[_currentIndex],
+        // If on Users, System, or Profile tab, jump back to Admin Dashboard (index 0)
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+          return;
+        }
+
+        // On Admin Dashboard, prompt exit confirmation
+        final shouldExit = await _showExitConfirmationDialog(context);
+        if (shouldExit == true) {
+          SystemNavigator.pop();
+        }
+      },
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: AppThemeController.themeModeNotifier,
+        builder: (context, currentMode, _) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final bool isDesktop = constraints.maxWidth >= 900;
+
+              if (isDesktop) {
+                return Scaffold(
+                  backgroundColor: ParishColors.backgroundLight,
+                  body: Row(
+                    children: [
+                      _buildDesktopSidebar(),
+                      Expanded(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1400),
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(30),
+                                bottomLeft: Radius.circular(30),
+                              ),
+                              child: Container(
+                                color: ParishColors.backgroundLight,
+                                child: _views[_currentIndex],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            }
+                    ],
+                  ),
+                );
+              }
 
-            return Scaffold(
-              backgroundColor: ParishColors.backgroundLight,
-              appBar: _buildMobileTopBar(),
-              body: SafeArea(child: _views[_currentIndex]),
-              bottomNavigationBar: _buildMobileBottomBar(),
-            );
-          },
-        );
-      },
+              return Scaffold(
+                backgroundColor: ParishColors.backgroundLight,
+                appBar: _buildMobileTopBar(),
+                body: SafeArea(child: _views[_currentIndex]),
+                bottomNavigationBar: _buildMobileBottomBar(),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 

@@ -169,6 +169,53 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     }
   }
 
+  // ===========================================================================
+  // App Lifecycle Exit & Back Navigation Handling
+  // ===========================================================================
+  Future<bool?> _showExitConfirmationDialog(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: ParishColors.cardWhite,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.exit_to_app_rounded, color: ParishColors.marianBlueAdaptive, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text('Exit ParishServe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to exit the application?',
+          style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: ParishColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Exit', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
@@ -218,69 +265,87 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AppThemeController.themeModeNotifier,
-      builder: (context, currentMode, _) {
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final bool isDesktop = constraints.maxWidth >= 900;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
 
-            if (isDesktop) {
-              return Scaffold(
-                backgroundColor: ParishColors.backgroundLight,
-                body: Row(
-                  children: [
-                    _buildModernDesktopSidebar(),
-                    Expanded(
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1440),
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(24),
-                              bottomLeft: Radius.circular(24),
-                            ),
-                            child: Container(
-                              color: ParishColors.backgroundLight,
-                              child: _isModuleAllowed(_currentIndex)
-                                  ? _views[_currentIndex]
-                                  : _buildUnauthorizedView(),
+        // If currently on any sub-view/module, jump back to the Overview Dashboard
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+          return;
+        }
+
+        // If already on the Overview Dashboard, confirm before exiting the app
+        final shouldExit = await _showExitConfirmationDialog(context);
+        if (shouldExit == true) {
+          SystemNavigator.pop();
+        }
+      },
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: AppThemeController.themeModeNotifier,
+        builder: (context, currentMode, _) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final bool isDesktop = constraints.maxWidth >= 900;
+
+              if (isDesktop) {
+                return Scaffold(
+                  backgroundColor: ParishColors.backgroundLight,
+                  body: Row(
+                    children: [
+                      _buildModernDesktopSidebar(),
+                      Expanded(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1440),
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(24),
+                                bottomLeft: Radius.circular(24),
+                              ),
+                              child: Container(
+                                color: ParishColors.backgroundLight,
+                                child: _isModuleAllowed(_currentIndex)
+                                    ? _views[_currentIndex]
+                                    : _buildUnauthorizedView(),
+                              ),
                             ),
                           ),
                         ),
                       ),
+                    ],
+                  ),
+                );
+              }
+
+              // Mobile / Tablet View: True Floating Island Overlay
+              return Scaffold(
+                backgroundColor: ParishColors.backgroundLight,
+                appBar: _buildModernMobileAppBar(context),
+                body: Stack(
+                  children: [
+                    // Layer 0: Page View (Extends full screen beneath the floating dock)
+                    Positioned.fill(
+                      child: _isModuleAllowed(_currentIndex)
+                          ? _views[_currentIndex]
+                          : _buildUnauthorizedView(),
+                    ),
+
+                    // Layer 1: True Floating Glass Island Dock with Crisp Outline
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _buildModernMobileFloatingDock(context),
                     ),
                   ],
                 ),
               );
-            }
-
-            // Mobile / Tablet View: True Floating Island Overlay
-            return Scaffold(
-              backgroundColor: ParishColors.backgroundLight,
-              appBar: _buildModernMobileAppBar(context),
-              body: Stack(
-                children: [
-                  // Layer 0: Page View (Extends full screen beneath the floating dock)
-                  Positioned.fill(
-                    child: _isModuleAllowed(_currentIndex)
-                        ? _views[_currentIndex]
-                        : _buildUnauthorizedView(),
-                  ),
-
-                  // Layer 1: True Floating Glass Island Dock with Crisp Outline
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: _buildModernMobileFloatingDock(context),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -627,9 +692,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? ParishColors.marianBlue
-                  : Colors.transparent,
+              color: isSelected ? ParishColors.marianBlue : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               boxShadow: isSelected
                   ? [
@@ -676,7 +739,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   }
 
   // ===========================================================================
-  // 2. MODERN MOBILE APP BAR (Clean Glassmorphic Top Bar)
+  // 2. MODERN MOBILE APP BAR
   // ===========================================================================
   PreferredSizeWidget _buildModernMobileAppBar(BuildContext context) {
     return PreferredSize(
@@ -820,14 +883,13 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   }
 
   // ===========================================================================
-  // 3. MODERN MOBILE FLOATING DOCK (Top-Layer Island with Crisp Defined Border)
+  // 3. MODERN MOBILE FLOATING DOCK
   // ===========================================================================
   Widget _buildModernMobileFloatingDock(BuildContext context) {
     final bool isDark = AppThemeController.isDarkMode;
     final double bottomInset = MediaQuery.of(context).padding.bottom;
 
     return Padding(
-      // Ensure the island floats cleanly above the system gesture bar with zero canvas background
       padding: EdgeInsets.fromLTRB(
         14,
         0,
@@ -835,12 +897,11 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         bottomInset > 0 ? bottomInset + 4 : 14,
       ),
       child: SizedBox(
-        height: 84, // Headroom ensuring the elevated hero center button is not clipped
+        height: 84,
         child: Stack(
           clipBehavior: Clip.none,
           alignment: Alignment.bottomCenter,
           children: [
-            // Glassmorphic Floating Dock Shell with Unclipped Drop Shadow & Outline Border
             Positioned(
               left: 0,
               right: 0,
@@ -850,14 +911,12 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
-                    // Deep ambient drop shadow to separate island from white backgrounds
                     BoxShadow(
                       color: Colors.black.withOpacity(isDark ? 0.45 : 0.12),
                       blurRadius: 22,
                       spreadRadius: 1,
                       offset: const Offset(0, 6),
                     ),
-                    // Marian Blue rim shadow for elevated presence
                     BoxShadow(
                       color: ParishColors.marianBlue.withOpacity(isDark ? 0.20 : 0.08),
                       blurRadius: 10,
@@ -873,17 +932,13 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       decoration: BoxDecoration(
                         color: (isDark ? const Color(0xFF1E293B) : ParishColors.cardWhite).withOpacity(0.92),
                         borderRadius: BorderRadius.circular(24),
-                        // Crisp defined outline preventing blend with white background
                         border: Border.all(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.20)
-                              : ParishColors.borderGrey,
+                          color: isDark ? Colors.white.withOpacity(0.20) : ParishColors.borderGrey,
                           width: 1.5,
                         ),
                       ),
                       child: Row(
                         children: [
-                          // 3 Modules Left
                           Expanded(
                             child: _buildModernDockItem(
                               index: 1,
@@ -908,11 +963,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                               activeIcon: Icons.calendar_month_rounded,
                             ),
                           ),
-
-                          // Gap Reserved for Hero Center Hub
                           const SizedBox(width: 58),
-
-                          // 3 Modules Right
                           Expanded(
                             child: _buildModernDockItem(
                               index: 4,
@@ -945,7 +996,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
               ),
             ),
 
-            // Center Hero Hub Button ("Overview") with Spring Press Interaction
             Positioned(
               top: 0,
               child: GestureDetector(
@@ -1016,7 +1066,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
               ),
             ),
 
-            // Overview Floating Micro-Label
             Positioned(
               bottom: 4,
               child: IgnorePointer(
@@ -1065,7 +1114,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  // Icon with Smooth Spring Scale
                   AnimatedScale(
                     scale: isSelected ? 1.14 : 1.0,
                     duration: const Duration(milliseconds: 240),
@@ -1089,8 +1137,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       ),
                     ),
                   ),
-
-                  // Lock indicator for restricted roles
                   if (!isAllowed)
                     Positioned(
                       top: 1,
@@ -1111,8 +1157,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 ],
               ),
               const SizedBox(height: 2),
-
-              // Active Indicator Under-Bar Glow
               AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
                 width: isSelected ? 12 : 0,
@@ -1132,8 +1176,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 ),
               ),
               const SizedBox(height: 2),
-
-              // Responsive Text Label
               AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 200),
                 style: TextStyle(
@@ -1158,7 +1200,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   }
 
   // ===========================================================================
-  // 4. RESTRICTED MODULE VIEW (Canonical Isolation Guard)
+  // 4. RESTRICTED MODULE VIEW
   // ===========================================================================
   Widget _buildUnauthorizedView() {
     return Center(
