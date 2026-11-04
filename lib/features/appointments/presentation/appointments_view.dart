@@ -1,8 +1,11 @@
+// =============================================================================
+// FILE: lib/features/appointments/presentation/appointments_view.dart
+// =============================================================================
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
 import '../../../core/services/records_sync_service.dart';
-import '../../auth/services/auth_service.dart';
 import '../../receipts/presentation/dialogs/receipt_detail_dialog.dart';
 import '../models/appointment_model.dart';
 import '../models/mass_intention_model.dart';
@@ -11,12 +14,10 @@ import '../services/mass_intention_pdf_service.dart';
 import '../services/mass_intention_service.dart';
 import 'dialogs/appointment_detail_dialog.dart';
 import 'dialogs/manage_payment_references_dialog.dart';
-import 'dialogs/mass_intention_dialog.dart';
 import 'dialogs/review_mass_intention_payment_dialog.dart';
-import 'dialogs/schedule_appointment_dialog.dart';
-import 'widgets/appointment_card.dart';
 import 'pages/book_mass_intention_page.dart';
 import 'pages/schedule_service_page.dart';
+import 'widgets/appointment_card.dart';
 
 enum AppointmentViewMode { cards, table }
 
@@ -30,6 +31,7 @@ class AppointmentsView extends StatefulWidget {
 class _AppointmentsViewState extends State<AppointmentsView>
     with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   late TabController _mainTabController;
   late AnimationController _skeletonAnimController;
   late Animation<double> _skeletonOpacityAnimation;
@@ -47,7 +49,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
   // View Mode: Cards vs Table
   AppointmentViewMode _viewMode = AppointmentViewMode.cards;
 
-  // Unified Filtering & Sorting State
+  // Filtering & Sorting State
   String _selectedStatusFilter = 'All';
   String _selectedDateRangeFilter = 'All Dates';
   DateTimeRange? _customDateRange;
@@ -56,7 +58,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
   bool _sortAscending = true;
   String _searchQuery = '';
 
-  // Secretary Mass Intention View Mode (By Mass Slot vs By Requester)
+  // Mass Intention View Mode
   bool _groupByMassSchedule = true;
 
   // Pagination State
@@ -119,12 +121,15 @@ class _AppointmentsViewState extends State<AppointmentsView>
       CurvedAnimation(parent: _skeletonAnimController, curve: Curves.easeInOut),
     );
 
+    RecordsSyncService.instance.checkConnectivity();
+    RecordsSyncService.instance.updatePendingCount();
     _loadAllData();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _mainTabController.dispose();
     _skeletonAnimController.dispose();
     super.dispose();
@@ -232,7 +237,6 @@ class _AppointmentsViewState extends State<AppointmentsView>
     }
 
     _applySorting(list, (a) => a.requestedDate, (a) => a.serviceType, (a) => a.requesterName);
-
     return list;
   }
 
@@ -267,7 +271,6 @@ class _AppointmentsViewState extends State<AppointmentsView>
     }
 
     _applySorting(list, (m) => m.scheduledDate, (m) => m.formattedTime12Hour, (m) => m.requesterName);
-
     return list;
   }
 
@@ -495,7 +498,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Filter & Sort Appointments',
+                        'Filter & Sort Liturgy Desk',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -524,11 +527,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
 
                   Text(
                     'Sort Sequence',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textDark,
-                    ),
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -574,11 +573,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
 
                   Text(
                     'Date Range Filter',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textDark,
-                    ),
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                   ),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
@@ -618,11 +613,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                   if (_mainTabController.index == 0) ...[
                     Text(
                       'Booking Status',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.textDark,
-                      ),
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                     ),
                     const SizedBox(height: 6),
                     SingleChildScrollView(
@@ -660,11 +651,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
                   if (_mainTabController.index == 0 || _mainTabController.index == 2) ...[
                     Text(
                       'Sacrament / Service Type',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.textDark,
-                      ),
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                     ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
@@ -767,489 +754,378 @@ class _AppointmentsViewState extends State<AppointmentsView>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final textDarkColor = ParishColors.textDark;
-    final cardWhiteColor = ParishColors.cardWhite;
-    final borderGreyColor = ParishColors.borderGrey;
-    final isAllDataLoading = _isLoadingAppointments && _isLoadingIntentions;
+  // ===========================================================================
+  // Hero Header with Sync Ribbon
+  // ===========================================================================
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool isMobile = constraints.maxWidth < 650;
-        final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
+  Widget _buildHeroHeader(bool isMobile) {
+    final fade = ParishColors.cardWhite;
+    final totalActiveBookings = _processedAppointments.length + _processedMassIntentions.length;
 
-        return Container(
-          width: double.infinity,
-          height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
-          alignment: Alignment.topCenter,
-          child: RefreshIndicator(
-            onRefresh: _loadAllData,
-            color: ParishColors.marianBlue,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 12 : 20,
-                vertical: isMobile ? 10 : 18,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: max(0.0, viewportHeight - (isMobile ? 24 : 36)),
-                  minWidth: double.infinity,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Parish Scheduling & Liturgy Desk',
-                            style: TextStyle(
-                              fontSize: isMobile ? 17 : 22,
-                              fontWeight: FontWeight.bold,
-                              color: textDarkColor,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.refresh, color: ParishColors.marianBlueAdaptive, size: 20),
-                          onPressed: _loadAllData,
-                          tooltip: 'Reload Database Records',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    _buildActionButtons(isMobile),
-                    const SizedBox(height: 12),
-
-                    _buildCompactStatsRow(),
-                    const SizedBox(height: 12),
-
-                    ValueListenableBuilder<RecordsSyncStatus>(
-                      valueListenable: RecordsSyncService.syncStatusNotifier,
-                      builder: (context, status, _) {
-                        return ValueListenableBuilder<int>(
-                          valueListenable: RecordsSyncService.pendingSyncCountNotifier,
-                          builder: (context, pendingCount, _) {
-                            Color pillColor;
-                            Color textColor;
-                            IconData statusIcon;
-                            String statusLabel;
-
-                            if (status == RecordsSyncStatus.offline) {
-                              pillColor = Colors.amber.shade100;
-                              textColor = Colors.amber.shade900;
-                              statusIcon = Icons.cloud_off;
-                              statusLabel = pendingCount > 0
-                                  ? 'Offline Mode ($pendingCount pending changes)'
-                                  : 'Offline Mode';
-                            } else if (status == RecordsSyncStatus.syncing) {
-                              pillColor = Colors.blue.shade100;
-                              textColor = Colors.blue.shade900;
-                              statusIcon = Icons.sync;
-                              statusLabel = 'Syncing schedule with Supabase cloud...';
-                            } else if (pendingCount > 0) {
-                              pillColor = Colors.orange.shade100;
-                              textColor = Colors.orange.shade900;
-                              statusIcon = Icons.upload_file;
-                              statusLabel = 'Online • $pendingCount booking(s) queued for upload (Tap to Sync)';
-                            } else {
-                              pillColor = Colors.green.shade50;
-                              textColor = Colors.green.shade800;
-                              statusIcon = Icons.cloud_done;
-                              statusLabel = 'Online • Liturgical schedule & intentions synchronized';
-                            }
-
-                            return InkWell(
-                              onTap: pendingCount > 0 && status != RecordsSyncStatus.syncing
-                                  ? () => RecordsSyncService.instance.syncPendingChanges()
-                                  : null,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                                decoration: BoxDecoration(
-                                  color: pillColor,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: textColor.withOpacity(0.3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(statusIcon, size: 15, color: textColor),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        statusLabel,
-                                        style: TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: textColor,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (pendingCount > 0 && status != RecordsSyncStatus.syncing) ...[
-                                      const SizedBox(width: 8),
-                                      Icon(Icons.refresh, size: 14, color: textColor),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-
-                    Container(
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: cardWhiteColor,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: borderGreyColor),
-                      ),
-                      child: TabBar(
-                        controller: _mainTabController,
-                        isScrollable: isMobile,
-                        tabAlignment: isMobile ? TabAlignment.start : TabAlignment.fill,
-                        labelColor: Colors.white,
-                        unselectedLabelColor: ParishColors.textMuted,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        indicator: BoxDecoration(
-                          color: _mainTabController.index == 3
-                              ? ParishColors.mercyRed
-                              : (_mainTabController.index == 2
-                              ? const Color(0xFF0F766E)
-                              : ParishColors.marianBlue),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        tabs: [
-                          Tab(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(
-                                'Sacraments (${_processedAppointments.length})',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
-                              ),
-                            ),
-                          ),
-                          Tab(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(
-                                'Mass Intentions (${_processedMassIntentions.length})',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
-                              ),
-                            ),
-                          ),
-                          Tab(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(
-                                'Completed (${_completedAppointments.length})',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
-                              ),
-                            ),
-                          ),
-                          Tab(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(
-                                'Cancelled (${_cancelledAppointments.length + _rejectedMassIntentions.length})',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    Container(
-                      width: double.infinity,
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: cardWhiteColor,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: borderGreyColor),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.search, size: 20, color: ParishColors.marianBlueAdaptive),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              onChanged: (val) {
-                                setState(() {
-                                  _searchQuery = val;
-                                  _currentPage = 1;
-                                });
-                              },
-                              style: TextStyle(fontSize: 13, color: textDarkColor),
-                              decoration: InputDecoration(
-                                hintText: 'Search by requester, sacrament, ref #, petitions...',
-                                hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                            ),
-                          ),
-                          if (_searchQuery.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear, size: 16),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {
-                                  _searchQuery = '';
-                                  _currentPage = 1;
-                                });
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    Row(
-                      children: [
-                        InkWell(
-                          onTap: _openFilterAndSortBottomSheet,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            height: 36,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: _hasActiveFilters ? ParishColors.marianBlueSurface : cardWhiteColor,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _hasActiveFilters ? ParishColors.marianBlue : borderGreyColor,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.tune,
-                                  size: 15,
-                                  color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  _hasActiveFilters
-                                      ? 'Filter & Sort ($_activeFilterCount)'
-                                      : 'Filter & Sort',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: _hasActiveFilters ? ParishColors.marianBlue : textDarkColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '${_getCurrentTabItemsCount()} items',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: ParishColors.textMuted,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: cardWhiteColor,
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(color: borderGreyColor),
-                          ),
-                          child: ToggleButtons(
-                            isSelected: [
-                              _viewMode == AppointmentViewMode.cards,
-                              _viewMode == AppointmentViewMode.table,
-                            ],
-                            onPressed: (idx) => setState(() {
-                              _viewMode = idx == 0 ? AppointmentViewMode.cards : AppointmentViewMode.table;
-                            }),
-                            borderRadius: BorderRadius.circular(6),
-                            selectedColor: Colors.white,
-                            fillColor: ParishColors.marianBlue,
-                            color: ParishColors.textMuted,
-                            constraints: const BoxConstraints(minHeight: 28, minWidth: 32),
-                            children: const [
-                              Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 14)),
-                              Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 14)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    if (_hasActiveFilters) ...[
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          if (_selectedDateRangeFilter != 'All Dates')
-                            _buildActiveFilterChip('Range: $_selectedDateRangeFilter', () {
-                              setState(() {
-                                _selectedDateRangeFilter = 'All Dates';
-                                _customDateRange = null;
-                                _currentPage = 1;
-                              });
-                            }),
-                          if (_selectedStatusFilter != 'All' && _mainTabController.index == 0)
-                            _buildActiveFilterChip('Status: $_selectedStatusFilter', () {
-                              setState(() {
-                                _selectedStatusFilter = 'All';
-                                _currentPage = 1;
-                              });
-                            }),
-                          if (_selectedServiceFilter != 'All')
-                            _buildActiveFilterChip('Service: $_selectedServiceFilter', () {
-                              setState(() {
-                                _selectedServiceFilter = 'All';
-                                _currentPage = 1;
-                              });
-                            }),
-                          if (_sortBy != 'Date: Earliest First' || !_sortAscending)
-                            _buildActiveFilterChip('Sorted: $_sortBy', () {
-                              setState(() {
-                                _sortBy = 'Date: Earliest First';
-                                _sortAscending = true;
-                              });
-                            }),
-                          ActionChip(
-                            label: const Text(
-                              'Clear',
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
-                                color: ParishColors.mercyRed,
-                              ),
-                            ),
-                            backgroundColor: ParishColors.mercyRedSurface,
-                            side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: _resetFilters,
-                          ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-
-                    if (isAllDataLoading)
-                      _buildSkeletonLoading(constraints.maxWidth)
-                    else if (_mainTabController.index == 0)
-                      _buildSacramentalAppointmentsTab(constraints.maxWidth)
-                    else if (_mainTabController.index == 1)
-                        _buildMassIntentionsTab(constraints.maxWidth)
-                      else if (_mainTabController.index == 2)
-                          _buildCompletedLogsTab(constraints.maxWidth)
-                        else
-                          _buildCancelledArchiveTab(constraints.maxWidth),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'images/jp2-bg.png',
+              fit: BoxFit.cover,
+              alignment: const Alignment(0.35, -0.55),
+              errorBuilder: (_, __, ___) => Container(color: ParishColors.marianBlueSurface),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    fade.withOpacity(0.96),
+                    fade.withOpacity(isMobile ? 0.88 : 0.80),
+                    fade.withOpacity(isMobile ? 0.25 : 0.0),
                   ],
+                  stops: [0.0, isMobile ? 0.62 : 0.45, isMobile ? 1.0 : 0.85],
                 ),
               ),
             ),
           ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, fade.withOpacity(0.55)],
+                  stops: const [0.55, 1.0],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 16 : 22, isMobile ? 12 : 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: ParishColors.goldAccent,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Schedules & Liturgy Desk',
+                            style: TextStyle(
+                              fontFamily: 'Georgia',
+                              fontFamilyFallback: const ['Times New Roman', 'serif'],
+                              fontSize: isMobile ? 26 : 38,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                              color: ParishColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '$totalActiveBookings active booking(s) across sacraments and mass intentions',
+                            style: TextStyle(
+                              fontSize: isMobile ? 12.5 : 14,
+                              fontStyle: FontStyle.italic,
+                              color: ParishColors.textDark.withOpacity(0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildOverflowMenu(),
+                  ],
+                ),
+                SizedBox(height: isMobile ? 44 : 64),
+                _buildSyncStatusBar(isMobile),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverflowMenu() {
+    return Container(
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite.withOpacity(0.9),
+        shape: BoxShape.circle,
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: PopupMenuButton<String>(
+        icon: Icon(Icons.more_vert, color: ParishColors.textMuted, size: 22),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        color: ParishColors.cardWhite,
+        onSelected: (val) {
+          if (val == 'gcash_settings') {
+            _openManageReferencesModal();
+          } else if (val == 'book_sacrament') {
+            navigateToScheduleServicePage(context, onAppointmentSaved: _loadAppointments);
+          } else if (val == 'book_intention') {
+            navigateToBookMassIntentionPage(context, onIntentionSaved: _loadMassIntentions);
+          } else if (val == 'refresh') {
+            _loadAllData();
+            RecordsSyncService.instance.checkConnectivity();
+          }
+        },
+        itemBuilder: (ctx) => [
+          const PopupMenuItem(
+            value: 'refresh',
+            child: Row(
+              children: [
+                Icon(Icons.refresh, size: 18),
+                SizedBox(width: 10),
+                Text('Reload Liturgy Ledger', style: TextStyle(fontSize: 13)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSyncStatusBar(bool isMobile) {
+    return ValueListenableBuilder<RecordsSyncStatus>(
+      valueListenable: RecordsSyncService.syncStatusNotifier,
+      builder: (context, status, _) {
+        return ValueListenableBuilder<int>(
+          valueListenable: RecordsSyncService.pendingSyncCountNotifier,
+          builder: (context, pendingCount, _) {
+            Color pillColor;
+            Color textColor;
+            IconData statusIcon;
+            String statusLabel;
+
+            if (status == RecordsSyncStatus.offline) {
+              pillColor = Colors.amber.shade50;
+              textColor = Colors.amber.shade900;
+              statusIcon = Icons.cloud_off;
+              statusLabel = pendingCount > 0
+                  ? 'Offline • Working Locally ($pendingCount pending)'
+                  : 'Offline • Working Locally';
+            } else if (status == RecordsSyncStatus.syncing) {
+              pillColor = Colors.blue.shade50;
+              textColor = Colors.blue.shade900;
+              statusIcon = Icons.sync;
+              statusLabel = 'Syncing schedule with Supabase cloud...';
+            } else if (pendingCount > 0) {
+              pillColor = Colors.orange.shade50;
+              textColor = Colors.orange.shade900;
+              statusIcon = Icons.upload_file;
+              statusLabel = 'Online • $pendingCount booking(s) queued (Tap to Sync Now)';
+            } else {
+              pillColor = const Color(0xFFE8F5E9);
+              textColor = const Color(0xFF2E7D32);
+              statusIcon = Icons.check_circle;
+              statusLabel = 'Online • Liturgical schedule & intentions synchronized';
+            }
+
+            final canSync = pendingCount > 0 && status != RecordsSyncStatus.syncing;
+
+            return InkWell(
+              onTap: canSync ? () => RecordsSyncService.instance.syncPendingChanges() : null,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: double.infinity,
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: pillColor.withOpacity(0.94),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: textColor.withOpacity(0.3)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Icon(statusIcon, size: 18, color: textColor),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        statusLabel,
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: textColor),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (!isMobile)
+                      ValueListenableBuilder<DateTime?>(
+                        valueListenable: RecordsSyncService.lastSyncedAtNotifier,
+                        builder: (context, lastSync, _) {
+                          final text = lastSync != null
+                              ? lastSync.toLocal().toString().substring(0, 16)
+                              : 'Never';
+                          return Padding(
+                            padding: const EdgeInsets.only(left: 10),
+                            child: Text(
+                              'Last sync: $text',
+                              style: TextStyle(fontSize: 11.5, color: textColor.withOpacity(0.85)),
+                            ),
+                          );
+                        },
+                      ),
+                    const SizedBox(width: 10),
+                    Icon(Icons.refresh, size: 17, color: textColor),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildActionButtons(bool isMobile) {
-    return isMobile
-        ? Column(
+  // ===========================================================================
+  // Action Cards (Streamlined 2-Card Row)
+  // ===========================================================================
+
+  Widget _buildActionCardsRow(bool isDesktop) {
+    final bookSacramentCard = _buildDashboardActionCard(
+      title: 'Book Sacrament / Service',
+      subtitle: 'Schedule baptisms, weddings, and blessings',
+      icon: Icons.add_task,
+      isSolidBlue: true,
+      onTap: () => navigateToScheduleServicePage(context, onAppointmentSaved: _loadAppointments),
+    );
+
+    final bookIntentionCard = _buildDashboardActionCard(
+      title: 'Book Mass Intention',
+      subtitle: 'Walk-in thanksgiving and repose offerings',
+      icon: Icons.volunteer_activism,
+      isSolidBlue: false,
+      borderColor: ParishColors.goldAccent,
+      iconColor: ParishColors.goldAccent,
+      titleColor: ParishColors.goldAccent,
+      onTap: () => navigateToBookMassIntentionPage(context, onIntentionSaved: _loadMassIntentions),
+    );
+
+    if (isDesktop) {
+      return Row(
+        children: [
+          Expanded(child: bookSacramentCard),
+          const SizedBox(width: 16),
+          Expanded(child: bookIntentionCard),
+        ],
+      );
+    }
+
+    return Column(
       children: [
-        SizedBox(
-          width: double.infinity,
-          height: 42,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.marianBlue,
-              foregroundColor: Colors.white,
-              elevation: 1,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => navigateToScheduleServicePage(context, onAppointmentSaved: _loadAppointments),
-            icon: const Icon(Icons.add_task, size: 17),
-            label: const Text('+ Book Sacrament / Service', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          height: 42,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-              foregroundColor: ParishColors.goldAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => navigateToBookMassIntentionPage(context, onIntentionSaved: _loadMassIntentions),
-            icon: const Icon(Icons.volunteer_activism, size: 17),
-            label: const Text('+ Book Mass Intention (Walk-In)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
-          ),
-        ),
-      ],
-    )
-        : Row(
-      children: [
-        Expanded(
-          flex: 5,
-          child: SizedBox(
-            height: 44,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ParishColors.marianBlue,
-                foregroundColor: Colors.white,
-                elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () => navigateToScheduleServicePage(context, onAppointmentSaved: _loadAppointments),
-              icon: const Icon(Icons.add_task, size: 18),
-              label: const Text('+ Book Sacrament / Service', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          flex: 5,
-          child: SizedBox(
-            height: 44,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: ParishColors.goldAccent, width: 1.5),
-                foregroundColor: ParishColors.goldAccent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () => navigateToBookMassIntentionPage(context, onIntentionSaved: _loadMassIntentions),
-              icon: const Icon(Icons.volunteer_activism, size: 18),
-              label: const Text('+ Book Mass Intention (Walk-In)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ),
+        bookSacramentCard,
+        const SizedBox(height: 10),
+        bookIntentionCard,
       ],
     );
   }
 
-  Widget _buildCompactStatsRow() {
+  Widget _buildDashboardActionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    bool isSolidBlue = false,
+    Color? borderColor,
+    Color? iconColor,
+    Color? titleColor,
+    required VoidCallback onTap,
+  }) {
+    final bgColor = isSolidBlue ? ParishColors.marianBlue : ParishColors.cardWhite;
+    final primaryTextColor = isSolidBlue ? Colors.white : (titleColor ?? ParishColors.textDark);
+    final secondaryTextColor = isSolidBlue ? Colors.white70 : ParishColors.textMuted;
+    final resolvedIconColor = isSolidBlue ? Colors.white : (iconColor ?? ParishColors.marianBlue);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        height: 68,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSolidBlue ? Colors.transparent : (borderColor ?? ParishColors.borderGrey),
+            width: 1.4,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isSolidBlue ? 0.08 : 0.02),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: isSolidBlue
+                    ? Colors.white.withOpacity(0.18)
+                    : (iconColor?.withOpacity(0.12) ?? ParishColors.marianBlueSurface),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: resolvedIconColor, size: 21),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: primaryTextColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: secondaryTextColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Liturgical Status KPI Deck (Always Visible + Interactive Active States)
+  // ===========================================================================
+
+  Widget _buildLiturgicalOverviewDeck(bool isMobile) {
     final activeApts = _appointments.where((a) {
       final s = a.appointmentStatus.toLowerCase();
       return s != 'cancelled' && s != 'completed';
@@ -1260,88 +1136,497 @@ class _AppointmentsViewState extends State<AppointmentsView>
     final cancelledTotal = _appointments.where((a) => a.appointmentStatus.toLowerCase() == 'cancelled').length +
         _massIntentions.where((m) => m.intentionStatus.toLowerCase() == 'cancelled' || m.intentionStatus.toLowerCase() == 'rejected').length;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: ParishColors.borderGrey),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildCompactStatItem(
-              'Active',
-              '$activeApts',
-              ParishColors.marianBlue,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double width = constraints.maxWidth;
+        final int crossAxisCount = width > 1050 ? 5 : (width > 600 ? 3 : 2);
+        final double itemWidth = (width - ((crossAxisCount - 1) * 10)) / crossAxisCount;
+
+        final items = [
+          _buildKpiCard(
+            label: 'Active Sacraments',
+            value: '$activeApts',
+            icon: Icons.event_available,
+            color: ParishColors.marianBlue,
+            surfaceColor: ParishColors.marianBlueSurface,
+            isSelected: _mainTabController.index == 0 && _selectedStatusFilter == 'All',
+            onTap: () => setState(() {
+              _mainTabController.index = 0;
+              _selectedStatusFilter = 'All';
+              _currentPage = 1;
+            }),
           ),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              'Pending',
-              '$pendingCount',
-              ParishColors.goldAccent,
-            ),
+          _buildKpiCard(
+            label: 'Pending Review',
+            value: '$pendingCount',
+            icon: Icons.pending_actions,
+            color: ParishColors.goldAccent,
+            surfaceColor: ParishColors.goldLight,
+            isSelected: _mainTabController.index == 0 && _selectedStatusFilter == 'Pending',
+            onTap: () => setState(() {
+              if (_mainTabController.index == 0 && _selectedStatusFilter == 'Pending') {
+                _selectedStatusFilter = 'All';
+              } else {
+                _mainTabController.index = 0;
+                _selectedStatusFilter = 'Pending';
+              }
+              _currentPage = 1;
+            }),
           ),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              'Confirmed',
-              '$confirmedCount',
-              ParishColors.oliveGreen,
-            ),
+          _buildKpiCard(
+            label: 'Confirmed',
+            value: '$confirmedCount',
+            icon: Icons.check_circle_outline,
+            color: ParishColors.oliveGreen,
+            surfaceColor: ParishColors.oliveGreenSurface,
+            isSelected: _mainTabController.index == 0 && _selectedStatusFilter == 'Confirmed',
+            onTap: () => setState(() {
+              if (_mainTabController.index == 0 && _selectedStatusFilter == 'Confirmed') {
+                _selectedStatusFilter = 'All';
+              } else {
+                _mainTabController.index = 0;
+                _selectedStatusFilter = 'Confirmed';
+              }
+              _currentPage = 1;
+            }),
           ),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              'Completed',
-              '$completedCount',
-              const Color(0xFF0F766E),
-            ),
+          _buildKpiCard(
+            label: 'Concluded',
+            value: '$completedCount',
+            icon: Icons.task_alt,
+            color: const Color(0xFF0F766E),
+            surfaceColor: const Color(0xFFF0FDFA),
+            isSelected: _mainTabController.index == 2,
+            onTap: () => setState(() {
+              _mainTabController.index = 2;
+              _currentPage = 1;
+            }),
           ),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(
-            child: _buildCompactStatItem(
-              'Cancelled',
-              '$cancelledTotal',
-              ParishColors.mercyRed,
-            ),
+          _buildKpiCard(
+            label: 'Cancelled Archive',
+            value: '$cancelledTotal',
+            icon: Icons.archive_outlined,
+            color: ParishColors.mercyRed,
+            surfaceColor: ParishColors.mercyRedSurface,
+            isSelected: _mainTabController.index == 3,
+            onTap: () => setState(() {
+              _mainTabController.index = 3;
+              _currentPage = 1;
+            }),
           ),
-        ],
+        ];
+
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: items.map((w) => SizedBox(width: itemWidth, child: w)).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildKpiCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required Color surfaceColor,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? surfaceColor : ParishColors.cardWhite,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? color : ParishColors.borderGrey,
+            width: isSelected ? 1.6 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(isSelected ? 0.08 : 0.02),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : surfaceColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 16, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    value,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color, height: 1.1),
+                  ),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected ? ParishColors.textDark : ParishColors.textMuted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildCompactStatItem(String label, String value, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+  // ===========================================================================
+  // Search & Filter Bar
+  // ===========================================================================
+
+  Widget _buildSearchAndFilterRow(bool isMobile) {
+    return Row(
       children: [
-        Text(
-          value,
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+        Expanded(
+          child: Container(
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: ParishColors.borderGrey, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 21, color: ParishColors.marianBlue),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    onChanged: (val) => setState(() {
+                      _searchQuery = val;
+                      _currentPage = 1;
+                    }),
+                    style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                    decoration: InputDecoration(
+                      hintText: isMobile
+                          ? 'Search requester, sacrament, or ID...'
+                          : 'Search by requester name, service type, reference #, or petitions...',
+                      hintStyle: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                if (_searchQuery.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear, size: 17),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                        _currentPage = 1;
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ),
         ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        const SizedBox(width: 10),
+        InkWell(
+          onTap: _openFilterAndSortBottomSheet,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 46,
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
+            decoration: BoxDecoration(
+              color: _hasActiveFilters ? ParishColors.marianBlueSurface : ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.borderGrey,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.tune,
+                  size: 18,
+                  color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textDark,
+                ),
+                if (!isMobile || _hasActiveFilters) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    _hasActiveFilters ? 'Filter ($_activeFilterCount)' : 'Filter',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textDark,
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.expand_more,
+                  size: 18,
+                  color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
+                ),
+              ],
+            ),
+          ),
         ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Section Header with Tabs & View Toggle
+  // ===========================================================================
+
+  Widget _buildSectionHeader(bool isMobile) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 4,
+              height: 38,
+              decoration: BoxDecoration(
+                color: ParishColors.goldAccent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Liturgical & Sacramental Calendar',
+                    style: TextStyle(
+                      fontFamily: 'Georgia',
+                      fontFamilyFallback: const ['Times New Roman', 'serif'],
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: ParishColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Manage bookings, verify intention offerings, and print liturgical slips.',
+                    style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: ParishColors.cardWhite,
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: ParishColors.borderGrey),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.event_note, size: 15, color: ParishColors.textDark),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${_getCurrentTabItemsCount()} items',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Tabs + View Toggle Row
+        Row(
+          children: [
+            Container(
+              height: 38,
+              decoration: BoxDecoration(
+                color: ParishColors.cardWhite,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ParishColors.borderGrey),
+              ),
+              child: TabBar(
+                controller: _mainTabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                labelColor: Colors.white,
+                unselectedLabelColor: ParishColors.textMuted,
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(
+                  color: _mainTabController.index == 3
+                      ? ParishColors.mercyRed
+                      : (_mainTabController.index == 2
+                      ? const Color(0xFF0F766E)
+                      : ParishColors.marianBlue),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                tabs: [
+                  Tab(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        'Sacraments (${_processedAppointments.length})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  Tab(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        'Mass Intentions (${_processedMassIntentions.length})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  Tab(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        'Completed (${_completedAppointments.length})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  Tab(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        'Cancelled (${_cancelledAppointments.length + _rejectedMassIntentions.length})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+
+            Container(
+              height: 36,
+              decoration: BoxDecoration(
+                color: ParishColors.cardWhite,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ParishColors.borderGrey),
+              ),
+              child: ToggleButtons(
+                isSelected: [
+                  _viewMode == AppointmentViewMode.cards,
+                  _viewMode == AppointmentViewMode.table,
+                ],
+                onPressed: (idx) => setState(() {
+                  _viewMode = idx == 0 ? AppointmentViewMode.cards : AppointmentViewMode.table;
+                }),
+                borderRadius: BorderRadius.circular(7),
+                selectedColor: Colors.white,
+                fillColor: ParishColors.marianBlue,
+                color: ParishColors.textMuted,
+                constraints: const BoxConstraints(minHeight: 32, minWidth: 36),
+                children: const [
+                  Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 16)),
+                  Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 16)),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        // Active Filter Badges
+        if (_hasActiveFilters) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              if (_selectedDateRangeFilter != 'All Dates')
+                _buildActiveFilterChip('Range: $_selectedDateRangeFilter', () {
+                  setState(() {
+                    _selectedDateRangeFilter = 'All Dates';
+                    _customDateRange = null;
+                    _currentPage = 1;
+                  });
+                }),
+              if (_selectedStatusFilter != 'All' && _mainTabController.index == 0)
+                _buildActiveFilterChip('Status: $_selectedStatusFilter', () {
+                  setState(() {
+                    _selectedStatusFilter = 'All';
+                    _currentPage = 1;
+                  });
+                }),
+              if (_selectedServiceFilter != 'All')
+                _buildActiveFilterChip('Service: $_selectedServiceFilter', () {
+                  setState(() {
+                    _selectedServiceFilter = 'All';
+                    _currentPage = 1;
+                  });
+                }),
+              if (_sortBy != 'Date: Earliest First' || !_sortAscending)
+                _buildActiveFilterChip('Sorted: $_sortBy', () {
+                  setState(() {
+                    _sortBy = 'Date: Earliest First';
+                    _sortAscending = true;
+                  });
+                }),
+              ActionChip(
+                label: const Text('Reset', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed)),
+                backgroundColor: ParishColors.mercyRedSurface,
+                onPressed: _resetFilters,
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildActiveFilterChip(String label, VoidCallback onDeleted) {
     return Chip(
-      label: Text(label, style: TextStyle(fontSize: 10, color: ParishColors.textDark)),
+      label: Text(label, style: TextStyle(fontSize: 11, color: ParishColors.textDark)),
       backgroundColor: ParishColors.marianBlueSurface,
-      deleteIcon: const Icon(Icons.close, size: 12),
+      deleteIcon: const Icon(Icons.close, size: 13),
       onDeleted: onDeleted,
-      padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
+
+  // ===========================================================================
+  // Skeleton Loading
+  // ===========================================================================
 
   Widget _buildSkeletonLoading(double availableWidth) {
     return AnimatedBuilder(
@@ -1353,7 +1638,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
             children: List.generate(4, (index) {
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
-                height: 100,
+                height: 96,
                 decoration: BoxDecoration(
                   color: ParishColors.cardWhite,
                   borderRadius: BorderRadius.circular(14),
@@ -1393,15 +1678,6 @@ class _AppointmentsViewState extends State<AppointmentsView>
                               borderRadius: BorderRadius.circular(4),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Container(
-                            height: 12,
-                            width: 180,
-                            decoration: BoxDecoration(
-                              color: ParishColors.borderGrey.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -1414,6 +1690,82 @@ class _AppointmentsViewState extends State<AppointmentsView>
       },
     );
   }
+
+  // ===========================================================================
+  // Main Dashboard Shell
+  // ===========================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final isAllDataLoading = _isLoadingAppointments && _isLoadingIntentions;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double screenWidth = constraints.maxWidth;
+        final bool isDesktop = screenWidth >= 1080;
+        final bool isMobile = screenWidth < 650;
+
+        return RefreshIndicator(
+          onRefresh: _loadAllData,
+          color: ParishColors.marianBlue,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 16 : 28,
+              vertical: isMobile ? 14 : 24,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1400),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 1. Hero Header with Sync Ribbon
+                    _buildHeroHeader(isMobile),
+                    const SizedBox(height: 16),
+
+                    // 2. Streamlined 2-Card Action Row
+                    _buildActionCardsRow(isDesktop),
+                    const SizedBox(height: 16),
+
+                    // 3. Liturgical Status KPI Deck (Always Visible)
+                    _buildLiturgicalOverviewDeck(isMobile),
+                    const SizedBox(height: 18),
+
+                    // 4. Search & Filter Bar
+                    _buildSearchAndFilterRow(isMobile),
+                    const SizedBox(height: 20),
+
+                    // 5. Section Header + Tabs + View Toggle
+                    _buildSectionHeader(isMobile),
+                    const SizedBox(height: 14),
+
+                    // 6. Tab Content
+                    if (isAllDataLoading)
+                      _buildSkeletonLoading(constraints.maxWidth)
+                    else if (_mainTabController.index == 0)
+                      _buildSacramentalAppointmentsTab(constraints.maxWidth)
+                    else if (_mainTabController.index == 1)
+                        _buildMassIntentionsTab(constraints.maxWidth)
+                      else if (_mainTabController.index == 2)
+                          _buildCompletedLogsTab(constraints.maxWidth)
+                        else
+                          _buildCancelledArchiveTab(constraints.maxWidth),
+
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // Tab 1: Sacramental Appointments
+  // ===========================================================================
 
   Widget _buildSacramentalAppointmentsTab(double availableWidth) {
     final processed = _processedAppointments;
@@ -1544,8 +1896,9 @@ class _AppointmentsViewState extends State<AppointmentsView>
   }
 
   // ===========================================================================
-  // TAB 2: MASS INTENTIONS REGISTRY VIEW
+  // Tab 2: Mass Intentions Registry
   // ===========================================================================
+
   Widget _buildMassIntentionsTab(double availableWidth) {
     final processed = _processedMassIntentions;
     final totalItems = processed.length;
@@ -1564,14 +1917,15 @@ class _AppointmentsViewState extends State<AppointmentsView>
       children: [
         if (nearest != null) ...[
           _buildNearestMassBanner(nearest),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
         ],
 
+        // Clean sub-toolbar for Mass Intentions
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: ParishColors.cardWhite,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: ParishColors.borderGrey),
           ),
           child: Row(
@@ -1581,48 +1935,56 @@ class _AppointmentsViewState extends State<AppointmentsView>
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFF005CEE)),
                   foregroundColor: const Color(0xFF005CEE),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
                 onPressed: _openManageReferencesModal,
                 icon: const Icon(Icons.qr_code_2, size: 16),
-                label: const Text('GCash Settings & References', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                label: const Text('GCash Stipend QR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
               Row(
                 children: [
                   ChoiceChip(
-                    label: const Text('Group by Slot', style: TextStyle(fontSize: 11)),
+                    label: const Text('Group by Slot'),
                     selected: _groupByMassSchedule,
                     selectedColor: ParishColors.marianBlueSurface,
-                    labelStyle: TextStyle(color: _groupByMassSchedule ? ParishColors.marianBlue : ParishColors.textMuted, fontWeight: FontWeight.bold),
-                    onSelected: (val) => setState(() => _groupByMassSchedule = true),
+                    labelStyle: TextStyle(
+                      color: _groupByMassSchedule ? ParishColors.marianBlue : ParishColors.textMuted,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                    ),
+                    onSelected: (_) => setState(() => _groupByMassSchedule = true),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   ChoiceChip(
-                    label: const Text('Per Requester', style: TextStyle(fontSize: 11)),
+                    label: const Text('Per Requester'),
                     selected: !_groupByMassSchedule,
                     selectedColor: ParishColors.marianBlueSurface,
-                    labelStyle: TextStyle(color: !_groupByMassSchedule ? ParishColors.marianBlue : ParishColors.textMuted, fontWeight: FontWeight.bold),
-                    onSelected: (val) => setState(() => _groupByMassSchedule = false),
+                    labelStyle: TextStyle(
+                      color: !_groupByMassSchedule ? ParishColors.marianBlue : ParishColors.textMuted,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                    ),
+                    onSelected: (_) => setState(() => _groupByMassSchedule = false),
                   ),
                 ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
 
         if (processed.isEmpty)
           _buildEmptyState('No active mass intentions registered under this filter.')
-        else if (_viewMode == AppointmentViewMode.table)
-          ...[
-            _buildMassIntentionsTableView(processed, availableWidth),
-            const SizedBox(height: 14),
-            _buildPaginationToolbar(totalItems),
-          ]
-        else if (_groupByMassSchedule)
-            ..._buildGroupedMassSlotsView()
-          else
-            ..._buildPerRequesterIntentionsView(totalItems),
+        else if (_viewMode == AppointmentViewMode.table) ...[
+          _buildMassIntentionsTableView(processed, availableWidth),
+          const SizedBox(height: 14),
+          _buildPaginationToolbar(totalItems),
+        ] else if (_groupByMassSchedule) ...[
+          ..._buildGroupedMassSlotsView(),
+        ] else ...[
+          ..._buildPerRequesterIntentionsView(totalItems),
+        ],
       ],
     );
   }
@@ -1740,109 +2102,72 @@ class _AppointmentsViewState extends State<AppointmentsView>
       if (m.otherIntentions != null && m.otherIntentions!.isNotEmpty) totalOthers++;
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool isCompact = constraints.maxWidth < 600;
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: ParishColors.goldLight,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: ParishColors.goldAccent, width: 1.4),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ParishColors.goldLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.goldAccent.withOpacity(0.5), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (isCompact) ...[
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(color: ParishColors.goldAccent, shape: BoxShape.circle),
-                      child: const Icon(Icons.church, color: Colors.white, size: 18),
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text('Next Scheduled Holy Mass',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  height: 36,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.marianBlue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    ),
-                    onPressed: () => _printLiturgicalSlipForSlot(slotTitle, items),
-                    icon: const Icon(Icons.print, size: 15),
-                    label: const Text('Print Mass Slip', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ] else ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(color: ParishColors.goldAccent, shape: BoxShape.circle),
-                          child: const Icon(Icons.church, color: Colors.white, size: 18),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('Next Scheduled Holy Mass (Day, Date & Time)',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
-                      ],
-                    ),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: ParishColors.marianBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      ),
-                      onPressed: () => _printLiturgicalSlipForSlot(slotTitle, items),
-                      icon: const Icon(Icons.print, size: 15),
-                      label: const Text('Print Mass Slip', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-              ],
-              const Divider(height: 16),
-              Text(slotTitle, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
+              Row(
                 children: [
-                  _buildIntentionCounterChip('Thanksgiving', totalThanksgiving, ParishColors.marianBlueAdaptive),
-                  _buildIntentionCounterChip('Repose of Souls', totalSouls, const Color(0xFF7C3AED)),
-                  _buildIntentionCounterChip('Special Intentions', totalSpecial, ParishColors.oliveGreen),
-                  if (totalOthers > 0) _buildIntentionCounterChip('Others', totalOthers, ParishColors.goldAccent),
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: const BoxDecoration(color: ParishColors.goldAccent, shape: BoxShape.circle),
+                    child: const Icon(Icons.church, color: Colors.white, size: 16),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Next Holy Mass Slot',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
                 ],
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.marianBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _printLiturgicalSlipForSlot(slotTitle, items),
+                icon: const Icon(Icons.print, size: 14),
+                label: const Text('Print Mass Slip', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 6),
+          Text(slotTitle, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              _buildIntentionCounterChip('Thanksgiving', totalThanksgiving, ParishColors.marianBlueAdaptive),
+              _buildIntentionCounterChip('Souls', totalSouls, const Color(0xFF7C3AED)),
+              _buildIntentionCounterChip('Special Intentions', totalSpecial, ParishColors.oliveGreen),
+              if (totalOthers > 0) _buildIntentionCounterChip('Others', totalOthers, ParishColors.goldAccent),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildIntentionCounterChip(String label, int count, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withOpacity(0.35)),
       ),
-      child: Text('$label: $count', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
+      child: Text('$label: $count', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: color)),
     );
   }
 
@@ -1988,6 +2313,10 @@ class _AppointmentsViewState extends State<AppointmentsView>
     );
   }
 
+  // ===========================================================================
+  // Tab 3: Completed Sacraments Log
+  // ===========================================================================
+
   Widget _buildCompletedLogsTab(double availableWidth) {
     final list = _completedAppointments;
     final totalItems = list.length;
@@ -2000,6 +2329,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
       children: [
         Container(
           width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: const Color(0xFFF0FDFA),
@@ -2008,27 +2338,17 @@ class _AppointmentsViewState extends State<AppointmentsView>
           ),
           child: Row(
             children: [
-              const Icon(Icons.task_alt, color: Color(0xFF0F766E), size: 20),
+              const Icon(Icons.task_alt, color: Color(0xFF0F766E), size: 18),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'CONCLUDED SACRAMENTAL CEREMONIES & LOGS',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
-                    ),
-                    Text(
-                      'Completed liturgies and fulfilled pastoral services are preserved here for historical reference without crowding the active schedule.',
-                      style: TextStyle(fontSize: 11, color: ParishColors.textDark),
-                    ),
-                  ],
+                child: Text(
+                  'Concluded sacramental ceremonies are archived here for pastoral record.',
+                  style: TextStyle(fontSize: 12, color: const Color(0xFF0F766E), fontWeight: FontWeight.w600),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
 
         if (list.isEmpty)
           _buildEmptyState('No completed sacramental services found under this filter.')
@@ -2042,6 +2362,10 @@ class _AppointmentsViewState extends State<AppointmentsView>
     );
   }
 
+  // ===========================================================================
+  // Tab 4: Cancelled & Rejected Archive
+  // ===========================================================================
+
   Widget _buildCancelledArchiveTab(double availableWidth) {
     final listApts = _cancelledAppointments;
     final listIntentions = _rejectedMassIntentions;
@@ -2052,6 +2376,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
       children: [
         Container(
           width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: ParishColors.mercyRedSurface,
@@ -2060,27 +2385,17 @@ class _AppointmentsViewState extends State<AppointmentsView>
           ),
           child: Row(
             children: [
-              const Icon(Icons.archive_outlined, color: ParishColors.mercyRed, size: 20),
+              const Icon(Icons.archive_outlined, color: ParishColors.mercyRed, size: 18),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'ISOLATED CANCELLED & REJECTED ARCHIVE',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
-                    ),
-                    Text(
-                      'Cancelled appointments and rejected mass intentions are archived here. Rejected transactions do not have official receipts.',
-                      style: TextStyle(fontSize: 11, color: ParishColors.textDark),
-                    ),
-                  ],
+                child: Text(
+                  'Cancelled bookings and rejected mass intentions are archived here for audit purposes.',
+                  style: TextStyle(fontSize: 12, color: ParishColors.mercyRed, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
 
         if (totalItems == 0)
           _buildEmptyState('No cancelled bookings or rejected mass intentions recorded.')
@@ -2093,7 +2408,7 @@ class _AppointmentsViewState extends State<AppointmentsView>
               decoration: BoxDecoration(
                 color: ParishColors.cardWhite,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: ParishColors.mercyRed.withOpacity(0.4)),
+                border: Border.all(color: ParishColors.borderGrey),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2109,8 +2424,8 @@ class _AppointmentsViewState extends State<AppointmentsView>
                           color: ParishColors.mercyRedSurface,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text('REJECTED (NO RECEIPT)',
-                            style: TextStyle(color: ParishColors.mercyRed, fontSize: 9, fontWeight: FontWeight.bold)),
+                        child: const Text('REJECTED',
+                            style: TextStyle(color: ParishColors.mercyRed, fontSize: 9.5, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
