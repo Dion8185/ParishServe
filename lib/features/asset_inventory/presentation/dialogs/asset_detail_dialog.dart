@@ -75,9 +75,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   late String _operationalStatus;
   late String _modeOfAcquisition;
 
-  List<AssetModel> _groupSiblingUnits = [];
-  bool _isLoadingSiblings = false;
-
   bool get _isEffectivelyArchived =>
       _asset.isArchived || _asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
 
@@ -114,10 +111,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         : 'Section 2 — Below 10,000.00';
   }
 
-  String get _cleanBaseGroupName {
-    return _asset.itemName.replaceAll(RegExp(r'\s*(—|-)?\s*\d{3}$'), '').trim();
-  }
-
   @override
   void initState() {
     super.initState();
@@ -147,7 +140,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
     _loadAuditHistory();
     _loadReferenceOptions();
-    _loadGroupSiblingUnits();
   }
 
   @override
@@ -196,59 +188,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     } catch (_) {
       if (mounted) setState(() => _isLoadingHistory = false);
     }
-  }
-
-  Future<void> _loadGroupSiblingUnits() async {
-    if (_asset.bulkBatchId == null || _asset.bulkBatchId!.isEmpty) {
-      if (_asset.childItems.isNotEmpty) {
-        setState(() => _groupSiblingUnits = _asset.childItems);
-      } else {
-        setState(() => _groupSiblingUnits = [_asset]);
-      }
-      return;
-    }
-
-    setState(() => _isLoadingSiblings = true);
-    try {
-      final allMatching = await AssetService.getAssets(includeArchived: true);
-      final siblings = allMatching.where((a) =>
-      a.controlNumber == _asset.controlNumber ||
-          a.bulkBatchId == _asset.bulkBatchId
-      ).toList();
-
-      List<AssetModel> units = [];
-      for (final s in siblings) {
-        if (s.childItems.isNotEmpty) {
-          units.addAll(s.childItems);
-        } else {
-          units.add(s);
-        }
-      }
-
-      units.sort((a, b) => (a.itemSequenceInBatch ?? 0).compareTo(b.itemSequenceInBatch ?? 0));
-
-      if (!mounted) return;
-      setState(() {
-        _groupSiblingUnits = units.isNotEmpty ? units : [_asset];
-        _isLoadingSiblings = false;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _groupSiblingUnits = _asset.childItems.isNotEmpty ? _asset.childItems : [_asset];
-          _isLoadingSiblings = false;
-        });
-      }
-    }
-  }
-
-  void _switchToUnit(AssetModel targetUnit) {
-    setState(() {
-      _isEditing = false;
-      _newWatermarkedPhotoBytes = null;
-      _newPhotoFileName = null;
-    });
-    _initializeAsset(targetUnit);
   }
 
   Future<void> _pickImageFromDevice() async {
@@ -401,7 +340,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
       widget.onAssetUpdated?.call();
       _loadAuditHistory();
-      _loadGroupSiblingUnits();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -551,6 +489,21 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                                     style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: _asset.conditionColor),
                                   ),
                                 ),
+                                if (_asset.quantity > 1) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: ParishColors.marianBlueSurface,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      '${_asset.quantity} UNITS',
+                                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                             const SizedBox(height: 2),
@@ -572,104 +525,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     ],
                   ),
                 ),
-
-                // Responsive Property Group Unit Selector Bar (Wrapped in Flexible/Expanded to prevent vertical wrapping)
-                if (_groupSiblingUnits.length > 1) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: ParishColors.backgroundLight,
-                      border: Border(bottom: BorderSide(color: borderGrey)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'PROPERTY GROUP: $_cleanBaseGroupName',
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${_groupSiblingUnits.length} total units inside this group',
-                                style: TextStyle(fontSize: 10, color: textMuted),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          height: 36,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.4)),
-                          ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<AssetModel>(
-                              value: _groupSiblingUnits.firstWhere(
-                                    (u) => u.assetId == _asset.assetId,
-                                orElse: () => _groupSiblingUnits.first,
-                              ),
-                              isDense: true,
-                              icon: const Icon(Icons.arrow_drop_down, color: ParishColors.marianBlue, size: 20),
-                              items: _groupSiblingUnits.map((unit) {
-                                return DropdownMenuItem<AssetModel>(
-                                  value: unit,
-                                  child: Text(
-                                    'Unit #${unit.propertyLabelSuffix} (${unit.conditionStatus})',
-                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (selected) {
-                                if (selected != null) _switchToUnit(selected);
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        IconButton(
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: borderGrey)),
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(34, 34),
-                          ),
-                          icon: const Icon(Icons.chevron_left, size: 16, color: ParishColors.marianBlue),
-                          tooltip: 'Previous Unit',
-                          onPressed: () {
-                            final currentIndex = _groupSiblingUnits.indexWhere((u) => u.assetId == _asset.assetId);
-                            if (currentIndex > 0) _switchToUnit(_groupSiblingUnits[currentIndex - 1]);
-                          },
-                        ),
-                        const SizedBox(width: 4),
-                        IconButton(
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: borderGrey)),
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(34, 34),
-                          ),
-                          icon: const Icon(Icons.chevron_right, size: 16, color: ParishColors.marianBlue),
-                          tooltip: 'Next Unit',
-                          onPressed: () {
-                            final currentIndex = _groupSiblingUnits.indexWhere((u) => u.assetId == _asset.assetId);
-                            if (currentIndex != -1 && currentIndex < _groupSiblingUnits.length - 1) {
-                              _switchToUnit(_groupSiblingUnits[currentIndex + 1]);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
 
                 // Content Area
                 Expanded(
@@ -905,9 +760,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             children: [
               Column(
                 children: [
-                  Text('Unit Identifier', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.bold)),
+                  Text('Quantity', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 2),
-                  Text('Unit #${_asset.propertyLabelSuffix}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                  Text('${_asset.quantity} unit(s)', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
                 ],
               ),
               Container(width: 1, height: 28, color: ParishColors.borderGrey),
@@ -946,7 +801,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _buildSpecItem('Dimensions', _asset.dimensions ?? '—')),
+                  Expanded(child: _buildSpecItem('Dimensions / Size', _asset.dimensions ?? '—')),
                   const SizedBox(width: 8),
                   Expanded(child: _buildSpecItem('Primary Color', _asset.color ?? '—')),
                 ],
@@ -1402,7 +1257,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Dimensions', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Dimensions / Size', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
                   TextFormField(controller: _dimensionsController, decoration: _inputDecoration()),
                 ],
@@ -1424,7 +1279,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Model', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text('Model / Brand', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                   const SizedBox(height: 6),
                   TextFormField(controller: _modelController, decoration: _inputDecoration()),
                 ],
@@ -1433,7 +1288,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ],
         ),
         const SizedBox(height: 12),
-        Text('Other Specifications', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text('Other Specifications / Inscriptions', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
         const SizedBox(height: 6),
         TextFormField(controller: _othersController, maxLines: 2, decoration: _inputDecoration()),
         const SizedBox(height: 12),

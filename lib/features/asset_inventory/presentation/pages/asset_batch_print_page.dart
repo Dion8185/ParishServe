@@ -269,7 +269,29 @@ class _AssetBatchPrintPageState extends State<AssetBatchPrintPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(a.controlNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue)),
+                                Row(
+                                  children: [
+                                    Text(a.controlNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue)),
+                                    if (a.quantity > 1) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: ParishColors.marianBlueSurface,
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                        child: Text(
+                                          '${a.quantity} units',
+                                          style: const TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: ParishColors.marianBlue,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                                 Text(a.itemName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textDark)),
                                 Text('${a.displayClassification} • ${a.displayLocation}', style: TextStyle(fontSize: 11.5, color: textMuted)),
                               ],

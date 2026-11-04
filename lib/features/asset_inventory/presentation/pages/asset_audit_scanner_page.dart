@@ -48,7 +48,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   AssetModel? _scannedAsset;
   String _selectedCondition = 'VERIFIED / GOOD';
   String _selectedStatus = 'Active';
-  bool _auditEntireGroup = true;
   bool _isRecordingAudit = false;
 
   final List<String> _conditionOptions = [
@@ -222,7 +221,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           _scannedAsset = asset;
           _selectedCondition = asset.conditionStatus;
           _selectedStatus = asset.operationalStatus;
-          _auditEntireGroup = asset.isPropertyGroup;
           _isSearching = false;
         });
       } else {
@@ -317,10 +315,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
         newLocation: asset.displayLocation,
         auditMethod: method,
         auditNotes: _auditNotesController.text.trim(),
-        auditEntireGroup: asset.isPropertyGroup && _auditEntireGroup,
-        groupAssetIds: asset.isPropertyGroup && _auditEntireGroup
-            ? asset.childItems.map((c) => c.assetId).toList()
-            : [],
       );
 
       if (!mounted) return;
@@ -335,9 +329,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
         _auditNotesController.clear();
         _manualInputController.clear();
         _nfcInputController.clear();
-        _successBannerMessage = asset.isPropertyGroup && _auditEntireGroup
-            ? 'Property Group $completedControlNo (All ${asset.quantity} units) verified as $verifiedCondition!'
-            : 'Audit recorded for $completedControlNo ($verifiedCondition).';
+        _successBannerMessage = 'Audit recorded for $completedControlNo (${asset.quantity} unit(s)): $verifiedCondition.';
       });
 
       if (_lastActiveMode == AuditScanMode.liveCamera) {
@@ -770,7 +762,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                   return ListTile(
                     dense: true,
                     title: Text(s.controlNumber, style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-                    subtitle: Text('${s.itemName} • ${s.displayLocation}'),
+                    subtitle: Text('${s.itemName} • Qty: ${s.quantity} • ${s.displayLocation}'),
                     onTap: () {
                       _manualInputController.text = s.controlNumber;
                       _searchAndLoadAsset(s.controlNumber);
@@ -788,7 +780,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   Widget _buildAssetAuditVerificationForm() {
     final asset = _scannedAsset!;
     final textDark = ParishColors.textDark;
-    final isGroup = asset.isPropertyGroup;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -808,7 +799,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                   const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 22),
                   const SizedBox(width: 8),
                   Text(
-                    isGroup ? 'Property Group Found (${asset.quantity} Units)' : 'Asset Found in Registry',
+                    asset.quantity > 1 ? 'Asset Found (${asset.quantity} Units)' : 'Asset Found in Registry',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: ParishColors.oliveGreen),
                   ),
                 ],
@@ -823,24 +814,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           Text(asset.itemName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark)),
           const SizedBox(height: 2),
           Text('Control #: ${asset.controlNumber}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-          Text('Location: ${asset.displayLocation} • Acq: ${asset.acquisitionYear}', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+          Text('Location: ${asset.displayLocation} • Quantity: ${asset.quantity} unit(s) • Acq: ${asset.acquisitionYear}', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
           const SizedBox(height: 16),
-
-          if (isGroup) ...[
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: ParishColors.marianBlueSurface, borderRadius: BorderRadius.circular(8)),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                activeColor: ParishColors.oliveGreen,
-                title: const Text('Batch Audit Entire Property Group', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                subtitle: Text('Apply verified condition to all ${asset.quantity} units simultaneously.', style: const TextStyle(fontSize: 11)),
-                value: _auditEntireGroup,
-                onChanged: (val) => setState(() => _auditEntireGroup = val),
-              ),
-            ),
-            const SizedBox(height: 14),
-          ],
 
           const Text('Verified Physical Condition *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),

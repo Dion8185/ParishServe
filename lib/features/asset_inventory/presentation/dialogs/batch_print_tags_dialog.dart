@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/asset_inventory/presentation/dialogs/batch_print_tags_dialog.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_model.dart';
@@ -16,7 +20,7 @@ void showBatchPrintTagsModal(
 class _BatchPrintTagsDialog extends StatefulWidget {
   final List<AssetModel> availableAssets;
 
-  const _BatchPrintTagsDialog({required this.availableAssets});
+  const _BatchPrintTagsDialog({super.key, required this.availableAssets});
 
   @override
   State<_BatchPrintTagsDialog> createState() => _BatchPrintTagsDialogState();
@@ -32,7 +36,6 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
   @override
   void initState() {
     super.initState();
-    // Default to selecting all active assets in the current view
     _selectedAssetIds.addAll(widget.availableAssets.map((a) => a.assetId));
   }
 
@@ -409,6 +412,24 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                                             ),
                                           ),
                                         ),
+                                        if (asset.quantity > 1) ...[
+                                          const SizedBox(width: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: ParishColors.marianBlueSurface,
+                                              borderRadius: BorderRadius.circular(3),
+                                            ),
+                                            child: Text(
+                                              '${asset.quantity} units',
+                                              style: const TextStyle(
+                                                fontSize: 8.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: ParishColors.marianBlue,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 2),

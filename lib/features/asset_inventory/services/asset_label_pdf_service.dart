@@ -17,7 +17,7 @@ class AssetLabelPdfService {
   static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
-  /// Generates printable sticker labels for an asset or property group.
+  /// Generates a printable sticker label for an asset
   static Future<Uint8List> generateSingleAssetLabelPdf(AssetModel asset) async {
     const pageFormat = PdfPageFormat(
       70 * PdfPageFormat.mm,
@@ -35,32 +35,19 @@ class AssetLabelPdfService {
       ),
     );
 
-    if (asset.isPropertyGroup && asset.childItems.isNotEmpty) {
-      for (final child in asset.childItems) {
-        pdf.addPage(
-          pw.Page(
-            pageFormat: pageFormat,
-            build: (context) {
-              return _buildSingleAssetSticker(child, fontRegular, fontBold, isChildUnit: true);
-            },
-          ),
-        );
-      }
-    } else {
-      pdf.addPage(
-        pw.Page(
-          pageFormat: pageFormat,
-          build: (context) {
-            return _buildSingleAssetSticker(asset, fontRegular, fontBold, isChildUnit: false);
-          },
-        ),
-      );
-    }
+    pdf.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        build: (context) {
+          return _buildSingleAssetSticker(asset, fontRegular, fontBold);
+        },
+      ),
+    );
 
     return pdf.save();
   }
 
-  /// Generates a full sheet of asset labels (A4 with 3x8 = 24 labels grid).
+  /// Generates a full sheet of asset labels (A4 with 3x8 = 24 labels grid)
   static Future<Uint8List> generateBatchAssetLabelsPdf(List<AssetModel> assets) async {
     const pageFormat = PdfPageFormat.a4;
     final fontRegular = await PdfGoogleFonts.arimoRegular();
@@ -73,20 +60,11 @@ class AssetLabelPdfService {
       ),
     );
 
-    final List<AssetModel> printableStickers = [];
-    for (final asset in assets) {
-      if (asset.isPropertyGroup && asset.childItems.isNotEmpty) {
-        printableStickers.addAll(asset.childItems);
-      } else {
-        printableStickers.add(asset);
-      }
-    }
-
     const int labelsPerPage = 24;
-    for (int i = 0; i < printableStickers.length; i += labelsPerPage) {
-      final pageAssets = printableStickers.sublist(
+    for (int i = 0; i < assets.length; i += labelsPerPage) {
+      final pageAssets = assets.sublist(
         i,
-        (i + labelsPerPage > printableStickers.length) ? printableStickers.length : i + labelsPerPage,
+        (i + labelsPerPage > assets.length) ? assets.length : i + labelsPerPage,
       );
 
       pdf.addPage(
@@ -100,7 +78,7 @@ class AssetLabelPdfService {
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
               children: pageAssets.map((asset) {
-                return _buildSingleAssetSticker(asset, fontRegular, fontBold, isChildUnit: asset.itemSequenceInBatch != null);
+                return _buildSingleAssetSticker(asset, fontRegular, fontBold);
               }).toList(),
             );
           },
@@ -135,14 +113,10 @@ class AssetLabelPdfService {
       AssetModel asset,
       pw.Font fontRegular,
       pw.Font fontBold,
-      {bool isChildUnit = false}
       ) {
     final qrData = asset.qrCodeToken.isNotEmpty ? asset.qrCodeToken : asset.controlNumber;
-
-    // Uses clean base control number without redundant -001 suffix
     final displayControlNo = asset.controlNumber;
 
-    // Resolve full readable names for Location and Classification
     final locationText = asset.locationName != null && asset.locationName!.isNotEmpty
         ? asset.locationName!
         : asset.locationAcronym;
@@ -181,7 +155,7 @@ class AssetLabelPdfService {
               ),
               pw.SizedBox(height: 1),
               pw.Text(
-                isChildUnit ? 'ITEM #${asset.propertyLabelSuffix}' : 'DSP-SJP2',
+                'DSP-SJP2',
                 style: pw.TextStyle(
                   font: fontBold,
                   fontSize: 5.5,
@@ -230,13 +204,27 @@ class AssetLabelPdfService {
                     ),
                   ],
                 ),
-                pw.Text(
-                  isChildUnit ? 'Property Group Item Unit' : 'Diocese of San Pablo • Property Tag',
-                  style: pw.TextStyle(
-                    font: fontRegular,
-                    fontSize: 4.8,
-                    color: textMuted,
-                  ),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'Diocese of San Pablo • Property Tag',
+                      style: pw.TextStyle(
+                        font: fontRegular,
+                        fontSize: 4.8,
+                        color: textMuted,
+                      ),
+                    ),
+                    if (asset.quantity > 1)
+                      pw.Text(
+                        'Qty: ${asset.quantity}',
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 4.8,
+                          color: marianBlue,
+                        ),
+                      ),
+                  ],
                 ),
                 pw.Container(
                   margin: const pw.EdgeInsets.symmetric(vertical: 1.5),

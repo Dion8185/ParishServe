@@ -13,7 +13,7 @@ import '../../models/asset_reference_models.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
-import '../dialogs/register_asset_dialog.dart'; // Reuses currency formatter
+import '../dialogs/register_asset_dialog.dart';
 
 class RegisterAssetPage extends StatefulWidget {
   final VoidCallback? onAssetSaved;
@@ -121,12 +121,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     final locAcronym = _selectedLocation?.acronym ?? 'C';
     final clsAcronym = _selectedClassification?.acronym ?? 'FF';
     final year = _dateOfAcquisition.year;
-    final qty = _parsedQuantity;
 
     setState(() {
-      _previewControlNumber = qty > 1
-          ? '$locAcronym-$clsAcronym $year-001 (Property Group Folder • $qty Units)'
-          : '$locAcronym-$clsAcronym $year-001';
+      _previewControlNumber = '$locAcronym-$clsAcronym $year-001';
     });
   }
 
@@ -252,7 +249,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         );
       }
 
-      await AssetService.registerBulkAssets(
+      await AssetService.registerAsset(
         itemName: _itemNameController.text.trim(),
         quantity: _parsedQuantity,
         unitPrice: _parsedUnitPrice,
@@ -312,9 +309,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Register Parish Property / Asset Group',
+            Text('Register Parish Property / Asset',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
-            Text('Assign standardized Diocesan Control Numbers & record property groups',
+            Text('Assign standardized Diocesan Control Numbers & record inventory properties',
                 style: TextStyle(fontSize: 12, color: textMuted)),
           ],
         ),
@@ -369,11 +366,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                     decoration: BoxDecoration(
                       color: ParishColors.goldLight,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: ParishColors.goldAccent.withOpacity(0.6)),
+                      border: Border.all(color: ParishColors.goldAccent.withValues(alpha: 0.6)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.folder_copy_outlined, color: ParishColors.goldAccent, size: 24),
+                        const Icon(Icons.qr_code_2, color: ParishColors.goldAccent, size: 24),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

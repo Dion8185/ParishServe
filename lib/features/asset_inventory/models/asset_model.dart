@@ -39,10 +39,8 @@ class AssetModel {
   final String? archivedBy;
   final String? archiveReason;
 
-  // Bulk Property Group association metadata
   final String? bulkBatchId;
   final int? itemSequenceInBatch;
-  final List<AssetModel> childItems; // Holds child units if this is a master Property Group
 
   final DateTime? lastAuditedAt;
   final String? auditedBy;
@@ -83,7 +81,6 @@ class AssetModel {
     this.archiveReason,
     this.bulkBatchId,
     this.itemSequenceInBatch,
-    this.childItems = const [],
     this.lastAuditedAt,
     this.auditedBy,
     this.createdBy,
@@ -91,25 +88,6 @@ class AssetModel {
     this.createdAt,
     this.updatedAt,
   }) : totalCost = totalCost ?? (quantity * unitPrice);
-
-  /// Returns true if this asset represents a Property Group folder containing multiple items
-  bool get isPropertyGroup => quantity > 1 || bulkBatchId != null;
-
-  /// Formatted item suffix or property number if part of a group (e.g. "001")
-  String get propertyLabelSuffix {
-    if (itemSequenceInBatch != null) {
-      return itemSequenceInBatch.toString().padLeft(3, '0');
-    }
-    return '001';
-  }
-
-  /// Full item identifier with sequence suffix if applicable
-  String get displayControlNumberWithSequence {
-    if (itemSequenceInBatch != null) {
-      return '$controlNumber-$propertyLabelSuffix';
-    }
-    return controlNumber;
-  }
 
   /// Human-readable date formatted as YYYY-MM-DD
   String get formattedAcquisitionDate {
@@ -259,10 +237,10 @@ class AssetModel {
       locName = map['storage_location']?.toString();
     }
 
-    final int qty = int.tryParse(map['quantity']?.toString() ?? '') ?? (children.isNotEmpty ? children.length : 1);
+    final int qty = int.tryParse(map['quantity']?.toString() ?? '') ?? 1;
     final double rawCost = double.tryParse(map['cost']?.toString() ?? '') ?? 0.0;
     final double uPrice = double.tryParse(map['unit_price']?.toString() ?? '') ?? (rawCost > 0 ? (rawCost / (qty > 0 ? qty : 1)) : 0.0);
-    final double totCost = double.tryParse(map['total_cost']?.toString() ?? '') ?? (qty * uPrice);
+    final double totCost = double.tryParse(map['total_cost']?.toString() ?? '') ?? (rawCost > 0 ? rawCost : (qty * uPrice));
 
     return AssetModel(
       assetId: map['asset_id']?.toString() ?? map['control_number']?.toString() ?? '',
@@ -296,7 +274,6 @@ class AssetModel {
       archiveReason: map['archive_reason']?.toString(),
       bulkBatchId: map['bulk_batch_id']?.toString(),
       itemSequenceInBatch: int.tryParse(map['item_sequence_in_batch']?.toString() ?? ''),
-      childItems: children,
       lastAuditedAt: parseNullableDate(map['last_audited_at']),
       auditedBy: map['audited_by']?.toString(),
       createdBy: map['created_by']?.toString(),
@@ -382,7 +359,6 @@ class AssetModel {
     String? archiveReason,
     String? bulkBatchId,
     int? itemSequenceInBatch,
-    List<AssetModel>? childItems,
     DateTime? lastAuditedAt,
     String? auditedBy,
     String? createdBy,
@@ -426,7 +402,6 @@ class AssetModel {
       archiveReason: archiveReason ?? this.archiveReason,
       bulkBatchId: bulkBatchId ?? this.bulkBatchId,
       itemSequenceInBatch: itemSequenceInBatch ?? this.itemSequenceInBatch,
-      childItems: childItems ?? this.childItems,
       lastAuditedAt: lastAuditedAt ?? this.lastAuditedAt,
       auditedBy: auditedBy ?? this.auditedBy,
       createdBy: createdBy ?? this.createdBy,

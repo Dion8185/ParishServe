@@ -58,7 +58,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   AssetModel? _scannedAsset;
   String _selectedCondition = 'VERIFIED / GOOD';
   String _selectedStatus = 'Active';
-  bool _auditEntireGroup = true; // Property Group batch toggle
   bool _isRecordingAudit = false;
 
   final List<String> _conditionOptions = [
@@ -263,7 +262,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           _scannedAsset = asset;
           _selectedCondition = asset.conditionStatus;
           _selectedStatus = asset.operationalStatus;
-          _auditEntireGroup = asset.isPropertyGroup;
           _isSearching = false;
         });
       } else {
@@ -362,10 +360,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         newLocation: asset.displayLocation,
         auditMethod: method,
         auditNotes: _auditNotesController.text.trim(),
-        auditEntireGroup: asset.isPropertyGroup && _auditEntireGroup,
-        groupAssetIds: asset.isPropertyGroup && _auditEntireGroup
-            ? asset.childItems.map((c) => c.assetId).toList()
-            : [],
       );
 
       if (!mounted) return;
@@ -381,11 +375,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         _auditNotesController.clear();
         _manualInputController.clear();
         _nfcInputController.clear();
-        _successBannerMessage = asset.isPropertyGroup && _auditEntireGroup
-            ? 'Property Group $completedControlNo (All ${asset.quantity} units) successfully audited as $verifiedCondition!'
-            : (isDecom
-            ? 'Audit saved: $completedControlNo verified as $verifiedCondition & marked Decommissioned (Archived).'
-            : 'Audit saved for $completedControlNo: $verifiedCondition • Status: $verifiedStatus.');
+        _successBannerMessage = isDecom
+            ? 'Audit saved: $completedControlNo (${asset.quantity} unit(s)) verified as $verifiedCondition & marked Decommissioned (Archived).'
+            : 'Audit saved for $completedControlNo (${asset.quantity} unit(s)): $verifiedCondition • Status: $verifiedStatus.';
       });
 
       if (_lastActiveMode == AuditScanMode.liveCamera) {
@@ -432,7 +424,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: ParishColors.marianBlue,
                       shape: BoxShape.circle,
                     ),
@@ -829,7 +821,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             Expanded(
               child: Row(
                 children: [
-                  Icon(Icons.videocam_outlined, color: ParishColors.marianBlue, size: 18),
+                  const Icon(Icons.videocam_outlined, color: ParishColors.marianBlue, size: 18),
                   const SizedBox(width: 6),
                   const Flexible(
                     child: Text(
@@ -975,10 +967,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
+              const Row(
                 children: [
                   Icon(Icons.nfc, size: 22, color: ParishColors.goldAccent),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Text(
                     'NFC / RFID Wireless Sensor Active',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.goldAccent),
@@ -997,7 +989,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            child: Icon(Icons.sensors, size: 42, color: ParishColors.goldAccent),
+            child: const Icon(Icons.sensors, size: 42, color: ParishColors.goldAccent),
           ),
           const SizedBox(height: 12),
           Text(
@@ -1165,7 +1157,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                                     ),
                                   ],
                                 ),
-                                Text('Loc: ${suggestion.displayLocation} • ${suggestion.conditionStatus}', style: TextStyle(fontSize: 10.5, color: textMuted)),
+                                Text('Loc: ${suggestion.displayLocation} • Qty: ${suggestion.quantity} • ${suggestion.conditionStatus}', style: TextStyle(fontSize: 10.5, color: textMuted)),
                               ],
                             ),
                           ),
@@ -1183,15 +1175,13 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   // ===========================================================================
-  // 5. Verification & Inspection Form with Property Group Batch Support
+  // 5. Verification & Inspection Form
   // ===========================================================================
 
   Widget _buildAssetAuditVerificationForm() {
     final asset = _scannedAsset!;
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
-    final borderGrey = ParishColors.borderGrey;
-    final bool isGroup = asset.isPropertyGroup;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1218,8 +1208,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20),
                   const SizedBox(width: 6),
                   Text(
-                    isGroup ? 'Property Group Found (${asset.quantity} Units)' : 'Asset Found in Registry',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.oliveGreen),
+                    asset.quantity > 1 ? 'Asset Found (${asset.quantity} Units)' : 'Asset Found in Registry',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.oliveGreen),
                   ),
                 ],
               ),
@@ -1249,33 +1239,13 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       'Control #: ${asset.controlNumber}',
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                     ),
-                    Text('Location: ${asset.displayLocation}', style: TextStyle(fontSize: 11.5, color: textMuted)),
+                    Text('Location: ${asset.displayLocation} • Quantity: ${asset.quantity} unit(s)', style: TextStyle(fontSize: 11.5, color: textMuted)),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
-
-          // Property Group Batch Audit Toggle
-          if (isGroup) ...[
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: ParishColors.marianBlueSurface,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                activeColor: ParishColors.oliveGreen,
-                title: const Text('Batch Audit Entire Property Group', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
-                subtitle: Text('Apply condition to all ${asset.quantity} units simultaneously.', style: const TextStyle(fontSize: 11)),
-                value: _auditEntireGroup,
-                onChanged: (val) => setState(() => _auditEntireGroup = val),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
 
           Text('Verified Physical Condition *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
           const SizedBox(height: 5),
@@ -1301,7 +1271,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             maxLines: 2,
             style: TextStyle(fontSize: 12.5, color: textDark),
             decoration: InputDecoration(
-              hintText: 'e.g. Verified inside storage room, good condition',
+              hintText: 'e.g. Verified on-site in storage room, all units accounted for',
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,

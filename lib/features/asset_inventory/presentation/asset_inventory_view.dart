@@ -76,7 +76,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
   AssetViewMode _viewMode = AssetViewMode.cards;
   int _currentPage = 0;
-  int _rowsPerPage = 10;
+  final int _rowsPerPage = 10;
 
   @override
   void initState() {
@@ -228,24 +228,17 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           .toList();
     }
 
-    // 6. Search Query (Searches control number, name, child items, RFID, model)
+    // 6. Search Query (Searches control number, name, RFID, model, color)
     if (_searchQuery.trim().isNotEmpty) {
       final q = _searchQuery.toLowerCase().trim();
       list = list.where((a) {
-        final matchesGroup = a.controlNumber.toLowerCase().contains(q) ||
+        return a.controlNumber.toLowerCase().contains(q) ||
             a.itemName.toLowerCase().contains(q) ||
             (a.model ?? '').toLowerCase().contains(q) ||
             (a.color ?? '').toLowerCase().contains(q) ||
             (a.rfidTag ?? '').toLowerCase().contains(q) ||
             a.displayLocation.toLowerCase().contains(q) ||
             a.displayClassification.toLowerCase().contains(q);
-
-        final matchesChild = a.childItems.any((child) =>
-        child.controlNumber.toLowerCase().contains(q) ||
-            child.itemName.toLowerCase().contains(q) ||
-            (child.rfidTag ?? '').toLowerCase().contains(q));
-
-        return matchesGroup || matchesChild;
       }).toList();
     }
 
@@ -719,7 +712,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    // 1. Header Title & Actions (Uncluttered)
+                    // 1. Header Title & Actions
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -754,7 +747,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                     const SizedBox(height: 12),
 
-                    // 2. Primary Action Hub Toolbar (Directly routes to promoted pages)
+                    // 2. Primary Action Hub Toolbar
                     _buildActionButtons(isMobile),
                     const SizedBox(height: 12),
 
@@ -823,7 +816,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                     const SizedBox(height: 10),
 
-                    // 5. Search Bar (Compact 44dp height)
+                    // 5. Search Bar
                     Container(
                       width: double.infinity,
                       height: 44,
@@ -847,7 +840,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                               }),
                               style: TextStyle(fontSize: 13, color: textDark),
                               decoration: InputDecoration(
-                                hintText: 'Search by Control #, group name, RFID...',
+                                hintText: 'Search by Control #, asset name, RFID...',
                                 hintStyle:
                                 TextStyle(fontSize: 12, color: textMuted),
                                 border: InputBorder.none,
@@ -1048,7 +1041,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   }
 
   // ===========================================================================
-  // Action Buttons Toolbar (Routes directly to promoted pages)
+  // Action Buttons Toolbar
   // ===========================================================================
 
   Widget _buildActionButtons(bool isMobile) {
@@ -1068,7 +1061,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             onPressed: _openRegisterAssetPage,
             icon: const Icon(Icons.add, size: 18),
             label: const Text(
-              '+ Register Asset / Group',
+              '+ Register Asset',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
           ),
@@ -1134,7 +1127,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               onPressed: _openRegisterAssetPage,
               icon: const Icon(Icons.add, size: 18),
               label: const Text(
-                '+ Register Asset / Group',
+                '+ Register Asset',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1385,7 +1378,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               horizontalMargin: 16,
               columns: [
                 DataColumn(label: _buildSortableColumnLabel('Control Number', 'Control Number')),
-                DataColumn(label: _buildSortableColumnLabel('Asset Name / Group', 'Asset Name')),
+                DataColumn(label: _buildSortableColumnLabel('Asset Name', 'Asset Name')),
                 const DataColumn(label: Text('Qty')),
                 const DataColumn(label: Text('Classification')),
                 const DataColumn(label: Text('Location')),
@@ -1410,32 +1403,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                   ),
                   DataCell(
-                    Row(
-                      children: [
-                        Text(
-                          a.isPropertyGroup
-                              ? a.itemName.replaceAll(RegExp(r'\s*(—|-)?\s*\d{3}$'), '').trim()
-                              : a.itemName,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        if (a.isPropertyGroup) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: ParishColors.marianBlueSurface,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                            child: Text(
-                              '(${a.quantity})',
-                              style: const TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                  color: ParishColors.marianBlue),
-                            ),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      a.itemName,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                   DataCell(Text('${a.quantity}')),
@@ -1587,7 +1557,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           const SizedBox(height: 12),
           Text(
             _searchQuery.isNotEmpty
-                ? 'No registered assets or groups match your search.'
+                ? 'No registered assets match your search.'
                 : 'No assets registered under this inventory section yet.',
             style: TextStyle(
                 fontWeight: FontWeight.bold,
@@ -1595,7 +1565,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 color: ParishColors.textDark),
           ),
           const SizedBox(height: 4),
-          Text('Tap "+ Register Asset / Group" above to record parish properties.',
+          Text('Tap "+ Register Asset" above to record parish properties.',
               style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
         ],
       ),

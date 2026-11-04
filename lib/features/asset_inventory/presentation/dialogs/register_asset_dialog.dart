@@ -195,14 +195,9 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     final locAcronym = _selectedLocation?.acronym ?? 'C';
     final clsAcronym = _selectedClassification?.acronym ?? 'FF';
     final year = _dateOfAcquisition.year;
-    final qty = _parsedQuantity;
 
     setState(() {
-      if (qty > 1) {
-        _previewControlNumber = '$locAcronym-$clsAcronym $year-001 (Property Group Folder • $qty Units)';
-      } else {
-        _previewControlNumber = '$locAcronym-$clsAcronym $year-001';
-      }
+      _previewControlNumber = '$locAcronym-$clsAcronym $year-001';
     });
   }
 
@@ -375,7 +370,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
         );
       }
 
-      final List<AssetModel> createdAssets = await AssetService.registerBulkAssets(
+      final AssetModel createdAsset = await AssetService.registerAsset(
         itemName: _itemNameController.text.trim(),
         quantity: qty,
         unitPrice: unitPriceValue,
@@ -403,8 +398,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
       widget.onAssetSaved?.call();
 
       final summaryText = qty > 1
-          ? 'Property Group registered successfully! Control # ${createdAssets.first.controlNumber} containing $qty individual units.'
-          : 'Asset registered successfully! Control #: ${createdAssets.first.controlNumber}';
+          ? 'Asset registered successfully! Control #: ${createdAsset.controlNumber} ($qty units).'
+          : 'Asset registered successfully! Control #: ${createdAsset.controlNumber}';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -461,11 +456,11 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Register Diocesan Parish Property / Group',
+                          'Register Diocesan Parish Property / Asset',
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
-                          'Assign standardized Diocesan Control Number with automatic child item numbering for bulk quantities',
+                          'Assign standardized Diocesan Control Number with total valuation and unit count',
                           style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
@@ -526,14 +521,14 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.folder_copy_outlined, color: ParishColors.goldAccent, size: 22),
+                            const Icon(Icons.qr_code_2, color: ParishColors.goldAccent, size: 24),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'Diocesan Control Number Preview (Property Group Structure):',
+                                    'Diocesan Control Number Preview:',
                                     style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
                                   ),
                                   const SizedBox(height: 2),
@@ -606,7 +601,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'When Quantity > 1, a Property Group folder is created with individual item numbers (001, 002...) generated automatically.',
+                              'Units sharing the same designation and acquisition details are managed under 1 Control Number with specified quantity.',
                               style: TextStyle(fontSize: 11.5, color: textMuted),
                             ),
                             const Divider(height: 20),
@@ -821,19 +816,17 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                       ),
                       const SizedBox(height: 14),
 
-                      // RFID Tag (Single items only)
-                      if (_parsedQuantity == 1) ...[
-                        _buildLabel('RFID / NFC Tag ID (Optional for Single Asset)'),
-                        TextFormField(
-                          controller: _rfidTagController,
-                          style: TextStyle(fontSize: 13.5, color: textDark),
-                          decoration: _inputDecoration(
-                            hint: 'e.g. 04:A2:4B:9C',
-                            prefixIcon: const Icon(Icons.nfc, size: 16, color: ParishColors.marianBlue),
-                          ),
+                      // RFID Tag (Optional)
+                      _buildLabel('RFID / NFC Tag ID (Optional)'),
+                      TextFormField(
+                        controller: _rfidTagController,
+                        style: TextStyle(fontSize: 13.5, color: textDark),
+                        decoration: _inputDecoration(
+                          hint: 'e.g. 04:A2:4B:9C',
+                          prefixIcon: const Icon(Icons.nfc, size: 16, color: ParishColors.marianBlue),
                         ),
-                        const SizedBox(height: 14),
-                      ],
+                      ),
+                      const SizedBox(height: 14),
 
                       // Condition & Operational Status
                       Row(
@@ -880,7 +873,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Dimensions (Optional)'),
+                                _buildLabel('Dimensions / Size (Optional)'),
                                 TextFormField(controller: _dimensionsController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. 10ft L x 3ft H')),
                               ],
                             ),
@@ -900,7 +893,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Model'),
+                                _buildLabel('Model / Brand'),
                                 TextFormField(controller: _modelController, style: TextStyle(fontSize: 13, color: textDark), decoration: _inputDecoration(hint: 'e.g. Custom')),
                               ],
                             ),
@@ -1057,7 +1050,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.check, size: 20),
                       label: Text(
-                        _isSaving ? 'Registering...' : 'Save & Register Property Group',
+                        _isSaving ? 'Registering...' : 'Save & Register Asset',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                     ),

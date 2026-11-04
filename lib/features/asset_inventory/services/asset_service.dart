@@ -13,7 +13,7 @@ import '../models/asset_model.dart';
 class AssetService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  /// Fetches registered parish assets, intelligently grouping bulk child units into parent Property Groups
+  /// Fetches registered parish assets directly from parish_assets
   static Future<List<AssetModel>> getAssets({
     bool includeArchived = false,
     String? categoryFilter,
@@ -65,62 +65,14 @@ class AssetService {
           .order('created_at', ascending: false);
 
       final List<dynamic> rows = response as List;
-
-      // Separate single items and bulk child items
-      final Map<String, List<Map<String, dynamic>>> batchGroups = {};
-      final List<Map<String, dynamic>> singleItems = [];
-
-      for (var row in rows) {
-        final map = row as Map<String, dynamic>;
-        final batchId = map['bulk_batch_id']?.toString();
-        if (batchId != null && batchId.isNotEmpty) {
-          batchGroups.putIfAbsent(batchId, () => []).add(map);
-        } else {
-          singleItems.add(map); // FIXED: Changed .push() to .add()
-        }
-      }
-
-      final List<AssetModel> assembledAssets = [];
-
-      // 1. Process Property Groups (Bulk batches)
-      batchGroups.forEach((batchId, childRows) {
-        // Sort children by sequence number
-        childRows.sort((a, b) => (int.tryParse(a['item_sequence_in_batch']?.toString() ?? '0') ?? 0)
-            .compareTo(int.tryParse(b['item_sequence_in_batch']?.toString() ?? '0') ?? 0));
-
-        final firstChild = childRows.first;
-        final List<AssetModel> children = childRows.map((c) => AssetModel.fromMap(c)).toList();
-
-        // Calculate total quantity & cost for the parent group
-        final double unitPrice = double.tryParse(firstChild['unit_price']?.toString() ?? '') ?? 0.0;
-        final int totalQty = children.length;
-
-        // Create the Parent Master Group Model representing the Folder
-        final parentGroup = AssetModel.fromMap(
-          firstChild,
-          children: children,
-        ).copyWith(
-          quantity: totalQty,
-          totalCost: totalQty * unitPrice,
-          itemName: firstChild['item_name'].toString().replaceAll(RegExp(r'\s+—\s+\d{3}$'), ''), // Clean base name
-        );
-
-        assembledAssets.add(parentGroup);
-      });
-
-      // 2. Process Single standalone items (Quantity = 1)
-      for (var map in singleItems) {
-        assembledAssets.add(AssetModel.fromMap(map));
-      }
-
-      return assembledAssets;
+      return rows.map((r) => AssetModel.fromMap(r as Map<String, dynamic>)).toList();
     } catch (e) {
       debugPrint('Error fetching parish assets: $e');
       rethrow;
     }
   }
 
-  /// Looks up a single asset or child item by Control Number, Property Label, or QR Token
+  /// Looks up a single asset by Control Number, Asset ID, QR Token, or RFID tag
   static Future<AssetModel?> findAssetByIdentifier(String identifier) async {
     final clean = identifier.trim();
     if (clean.isEmpty) return null;
@@ -237,7 +189,7 @@ class AssetService {
         return result.map((r) => r['control_number'].toString().trim()).toList();
       }
     } catch (e) {
-      debugPrint('Batch RPC notice: $e. Falling back to global sequence scanner.');
+      debugPrint('Batch RPC notice: $e. Falling back to sequence scanner.');
     }
 
     final records = await _client
@@ -290,8 +242,8 @@ class AssetService {
     }
   }
 
-  /// Registers single or Property Group (bulk) assets with unique child property labels (`001`, `002`, etc.)
-  static Future<List<AssetModel>> registerBulkAssets({
+  /// Registers a parish asset with a single Control Number and specified quantity (e.g., 16 units)
+  static Future<AssetModel> registerAsset({
     required String itemName,
     required int quantity,
     required double unitPrice,
@@ -330,67 +282,65 @@ class AssetService {
     );
 
     final String assignedControlNumber = controlNumbers.first;
-    final String bulkBatchId = quantity > 1 ? 'GRP-${now.millisecondsSinceEpoch}-${Random().nextInt(9999)}' : '';
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
-    final String dateString = '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}';
+    final double calculatedTotalCost = quantity * safeUnitPrice;
+    final String dateString =
+        '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}';
 
-    final List<Map<String, dynamic>> payloads = [];
-    final List<Map<String, dynamic>> auditLogs = [];
+    final String assetId = generatePermanentIdentifier('AST');
+    final String qrCodeToken = generatePermanentIdentifier('QR');
 
-    for (int i = 0; i < quantity; i++) {
-      final String assetId = generatePermanentIdentifier('AST');
-      final String qrCodeToken = generatePermanentIdentifier('QR');
-      final int seqNum = i + 1;
-      final String seqSuffix = seqNum.toString().padLeft(3, '0');
+    final payload = {
+      'asset_id': assetId,
+      'control_number': assignedControlNumber,
+      'item_name': cleanItemName,
+      'classification_id': classificationId,
+      'classification_acronym': classificationAcronym.trim().toUpperCase(),
+      'location_id': locationId,
+      'location_acronym': locationAcronym.trim().toUpperCase(),
+      'dimensions': dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
+      'color': color?.trim().isEmpty ?? true ? null : color!.trim(),
+      'model': model?.trim().isEmpty ?? true ? null : model!.trim(),
+      'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
+      'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
+      'photo_url': photoUrl?.trim().isEmpty ?? true ? null : photoUrl!.trim(),
+      'date_of_acquisition': dateString,
+      'acquisition_year': acquisitionYear,
+      'mode_of_acquisition': modeOfAcquisition,
+      'quantity': quantity,
+      'unit_price': safeUnitPrice,
+      'total_cost': calculatedTotalCost,
+      'cost': calculatedTotalCost,
+      'rfid_tag': (rfidTag != null && rfidTag.trim().isNotEmpty) ? rfidTag.trim() : null,
+      'qr_code_token': qrCodeToken,
+      'condition_status': conditionStatus,
+      'operational_status': operationalStatus,
+      'is_archived': isDecommissioned,
+      'archived_at': isDecommissioned ? now.toIso8601String() : null,
+      'archived_by': isDecommissioned ? validUserId : null,
+      'archive_reason': isDecommissioned ? 'Registered with Decommissioned status.' : null,
+      'bulk_batch_id': null,
+      'item_sequence_in_batch': null,
+      'registration_date': now.toIso8601String(),
+      'created_by': validUserId,
+      'created_at': now.toIso8601String(),
+      'updated_at': now.toIso8601String(),
+      'category': classificationName ?? classificationAcronym,
+      'storage_location': locationName ?? locationAcronym,
+      'acquisition_date': dateString,
+      'acquisition_mode': modeOfAcquisition,
+      'description': remarks ?? others ?? cleanItemName,
+    };
 
-      final String itemDesignation = quantity > 1
-          ? '$cleanItemName — $seqSuffix'
-          : cleanItemName;
+    final response = await _client
+        .from('parish_assets')
+        .insert(payload)
+        .select()
+        .single();
 
-      payloads.add({
-        'asset_id': assetId,
-        'control_number': assignedControlNumber,
-        'item_name': itemDesignation,
-        'classification_id': classificationId,
-        'classification_acronym': classificationAcronym.trim().toUpperCase(),
-        'location_id': locationId,
-        'location_acronym': locationAcronym.trim().toUpperCase(),
-        'dimensions': dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
-        'color': color?.trim().isEmpty ?? true ? null : color!.trim(),
-        'model': model?.trim().isEmpty ?? true ? null : model!.trim(),
-        'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
-        'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
-        'photo_url': photoUrl?.trim().isEmpty ?? true ? null : photoUrl!.trim(),
-        'date_of_acquisition': dateString,
-        'acquisition_year': acquisitionYear,
-        'mode_of_acquisition': modeOfAcquisition,
-        'quantity': quantity,
-        'unit_price': safeUnitPrice,
-        'total_cost': quantity * safeUnitPrice,
-        'cost': quantity * safeUnitPrice,
-        'rfid_tag': (quantity == 1 && rfidTag != null && rfidTag.trim().isNotEmpty) ? rfidTag.trim() : null,
-        'qr_code_token': qrCodeToken,
-        'condition_status': conditionStatus,
-        'operational_status': operationalStatus,
-        'is_archived': isDecommissioned,
-        'archived_at': isDecommissioned ? now.toIso8601String() : null,
-        'archived_by': isDecommissioned ? validUserId : null,
-        'archive_reason': isDecommissioned ? 'Registered with Decommissioned status.' : null,
-        'bulk_batch_id': quantity > 1 ? bulkBatchId : null,
-        'item_sequence_in_batch': quantity > 1 ? seqNum : null,
-        'registration_date': now.toIso8601String(),
-        'created_by': validUserId,
-        'created_at': now.toIso8601String(),
-        'updated_at': now.toIso8601String(),
-        'category': classificationName ?? classificationAcronym,
-        'storage_location': locationName ?? locationAcronym,
-        'acquisition_date': dateString,
-        'acquisition_mode': modeOfAcquisition,
-        'description': remarks ?? others ?? itemDesignation,
-      });
-
-      auditLogs.add({
-        'audit_id': 'AUD-${now.millisecondsSinceEpoch}-$i',
+    try {
+      await _client.from('asset_audit_logs').insert({
+        'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
         'asset_id': assetId,
         'control_number': assignedControlNumber,
         'audited_by': validUserId,
@@ -401,39 +351,65 @@ class AssetService {
         'previous_location': null,
         'new_location': locationName ?? locationAcronym,
         'audit_method': 'MANUAL',
-        'audit_notes': quantity > 1
-            ? 'Registered inside Property Group $assignedControlNumber (Item $seqSuffix).'
-            : 'Initial registration in parish inventory.',
+        'audit_notes': 'Initial registration in parish inventory ($quantity unit(s)).',
         'audited_at': now.toIso8601String(),
       });
-    }
-
-    final List<dynamic> response = await _client
-        .from('parish_assets')
-        .insert(payloads)
-        .select();
-
-    try {
-      await _client.from('asset_audit_logs').insert(auditLogs);
     } catch (e) {
-      debugPrint('Non-blocking audit log note: $e');
+      debugPrint('Initial audit log notice: $e');
     }
 
-    final List<AssetModel> createdChildren = response.map((row) => AssetModel.fromMap(row as Map<String, dynamic>)).toList();
-
-    if (quantity > 1) {
-      final parentGroup = AssetModel.fromMap(response.first, children: createdChildren).copyWith(
-        quantity: quantity,
-        totalCost: quantity * unitPrice,
-        itemName: cleanItemName,
-      );
-      return [parentGroup];
-    }
-
-    return createdChildren;
+    return AssetModel.fromMap(response);
   }
 
-  /// Updates an individual item or an entire Property Group
+  /// Backward-compatible alias for single-record registration
+  static Future<List<AssetModel>> registerBulkAssets({
+    required String itemName,
+    required int quantity,
+    required double unitPrice,
+    required String classificationId,
+    required String classificationAcronym,
+    String? classificationName,
+    required String locationId,
+    required String locationAcronym,
+    String? locationName,
+    String? dimensions,
+    String? color,
+    String? model,
+    String? others,
+    String? remarks,
+    String? photoUrl,
+    required DateTime dateOfAcquisition,
+    String modeOfAcquisition = 'Purchase',
+    String? rfidTag,
+    String conditionStatus = 'VERIFIED / GOOD',
+    String operationalStatus = 'Active',
+  }) async {
+    final asset = await registerAsset(
+      itemName: itemName,
+      quantity: quantity,
+      unitPrice: unitPrice,
+      classificationId: classificationId,
+      classificationAcronym: classificationAcronym,
+      classificationName: classificationName,
+      locationId: locationId,
+      locationAcronym: locationAcronym,
+      locationName: locationName,
+      dimensions: dimensions,
+      color: color,
+      model: model,
+      others: others,
+      remarks: remarks,
+      photoUrl: photoUrl,
+      dateOfAcquisition: dateOfAcquisition,
+      modeOfAcquisition: modeOfAcquisition,
+      rfidTag: rfidTag,
+      conditionStatus: conditionStatus,
+      operationalStatus: operationalStatus,
+    );
+    return [asset];
+  }
+
+  /// Updates an asset record
   static Future<AssetModel> updateAsset({
     required String assetId,
     required String itemName,
@@ -480,7 +456,7 @@ class AssetService {
       'date_of_acquisition': '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}',
       'acquisition_year': dateOfAcquisition.year,
       'mode_of_acquisition': modeOfAcquisition,
-      'quantity': quantity,
+      'quantity': quantity > 0 ? quantity : 1,
       'unit_price': safeUnitPrice,
       'total_cost': safeTotalCost,
       'cost': safeTotalCost,
@@ -501,7 +477,7 @@ class AssetService {
     return AssetModel.fromMap(response);
   }
 
-  /// Records an audit inspection (Supports both individual item and batch Property Group audits)
+  /// Records an audit inspection for an asset and its units
   static Future<void> recordAuditScan({
     required String assetId,
     required String controlNumber,
@@ -518,31 +494,6 @@ class AssetService {
   }) async {
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
-
-    if (auditEntireGroup && groupAssetIds.isNotEmpty) {
-      for (final id in groupAssetIds) {
-        await _client.from('asset_audit_logs').insert({
-          'audit_id': 'AUD-${now.millisecondsSinceEpoch}-${Random().nextInt(999)}',
-          'asset_id': id,
-          'control_number': controlNumber,
-          'audited_by': validUserId,
-          'new_condition': newCondition,
-          'new_status': newStatus,
-          'audit_method': auditMethod,
-          'audit_notes': 'Batch group inspection: ${auditNotes ?? "All items verified"}',
-          'audited_at': now.toIso8601String(),
-        });
-
-        await _client.from('parish_assets').update({
-          'condition_status': newCondition,
-          'operational_status': newStatus,
-          'last_audited_at': now.toIso8601String(),
-          'audited_by': validUserId,
-          'updated_at': now.toIso8601String(),
-        }).eq('asset_id', id);
-      }
-      return;
-    }
 
     await _client.from('asset_audit_logs').insert({
       'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
