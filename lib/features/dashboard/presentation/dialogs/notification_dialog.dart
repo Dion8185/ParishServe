@@ -80,13 +80,19 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
         refNo: item.referenceId ?? 'APT-RECORD',
       );
     } else if (type.contains('iot') || type.contains('humidity') || type.contains('temperature')) {
-      // Deep-link to Smart Archive telemetry warning modal
+      // Extract real numbers from message (e.g., "Humidity is 78.4% RH (Temp: 32.8 C)...")
+      final humMatch = RegExp(r'(\d+\.?\d*)\s*%').firstMatch(item.message);
+      final tempMatch = RegExp(r'(\d+\.?\d*)\s*C').firstMatch(item.message);
+
+      final parsedHum = humMatch != null ? '${humMatch.group(1)} %' : '76.0 %';
+      final parsedTemp = tempMatch != null ? '${tempMatch.group(1)} °C' : '32.5 °C';
+
       showSensorDetailModal(
         context,
-        roomTitle: 'Monitored Archive Storage Room',
+        roomTitle: 'Sacramental Archive Room',
         nodeId: item.referenceId ?? 'ESP32-NODE-01',
-        temperature: '28.5 °C',
-        humidity: '68.2 %',
+        temperature: parsedTemp,
+        humidity: parsedHum,
         isWarning: true,
       );
     } else if (type.contains('pabuklat') || type.contains('request')) {

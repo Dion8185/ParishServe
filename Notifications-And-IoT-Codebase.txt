@@ -1,0 +1,2340 @@
+--- START OF FILE Notifications-And-IoT-Codebase.txt ---
+
+=====================================
+lib/core/services/notification_service.dart
+=====================================
+
+// =============================================================================
+// FILE: lib/core/services/notification_service.dart
+// =============================================================================
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../features/appointments/presentation/dialogs/appointment_detail_dialog.dart';
+import '../../features/auth/models/user_model.dart';
+import '../../features/auth/services/auth_service.dart';
+import '../../features/sacramental_records/presentation/dialogs/pabuklat_requests_modal.dart';
+import '../../features/smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
+
+class NotificationService {
+  NotificationService._();
+
+  // OneSignal Public App ID
+  static const String _oneSignalAppId = "54bdc4cd-8445-4c44-883c-068487b04ca7";
+
+  static bool _isInitialized = false;
+
+  /// Global navigator key reference for in-app push deep-linking
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+  /// Caches push payloads received during cold start / killed state before the user session is mounted
+  static Map<String, dynamic>? pendingNotificationData;
+
+  /// Initializes the OneSignal SDK on mobile platforms without blocking the UI thread
+  static Future<void> initialize() async {
+    if (kIsWeb) {
+      debugPrint('[NotificationService] Running on Web - skipping native OneSignal mobile SDK initialization.');
+      return;
+    }
+
+    if (_isInitialized) return;
+
+    try {
+      OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+      OneSignal.initialize(_oneSignalAppId);
+
+      // Request notification permissions asynchronously so it does not block the Android draw traversal
+      OneSignal.Notifications.requestPermission(true).then((permissionGranted) {
+        debugPrint('[NotificationService] Push Permission Granted: $permissionGranted');
+      }).catchError((e) {
+        debugPrint('[NotificationService] Push permission request notice: $e');
+      });
+
+      OneSignal.User.pushSubscription.addObserver((state) {
+        debugPrint('[OneSignal Observer] Subscription ID: ${state.current.id}');
+        debugPrint('[OneSignal Observer] Push Token: ${state.current.token}');
+        debugPrint('[OneSignal Observer] Opted In: ${state.current.optedIn}');
+      });
+
+      // Foreground notification banner display
+      OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+        debugPrint('[OneSignal Foreground]: ${event.notification.title} - ${event.notification.body}');
+        event.notification.display();
+      });
+
+      // Notification click listener with cold-start resilience
+      OneSignal.Notifications.addClickListener((event) {
+        final notification = event.notification;
+        debugPrint('[OneSignal Clicked]: ${notification.title}');
+        _handleNotificationClick(notification.additionalData);
+      });
+
+      _isInitialized = true;
+      debugPrint('[NotificationService] OneSignal successfully initialized.');
+    } catch (e) {
+      debugPrint('[NotificationService] Error initializing OneSignal: $e');
+    }
+  }
+
+  /// Associates the logged-in user (Staff or Parishioner) with OneSignal
+  /// and links their user_id as External ID to enable targeted push notifications.
+  static Future<void> syncStaffUser(UserModel user) async {
+    if (kIsWeb) return;
+
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    final role = user.userRole.toLowerCase();
+
+    try {
+      // 1. Opt-in the device push channel
+      OneSignal.User.pushSubscription.optIn();
+
+      // 2. Link OneSignal External ID to Supabase user_id for targeted alerts
+      await OneSignal.login(user.userId);
+
+      // 3. Set clean role tag (staff roles or 'user')
+      await OneSignal.User.addTagWithKey("role", role);
+
+      debugPrint('[NotificationService] OneSignal user synced: userId=${user.userId}, role=$role');
+      debugPrint('[NotificationService] Device Subscription ID: ${OneSignal.User.pushSubscription.id}');
+    } catch (e) {
+      debugPrint('[NotificationService] Error syncing user with OneSignal: $e');
+    }
+  }
+
+  /// Unlinks user from OneSignal on logout to prevent receiving other users' notifications
+  static Future<void> clearStaffUser() async {
+    if (kIsWeb || !_isInitialized) return;
+
+    try {
+      await OneSignal.User.removeTag("role");
+      await OneSignal.logout();
+      debugPrint('[NotificationService] OneSignal session detached.');
+    } catch (e) {
+      debugPrint('[NotificationService] Error logging out of OneSignal: $e');
+    }
+  }
+
+  /// Dispatches a push notification to all devices tagged with [targetRole] (e.g. 'secretary', 'parishpriest')
+  /// by invoking the Supabase Edge Function 'dispatch-alert'.
+  static Future<void> sendRolePushNotification({
+    required String targetRole,
+    required String title,
+    required String message,
+    required Map<String, dynamic> data,
+    String alertType = 'pabuklat_request',
+  }) async {
+    try {
+      final client = Supabase.instance.client;
+
+      await client.functions.invoke(
+        'dispatch-alert',
+        body: {
+          'alertType': alertType,
+          'title': title,
+          'message': message,
+          'targetRoles': [targetRole.toLowerCase()],
+          'additionalData': data,
+        },
+      );
+
+      debugPrint('[NotificationService] Push dispatched to role: $targetRole');
+    } catch (e) {
+      debugPrint('[NotificationService] Role push invocation notice: $e');
+    }
+  }
+
+  /// Dispatches a direct push notification to a specific requester account [targetUserId]
+  /// via the Supabase Edge Function 'dispatch-alert'.
+  static Future<void> sendUserPushNotification({
+    required String targetUserId,
+    required String title,
+    required String message,
+    required Map<String, dynamic> data,
+    String alertType = 'pabuklat_ready',
+  }) async {
+    try {
+      final client = Supabase.instance.client;
+
+      await client.functions.invoke(
+        'dispatch-alert',
+        body: {
+          'alertType': alertType,
+          'title': title,
+          'message': message,
+          'targetUserIds': [targetUserId],
+          'additionalData': data,
+        },
+      );
+
+      debugPrint('[NotificationService] User push dispatched to external_id: $targetUserId');
+    } catch (e) {
+      debugPrint('[NotificationService] User push invocation notice: $e');
+    }
+  }
+
+  /// Consumes and executes any pending notification payload once the app is authenticated and mounted
+  static void consumePendingNotification(BuildContext context) {
+    if (pendingNotificationData != null) {
+      final data = pendingNotificationData;
+      pendingNotificationData = null;
+      debugPrint('[NotificationService] Consuming pending cold-start notification payload.');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleNotificationClick(data);
+      });
+    }
+  }
+
+  /// Routes the user to the appropriate screen or modal depending on the alert payload
+  static void _handleNotificationClick(Map<String, dynamic>? additionalData) {
+    if (additionalData == null) return;
+
+    final context = navigatorKey.currentContext;
+
+    if (context == null || AuthService.currentUser == null) {
+      debugPrint('[NotificationService] Context or session not yet ready. Caching notification payload.');
+      pendingNotificationData = additionalData;
+      return;
+    }
+
+    final type = (additionalData['type'] ?? additionalData['alertType'] ?? additionalData['notification_type'])?.toString().toLowerCase() ?? '';
+    final refId = (additionalData['appointment_id'] ?? additionalData['reference_id'] ?? additionalData['node_id'] ?? additionalData['service_request_id'])?.toString();
+
+    try {
+      // 1. Appointments, Tuesday Approvals, and 24h/12h Reminders
+      if (type.contains('appointment') || type.contains('tuesday') || type.contains('reminder')) {
+        debugPrint('[NotificationService] Deep-linking to Appointment Detail: $refId');
+        showAppointmentDetailModal(
+          context,
+          refNo: refId ?? 'APT-RECORD',
+        );
+      }
+      // 2. Smart Archive IoT Environmental Breaches
+      else if (type.contains('iot') || type.contains('humidity') || type.contains('temperature')) {
+        debugPrint('[NotificationService] Deep-linking to Smart Archive Sensor Dialog: $refId');
+        final tempStr = additionalData['temperature'] != null ? '${additionalData["temperature"]} °C' : '28.5 °C';
+        final humStr = additionalData['humidity'] != null ? '${additionalData["humidity"]} %' : '68.2 %';
+
+        showSensorDetailModal(
+          context,
+          roomTitle: 'Monitored Archive Storage Room',
+          nodeId: refId ?? 'ESP32-NODE-01',
+          temperature: tempStr,
+          humidity: humStr,
+          isWarning: true,
+        );
+      }
+      // 3. Pabuklat Requests (Secretary view)
+      else if (type.contains('pabuklat_request')) {
+        debugPrint('[NotificationService] Deep-linking to Secretary Pabuklat Review Modal: $refId');
+        showPabuklatRequestsModal(context);
+      }
+    } catch (e) {
+      debugPrint('[NotificationService] Error executing deep-link action: $e');
+    }
+  }
+}
+
+=====================================
+lib/features/dashboard/presentation/dialogs/notification_dialog.dart
+=====================================
+
+// =============================================================================
+// FILE: lib/features/dashboard/presentation/dialogs/notification_dialog.dart
+// =============================================================================
+
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../appointments/presentation/dialogs/appointment_detail_dialog.dart';
+import '../../../notifications/models/notification_model.dart';
+import '../../../notifications/services/in_app_notification_service.dart';
+import '../../../sacramental_records/presentation/dialogs/pabuklat_requests_modal.dart';
+import '../../../smart_archive/presentation/dialogs/sensor_detail_dialog.dart';
+
+void showNotificationModal(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => const _NotificationCenterDialog(),
+  );
+}
+
+class _NotificationCenterDialog extends StatefulWidget {
+  const _NotificationCenterDialog();
+
+  @override
+  State<_NotificationCenterDialog> createState() => _NotificationCenterDialogState();
+}
+
+class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
+  List<NotificationModel> _notifications = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    setState(() => _isLoading = true);
+    final data = await InAppNotificationService.getNotifications();
+    if (!mounted) return;
+    setState(() {
+      _notifications = data;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _handleItemTap(NotificationModel item) async {
+    // 1. Mark as read in Supabase and deduct from the bell counter
+    if (!item.isRead) {
+      await InAppNotificationService.markAsRead(item.notificationId);
+      setState(() {
+        final idx = _notifications.indexWhere((n) => n.notificationId == item.notificationId);
+        if (idx != -1) {
+          _notifications[idx] = NotificationModel(
+            notificationId: item.notificationId,
+            userId: item.userId,
+            targetRole: item.targetRole,
+            title: item.title,
+            message: item.message,
+            notificationType: item.notificationType,
+            referenceId: item.referenceId,
+            isRead: true,
+            isCleared: item.isCleared,
+            createdAt: item.createdAt,
+          );
+        }
+      });
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context); // Close notification modal before deep-linking
+
+    // 2. Route to respective screen or modal
+    final type = item.notificationType.toLowerCase();
+
+    if (type.contains('appointment') || type.contains('tuesday') || type.contains('reminder')) {
+      // Deep-link to the specific appointment approval / details modal
+      showAppointmentDetailModal(
+        context,
+        refNo: item.referenceId ?? 'APT-RECORD',
+      );
+    } else if (type.contains('iot') || type.contains('humidity') || type.contains('temperature')) {
+      // Deep-link to Smart Archive telemetry warning modal
+      showSensorDetailModal(
+        context,
+        roomTitle: 'Monitored Archive Storage Room',
+        nodeId: item.referenceId ?? 'ESP32-NODE-01',
+        temperature: '28.5 °C',
+        humidity: '68.2 %',
+        isWarning: true,
+      );
+    } else if (type.contains('pabuklat') || type.contains('request')) {
+      // Deep-link to Secretary's Pabuklat review modal
+      showPabuklatRequestsModal(context);
+    }
+  }
+
+  Future<void> _handleClearAll() async {
+    await InAppNotificationService.clearAllNotifications();
+    if (!mounted) return;
+    setState(() {
+      _notifications.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Notification tray cleared.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _handleMarkAllRead() async {
+    await InAppNotificationService.markAllAsRead();
+    if (!mounted) return;
+    setState(() {
+      _notifications = _notifications.map((n) {
+        return NotificationModel(
+          notificationId: n.notificationId,
+          userId: n.userId,
+          targetRole: n.targetRole,
+          title: n.title,
+          message: n.message,
+          notificationType: n.notificationType,
+          referenceId: n.referenceId,
+          isRead: true,
+          isCleared: n.isCleared,
+          createdAt: n.createdAt,
+        );
+      }).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
+    final cardWhite = ParishColors.cardWhite;
+    final borderGrey = ParishColors.borderGrey;
+    final unreadCount = _notifications.where((n) => !n.isRead).length;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: cardWhite,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        width: double.maxFinite,
+        constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
+        child: Column(
+          children: [
+            // Modal Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(bottom: BorderSide(color: borderGrey)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ParishColors.marianBlueAdaptive,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.notifications_active, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Parish Alerts & History',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: textDark),
+                            ),
+                            if (unreadCount > 0) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRed,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '$unreadCount NEW',
+                                  style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          'Recent push dispatches and operational notices',
+                          style: TextStyle(fontSize: 11.5, color: textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // Secondary Action Bar (Mark all read & Clear tray)
+            if (_notifications.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  border: Border(bottom: BorderSide(color: borderGrey)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      onPressed: unreadCount > 0 ? _handleMarkAllRead : null,
+                      icon: const Icon(Icons.done_all, size: 16),
+                      label: const Text('Mark All as Read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: ParishColors.mercyRed,
+                      ),
+                      onPressed: _handleClearAll,
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+                      label: const Text('Clear Tray', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Notification List Body
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _notifications.isEmpty
+                  ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.notifications_off_outlined, size: 48, color: borderGrey),
+                    const SizedBox(height: 12),
+                    Text(
+                      'All caught up!',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'No recent notifications or alerts in your tray.',
+                      style: TextStyle(fontSize: 12.5, color: textMuted),
+                    ),
+                  ],
+                ),
+              )
+                  : ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: _notifications.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final item = _notifications[index];
+                  return _buildNotificationCard(item, textDark, textMuted, borderGrey);
+                },
+              ),
+            ),
+
+            // Modal Footer
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: cardWhite,
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                border: Border(top: BorderSide(color: borderGrey)),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationCard(NotificationModel item, Color textDark, Color textMuted, Color borderGrey) {
+    return InkWell(
+      onTap: () => _handleItemTap(item),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: item.isRead ? ParishColors.cardWhite : ParishColors.backgroundLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: item.isRead ? borderGrey : item.accentColor.withOpacity(0.5),
+            width: item.isRead ? 1.0 : 1.5,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon Badge
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: item.accentColor.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(item.iconData, color: item.accentColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.title,
+                          style: TextStyle(
+                            fontWeight: item.isRead ? FontWeight.w600 : FontWeight.bold,
+                            fontSize: 13.5,
+                            color: textDark,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        item.timeAgo,
+                        style: TextStyle(fontSize: 11, color: textMuted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.message,
+                    style: TextStyle(fontSize: 12, color: textMuted, height: 1.35),
+                  ),
+                  if (item.referenceId != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: ParishColors.marianBlueSurface,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Ref: ${item.referenceId}',
+                            style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Tap to view details',
+                          style: TextStyle(fontSize: 10, color: ParishColors.marianBlueAdaptive, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // Unread Indicator Dot
+            if (!item.isRead) ...[
+              const SizedBox(width: 8),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: item.accentColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+=====================================
+lib/features/notifications/models/notification_model.dart
+=====================================
+
+// =============================================================================
+// FILE: lib/features/notifications/models/notification_model.dart
+// =============================================================================
+
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+class NotificationModel {
+  final String notificationId;
+  final String? userId;
+  final String? targetRole; // 'parishpriest', 'secretary', 'all_staff'
+  final String title;
+  final String message;
+  final String notificationType;
+  // 'new_appointment', 'tuesday_approval', 'iot_breach', 'reminder_24h', 'reminder_12h', 'pabuklat_ready', 'pabuklat_request', 'general'
+  final String? referenceId; // appointment_id, node_id, record_id, service_request_id
+  final bool isRead;
+  final bool isCleared;
+  final DateTime createdAt;
+
+  NotificationModel({
+    required this.notificationId,
+    this.userId,
+    this.targetRole,
+    required this.title,
+    required this.message,
+    this.notificationType = 'general',
+    this.referenceId,
+    this.isRead = false,
+    this.isCleared = false,
+    required this.createdAt,
+  });
+
+  /// Relative human-readable time (e.g., "Just now", "15m ago", "2h ago")
+  String get timeAgo {
+    final now = DateTime.now();
+    final difference = now.difference(createdAt);
+
+    if (difference.inSeconds < 60) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// Appropriate icon based on alert category
+  IconData get iconData {
+    switch (notificationType.toLowerCase()) {
+      case 'iot_breach':
+      case 'humidity_breach':
+      case 'temperature_spike':
+        return Icons.warning_amber_rounded;
+      case 'tuesday_approval':
+        return Icons.approval_outlined;
+      case 'new_appointment':
+        return Icons.calendar_today_outlined;
+      case 'reminder_24h':
+      case 'reminder_12h':
+        return Icons.alarm;
+      case 'pabuklat_ready':
+      case 'certificate_ready':
+        return Icons.verified_outlined;
+      case 'pabuklat_request':
+        return Icons.folder_shared;
+      default:
+        return Icons.notifications_active_outlined;
+    }
+  }
+
+  /// Appropriate theme accent color based on urgency
+  Color get accentColor {
+    switch (notificationType.toLowerCase()) {
+      case 'iot_breach':
+      case 'humidity_breach':
+      case 'temperature_spike':
+        return ParishColors.mercyRed;
+      case 'tuesday_approval':
+      case 'reminder_24h':
+      case 'reminder_12h':
+        return ParishColors.goldAccent;
+      case 'pabuklat_ready':
+      case 'certificate_ready':
+        return ParishColors.oliveGreen;
+      case 'pabuklat_request':
+        return ParishColors.marianBlue;
+      case 'new_appointment':
+      default:
+        return ParishColors.marianBlue;
+    }
+  }
+
+  factory NotificationModel.fromMap(Map<String, dynamic> map) {
+    return NotificationModel(
+      notificationId: map['notification_id']?.toString() ?? '',
+      userId: map['user_id']?.toString(),
+      targetRole: map['target_role']?.toString(),
+      title: map['title']?.toString() ?? 'Notification',
+      message: map['message']?.toString() ?? '',
+      notificationType: map['notification_type']?.toString() ?? 'general',
+      referenceId: map['reference_id']?.toString(),
+      isRead: map['is_read'] ?? false,
+      isCleared: map['is_cleared'] ?? false,
+      createdAt: DateTime.tryParse(map['created_at']?.toString() ?? '') ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'notification_id': notificationId,
+      'user_id': userId,
+      'target_role': targetRole,
+      'title': title,
+      'message': message,
+      'notification_type': notificationType,
+      'reference_id': referenceId,
+      'is_read': isRead,
+      'is_cleared': isCleared,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
+
+=====================================
+lib/features/notifications/services/in_app_notification_service.dart
+=====================================
+
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../auth/services/auth_service.dart';
+import '../models/notification_model.dart';
+
+class InAppNotificationService {
+  InAppNotificationService._();
+
+  static final SupabaseClient _client = Supabase.instance.client;
+
+  /// Global value notifier holding the live unread count for fast UI updates
+  static final ValueNotifier<int> unreadCountNotifier = ValueNotifier<int>(0);
+
+  static RealtimeChannel? _subscriptionChannel;
+
+  /// Fetches the notification history for the current staff member
+  static Future<List<NotificationModel>> getNotifications() async {
+    final user = AuthService.currentUser;
+    if (user == null) return [];
+
+    final role = user.userRole.toLowerCase();
+    final userId = user.userId;
+
+    try {
+      final response = await _client
+          .from('notifications')
+          .select()
+          .eq('is_cleared', false)
+          .or('user_id.eq.$userId,target_role.eq.$role,target_role.eq.all_staff')
+          .order('created_at', ascending: false)
+          .limit(50);
+
+      final list = (response as List)
+          .map((row) => NotificationModel.fromMap(row as Map<String, dynamic>))
+          .toList();
+
+      // Recalculate and update the unread count badge
+      final unreadCount = list.where((n) => !n.isRead).length;
+      unreadCountNotifier.value = unreadCount;
+
+      return list;
+    } catch (e) {
+      debugPrint('[InAppNotificationService] Error fetching notifications: $e');
+      return [];
+    }
+  }
+
+  /// Starts listening to real-time changes in public.notifications
+  static void startRealtimeListener() {
+    final user = AuthService.currentUser;
+    if (user == null || _subscriptionChannel != null) return;
+
+    // Initial fetch to prime the unread counter
+    getNotifications();
+
+    _subscriptionChannel = _client
+        .channel('public:notifications')
+        .onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'notifications',
+      callback: (payload) {
+        debugPrint('[InAppNotificationService] Realtime notification update received.');
+        // Re-fetch notifications and refresh the unread counter badge
+        getNotifications();
+      },
+    )
+        .subscribe();
+  }
+
+  /// Stops the realtime listener upon logout
+  static void stopRealtimeListener() {
+    if (_subscriptionChannel != null) {
+      _client.removeChannel(_subscriptionChannel!);
+      _subscriptionChannel = null;
+    }
+    unreadCountNotifier.value = 0;
+  }
+
+  /// Marks a specific notification as read in Supabase
+  static Future<void> markAsRead(String notificationId) async {
+    try {
+      await _client
+          .from('notifications')
+          .update({'is_read': true})
+          .eq('notification_id', notificationId);
+
+      // Immediately deduct from the local unread count
+      if (unreadCountNotifier.value > 0) {
+        unreadCountNotifier.value--;
+      }
+    } catch (e) {
+      debugPrint('[InAppNotificationService] Error marking notification as read: $e');
+    }
+  }
+
+  /// Marks all active notifications as read
+  static Future<void> markAllAsRead() async {
+    final user = AuthService.currentUser;
+    if (user == null) return;
+
+    final role = user.userRole.toLowerCase();
+    final userId = user.userId;
+
+    try {
+      await _client
+          .from('notifications')
+          .update({'is_read': true})
+          .eq('is_cleared', false)
+          .or('user_id.eq.$userId,target_role.eq.$role,target_role.eq.all_staff');
+
+      unreadCountNotifier.value = 0;
+    } catch (e) {
+      debugPrint('[InAppNotificationService] Error marking all as read: $e');
+    }
+  }
+
+  /// Clears the notification tray for the user (sets is_cleared = true)
+  static Future<void> clearAllNotifications() async {
+    final user = AuthService.currentUser;
+    if (user == null) return;
+
+    final role = user.userRole.toLowerCase();
+    final userId = user.userId;
+
+    try {
+      await _client
+          .from('notifications')
+          .update({'is_cleared': true, 'is_read': true})
+          .or('user_id.eq.$userId,target_role.eq.$role,target_role.eq.all_staff');
+
+      unreadCountNotifier.value = 0;
+    } catch (e) {
+      debugPrint('[InAppNotificationService] Error clearing notification tray: $e');
+    }
+  }
+}
+
+=====================================
+lib/features/smart_archive/presentation/dialogs/configure_thresholds_dialog.dart
+=====================================
+
+// =============================================================================
+// FILE: lib/features/smart_archive/presentation/dialogs/configure_thresholds_dialog.dart
+// =============================================================================
+
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showConfigureThresholdsModal(BuildContext context) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => const _ConfigureThresholdsDialog(),
+  );
+}
+
+class _ConfigureThresholdsDialog extends StatefulWidget {
+  const _ConfigureThresholdsDialog();
+
+  @override
+  State<_ConfigureThresholdsDialog> createState() => _ConfigureThresholdsDialogState();
+}
+
+class _ConfigureThresholdsDialogState extends State<_ConfigureThresholdsDialog> {
+  double _maxHumidity = 60.0;
+  double _maxTemperature = 26.0;
+  int _pollingIntervalSec = 60;
+  bool _audioAlarmsEnabled = true;
+  bool _pushNotificationsEnabled = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
+    final cardWhite = ParishColors.cardWhite;
+    final borderGrey = ParishColors.borderGrey;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: cardWhite,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: Container(
+        width: 520,
+        constraints: const BoxConstraints(maxHeight: 680),
+        child: Column(
+          children: [
+            // Modal Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(bottom: BorderSide(color: borderGrey)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: ParishColors.marianBlue,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.tune, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Environmental Thresholds',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                        ),
+                        Text(
+                          'Define microclimate alert triggers for archive rooms',
+                          style: TextStyle(fontSize: 11.5, color: textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // Sliders & Configuration Settings
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Maximum Relative Humidity Slider
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Max Relative Humidity Threshold:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                        Text('${_maxHumidity.toInt()}% RH', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                      ],
+                    ),
+                    Slider(
+                      value: _maxHumidity,
+                      min: 45.0,
+                      max: 80.0,
+                      divisions: 35,
+                      activeColor: ParishColors.marianBlue,
+                      onChanged: (val) => setState(() => _maxHumidity = val),
+                    ),
+                    Text('Canon 1283 baseline: Relative humidity exceeding 60% promotes mold spores and biological paper decay.', style: TextStyle(fontSize: 11, color: textMuted)),
+                    const Divider(height: 24),
+
+                    // Maximum Temperature Slider
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Max Ambient Temperature Threshold:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                        Text('${_maxTemperature.toInt()} °C', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
+                      ],
+                    ),
+                    Slider(
+                      value: _maxTemperature,
+                      min: 18.0,
+                      max: 35.0,
+                      divisions: 17,
+                      activeColor: ParishColors.goldAccent,
+                      onChanged: (val) => setState(() => _maxTemperature = val),
+                    ),
+                    Text('Temperatures above 26°C accelerate ink acid hydrolysis in handwritten leather volumes.', style: TextStyle(fontSize: 11, color: textMuted)),
+                    const Divider(height: 24),
+
+                    // Polling Interval Dropdown
+                    Text('Telemetry Ingestion Rate:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int>(
+                      value: _pollingIntervalSec,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: ParishColors.backgroundLight,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 30, child: Text('Every 30 Seconds (High-Frequency)')),
+                        DropdownMenuItem(value: 60, child: Text('Every 60 Seconds (Standard Mesh)')),
+                        DropdownMenuItem(value: 300, child: Text('Every 5 Minutes (Power-Saving)')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setState(() => _pollingIntervalSec = val);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Alert Dispatch Rules
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: ParishColors.oliveGreen,
+                      title: const Text('Push Notification Broadcast', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      subtitle: const Text('Alert all Secretariat & Clergy mobile devices on breach', style: TextStyle(fontSize: 11)),
+                      value: _pushNotificationsEnabled,
+                      onChanged: (val) => setState(() => _pushNotificationsEnabled = val),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: ParishColors.oliveGreen,
+                      title: const Text('Audible Hardware Alarm Tone', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      subtitle: const Text('Emit piezo tone from ESP32 node when threshold is breached', style: TextStyle(fontSize: 11)),
+                      value: _audioAlarmsEnabled,
+                      onChanged: (val) => setState(() => _audioAlarmsEnabled = val),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Actions
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: cardWhite,
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                border: Border(top: BorderSide(color: borderGrey)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: textMuted)),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Environmental parameters updated. Broadcast sent to ESP32 nodes.'),
+                          backgroundColor: ParishColors.oliveGreen,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.save, size: 16),
+                    label: const Text('Save Parameters', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+=====================================
+lib/features/smart_archive/presentation/dialogs/sensor_detail_dialog.dart
+=====================================
+
+// =============================================================================
+// FILE: lib/features/smart_archive/presentation/dialogs/sensor_detail_dialog.dart
+// =============================================================================
+
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+
+void showSensorDetailModal(
+    BuildContext context, {
+      required String roomTitle,
+      required String nodeId,
+      required String temperature,
+      required String humidity,
+      required bool isWarning,
+    }) {
+  showDialog(
+    context: context,
+    builder: (ctx) => _SensorDetailDialog(
+      roomTitle: roomTitle,
+      nodeId: nodeId,
+      temperature: temperature,
+      humidity: humidity,
+      isWarning: isWarning,
+    ),
+  );
+}
+
+class _SensorDetailDialog extends StatelessWidget {
+  final String roomTitle;
+  final String nodeId;
+  final String temperature;
+  final String humidity;
+  final bool isWarning;
+
+  const _SensorDetailDialog({
+    required this.roomTitle,
+    required this.nodeId,
+    required this.temperature,
+    required this.humidity,
+    required this.isWarning,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
+    final cardWhite = ParishColors.cardWhite;
+    final borderGrey = ParishColors.borderGrey;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: cardWhite,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: Container(
+        width: 540,
+        constraints: const BoxConstraints(maxHeight: 680),
+        child: Column(
+          children: [
+            // Modal Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: isWarning ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(bottom: BorderSide(color: borderGrey)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isWarning ? Icons.warning_amber_rounded : Icons.sensors,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          roomTitle,
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'ESP32 Hardware Node: $nodeId',
+                          style: TextStyle(fontSize: 11.5, color: textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // Content Body
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Status Alert Box
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isWarning ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isWarning ? Icons.error_outline : Icons.check_circle_outline,
+                                color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                isWarning ? 'CRITICAL HUMIDITY BREACH' : 'OPTIMAL PRESERVATION STATUS',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            isWarning
+                                ? 'Relative humidity is $humidity (Safe limit is <=60%). Inspect room ventilation and activate dehumidifier unit immediately.'
+                                : 'Environmental variables are within safe bounds for long-term sacramental parchment storage.',
+                            style: TextStyle(fontSize: 12, color: textDark, height: 1.35),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Live Metrics Card
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: ParishColors.backgroundLight,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: borderGrey),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Ambient Temperature', style: TextStyle(fontSize: 11, color: textMuted, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 4),
+                                Text(temperature, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
+                                const SizedBox(height: 2),
+                                Text('Safe Target: 18°C - 24°C', style: TextStyle(fontSize: 10, color: textMuted)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: ParishColors.backgroundLight,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: borderGrey),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Relative Humidity', style: TextStyle(fontSize: 11, color: textMuted, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  humidity,
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text('Safe Target: 45% - 60%', style: TextStyle(fontSize: 10, color: textMuted)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Hardware Specifications
+                    Text('Hardware Node Telemetry', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDark)),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: ParishColors.backgroundLight,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: borderGrey),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildDetailRow('Microcontroller Unit', 'ESP32-WROOM-32D Dual Core 240MHz'),
+                          _buildDetailRow('Sensor Transducer', 'BME280 Calibrated Digital I2C'),
+                          _buildDetailRow('Wi-Fi Mesh Signal', '-58 dBm (Strong Connection)'),
+                          _buildDetailRow('Power / Battery Level', '98% (Mains Power + Backup LiPo)'),
+                          _buildDetailRow('Firmware Version', 'ParishServe-Sensor-v1.4.2'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Actions
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: cardWhite,
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                border: Border(top: BorderSide(color: borderGrey)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close Inspector'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
+          Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+        ],
+      ),
+    );
+  }
+}
+
+=====================================
+lib/features/smart_archive/presentation/smart_archive_view.dart
+=====================================
+
+// =============================================================================
+// FILE: lib/features/smart_archive/presentation/smart_archive_view.dart
+// =============================================================================
+
+import 'dart:math';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import 'dialogs/configure_thresholds_dialog.dart';
+import 'widgets/storage_node_tile.dart';
+
+class SmartArchiveNodeData {
+  final String nodeId;
+  final String roomTitle;
+  final String storageType;
+  final String locationDescription;
+  final double temperature;
+  final double humidity;
+  final double idealTempMin;
+  final double idealTempMax;
+  final double idealHumidityMin;
+  final double idealHumidityMax;
+  final int signalDbm;
+  final int batteryPercent;
+  final bool isWarning;
+  final String warningReason;
+  final DateTime lastTelemetryAt;
+  final List<double> recentTempHistory;
+  final List<double> recentHumidityHistory;
+
+  const SmartArchiveNodeData({
+    required this.nodeId,
+    required this.roomTitle,
+    required this.storageType,
+    required this.locationDescription,
+    required this.temperature,
+    required this.humidity,
+    this.idealTempMin = 18.0,
+    this.idealTempMax = 24.0,
+    this.idealHumidityMin = 45.0,
+    this.idealHumidityMax = 60.0,
+    required this.signalDbm,
+    required this.batteryPercent,
+    required this.isWarning,
+    required this.warningReason,
+    required this.lastTelemetryAt,
+    required this.recentTempHistory,
+    required this.recentHumidityHistory,
+  });
+
+  factory SmartArchiveNodeData.fromFirebase(Map<String, dynamic> map, String fallbackId) {
+    final double temp = double.tryParse(map['temperature']?.toString() ?? '24.0') ?? 24.0;
+    final double hum = double.tryParse(map['humidity']?.toString() ?? '50.0') ?? 50.0;
+    final bool isWarn = map['is_warning'] == true || hum > 60.0 || temp > 26.0;
+
+    return SmartArchiveNodeData(
+      nodeId: map['node_id']?.toString() ?? fallbackId,
+      roomTitle: map['room_title']?.toString() ?? 'Monitored Archive Storage',
+      storageType: map['storage_type']?.toString() ?? 'Sacramental Archive Repository',
+      locationDescription: map['location_description']?.toString() ?? 'Parish Archive Vault',
+      temperature: temp,
+      humidity: hum,
+      signalDbm: int.tryParse(map['rssi']?.toString() ?? '-60') ?? -60,
+      batteryPercent: int.tryParse(map['battery']?.toString() ?? '95') ?? 95,
+      isWarning: isWarn,
+      warningReason: isWarn
+          ? 'Environmental breach detected: Temperature or humidity exceeds safe thresholds.'
+          : 'Preservation parameters optimal.',
+      lastTelemetryAt: DateTime.now(),
+      recentTempHistory: [temp],
+      recentHumidityHistory: [hum],
+    );
+  }
+}
+
+class SmartArchiveView extends StatefulWidget {
+  const SmartArchiveView({super.key});
+
+  @override
+  State<SmartArchiveView> createState() => _SmartArchiveViewState();
+}
+
+class _SmartArchiveViewState extends State<SmartArchiveView> {
+  String _nodeFilter = 'All Nodes'; // 'All Nodes', 'Safe', 'Alerts'
+  final DatabaseReference _rtdbRef = FirebaseDatabase.instance.ref('storage_nodes');
+
+  List<SmartArchiveNodeData> _filterNodes(List<SmartArchiveNodeData> nodes) {
+    if (_nodeFilter == 'Alerts') {
+      return nodes.where((n) => n.isWarning).toList();
+    } else if (_nodeFilter == 'Safe') {
+      return nodes.where((n) => !n.isWarning).toList();
+    }
+    return nodes;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
+    final cardWhite = ParishColors.cardWhite;
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: _rtdbRef.onValue,
+      builder: (context, snapshot) {
+        final bool isLoading = snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData;
+
+        // Parse nodes from Firebase Realtime Database
+        List<SmartArchiveNodeData> allNodes = [];
+        if (snapshot.hasData && snapshot.data?.snapshot.value != null) {
+          final raw = snapshot.data!.snapshot.value;
+          if (raw is Map) {
+            raw.forEach((key, val) {
+              if (val is Map) {
+                allNodes.add(
+                  SmartArchiveNodeData.fromFirebase(
+                    Map<String, dynamic>.from(val),
+                    key.toString(),
+                  ),
+                );
+              }
+            });
+          }
+        }
+
+        // Fallback placeholder node if no hardware has posted yet
+        if (allNodes.isEmpty && !isLoading) {
+          allNodes = [
+            SmartArchiveNodeData(
+              nodeId: 'ESP32-NODE-01',
+              roomTitle: 'Main Sacramental Archive Room',
+              storageType: 'Canon 535 Sacramental Ledger Repository',
+              locationDescription: 'Parish Administration Building, 2nd Floor Archive Vault',
+              temperature: 24.2,
+              humidity: 54.0,
+              signalDbm: -58,
+              batteryPercent: 98,
+              isWarning: false,
+              warningReason: 'Awaiting first live transmission from hardware...',
+              lastTelemetryAt: DateTime.now(),
+              recentTempHistory: [24.2],
+              recentHumidityHistory: [54.0],
+            ),
+          ];
+        }
+
+        final filteredNodes = _filterNodes(allNodes);
+        final warningCount = allNodes.where((n) => n.isWarning).length;
+        final safeCount = allNodes.where((n) => !n.isWarning).length;
+        final avgTemp = allNodes.isEmpty
+            ? 0.0
+            : allNodes.fold(0.0, (s, n) => s + n.temperature) / allNodes.length;
+        final avgHum = allNodes.isEmpty
+            ? 0.0
+            : allNodes.fold(0.0, (s, n) => s + n.humidity) / allNodes.length;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isDesktop = constraints.maxWidth >= 900;
+            final bool isMobile = constraints.maxWidth < 650;
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 14 : 24,
+                vertical: isMobile ? 12 : 20,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Header & Live Indicator
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Smart Archive & IoT Telemetry',
+                          style: TextStyle(
+                            fontSize: isMobile ? 18 : 22,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: ParishColors.oliveGreenSurface,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.circle, color: ParishColors.oliveGreen, size: 8),
+                                SizedBox(width: 5),
+                                Text(
+                                  'LIVE STREAMING',
+                                  style: TextStyle(
+                                    color: ParishColors.oliveGreen,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.tune, color: ParishColors.marianBlue, size: 20),
+                            tooltip: 'Configure Safe Limits',
+                            onPressed: () => showConfigureThresholdsModal(context),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 2. Status Banner
+                  _buildStatusBanner(warningCount, isMobile),
+                  const SizedBox(height: 14),
+
+                  // 3. Compact Stats Row
+                  _buildCompactStatsRow(allNodes.length, avgTemp, avgHum, safeCount, warningCount),
+                  const SizedBox(height: 14),
+
+                  // 4. Filter Chips Bar
+                  Row(
+                    children: [
+                      Text(
+                        'Storage Nodes (${filteredNodes.length})',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+                      ),
+                      const Spacer(),
+                      Wrap(
+                        spacing: 6,
+                        children: ['All Nodes', 'Safe', 'Alerts'].map((f) {
+                          final isSelected = _nodeFilter == f;
+                          Color activeColor = ParishColors.marianBlue;
+                          if (f == 'Alerts') activeColor = ParishColors.mercyRed;
+                          if (f == 'Safe') activeColor = ParishColors.oliveGreen;
+
+                          return ChoiceChip(
+                            label: Text(f),
+                            selected: isSelected,
+                            selectedColor: activeColor,
+                            backgroundColor: cardWhite,
+                            labelStyle: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? Colors.white : textDark,
+                            ),
+                            onSelected: (_) => setState(() => _nodeFilter = f),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 5. Monitored Node Tiles Grid
+                  if (isLoading)
+                    const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+                  else if (filteredNodes.isEmpty)
+                    _buildEmptyState()
+                  else
+                    isDesktop
+                        ? GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: filteredNodes.length,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 14,
+                        mainAxisSpacing: 14,
+                        childAspectRatio: 1.85,
+                      ),
+                      itemBuilder: (context, index) {
+                        final node = filteredNodes[index];
+                        return StorageNodeTile(
+                          roomTitle: node.roomTitle,
+                          nodeId: node.nodeId,
+                          temperature: '${node.temperature.toStringAsFixed(1)} °C',
+                          humidity: '${node.humidity.toStringAsFixed(1)} %',
+                          isWarning: node.isWarning,
+                          storageType: node.storageType,
+                          signalDbm: node.signalDbm,
+                          batteryPercent: node.batteryPercent,
+                          lastTelemetry: node.lastTelemetryAt,
+                        );
+                      },
+                    )
+                        : ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: filteredNodes.length,
+                      itemBuilder: (context, index) {
+                        final node = filteredNodes[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: StorageNodeTile(
+                            roomTitle: node.roomTitle,
+                            nodeId: node.nodeId,
+                            temperature: '${node.temperature.toStringAsFixed(1)} °C',
+                            humidity: '${node.humidity.toStringAsFixed(1)} %',
+                            isWarning: node.isWarning,
+                            storageType: node.storageType,
+                            signalDbm: node.signalDbm,
+                            batteryPercent: node.batteryPercent,
+                            lastTelemetry: node.lastTelemetryAt,
+                          ),
+                        );
+                      },
+                    ),
+
+                  const SizedBox(height: 20),
+
+                  // 6. Conservation Guidelines Card
+                  _buildConservationProtocol(isDesktop),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusBanner(int warningCount, bool isMobile) {
+    final bool hasAlerts = warningCount > 0;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isMobile ? 14 : 18),
+      decoration: BoxDecoration(
+        color: hasAlerts ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasAlerts ? ParishColors.mercyRed.withOpacity(0.5) : ParishColors.marianBlue.withOpacity(0.35),
+          width: 1.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: hasAlerts ? ParishColors.mercyRed : ParishColors.marianBlue,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              hasAlerts ? Icons.warning_amber_rounded : Icons.sensors,
+              color: Colors.white,
+              size: isMobile ? 22 : 26,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      hasAlerts ? '$warningCount Environmental Warning Active' : 'ESP32 IoT Network Normal',
+                      style: TextStyle(
+                        fontSize: isMobile ? 14 : 16,
+                        fontWeight: FontWeight.bold,
+                        color: hasAlerts ? ParishColors.mercyRed : ParishColors.marianBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: hasAlerts ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        hasAlerts ? 'BREACH' : 'ONLINE',
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  hasAlerts
+                      ? 'Relative humidity exceeds 60% in monitored area. Inspect dehumidifiers.'
+                      : 'Live DHT11 telemetry streamed from ESP32 via Firebase RTDB (Canon 1283 standards).',
+                  style: TextStyle(fontSize: isMobile ? 11 : 12, color: ParishColors.textDark, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactStatsRow(int count, double avgTemp, double avgHum, int safe, int alerts) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _statItem('Nodes', '$count', ParishColors.marianBlue)),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(child: _statItem('Avg Temp', '${avgTemp.toStringAsFixed(1)}°C', ParishColors.goldAccent)),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(child: _statItem('Avg Hum', '${avgHum.toStringAsFixed(1)}%', avgHum > 60.0 ? ParishColors.mercyRed : ParishColors.oliveGreen)),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(child: _statItem('Safe', '$safe', ParishColors.oliveGreen)),
+          Container(width: 1, height: 20, color: ParishColors.borderGrey),
+          Expanded(child: _statItem('Alerts', '$alerts', alerts > 0 ? ParishColors.mercyRed : ParishColors.textMuted)),
+        ],
+      ),
+    );
+  }
+
+  Widget _statItem(String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: color), maxLines: 1),
+        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ParishColors.textMuted), maxLines: 1),
+      ],
+    );
+  }
+
+  Widget _buildConservationProtocol(bool isDesktop) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.shield_outlined, size: 20, color: ParishColors.marianBlue),
+              SizedBox(width: 8),
+              Text(
+                'Preventive Conservation Standards (Canon 1283 & ISO 11799)',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const Divider(height: 18),
+          Text(
+            '• Relative Humidity: Target 45%–60% RH to prevent fungal mold germination and leather embrittlement.\n'
+                '• Temperature Baseline: Target 18°C–24°C ambient range to avoid thermal hydrolysis of legacy ink.\n'
+                '• Push Alerts: Dispatched via Supabase Edge Function to Clergy & Secretariat on 60%+ RH breach.',
+            style: TextStyle(fontSize: 12, color: ParishColors.textMuted, height: 1.45),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.sensors_off_outlined, size: 40, color: ParishColors.textMuted),
+          const SizedBox(height: 10),
+          Text('No sensor nodes match "$_nodeFilter".', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+}
+
+=====================================
+lib/features/smart_archive/presentation/widgets/storage_node_tile.dart
+=====================================
+
+// =============================================================================
+// FILE: lib/features/smart_archive/presentation/widgets/storage_node_tile.dart
+// =============================================================================
+
+import 'package:flutter/material.dart';
+import '../../../../core/constants/colors.dart';
+import '../dialogs/sensor_detail_dialog.dart';
+
+class StorageNodeTile extends StatelessWidget {
+  final String roomTitle;
+  final String nodeId;
+  final String temperature;
+  final String humidity;
+  final bool isWarning;
+  final String? storageType;
+  final int signalDbm;
+  final int batteryPercent;
+  final DateTime? lastTelemetry;
+
+  const StorageNodeTile({
+    super.key,
+    required this.roomTitle,
+    required this.nodeId,
+    required this.temperature,
+    required this.humidity,
+    required this.isWarning,
+    this.storageType,
+    this.signalDbm = -60,
+    this.batteryPercent = 95,
+    this.lastTelemetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
+    final cardWhite = ParishColors.cardWhite;
+    final borderGrey = ParishColors.borderGrey;
+
+    return InkWell(
+      onTap: () => showSensorDetailModal(
+        context,
+        roomTitle: roomTitle,
+        nodeId: nodeId,
+        temperature: temperature,
+        humidity: humidity,
+        isWarning: isWarning,
+      ),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isWarning ? ParishColors.mercyRedSurface.withOpacity(0.5) : cardWhite,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isWarning ? ParishColors.mercyRed : borderGrey,
+            width: isWarning ? 1.8 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isWarning
+                  ? ParishColors.mercyRed.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Top Row: Title, Node ID & Status Pill
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        roomTitle,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: isWarning ? ParishColors.mercyRed : textDark,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(
+                            nodeId,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: ParishColors.marianBlue,
+                            ),
+                          ),
+                          if (storageType != null) ...[
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '• $storageType',
+                                style: TextStyle(fontSize: 11, color: textMuted),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                  decoration: BoxDecoration(
+                    color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isWarning ? Icons.warning_amber_rounded : Icons.check_circle,
+                        size: 11,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isWarning ? 'HUMIDITY ALERT' : 'SAFE',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 9.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Live Gauges: Temperature & Relative Humidity
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isWarning ? Colors.white : ParishColors.backgroundLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isWarning
+                      ? ParishColors.mercyRed.withOpacity(0.3)
+                      : borderGrey.withOpacity(0.6),
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Temperature Metric
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: ParishColors.goldLight,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.thermostat, color: ParishColors.goldAccent, size: 18),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Temp', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.w600)),
+                            Text(temperature, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(width: 1, height: 28, color: borderGrey),
+                  const SizedBox(width: 12),
+
+                  // Humidity Metric
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: isWarning ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.water_drop_outlined,
+                            color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Humidity', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.w600)),
+                            Text(
+                              humidity,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: isWarning ? ParishColors.mercyRed : textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Footer: Node Telemetry Metadata
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.wifi, size: 12, color: textMuted),
+                    const SizedBox(width: 3),
+                    Text('$signalDbm dBm', style: TextStyle(fontSize: 10.5, color: textMuted)),
+                    const SizedBox(width: 8),
+                    Icon(Icons.battery_charging_full, size: 12, color: textMuted),
+                    const SizedBox(width: 3),
+                    Text('$batteryPercent%', style: TextStyle(fontSize: 10.5, color: textMuted)),
+                  ],
+                ),
+                Text(
+                  'Tap to inspect telemetry',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+=====================================
+pubspec.yaml
+=====================================
+
+name: parishserve
+description: "Integrated Parish Asset Inventory, Sacramental Records Digitization, Service Appointment, Receipt Management, and ESP32-Based Smart Archive and Asset Monitoring System"
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+  supabase_flutter: ^2.17.2
+  file_picker: ^13.1.0
+  mobile_scanner: ^7.4.2
+  image_picker: ^1.2.3
+  onesignal_flutter: ^5.7.0
+  sqflite: ^2.4.4
+  sqflite_common_ffi: ^2.4.3
+  sqflite_common_ffi_web: ^1.2.0
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  printing: ^5.15.1
+  pdf: ^3.13.1
+  firebase_core: ^5.1.0
+  firebase_database: ^13.0.1
+  google_mlkit_text_recognition: ^0.17.1
+  google_fonts: ^6.2.1
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  file_picker: ^13.1.0
+
+msix_config:
+  display_name: ParishServe
+  publisher_display_name: Saint John Paul II Parish
+  identity_name: com.parishserve.records
+  capabilities:
+    - webcam
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "images/logo-jp2.png"
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  assets:
+    - images/
+    - lib/features/receipts/presentation/
+    - lib/features/receipts/presentation/dialogs/
+    - lib/features/receipts/presentation/widgets/
+    - assets/fonts/
+
+  fonts:
+      # Classical Inscription (Title Banners)
+      - family: Cinzel
+        fonts:
+          - asset: assets/fonts/Cinzel-Regular.ttf
+          - asset: assets/fonts/Cinzel-Bold.ttf
+            weight: 700
+
+      # Chancery / Cursive Script
+      - family: Caveat
+        fonts:
+          - asset: assets/fonts/Caveat-Regular.ttf
+          - asset: assets/fonts/Caveat-Bold.ttf
+            weight: 700
+
+      # Classical Times / Ecclesiastical Serif
+      - family: Tinos
+        fonts:
+          - asset: assets/fonts/Tinos-Regular.ttf
+          - asset: assets/fonts/Tinos-Bold.ttf
+            weight: 700
+
+      # Modern Sans / Helvetica equivalent
+      - family: Arimo
+        fonts:
+          - asset: assets/fonts/Arimo-Regular.ttf
+          - asset: assets/fonts/Arimo-Bold.ttf
+            weight: 700
+
+      # Traditional Literary Serif
+      - family: EBGaramond
+        fonts:
+          - asset: assets/fonts/EBGaramond-Regular.ttf
+          - asset: assets/fonts/EBGaramond-Bold.ttf
+            weight: 700
+
+      # Typewriter / Monospace
+      - family: Cousine
+        fonts:
+          - asset: assets/fonts/Cousine-Regular.ttf
+          - asset: assets/fonts/Cousine-Bold.ttf
+            weight: 700
+
+--- END OF FILE Notifications-And-IoT-Codebase.txt ---

@@ -3,6 +3,7 @@
 // =============================================================================
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 
 void showSensorDetailModal(
@@ -25,7 +26,7 @@ void showSensorDetailModal(
   );
 }
 
-class _SensorDetailDialog extends StatelessWidget {
+class _SensorDetailDialog extends StatefulWidget {
   final String roomTitle;
   final String nodeId;
   final String temperature;
@@ -41,6 +42,43 @@ class _SensorDetailDialog extends StatelessWidget {
   });
 
   @override
+  State<_SensorDetailDialog> createState() => _SensorDetailDialogState();
+}
+
+class _SensorDetailDialogState extends State<_SensorDetailDialog> {
+  List<Map<String, dynamic>> _historyLogs = [];
+  bool _isLoadingLogs = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch24HourTelemetry();
+  }
+
+  Future<void> _fetch24HourTelemetry() async {
+    try {
+      final twentyFourHoursAgo = DateTime.now().subtract(const Duration(hours: 24)).toIso8601String();
+      final data = await Supabase.instance.client
+          .from('sensor_telemetry_logs')
+          .select('temperature, humidity, recorded_at, is_warning')
+          .eq('node_id', widget.nodeId)
+          .gte('recorded_at', twentyFourHoursAgo)
+          .order('recorded_at', ascending: true)
+          .limit(30);
+
+      if (mounted) {
+        setState(() {
+          _historyLogs = List<Map<String, dynamic>>.from(data);
+          _isLoadingLogs = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[SensorDetailDialog] Notice fetching telemetry logs: $e');
+      if (mounted) setState(() => _isLoadingLogs = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
@@ -52,15 +90,15 @@ class _SensorDetailDialog extends StatelessWidget {
       backgroundColor: cardWhite,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Container(
-        width: 540,
-        constraints: const BoxConstraints(maxHeight: 680),
+        width: 520,
+        constraints: const BoxConstraints(maxHeight: 620),
         child: Column(
           children: [
             // Modal Header
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: isWarning ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
+                color: widget.isWarning ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 border: Border(bottom: BorderSide(color: borderGrey)),
               ),
@@ -69,11 +107,11 @@ class _SensorDetailDialog extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
+                      color: widget.isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      isWarning ? Icons.warning_amber_rounded : Icons.sensors,
+                      widget.isWarning ? Icons.warning_amber_rounded : Icons.sensors,
                       color: Colors.white,
                       size: 20,
                     ),
@@ -84,13 +122,13 @@ class _SensorDetailDialog extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          roomTitle,
+                          widget.roomTitle,
                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          'ESP32 Hardware Node: $nodeId',
+                          'Node ID: ${widget.nodeId}',
                           style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
@@ -104,7 +142,7 @@ class _SensorDetailDialog extends StatelessWidget {
               ),
             ),
 
-            // Content Body
+            // Content Body - Strictly essential data
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
@@ -116,10 +154,10 @@ class _SensorDetailDialog extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: isWarning ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
+                        color: widget.isWarning ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                          color: widget.isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
                         ),
                       ),
                       child: Column(
@@ -128,26 +166,26 @@ class _SensorDetailDialog extends StatelessWidget {
                           Row(
                             children: [
                               Icon(
-                                isWarning ? Icons.error_outline : Icons.check_circle_outline,
-                                color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
-                                size: 20,
+                                widget.isWarning ? Icons.error_outline : Icons.check_circle_outline,
+                                color: widget.isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                                size: 18,
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                isWarning ? 'CRITICAL HUMIDITY BREACH' : 'OPTIMAL PRESERVATION STATUS',
+                                widget.isWarning ? 'MICROCLIMATE BREACH DETECTED' : 'OPTIMAL PRESERVATION STATUS',
                                 style: TextStyle(
-                                  fontSize: 12.5,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                                  color: widget.isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            isWarning
-                                ? 'Relative humidity is $humidity (Safe limit is <=60%). Inspect room ventilation and activate dehumidifier unit immediately.'
-                                : 'Environmental variables are within safe bounds for long-term sacramental parchment storage.',
+                            widget.isWarning
+                                ? 'Relative humidity is currently ${widget.humidity}. Please verify room ventilation and run the archive dehumidifier.'
+                                : 'Microclimate parameters are safe for long-term sacramental book and parchment preservation.',
                             style: TextStyle(fontSize: 12, color: textDark, height: 1.35),
                           ),
                         ],
@@ -155,7 +193,7 @@ class _SensorDetailDialog extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
 
-                    // Live Metrics Card
+                    // Live Telemetry Cards
                     Row(
                       children: [
                         Expanded(
@@ -171,9 +209,9 @@ class _SensorDetailDialog extends StatelessWidget {
                               children: [
                                 Text('Ambient Temperature', style: TextStyle(fontSize: 11, color: textMuted, fontWeight: FontWeight.w600)),
                                 const SizedBox(height: 4),
-                                Text(temperature, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
+                                Text(widget.temperature, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
                                 const SizedBox(height: 2),
-                                Text('Safe Target: 18°C - 24°C', style: TextStyle(fontSize: 10, color: textMuted)),
+                                Text('Canon Target: 18°C – 24°C', style: TextStyle(fontSize: 10, color: textMuted)),
                               ],
                             ),
                           ),
@@ -193,42 +231,53 @@ class _SensorDetailDialog extends StatelessWidget {
                                 Text('Relative Humidity', style: TextStyle(fontSize: 11, color: textMuted, fontWeight: FontWeight.w600)),
                                 const SizedBox(height: 4),
                                 Text(
-                                  humidity,
+                                  widget.humidity,
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
-                                    color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
+                                    color: widget.isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text('Safe Target: 45% - 60%', style: TextStyle(fontSize: 10, color: textMuted)),
+                                Text('Canon Target: 45% – 60%', style: TextStyle(fontSize: 10, color: textMuted)),
                               ],
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
-                    // Hardware Specifications
-                    Text('Hardware Node Telemetry', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDark)),
+                    // Actual Log History
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Recorded Telemetry History', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                        if (_isLoadingLogs)
+                          const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        else
+                          Text('${_historyLogs.length} events logged', style: TextStyle(fontSize: 11, color: textMuted)),
+                      ],
+                    ),
                     const SizedBox(height: 8),
+
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      height: 85,
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: ParishColors.backgroundLight,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: borderGrey),
                       ),
-                      child: Column(
-                        children: [
-                          _buildDetailRow('Microcontroller Unit', 'ESP32-WROOM-32D Dual Core 240MHz'),
-                          _buildDetailRow('Sensor Transducer', 'BME280 Calibrated Digital I2C'),
-                          _buildDetailRow('Wi-Fi Mesh Signal', '-58 dBm (Strong Connection)'),
-                          _buildDetailRow('Power / Battery Level', '98% (Mains Power + Backup LiPo)'),
-                          _buildDetailRow('Firmware Version', 'ParishServe-Sensor-v1.4.2'),
-                        ],
-                      ),
+                      child: _historyLogs.isEmpty
+                          ? Center(
+                        child: Text(
+                          _isLoadingLogs ? 'Loading archive logs...' : 'No historical breach logs recorded in the past 24 hours.',
+                          style: TextStyle(fontSize: 11.5, color: textMuted),
+                        ),
+                      )
+                          : _buildTelemetrySparkline(_historyLogs),
                     ),
                   ],
                 ),
@@ -264,16 +313,35 @@ class _SensorDetailDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3.5),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
-          Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-        ],
-      ),
+  Widget _buildTelemetrySparkline(List<Map<String, dynamic>> logs) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: logs.map((log) {
+        final hum = double.tryParse(log['humidity']?.toString() ?? '50.0') ?? 50.0;
+        final isBreach = hum > 60.0;
+        final normalizedHeight = ((hum - 35) / 45 * 50).clamp(8.0, 56.0);
+
+        return Expanded(
+          child: Tooltip(
+            message: '${hum.toStringAsFixed(1)}% RH',
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1.5),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Container(
+                    height: normalizedHeight,
+                    decoration: BoxDecoration(
+                      color: isBreach ? ParishColors.mercyRed : ParishColors.marianBlue,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

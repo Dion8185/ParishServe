@@ -12,9 +12,8 @@ class StorageNodeTile extends StatelessWidget {
   final String temperature;
   final String humidity;
   final bool isWarning;
+  final bool isOffline;
   final String? storageType;
-  final int signalDbm;
-  final int batteryPercent;
   final DateTime? lastTelemetry;
 
   const StorageNodeTile({
@@ -24,9 +23,8 @@ class StorageNodeTile extends StatelessWidget {
     required this.temperature,
     required this.humidity,
     required this.isWarning,
+    this.isOffline = false,
     this.storageType,
-    this.signalDbm = -60,
-    this.batteryPercent = 95,
     this.lastTelemetry,
   });
 
@@ -36,6 +34,20 @@ class StorageNodeTile extends StatelessWidget {
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
+
+    Color tileBgColor = cardWhite;
+    Color tileBorderColor = borderGrey;
+    double tileBorderWidth = 1.0;
+
+    if (isOffline) {
+      tileBgColor = Colors.grey.shade50;
+      tileBorderColor = Colors.grey.shade400;
+      tileBorderWidth = 1.2;
+    } else if (isWarning) {
+      tileBgColor = ParishColors.mercyRedSurface.withOpacity(0.5);
+      tileBorderColor = ParishColors.mercyRed;
+      tileBorderWidth = 1.8;
+    }
 
     return InkWell(
       onTap: () => showSensorDetailModal(
@@ -50,11 +62,11 @@ class StorageNodeTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isWarning ? ParishColors.mercyRedSurface.withOpacity(0.5) : cardWhite,
+          color: tileBgColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isWarning ? ParishColors.mercyRed : borderGrey,
-            width: isWarning ? 1.8 : 1.0,
+            color: tileBorderColor,
+            width: tileBorderWidth,
           ),
           boxShadow: [
             BoxShadow(
@@ -83,21 +95,21 @@ class StorageNodeTile extends StatelessWidget {
                         roomTitle,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: isWarning ? ParishColors.mercyRed : textDark,
+                          fontSize: 15.5,
+                          color: isOffline ? textMuted : (isWarning ? ParishColors.mercyRed : textDark),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Row(
                         children: [
                           Text(
                             nodeId,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.bold,
-                              color: ParishColors.marianBlue,
+                              color: isOffline ? textMuted : ParishColors.marianBlue,
                             ),
                           ),
                           if (storageType != null) ...[
@@ -117,27 +129,39 @@ class StorageNodeTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
+
+                // Status Pill
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                    color: isOffline
+                        ? Colors.grey.shade600
+                        : (isWarning ? ParishColors.mercyRed : ParishColors.oliveGreen),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        isWarning ? Icons.warning_amber_rounded : Icons.check_circle,
+                        isOffline
+                            ? Icons.wifi_off_rounded
+                            : (isWarning ? Icons.warning_amber_rounded : Icons.check_circle),
                         size: 11,
                         color: Colors.white,
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        isWarning ? 'HUMIDITY ALERT' : 'SAFE',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 9.5,
+                      Flexible(
+                        child: Text(
+                          isOffline
+                              ? 'OFFLINE'
+                              : (isWarning ? 'ALERT' : 'OPTIMAL'),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 9.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -145,11 +169,11 @@ class StorageNodeTile extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
 
             // Live Gauges: Temperature & Relative Humidity
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
                 color: isWarning ? Colors.white : ParishColors.backgroundLight,
                 borderRadius: BorderRadius.circular(12),
@@ -167,25 +191,35 @@ class StorageNodeTile extends StatelessWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: ParishColors.goldLight,
+                          decoration: const BoxDecoration(
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.thermostat, color: ParishColors.goldAccent, size: 18),
+                          child: const Icon(Icons.thermostat, color: ParishColors.goldAccent, size: 17),
                         ),
                         const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Temp', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.w600)),
-                            Text(temperature, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
-                          ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Temperature', style: TextStyle(fontSize: 10, color: textMuted, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              Text(
+                                temperature,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: isOffline ? textMuted : textDark,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                   Container(width: 1, height: 28, color: borderGrey),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
 
                   // Humidity Metric
                   Expanded(
@@ -194,29 +228,39 @@ class StorageNodeTile extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: isWarning ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
+                            color: isOffline
+                                ? Colors.grey.shade200
+                                : (isWarning ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
                             Icons.water_drop_outlined,
-                            color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
-                            size: 18,
+                            color: isOffline
+                                ? textMuted
+                                : (isWarning ? ParishColors.mercyRed : ParishColors.marianBlue),
+                            size: 17,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Humidity', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.w600)),
-                            Text(
-                              humidity,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: isWarning ? ParishColors.mercyRed : textDark,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Rel. Humidity', style: TextStyle(fontSize: 10, color: textMuted, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              Text(
+                                humidity,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: isOffline
+                                      ? textMuted
+                                      : (isWarning ? ParishColors.mercyRed : textDark),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -224,30 +268,43 @@ class StorageNodeTile extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
-            // Footer: Node Telemetry Metadata
+            // Honest Footer: Sensor & Action Hint
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.wifi, size: 12, color: textMuted),
-                    const SizedBox(width: 3),
-                    Text('$signalDbm dBm', style: TextStyle(fontSize: 10.5, color: textMuted)),
-                    const SizedBox(width: 8),
-                    Icon(Icons.battery_charging_full, size: 12, color: textMuted),
-                    const SizedBox(width: 3),
-                    Text('$batteryPercent%', style: TextStyle(fontSize: 10.5, color: textMuted)),
+                    Icon(Icons.sensors, size: 13, color: isOffline ? Colors.amber.shade800 : ParishColors.marianBlue),
+                    const SizedBox(width: 4),
+                    Text(
+                      isOffline ? 'Awaiting transmission...' : 'DHT11 Live Feed',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isOffline ? Colors.amber.shade800 : textMuted,
+                      ),
+                    ),
                   ],
                 ),
-                Text(
-                  'Tap to inspect telemetry',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.bold,
-                    color: isWarning ? ParishColors.mercyRed : ParishColors.marianBlue,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      'View Inspector',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isOffline ? Colors.amber.shade900 : ParishColors.marianBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 14,
+                      color: isOffline ? Colors.amber.shade900 : ParishColors.marianBlue,
+                    ),
+                  ],
                 ),
               ],
             ),
