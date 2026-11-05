@@ -2,11 +2,11 @@
 // FILE: lib/features/smart_archive/presentation/smart_archive_view.dart
 // =============================================================================
 
-import 'dart:math';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
-import 'dialogs/configure_thresholds_dialog.dart';
 import 'widgets/storage_node_tile.dart';
 
 class SmartArchiveNodeData {
@@ -20,13 +20,9 @@ class SmartArchiveNodeData {
   final double idealTempMax;
   final double idealHumidityMin;
   final double idealHumidityMax;
-  final int signalDbm;
-  final int batteryPercent;
   final bool isWarning;
   final String warningReason;
   final DateTime lastTelemetryAt;
-  final List<double> recentTempHistory;
-  final List<double> recentHumidityHistory;
 
   const SmartArchiveNodeData({
     required this.nodeId,
@@ -35,40 +31,80 @@ class SmartArchiveNodeData {
     required this.locationDescription,
     required this.temperature,
     required this.humidity,
-    this.idealTempMin = 18.0,
-    this.idealTempMax = 24.0,
-    this.idealHumidityMin = 45.0,
-    this.idealHumidityMax = 60.0,
-    required this.signalDbm,
-    required this.batteryPercent,
+    this.idealTempMin = 22.0,
+    this.idealTempMax = 32.0,     // Santa Cruz, Laguna tropical baseline
+    this.idealHumidityMin = 50.0,
+    this.idealHumidityMax = 75.0, // Calibrated for Laguna ambient humidity (83.9% avg)
     required this.isWarning,
     required this.warningReason,
     required this.lastTelemetryAt,
-    required this.recentTempHistory,
-    required this.recentHumidityHistory,
   });
 
+  /// Flags as OFFLINE if no telemetry received in 5 minutes
+  bool get isOffline {
+    final diffMinutes = DateTime.now().difference(lastTelemetryAt).inMinutes.abs();
+    return diffMinutes >= 5;
+  }
+
   factory SmartArchiveNodeData.fromFirebase(Map<String, dynamic> map, String fallbackId) {
-    final double temp = double.tryParse(map['temperature']?.toString() ?? '24.0') ?? 24.0;
-    final double hum = double.tryParse(map['humidity']?.toString() ?? '50.0') ?? 50.0;
-    final bool isWarn = map['is_warning'] == true || hum > 60.0 || temp > 26.0;
+    final rawTemp = map['temperature'] ?? map['temp'];
+    final rawHum = map['humidity'] ?? map['hum'];
+    final double temp = double.tryParse(rawTemp?.toString() ?? '28.0') ?? 28.0;
+    final double hum = double.tryParse(rawHum?.toString() ?? '68.0') ?? 68.0;
+
+    // Santa Cruz, Laguna Tropical Preservation Baseline
+    const double maxHum = 75.0;  // Real breach limit for Laguna
+    const double maxTemp = 32.0; // Real breach limit for Laguna
+
+    final bool isWarn = hum > maxHum || temp > maxTemp;
+
+    final rawTimestamp = map['timestamp'] ??
+        map['last_telemetry_at'] ??
+        map['last_updated'] ??
+        map['time'];
+
+    DateTime telemetryTime = DateTime.now();
+
+    if (rawTimestamp != null) {
+      if (rawTimestamp is int) {
+        if (rawTimestamp < 10000000000) {
+          telemetryTime = DateTime.fromMillisecondsSinceEpoch(rawTimestamp * 1000, isUtc: true).toLocal();
+        } else {
+          telemetryTime = DateTime.fromMillisecondsSinceEpoch(rawTimestamp, isUtc: true).toLocal();
+        }
+      } else if (rawTimestamp is num) {
+        final val = rawTimestamp.toInt();
+        if (val < 10000000000) {
+          telemetryTime = DateTime.fromMillisecondsSinceEpoch(val * 1000, isUtc: true).toLocal();
+        } else {
+          telemetryTime = DateTime.fromMillisecondsSinceEpoch(val, isUtc: true).toLocal();
+        }
+      } else if (rawTimestamp is String) {
+        final parsed = DateTime.tryParse(rawTimestamp);
+        if (parsed != null) {
+          telemetryTime = parsed.isUtc ? parsed.toLocal() : parsed;
+        }
+      }
+
+      if (telemetryTime.year < 2024) {
+        telemetryTime = DateTime.now();
+      }
+    }
 
     return SmartArchiveNodeData(
-      nodeId: map['node_id']?.toString() ?? fallbackId,
-      roomTitle: map['room_title']?.toString() ?? 'Monitored Archive Storage',
-      storageType: map['storage_type']?.toString() ?? 'Sacramental Archive Repository',
-      locationDescription: map['location_description']?.toString() ?? 'Parish Archive Vault',
+      nodeId: map['node_id']?.toString() ?? map['nodeId']?.toString() ?? fallbackId,
+      roomTitle: map['room_title']?.toString() ?? map['roomTitle']?.toString() ?? 'Sacramental Archive Room',
+      storageType: map['storage_type']?.toString() ?? map['storageType']?.toString() ?? 'Sacramental Archive Repository',
+      locationDescription: map['location_description']?.toString() ?? map['location']?.toString() ?? 'Parish Archive Vault',
       temperature: temp,
       humidity: hum,
-      signalDbm: int.tryParse(map['rssi']?.toString() ?? '-60') ?? -60,
-      batteryPercent: int.tryParse(map['battery']?.toString() ?? '95') ?? 95,
+      idealHumidityMax: maxHum,
+      idealTempMax: maxTemp,
       isWarning: isWarn,
       warningReason: isWarn
-          ? 'Environmental breach detected: Temperature or humidity exceeds safe thresholds.'
-          : 'Preservation parameters optimal.',
-      lastTelemetryAt: DateTime.now(),
-      recentTempHistory: [temp],
-      recentHumidityHistory: [hum],
+          ? 'Tropical moisture breach: Humidity ($hum%) or temperature ($temp°C) exceeds safe limits (Max: $maxHum% RH, $maxTemp°C).'
+          : 'Preservation parameters optimal for Laguna tropical climate.',
+      lastTelemetryAt: telemetryTime,
     );
   }
 }
@@ -81,244 +117,229 @@ class SmartArchiveView extends StatefulWidget {
 }
 
 class _SmartArchiveViewState extends State<SmartArchiveView> {
-  String _nodeFilter = 'All Nodes'; // 'All Nodes', 'Safe', 'Alerts'
-  final DatabaseReference _rtdbRef = FirebaseDatabase.instance.ref('storage_nodes');
+  // Explicit Singapore regional RTDB endpoint matching your ESP32 configuration
+  static const String _kFirebaseRtdbUrl =
+      "https://parishserve-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-  List<SmartArchiveNodeData> _filterNodes(List<SmartArchiveNodeData> nodes) {
-    if (_nodeFilter == 'Alerts') {
-      return nodes.where((n) => n.isWarning).toList();
-    } else if (_nodeFilter == 'Safe') {
-      return nodes.where((n) => !n.isWarning).toList();
+  late final DatabaseReference _rtdbRef;
+  List<Map<String, dynamic>> _chartTelemetryLogs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeRealtimeDatabase();
+    _fetchHistoricalLogs();
+    _runDiagnosticCheck();
+  }
+
+  void _initializeRealtimeDatabase() {
+    try {
+      debugPrint('[SmartArchiveView] Connecting explicitly to regional RTDB: $_kFirebaseRtdbUrl');
+
+      // Explicitly connects Android native client to asia-southeast1 (Singapore)
+      final rtdb = FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: _kFirebaseRtdbUrl,
+      );
+
+      _rtdbRef = rtdb.ref('storage_nodes');
+    } catch (e) {
+      debugPrint('[SmartArchiveView] Error obtaining DatabaseReference: $e');
+      _rtdbRef = FirebaseDatabase.instance.ref('storage_nodes');
     }
-    return nodes;
+  }
+
+  Future<void> _runDiagnosticCheck() async {
+    try {
+      final snapshot = await _rtdbRef.get().timeout(const Duration(seconds: 6));
+      debugPrint('[RTDB Diagnostic] SUCCESS! Data received on mobile: ${snapshot.value}');
+    } catch (e) {
+      debugPrint('[RTDB Diagnostic] CONNECTION NOTICE OR TIMEOUT: $e');
+    }
+  }
+
+  Future<void> _fetchHistoricalLogs() async {
+    try {
+      final twentyFourHoursAgo = DateTime.now().subtract(const Duration(hours: 24)).toIso8601String();
+      final data = await Supabase.instance.client
+          .from('sensor_telemetry_logs')
+          .select('temperature, humidity, recorded_at')
+          .gte('recorded_at', twentyFourHoursAgo)
+          .order('recorded_at', ascending: true)
+          .limit(25);
+
+      if (mounted) {
+        setState(() {
+          _chartTelemetryLogs = List<Map<String, dynamic>>.from(data);
+        });
+      }
+    } catch (e) {
+      debugPrint('[SmartArchiveView] Notice loading chart logs: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
-    final cardWhite = ParishColors.cardWhite;
-
     return StreamBuilder<DatabaseEvent>(
       stream: _rtdbRef.onValue,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off, size: 48, color: ParishColors.mercyRed),
+                  const SizedBox(height: 12),
+                  Text(
+                    'IoT Telemetry Connection Notice',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ParishColors.textDark),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => setState(() => _initializeRealtimeDatabase()),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Retry Connection'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         final bool isLoading = snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData;
 
-        // Parse nodes from Firebase Realtime Database
-        List<SmartArchiveNodeData> allNodes = [];
+        SmartArchiveNodeData? activeNode;
+
         if (snapshot.hasData && snapshot.data?.snapshot.value != null) {
           final raw = snapshot.data!.snapshot.value;
           if (raw is Map) {
             raw.forEach((key, val) {
-              if (val is Map) {
-                allNodes.add(
-                  SmartArchiveNodeData.fromFirebase(
-                    Map<String, dynamic>.from(val),
-                    key.toString(),
-                  ),
+              if (val is Map && activeNode == null) {
+                activeNode = SmartArchiveNodeData.fromFirebase(
+                  Map<String, dynamic>.from(val),
+                  key.toString(),
                 );
               }
             });
           }
         }
 
-        // Fallback placeholder node if no hardware has posted yet
-        if (allNodes.isEmpty && !isLoading) {
-          allNodes = [
-            SmartArchiveNodeData(
-              nodeId: 'ESP32-NODE-01',
-              roomTitle: 'Main Sacramental Archive Room',
-              storageType: 'Canon 535 Sacramental Ledger Repository',
-              locationDescription: 'Parish Administration Building, 2nd Floor Archive Vault',
-              temperature: 24.2,
-              humidity: 54.0,
-              signalDbm: -58,
-              batteryPercent: 98,
-              isWarning: false,
-              warningReason: 'Awaiting first live transmission from hardware...',
-              lastTelemetryAt: DateTime.now(),
-              recentTempHistory: [24.2],
-              recentHumidityHistory: [54.0],
-            ),
-          ];
-        }
+        // Fallback default node calibrated for Laguna
+        activeNode ??= SmartArchiveNodeData(
+          nodeId: 'ESP32-NODE-01',
+          roomTitle: 'Sacramental Archive Room',
+          storageType: 'Canon 535 Sacramental Ledger Repository',
+          locationDescription: 'Parish Administration Building, 2nd Floor Archive Vault',
+          temperature: 28.2,
+          humidity: 64.0,
+          isWarning: false,
+          warningReason: 'Awaiting first live transmission from hardware...',
+          lastTelemetryAt: DateTime.now(),
+        );
 
-        final filteredNodes = _filterNodes(allNodes);
-        final warningCount = allNodes.where((n) => n.isWarning).length;
-        final safeCount = allNodes.where((n) => !n.isWarning).length;
-        final avgTemp = allNodes.isEmpty
-            ? 0.0
-            : allNodes.fold(0.0, (s, n) => s + n.temperature) / allNodes.length;
-        final avgHum = allNodes.isEmpty
-            ? 0.0
-            : allNodes.fold(0.0, (s, n) => s + n.humidity) / allNodes.length;
+        final bool isOffline = activeNode!.isOffline;
+        final bool isWarning = activeNode!.isWarning;
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            final bool isDesktop = constraints.maxWidth >= 900;
-            final bool isMobile = constraints.maxWidth < 650;
+            final double screenWidth = constraints.maxWidth;
+            final bool isDesktop = screenWidth >= 1080;
+            final bool isMobile = screenWidth < 650;
 
-            return SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 14 : 24,
-                vertical: isMobile ? 12 : 20,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Header & Live Indicator
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Smart Archive & IoT Telemetry',
-                          style: TextStyle(
-                            fontSize: isMobile ? 18 : 22,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: ParishColors.oliveGreenSurface,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
+            return RefreshIndicator(
+              onRefresh: () async {
+                setState(() => _initializeRealtimeDatabase());
+                await _fetchHistoricalLogs();
+              },
+              color: ParishColors.marianBlue,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 16 : 28,
+                  vertical: isMobile ? 14 : 24,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1400),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 1. Hero Header with SJP Background & Real-Time Sync Ribbon
+                        _buildHeroHeader(isMobile, isWarning, isOffline),
+                        const SizedBox(height: 20),
+
+                        // 2. Section Title
+                        _buildSectionTitle(),
+                        const SizedBox(height: 12),
+
+                        // 3. Single Node Card + Live Microclimate Line Graph
+                        if (isLoading)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(60),
+                              child: CircularProgressIndicator(),
                             ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.circle, color: ParishColors.oliveGreen, size: 8),
-                                SizedBox(width: 5),
-                                Text(
-                                  'LIVE STREAMING',
-                                  style: TextStyle(
-                                    color: ParishColors.oliveGreen,
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          )
+                        else
+                          isDesktop
+                              ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Left: Single Node Card
+                              SizedBox(
+                                width: 420,
+                                child: StorageNodeTile(
+                                  roomTitle: activeNode!.roomTitle,
+                                  nodeId: activeNode!.nodeId,
+                                  temperature: '${activeNode!.temperature.toStringAsFixed(1)} °C',
+                                  humidity: '${activeNode!.humidity.toStringAsFixed(1)} %',
+                                  isWarning: isWarning,
+                                  isOffline: isOffline,
+                                  storageType: activeNode!.storageType,
+                                  lastTelemetry: activeNode!.lastTelemetryAt,
                                 ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(width: 16),
+                              // Right: Real Microclimate Line Graph
+                              Expanded(
+                                child: _buildTelemetryLineGraphCard(activeNode!),
+                              ),
+                            ],
+                          )
+                              : Column(
+                            children: [
+                              StorageNodeTile(
+                                roomTitle: activeNode!.roomTitle,
+                                nodeId: activeNode!.nodeId,
+                                temperature: '${activeNode!.temperature.toStringAsFixed(1)} °C',
+                                humidity: '${activeNode!.humidity.toStringAsFixed(1)} %',
+                                isWarning: isWarning,
+                                isOffline: isOffline,
+                                storageType: activeNode!.storageType,
+                                lastTelemetry: activeNode!.lastTelemetryAt,
+                              ),
+                              const SizedBox(height: 14),
+                              _buildTelemetryLineGraphCard(activeNode!),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.tune, color: ParishColors.marianBlue, size: 20),
-                            tooltip: 'Configure Safe Limits',
-                            onPressed: () => showConfigureThresholdsModal(context),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
 
-                  // 2. Status Banner
-                  _buildStatusBanner(warningCount, isMobile),
-                  const SizedBox(height: 14),
-
-                  // 3. Compact Stats Row
-                  _buildCompactStatsRow(allNodes.length, avgTemp, avgHum, safeCount, warningCount),
-                  const SizedBox(height: 14),
-
-                  // 4. Filter Chips Bar
-                  Row(
-                    children: [
-                      Text(
-                        'Storage Nodes (${filteredNodes.length})',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
-                      ),
-                      const Spacer(),
-                      Wrap(
-                        spacing: 6,
-                        children: ['All Nodes', 'Safe', 'Alerts'].map((f) {
-                          final isSelected = _nodeFilter == f;
-                          Color activeColor = ParishColors.marianBlue;
-                          if (f == 'Alerts') activeColor = ParishColors.mercyRed;
-                          if (f == 'Safe') activeColor = ParishColors.oliveGreen;
-
-                          return ChoiceChip(
-                            label: Text(f),
-                            selected: isSelected,
-                            selectedColor: activeColor,
-                            backgroundColor: cardWhite,
-                            labelStyle: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: isSelected ? Colors.white : textDark,
-                            ),
-                            onSelected: (_) => setState(() => _nodeFilter = f),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 5. Monitored Node Tiles Grid
-                  if (isLoading)
-                    const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
-                  else if (filteredNodes.isEmpty)
-                    _buildEmptyState()
-                  else
-                    isDesktop
-                        ? GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: filteredNodes.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
-                        childAspectRatio: 1.85,
-                      ),
-                      itemBuilder: (context, index) {
-                        final node = filteredNodes[index];
-                        return StorageNodeTile(
-                          roomTitle: node.roomTitle,
-                          nodeId: node.nodeId,
-                          temperature: '${node.temperature.toStringAsFixed(1)} °C',
-                          humidity: '${node.humidity.toStringAsFixed(1)} %',
-                          isWarning: node.isWarning,
-                          storageType: node.storageType,
-                          signalDbm: node.signalDbm,
-                          batteryPercent: node.batteryPercent,
-                          lastTelemetry: node.lastTelemetryAt,
-                        );
-                      },
-                    )
-                        : ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: filteredNodes.length,
-                      itemBuilder: (context, index) {
-                        final node = filteredNodes[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: StorageNodeTile(
-                            roomTitle: node.roomTitle,
-                            nodeId: node.nodeId,
-                            temperature: '${node.temperature.toStringAsFixed(1)} °C',
-                            humidity: '${node.humidity.toStringAsFixed(1)} %',
-                            isWarning: node.isWarning,
-                            storageType: node.storageType,
-                            signalDbm: node.signalDbm,
-                            batteryPercent: node.batteryPercent,
-                            lastTelemetry: node.lastTelemetryAt,
-                          ),
-                        );
-                      },
+                        const SizedBox(height: 36),
+                      ],
                     ),
-
-                  const SizedBox(height: 20),
-
-                  // 6. Conservation Guidelines Card
-                  _buildConservationProtocol(isDesktop),
-                ],
+                  ),
+                ),
               ),
             );
           },
@@ -327,69 +348,124 @@ class _SmartArchiveViewState extends State<SmartArchiveView> {
     );
   }
 
-  Widget _buildStatusBanner(int warningCount, bool isMobile) {
-    final bool hasAlerts = warningCount > 0;
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(isMobile ? 14 : 18),
-      decoration: BoxDecoration(
-        color: hasAlerts ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: hasAlerts ? ParishColors.mercyRed.withOpacity(0.5) : ParishColors.marianBlue.withOpacity(0.35),
-          width: 1.5,
-        ),
-      ),
-      child: Row(
+  // ===========================================================================
+  // Hero Header with SJP Background & Embedded Live Telemetry Ribbon
+  // ===========================================================================
+
+  Widget _buildHeroHeader(bool isMobile, bool isWarning, bool isOffline) {
+    final fade = ParishColors.cardWhite;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Stack(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: hasAlerts ? ParishColors.mercyRed : ParishColors.marianBlue,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              hasAlerts ? Icons.warning_amber_rounded : Icons.sensors,
-              color: Colors.white,
-              size: isMobile ? 22 : 26,
+          Positioned.fill(
+            child: Image.asset(
+              'images/jp2-bg.png',
+              fit: BoxFit.cover,
+              alignment: const Alignment(0.35, -0.55),
+              errorBuilder: (_, __, ___) => Container(color: ParishColors.marianBlueSurface),
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    fade.withOpacity(0.96),
+                    fade.withOpacity(isMobile ? 0.88 : 0.80),
+                    fade.withOpacity(isMobile ? 0.25 : 0.0),
+                  ],
+                  stops: [0.0, isMobile ? 0.62 : 0.45, isMobile ? 1.0 : 0.85],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, fade.withOpacity(0.55)],
+                  stops: const [0.55, 1.0],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 16 : 22, isMobile ? 12 : 16, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      hasAlerts ? '$warningCount Environmental Warning Active' : 'ESP32 IoT Network Normal',
-                      style: TextStyle(
-                        fontSize: isMobile ? 14 : 16,
-                        fontWeight: FontWeight.bold,
-                        color: hasAlerts ? ParishColors.mercyRed : ParishColors.marianBlue,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: ParishColors.goldAccent,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Smart Archive & IoT',
+                            style: TextStyle(
+                              fontFamily: 'Georgia',
+                              fontFamilyFallback: const ['Times New Roman', 'serif'],
+                              fontSize: isMobile ? 26 : 38,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                              color: ParishColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Preserving sacramental ledgers under Santa Cruz, Laguna microclimate standards',
+                            style: TextStyle(
+                              fontSize: isMobile ? 12.5 : 14,
+                              fontStyle: FontStyle.italic,
+                              color: ParishColors.textDark.withOpacity(0.8),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    // Functional Feed Refresh Button
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: hasAlerts ? ParishColors.mercyRed : ParishColors.oliveGreen,
-                        borderRadius: BorderRadius.circular(4),
+                        color: ParishColors.cardWhite.withOpacity(0.9),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: ParishColors.borderGrey),
                       ),
-                      child: Text(
-                        hasAlerts ? 'BREACH' : 'ONLINE',
-                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      child: IconButton(
+                        icon: const Icon(Icons.refresh, color: ParishColors.marianBlue, size: 21),
+                        tooltip: 'Reload Telemetry Feed',
+                        onPressed: () async {
+                          setState(() => _initializeRealtimeDatabase());
+                          await _fetchHistoricalLogs();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Telemetry feed reloaded.'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  hasAlerts
-                      ? 'Relative humidity exceeds 60% in monitored area. Inspect dehumidifiers.'
-                      : 'Live DHT11 telemetry streamed from ESP32 via Firebase RTDB (Canon 1283 standards).',
-                  style: TextStyle(fontSize: isMobile ? 11 : 12, color: ParishColors.textDark, height: 1.35),
-                ),
+                SizedBox(height: isMobile ? 38 : 50),
+                _buildTelemetrySyncRibbon(isMobile, isWarning, isOffline),
               ],
             ),
           ),
@@ -398,90 +474,359 @@ class _SmartArchiveViewState extends State<SmartArchiveView> {
     );
   }
 
-  Widget _buildCompactStatsRow(int count, double avgTemp, double avgHum, int safe, int alerts) {
+  Widget _buildTelemetrySyncRibbon(bool isMobile, bool isWarning, bool isOffline) {
+    Color pillColor;
+    Color textColor;
+    IconData statusIcon;
+    String statusLabel;
+
+    if (isOffline) {
+      pillColor = Colors.amber.shade50;
+      textColor = Colors.amber.shade900;
+      statusIcon = Icons.wifi_off_rounded;
+      statusLabel = 'Hardware Offline • ESP32 disconnected or power interrupted';
+    } else if (isWarning) {
+      pillColor = ParishColors.mercyRedSurface;
+      textColor = ParishColors.mercyRed;
+      statusIcon = Icons.warning_amber_rounded;
+      statusLabel = 'Tropical Moisture Alert • Relative humidity exceeds 75% threshold';
+    } else {
+      pillColor = const Color(0xFFE8F5E9);
+      textColor = const Color(0xFF2E7D32);
+      statusIcon = Icons.check_circle_outline;
+      statusLabel = 'Online • Live DHT11 stream (Santa Cruz, Laguna Tropical Baseline)';
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      width: double.infinity,
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: ParishColors.borderGrey),
+        color: pillColor.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: textColor.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Expanded(child: _statItem('Nodes', '$count', ParishColors.marianBlue)),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(child: _statItem('Avg Temp', '${avgTemp.toStringAsFixed(1)}°C', ParishColors.goldAccent)),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(child: _statItem('Avg Hum', '${avgHum.toStringAsFixed(1)}%', avgHum > 60.0 ? ParishColors.mercyRed : ParishColors.oliveGreen)),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(child: _statItem('Safe', '$safe', ParishColors.oliveGreen)),
-          Container(width: 1, height: 20, color: ParishColors.borderGrey),
-          Expanded(child: _statItem('Alerts', '$alerts', alerts > 0 ? ParishColors.mercyRed : ParishColors.textMuted)),
+          Icon(statusIcon, size: 18, color: textColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              statusLabel,
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: textColor),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (!isMobile)
+            Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: Text(
+                'ESP32 Node Active',
+                style: TextStyle(fontSize: 11.5, color: textColor.withOpacity(0.85)),
+              ),
+            ),
+          const SizedBox(width: 10),
+          Icon(Icons.sensors, size: 17, color: textColor),
         ],
       ),
     );
   }
 
-  Widget _statItem(String label, String value, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+  Widget _buildSectionTitle() {
+    return Row(
       children: [
-        Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: color), maxLines: 1),
-        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ParishColors.textMuted), maxLines: 1),
+        Container(
+          width: 4,
+          height: 26,
+          decoration: BoxDecoration(
+            color: ParishColors.goldAccent,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          'Monitored Archive Vault Telemetry',
+          style: TextStyle(
+            fontFamily: 'Georgia',
+            fontFamilyFallback: const ['Times New Roman', 'serif'],
+            fontSize: 17.5,
+            fontWeight: FontWeight.w800,
+            color: ParishColors.textDark,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildConservationProtocol(bool isDesktop) {
+  // ===========================================================================
+  // Live Microclimate Line Graph (Zero packages, pure Flutter)
+  // ===========================================================================
+
+  Widget _buildTelemetryLineGraphCard(SmartArchiveNodeData node) {
+    List<double> humPoints = [];
+    List<double> tempPoints = [];
+
+    if (_chartTelemetryLogs.isNotEmpty) {
+      for (final log in _chartTelemetryLogs) {
+        final hum = double.tryParse(log['humidity']?.toString() ?? '65.0') ?? 65.0;
+        final temp = double.tryParse(log['temperature']?.toString() ?? '28.0') ?? 28.0;
+        humPoints.add(hum);
+        tempPoints.add(temp);
+      }
+    }
+
+    humPoints.add(node.humidity);
+    tempPoints.add(node.temperature);
+
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.shield_outlined, size: 20, color: ParishColors.marianBlue),
-              SizedBox(width: 8),
-              Text(
-                'Preventive Conservation Standards (Canon 1283 & ISO 11799)',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Microclimate Trends Plot',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Real-time line visualization of conditions',
+                      style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildLegendItem('Humidity', ParishColors.marianBlue),
+                  const SizedBox(width: 8),
+                  _buildLegendItem('Temp', ParishColors.goldAccent),
+                ],
               ),
             ],
           ),
-          const Divider(height: 18),
-          Text(
-            '• Relative Humidity: Target 45%–60% RH to prevent fungal mold germination and leather embrittlement.\n'
-                '• Temperature Baseline: Target 18°C–24°C ambient range to avoid thermal hydrolysis of legacy ink.\n'
-                '• Push Alerts: Dispatched via Supabase Edge Function to Clergy & Secretariat on 60%+ RH breach.',
-            style: TextStyle(fontSize: 12, color: ParishColors.textMuted, height: 1.45),
+          const SizedBox(height: 18),
+
+          SizedBox(
+            height: 140,
+            width: double.infinity,
+            child: CustomPaint(
+              painter: _MicroclimateLineChartPainter(
+                humidityPoints: humPoints,
+                temperaturePoints: tempPoints,
+                maxHumThreshold: node.idealHumidityMax,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Past Readings', style: TextStyle(fontSize: 10, color: ParishColors.textMuted)),
+              Row(
+                children: [
+                  Container(
+                    width: 12,
+                    height: 2,
+                    color: ParishColors.mercyRed.withOpacity(0.6),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Laguna Limit: 75% RH',
+                    style: TextStyle(fontSize: 10, color: ParishColors.mercyRed, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Text('Live Now', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(32),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ParishColors.borderGrey),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.sensors_off_outlined, size: 40, color: ParishColors.textMuted),
-          const SizedBox(height: 10),
-          Text('No sensor nodes match "$_nodeFilter".', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-        ],
-      ),
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+        ),
+      ],
     );
+  }
+}
+
+// =============================================================================
+// Custom Painter for Microclimate Curves (35% to 90% RH range for Laguna)
+// =============================================================================
+
+class _MicroclimateLineChartPainter extends CustomPainter {
+  final List<double> humidityPoints;
+  final List<double> temperaturePoints;
+  final double maxHumThreshold;
+
+  _MicroclimateLineChartPainter({
+    required this.humidityPoints,
+    required this.temperaturePoints,
+    required this.maxHumThreshold,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final gridPaint = Paint()
+      ..color = ParishColors.borderGrey.withOpacity(0.5)
+      ..strokeWidth = 1.0;
+
+    for (int i = 1; i <= 3; i++) {
+      final y = size.height * (i / 4);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // Threshold Line at 75% RH
+    final thresholdY = _getY(maxHumThreshold, 35.0, 90.0, size.height);
+    final thresholdPaint = Paint()
+      ..color = ParishColors.mercyRed.withOpacity(0.5)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(Offset(0, thresholdY), Offset(size.width, thresholdY), thresholdPaint);
+
+    // Humidity Curve (Marian Blue)
+    _drawMetricCurve(
+      canvas,
+      size,
+      humidityPoints,
+      minVal: 35.0,
+      maxVal: 90.0,
+      lineColor: ParishColors.marianBlue,
+      gradientStart: ParishColors.marianBlue.withOpacity(0.18),
+    );
+
+    // Temperature Curve (Gold Accent)
+    _drawMetricCurve(
+      canvas,
+      size,
+      temperaturePoints,
+      minVal: 15.0,
+      maxVal: 40.0,
+      lineColor: ParishColors.goldAccent,
+      gradientStart: ParishColors.goldAccent.withOpacity(0.12),
+    );
+  }
+
+  void _drawMetricCurve(
+      Canvas canvas,
+      Size size,
+      List<double> values, {
+        required double minVal,
+        required double maxVal,
+        required Color lineColor,
+        required Color gradientStart,
+      }) {
+    if (values.isEmpty) return;
+
+    final linePaint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final dotPaint = Paint()
+      ..color = lineColor
+      ..style = PaintingStyle.fill;
+
+    final dotInner = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    final fillPath = Path();
+
+    final stepX = values.length > 1 ? size.width / (values.length - 1) : size.width;
+
+    for (int i = 0; i < values.length; i++) {
+      final x = i * stepX;
+      final y = _getY(values[i], minVal, maxVal, size.height);
+
+      if (i == 0) {
+        path.moveTo(x, y);
+        fillPath.moveTo(x, size.height);
+        fillPath.lineTo(x, y);
+      } else {
+        path.lineTo(x, y);
+        fillPath.lineTo(x, y);
+      }
+
+      if (i >= values.length - 3) {
+        canvas.drawCircle(Offset(x, y), 4.0, dotPaint);
+        canvas.drawCircle(Offset(x, y), 2.0, dotInner);
+      }
+    }
+
+    fillPath.lineTo(size.width, size.height);
+    fillPath.close();
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [gradientStart, Colors.transparent],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(path, linePaint);
+  }
+
+  double _getY(double value, double min, double max, double height) {
+    final clamped = value.clamp(min, max);
+    final ratio = (clamped - min) / (max - min);
+    return height - (ratio * height);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MicroclimateLineChartPainter oldDelegate) {
+    return oldDelegate.humidityPoints != humidityPoints ||
+        oldDelegate.temperaturePoints != temperaturePoints;
   }
 }

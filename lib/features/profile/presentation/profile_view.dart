@@ -117,10 +117,6 @@ class _ProfileViewState extends State<ProfileView> {
                               color: ParishColors.textDark,
                             ),
                           ),
-                          Text(
-                            'Manage account credentials, appearance theme, and security access',
-                            style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
-                          ),
                         ],
                       ),
                     ],
@@ -485,22 +481,23 @@ class _ProfileViewState extends State<ProfileView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Account Password', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                    Text('Account Password', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 2),
-                    Text('Update your credentials via secure 6-digit email OTP verification', style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
+                    Text('Update via secure email OTP', style: TextStyle(fontSize: 11, color: ParishColors.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.2),
                   foregroundColor: ParishColors.marianBlueAdaptive,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 ),
                 onPressed: () => showForgotPasswordDialog(context, initialIdentifier: email),
-                icon: const Icon(Icons.lock_reset, size: 16),
-                label: const Text('Change Password', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.lock_reset, size: 15),
+                label: const Text('Change', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -549,22 +546,28 @@ class _ProfileViewState extends State<ProfileView> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.policy_outlined, color: ParishColors.marianBlue, size: 22),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Legal & Canonical Governance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
-                  Text('Review Terms of Service & RA 10173 Privacy Policy', style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
-                ],
-              ),
-            ],
+          Expanded(
+            child: Row(
+              children: [
+                const Icon(Icons.policy_outlined, color: ParishColors.marianBlue, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Legal & Governance', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Text('Terms & RA 10173 Privacy Policy', style: TextStyle(fontSize: 11, color: ParishColors.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           TextButton(
             onPressed: () => showTermsAndConditionsModal(context, isReadOnly: true),
-            child: const Text('View Terms', style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+            child: const Text('View', style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
           ),
         ],
       ),

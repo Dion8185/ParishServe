@@ -1473,69 +1473,71 @@ class _AppointmentsViewState extends State<AppointmentsView>
         // Tabs + View Toggle Row
         Row(
           children: [
-            Container(
-              height: 38,
-              decoration: BoxDecoration(
-                color: ParishColors.cardWhite,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: ParishColors.borderGrey),
-              ),
-              child: TabBar(
-                controller: _mainTabController,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                labelColor: Colors.white,
-                unselectedLabelColor: ParishColors.textMuted,
-                indicatorSize: TabBarIndicatorSize.tab,
-                indicator: BoxDecoration(
-                  color: _mainTabController.index == 3
-                      ? ParishColors.mercyRed
-                      : (_mainTabController.index == 2
-                      ? const Color(0xFF0F766E)
-                      : ParishColors.marianBlue),
-                  borderRadius: BorderRadius.circular(8),
+            Expanded(
+              child: Container(
+                height: 38,
+                decoration: BoxDecoration(
+                  color: ParishColors.cardWhite,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ParishColors.borderGrey),
                 ),
-                tabs: [
-                  Tab(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        'Sacraments (${_processedAppointments.length})',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                child: TabBar(
+                  controller: _mainTabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: ParishColors.textMuted,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicator: BoxDecoration(
+                    color: _mainTabController.index == 3
+                        ? ParishColors.mercyRed
+                        : (_mainTabController.index == 2
+                        ? const Color(0xFF0F766E)
+                        : ParishColors.marianBlue),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  tabs: [
+                    Tab(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          'Sacraments (${_processedAppointments.length})',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
                       ),
                     ),
-                  ),
-                  Tab(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        'Mass Intentions (${_processedMassIntentions.length})',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    Tab(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          'Mass Intentions (${_processedMassIntentions.length})',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
                       ),
                     ),
-                  ),
-                  Tab(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        'Completed (${_completedAppointments.length})',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    Tab(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          'Completed (${_completedAppointments.length})',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
                       ),
                     ),
-                  ),
-                  Tab(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        'Cancelled (${_cancelledAppointments.length + _rejectedMassIntentions.length})',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    Tab(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          'Cancelled (${_cancelledAppointments.length + _rejectedMassIntentions.length})',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
 
             Container(
               height: 36,
