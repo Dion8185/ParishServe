@@ -1974,9 +1974,11 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                         color: ParishColors.marianBlue,
                                         child: SingleChildScrollView(
                                                 physics: const AlwaysScrollableScrollPhysics(),
-                                                padding: EdgeInsets.symmetric(
-                                                        horizontal: isMobile ? 16 : 28,
-                                                        vertical: isMobile ? 14 : 24,
+                                                padding: EdgeInsets.fromLTRB(
+                                                        isMobile ? 16 : 28,
+                                                        isMobile ? 14 : 24,
+                                                        isMobile ? 16 : 28,
+                                                        isMobile ? 110 : 36,
                                                 ),
                                                 child: Center(
                                                         child: ConstrainedBox(

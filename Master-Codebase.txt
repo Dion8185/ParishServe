@@ -4566,9 +4566,11 @@ class _AppointmentsViewState extends State<AppointmentsView>
           color: ParishColors.marianBlue,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 16 : 28,
-              vertical: isMobile ? 14 : 24,
+            padding: EdgeInsets.fromLTRB(
+              isMobile ? 16 : 28,
+              isMobile ? 14 : 24,
+              isMobile ? 16 : 28,
+              isMobile ? 110 : 36,
             ),
             child: Center(
               child: ConstrainedBox(
@@ -21705,9 +21707,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             color: ParishColors.marianBlue,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 14 : 20,
-                vertical: isMobile ? 12 : 18,
+              padding: EdgeInsets.fromLTRB(
+                isMobile ? 14 : 20,
+                isMobile ? 12 : 18,
+                isMobile ? 14 : 20,
+                isMobile ? 110 : 36,
               ),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
@@ -42104,7 +42108,12 @@ class _DashboardViewState extends State<DashboardView> {
         final bool isMobile = constraints.maxWidth < 650;
 
         return SingleChildScrollView(
-          padding: EdgeInsets.all(isDesktop ? 26 : (isMobile ? 14 : 18)),
+          padding: EdgeInsets.fromLTRB(
+            isDesktop ? 26 : (isMobile ? 14 : 18),
+            isDesktop ? 26 : (isMobile ? 14 : 18),
+            isDesktop ? 26 : (isMobile ? 14 : 18),
+            isMobile ? 110 : 36,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -52294,7 +52303,6 @@ lib/features/profile/presentation/profile_view.dart
 // FILE: lib/features/profile/presentation/profile_view.dart
 // =============================================================================
 
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
@@ -52303,6 +52311,33 @@ import '../../auth/models/user_model.dart';
 import '../../auth/presentation/dialogs/forgot_password_dialog.dart';
 import '../../auth/presentation/dialogs/terms_conditions_dialog.dart';
 import '../../auth/services/auth_service.dart';
+
+/// The three sections reachable from the segmented tab bar.
+enum _ProfileSection { account, appearance, security }
+
+extension on _ProfileSection {
+  String get label {
+    switch (this) {
+      case _ProfileSection.account:
+        return 'Account';
+      case _ProfileSection.appearance:
+        return 'Appearance';
+      case _ProfileSection.security:
+        return 'Security';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case _ProfileSection.account:
+        return Icons.badge_outlined;
+      case _ProfileSection.appearance:
+        return Icons.palette_outlined;
+      case _ProfileSection.security:
+        return Icons.security;
+    }
+  }
+}
 
 class ProfileView extends StatefulWidget {
   final UserModel? currentUser;
@@ -52314,6 +52349,8 @@ class ProfileView extends StatefulWidget {
 }
 
 class _ProfileViewState extends State<ProfileView> {
+  _ProfileSection _section = _ProfileSection.account;
+
   void _copyToClipboard(String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -52371,133 +52408,107 @@ class _ProfileViewState extends State<ProfileView> {
     final userId = user?.userId ?? 'U26-0001';
     final email = user?.email ?? 'parishioner@sjp2parish.ph';
     final username = user?.username ?? 'parishioner_user';
-    final isStaff = user?.userRole.toLowerCase() != 'user';
+    final isStaff = user != null && user.userRole.toLowerCase() != 'user';
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isDesktop = constraints.maxWidth >= 900;
-        final double viewportHeight = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
+        final double screenWidth = constraints.maxWidth;
+        final bool isWide = screenWidth >= 900;
+        final bool isMobile = screenWidth < 650;
 
-        return Container(
-          width: double.infinity,
-          height: constraints.hasBoundedHeight ? constraints.maxHeight : null,
-          alignment: Alignment.topCenter,
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {});
+          },
+          color: ParishColors.marianBlue,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.all(isDesktop ? 28.0 : 20.0),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: max(0.0, viewportHeight - 56.0),
-                maxWidth: 1100,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  // Top Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+            padding: EdgeInsets.fromLTRB(
+              isMobile ? 16 : 28,
+              isMobile ? 14 : 24,
+              isMobile ? 16 : 28,
+              isMobile ? 110 : 36,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1100),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    // Hero banner + overlapping identity card
+                    _buildIdentityHeader(
+                      context,
+                      isWide: isWide,
+                      isMobile: isMobile,
+                      fullName: fullName,
+                      role: role,
+                      userId: userId,
+                      username: username,
+                      isStaff: isStaff,
+                    ),
+                    const SizedBox(height: 22),
+
+                    // Segmented section navigation
+                    _buildSectionTabs(isMobile),
+                    const SizedBox(height: 16),
+
+                    // Animated section content
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 280),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.03),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      ),
+                      child: KeyedSubtree(
+                        key: ValueKey(_section),
+                        child: _buildSectionBody(context, user, fullName, email, isWide),
+                      ),
+                    ),
+
+                    // On narrower screens the log out button lives at the bottom
+                    if (!isWide) ...[
+                      const SizedBox(height: 24),
+                      _buildLogoutButton(context),
+                    ],
+
+                    const SizedBox(height: 32),
+
+                    // Footer Institutional Branding
+                    Center(
+                      child: Column(
                         children: [
-                          Text(
-                            isDesktop ? 'User Profile & System Preferences' : 'My Profile',
+                          const Text(
+                            'TOTUS TUUS',
                             style: TextStyle(
-                              fontSize: isDesktop ? 22 : 19,
+                              fontFamily: 'serif',
+                              fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: ParishColors.textDark,
+                              fontStyle: FontStyle.italic,
+                              color: ParishColors.goldAccent,
+                              letterSpacing: 2.0,
                             ),
                           ),
+                          const SizedBox(height: 2),
                           Text(
-                            'Manage account credentials, appearance theme, and security access',
-                            style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                            'ParishServe v1.0.0 • St. John Paul II Parish, Diocese of San Pablo',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Responsive Grid Layout
-                  if (isDesktop)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Left Column: Profile Hero Card
-                        Expanded(
-                          flex: 4,
-                          child: Column(
-                            children: [
-                              _buildProfileHeroCard(fullName, role, userId, username, isStaff),
-                              const SizedBox(height: 20),
-                              _buildLogoutButton(context),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-
-                        // Right Column: Credentials, Preferences, Security & Legal
-                        Expanded(
-                          flex: 6,
-                          child: Column(
-                            children: [
-                              _buildCredentialsCard(fullName, username, email, userId, role, isStaff),
-                              const SizedBox(height: 20),
-                              _buildPreferencesCard(user),
-                              const SizedBox(height: 20),
-                              _buildSecurityCard(context, email),
-                              const SizedBox(height: 20),
-                              _buildLegalGovernanceCard(context),
-                            ],
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    Column(
-                      children: [
-                        _buildProfileHeroCard(fullName, role, userId, username, isStaff),
-                        const SizedBox(height: 20),
-                        _buildCredentialsCard(fullName, username, email, userId, role, isStaff),
-                        const SizedBox(height: 20),
-                        _buildPreferencesCard(user),
-                        const SizedBox(height: 20),
-                        _buildSecurityCard(context, email),
-                        const SizedBox(height: 20),
-                        _buildLegalGovernanceCard(context),
-                        const SizedBox(height: 24),
-                        _buildLogoutButton(context),
-                      ],
                     ),
-
-                  const SizedBox(height: 32),
-
-                  // Footer Institutional Branding
-                  Center(
-                    child: Column(
-                      children: [
-                        const Text(
-                          'TOTUS TUUS',
-                          style: TextStyle(
-                            fontFamily: 'serif',
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            fontStyle: FontStyle.italic,
-                            color: ParishColors.goldAccent,
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'ParishServe v1.0.0 • St. John Paul II Parish, Diocese of San Pablo',
-                          style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
+                    const SizedBox(height: 12),
+                  ],
+                ),
               ),
             ),
           ),
@@ -52507,17 +52518,472 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   // ===========================================================================
-  // Profile Hero Card (Identity & Badge)
+  // Hero banner + overlapping identity card
   // ===========================================================================
 
-  Widget _buildProfileHeroCard(String fullName, String role, String userId, String username, bool isStaff) {
+  Widget _buildIdentityHeader(
+      BuildContext context, {
+        required bool isWide,
+        required bool isMobile,
+        required String fullName,
+        required String role,
+        required String userId,
+        required String username,
+        required bool isStaff,
+      }) {
+    final double bannerHeight = isMobile ? 190 : 180;
+    const double overlap = 48;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: bannerHeight,
+          child: _buildHeroBanner(isMobile),
+        ),
+        Padding(
+          padding: EdgeInsets.only(
+            top: bannerHeight - overlap,
+            left: isMobile ? 10 : 24,
+            right: isMobile ? 10 : 24,
+          ),
+          child: _buildIdentityCard(
+            context,
+            isWide: isWide,
+            isMobile: isMobile,
+            fullName: fullName,
+            role: role,
+            userId: userId,
+            username: username,
+            isStaff: isStaff,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeroBanner(bool isMobile) {
+    final fade = ParishColors.cardWhite;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'images/jp2-bg.png',
+              fit: BoxFit.cover,
+              alignment: const Alignment(0.35, -0.55),
+              errorBuilder: (_, __, ___) => Container(color: ParishColors.marianBlueSurface),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    fade.withOpacity(0.96),
+                    fade.withOpacity(isMobile ? 0.88 : 0.80),
+                    fade.withOpacity(isMobile ? 0.25 : 0.0),
+                  ],
+                  stops: [0.0, isMobile ? 0.62 : 0.45, isMobile ? 1.0 : 0.85],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, fade.withOpacity(0.55)],
+                  stops: const [0.55, 1.0],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(isMobile ? 18 : 28, isMobile ? 18 : 22, isMobile ? 14 : 20, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 56,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: ParishColors.goldAccent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'User Profile & System Preferences',
+                  style: TextStyle(
+                    fontFamily: 'Georgia',
+                    fontFamilyFallback: const ['Times New Roman', 'serif'],
+                    fontSize: isMobile ? 24 : 36,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Manage account credentials, appearance theme, and security access',
+                  style: TextStyle(
+                    fontSize: isMobile ? 12.5 : 14,
+                    fontStyle: FontStyle.italic,
+                    color: ParishColors.textDark.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Identity Card (avatar, name, role, ID, status, and log out on wide screens)
+  // ===========================================================================
+
+  Widget _buildIdentityCard(
+      BuildContext context, {
+        required bool isWide,
+        required bool isMobile,
+        required String fullName,
+        required String role,
+        required String userId,
+        required String username,
+        required bool isStaff,
+      }) {
+    final chips = Wrap(
+      alignment: isWide ? WrapAlignment.start : WrapAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _buildRoleChip(role),
+        _buildIdChip(userId, isStaff),
+        _buildStatusBadge(),
+      ],
+    );
+
+    final nameBlock = Column(
+      crossAxisAlignment: isWide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          fullName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: isWide ? TextAlign.start : TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Georgia',
+            fontFamilyFallback: const ['Times New Roman', 'serif'],
+            fontSize: isWide ? 26 : 22,
+            fontWeight: FontWeight.w800,
+            color: ParishColors.textDark,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '@$username',
+          style: TextStyle(fontSize: 13.5, color: ParishColors.textMuted, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 12),
+        chips,
+      ],
+    );
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 18 : 24),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: isWide
+          ? Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildAvatar(fullName, 104),
+          const SizedBox(width: 24),
+          Expanded(child: nameBlock),
+          const SizedBox(width: 20),
+          SizedBox(width: 220, child: _buildLogoutButton(context, compact: true)),
+        ],
+      )
+          : Column(
+        children: [
+          _buildAvatar(fullName, 96),
+          const SizedBox(height: 14),
+          nameBlock,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(String fullName, double size) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: ParishColors.marianBlueSurface,
+              border: Border.all(color: ParishColors.goldAccent, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: ParishColors.goldAccent.withOpacity(0.25),
+                  blurRadius: 16,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                fullName.isNotEmpty ? fullName[0].toUpperCase() : 'P',
+                style: TextStyle(
+                  fontFamily: 'Georgia',
+                  fontFamilyFallback: const ['Times New Roman', 'serif'],
+                  fontSize: size * 0.42,
+                  fontWeight: FontWeight.bold,
+                  color: ParishColors.marianBlueAdaptive,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: ParishColors.oliveGreen,
+                shape: BoxShape.circle,
+                border: Border.all(color: ParishColors.cardWhite, width: 3),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleChip(String role) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: ParishColors.marianBlueSurface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ParishColors.marianBlueAdaptive.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.verified_user_outlined, size: 14, color: ParishColors.marianBlueAdaptive),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              role,
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdChip(String userId, bool isStaff) {
+    return InkWell(
+      onTap: () => _copyToClipboard(userId, isStaff ? 'Staff ID' : 'Parishioner ID'),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: ParishColors.backgroundLight,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: ParishColors.borderGrey),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${isStaff ? "Staff" : "Account"} ID: $userId',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.copy, size: 13, color: ParishColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: ParishColors.oliveGreen.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: ParishColors.oliveGreen,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'ACCOUNT ACTIVE & VERIFIED',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.oliveGreen,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Segmented Section Tabs
+  // ===========================================================================
+
+  Widget _buildSectionTabs(bool isMobile) {
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Row(
+        children: [
+          for (final s in _ProfileSection.values)
+            Expanded(child: _buildTabItem(s, isMobile)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabItem(_ProfileSection s, bool isMobile) {
+    final selected = _section == s;
+    final Color fg = selected ? Colors.white : ParishColors.textMuted;
+
+    final content = isMobile
+        ? Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(s.icon, size: 20, color: fg),
+        const SizedBox(height: 4),
+        Text(s.label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: fg)),
+      ],
+    )
+        : Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(s.icon, size: 18, color: fg),
+        const SizedBox(width: 8),
+        Text(s.label, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: fg)),
+      ],
+    );
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (_section != s) setState(() => _section = s);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: EdgeInsets.symmetric(vertical: isMobile ? 10 : 12, horizontal: 6),
+          decoration: BoxDecoration(
+            color: selected ? ParishColors.marianBlueAdaptive : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: selected
+                ? [
+              BoxShadow(
+                color: ParishColors.marianBlueAdaptive.withOpacity(0.30),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ]
+                : const [],
+          ),
+          child: Center(child: FittedBox(fit: BoxFit.scaleDown, child: content)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionBody(
+      BuildContext context,
+      UserModel? user,
+      String fullName,
+      String email,
+      bool isWide,
+      ) {
+    switch (_section) {
+      case _ProfileSection.account:
+        return _buildCredentialsCard(fullName, email, isWide);
+      case _ProfileSection.appearance:
+        return _buildPreferencesCard(user);
+      case _ProfileSection.security:
+        return Column(
+          children: [
+            _buildSecurityCard(context, email),
+            const SizedBox(height: 16),
+            _buildLegalGovernanceCard(context),
+          ],
+        );
+    }
+  }
+
+  // ===========================================================================
+  // Shared card helpers
+  // ===========================================================================
+
+  Widget _card({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: ParishColors.borderGrey, width: 1.5),
+        border: Border.all(color: ParishColors.borderGrey),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -52526,108 +52992,44 @@ class _ProfileViewState extends State<ProfileView> {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: ParishColors.marianBlueSurface,
-              border: Border.all(color: ParishColors.goldAccent, width: 3),
-            ),
-            child: Center(
-              child: Text(
-                fullName.isNotEmpty ? fullName[0].toUpperCase() : 'P',
-                style: TextStyle(
-                  fontSize: 38,
-                  fontWeight: FontWeight.bold,
-                  color: ParishColors.marianBlueAdaptive,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
+      child: child,
+    );
+  }
 
-          Text(
-            fullName,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+  Widget _cardHeader(IconData icon, String title) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 22,
+          decoration: BoxDecoration(
+            color: ParishColors.goldAccent,
+            borderRadius: BorderRadius.circular(2),
           ),
-          const SizedBox(height: 3),
-          Text(
-            '@$username',
-            style: TextStyle(fontSize: 13, color: ParishColors.textMuted, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(width: 10),
+        Icon(icon, color: ParishColors.marianBlueAdaptive, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
           ),
-          const SizedBox(height: 10),
+        ),
+      ],
+    );
+  }
 
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: ParishColors.marianBlueSurface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: ParishColors.marianBlueAdaptive.withOpacity(0.3)),
-            ),
-            child: Text(
-              role,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          InkWell(
-            onTap: () => _copyToClipboard(userId, isStaff ? 'Staff ID' : 'Parishioner ID'),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: ParishColors.backgroundLight,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ParishColors.borderGrey),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${isStaff ? "Staff" : "Account"} ID: $userId',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(Icons.copy, size: 13, color: ParishColors.textMuted),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Divider(),
-          const SizedBox(height: 6),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: ParishColors.oliveGreen,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              const Text(
-                'ACCOUNT ACTIVE & VERIFIED',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.bold,
-                  color: ParishColors.oliveGreen,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ],
+  Widget _iconBadge(IconData icon, {Color? color}) {
+    final c = color ?? ParishColors.marianBlueAdaptive;
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: ParishColors.marianBlueSurface,
+        borderRadius: BorderRadius.circular(12),
       ),
+      child: Icon(icon, color: c, size: 20),
     );
   }
 
@@ -52635,59 +53037,55 @@ class _ProfileViewState extends State<ProfileView> {
   // Credentials & Assignment Section Card
   // ===========================================================================
 
-  Widget _buildCredentialsCard(String fullName, String username, String email, String userId, String role, bool isStaff) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.borderGrey),
+  Widget _buildCredentialsCard(String fullName, String email, bool isWide) {
+    final nameTile = _buildInfoTile(
+      Icons.person_outline,
+      'Full Legal Name',
+      fullName,
+    );
+
+    final emailTile = _buildInfoTile(
+      Icons.email_outlined,
+      'Registered Email Address',
+      email,
+      onTap: () => _copyToClipboard(email, 'Email address'),
+      trailing: IconButton(
+        icon: Icon(Icons.copy, size: 16, color: ParishColors.marianBlueAdaptive),
+        tooltip: 'Copy Email',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        onPressed: () => _copyToClipboard(email, 'Email address'),
       ),
+    );
+
+    final jurisdictionTile = _buildInfoTile(
+      Icons.church_outlined,
+      'Ecclesiastical Jurisdiction',
+      'St. John Paul II Parish • Diocese of San Pablo (Laguna)',
+    );
+
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.badge_outlined, color: ParishColors.marianBlueAdaptive, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Canonical Credentials & Assignment',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-              ),
-            ],
-          ),
-          const Divider(height: 24),
-          _buildInfoTile(
-            Icons.person_outline,
-            'Full Legal Name',
-            fullName,
-          ),
-          const Divider(height: 20),
-          _buildInfoTile(
-            Icons.email_outlined,
-            'Registered Email Address',
-            email,
-            trailing: IconButton(
-              icon: Icon(Icons.copy, size: 16, color: ParishColors.marianBlueAdaptive),
-              tooltip: 'Copy Email',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: () => _copyToClipboard(email, 'Email address'),
-            ),
-          ),
-          const Divider(height: 20),
-          _buildInfoTile(
-            Icons.church_outlined,
-            'Ecclesiastical Jurisdiction',
-            'St. John Paul II Parish • Diocese of San Pablo (Laguna)',
-          ),
-          const Divider(height: 20),
-          _buildInfoTile(
-            Icons.verified_user_outlined,
-            'Authorization Status',
-            isStaff ? 'Canonical Staff Authorization Active' : 'Verified Registered Parishioner',
-          ),
+          _cardHeader(Icons.badge_outlined, 'Canonical Credentials & Assignment'),
+          const SizedBox(height: 16),
+          if (isWide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: nameTile),
+                const SizedBox(width: 12),
+                Expanded(child: emailTile),
+              ],
+            )
+          else ...[
+            nameTile,
+            const SizedBox(height: 12),
+            emailTile,
+          ],
+          const SizedBox(height: 12),
+          jurisdictionTile,
         ],
       ),
     );
@@ -52698,44 +53096,159 @@ class _ProfileViewState extends State<ProfileView> {
   // ===========================================================================
 
   Widget _buildPreferencesCard(UserModel? user) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.borderGrey),
-      ),
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _cardHeader(Icons.palette_outlined, 'Appearance & Theme Settings'),
+          const SizedBox(height: 16),
+
+          // Visual theme picker
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.palette_outlined, color: ParishColors.marianBlueAdaptive, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Appearance & Theme Settings',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+              Expanded(child: _buildThemeOption(dark: false, label: 'Light', user: user)),
+              const SizedBox(width: 12),
+              Expanded(child: _buildThemeOption(dark: true, label: 'Marian Nocturnal', user: user)),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Original switch retained as a quick toggle
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ParishColors.borderGrey),
+            ),
+            child: SwitchListTile(
+              activeColor: ParishColors.marianBlueAdaptive,
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(
+                AppThemeController.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                color: ParishColors.goldAccent,
+              ),
+              title: const Text('Dark Mode (Marian Nocturnal Theme)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              subtitle: const Text('Saved per account across sign-in sessions', style: TextStyle(fontSize: 12)),
+              value: AppThemeController.isDarkMode,
+              onChanged: (val) {
+                AppThemeController.toggleTheme(val, userId: user?.userId);
+                setState(() {});
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeOption({required bool dark, required String label, required UserModel? user}) {
+    final selected = AppThemeController.isDarkMode == dark;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (!selected) {
+            AppThemeController.toggleTheme(dark, userId: user?.userId);
+            setState(() {});
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: selected ? ParishColors.marianBlueSurface : Colors.transparent,
+            border: Border.all(
+              color: selected ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildThemePreview(dark),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(
+                    dark ? Icons.dark_mode : Icons.light_mode,
+                    size: 16,
+                    color: ParishColors.goldAccent,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    ),
+                  ),
+                  Icon(
+                    selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: selected ? ParishColors.marianBlueAdaptive : ParishColors.textMuted,
+                  ),
+                ],
               ),
             ],
           ),
-          const Divider(height: 24),
+        ),
+      ),
+    );
+  }
 
-          // Active Dark Mode Switch (Persisted to Database)
-          SwitchListTile(
-            activeColor: ParishColors.marianBlueAdaptive,
-            contentPadding: EdgeInsets.zero,
-            secondary: Icon(
-              AppThemeController.isDarkMode ? Icons.dark_mode : Icons.light_mode,
-              color: ParishColors.goldAccent,
+  Widget _buildThemePreview(bool dark) {
+    final bg = dark ? const Color(0xFF0E1525) : const Color(0xFFF3F5FA);
+    final panel = dark ? const Color(0xFF1A2440) : Colors.white;
+    final line = dark ? const Color(0xFF3A476E) : const Color(0xFFD5DBE8);
+
+    BoxDecoration lineDeco = BoxDecoration(color: line, borderRadius: BorderRadius.circular(2));
+
+    return Container(
+      height: 84,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 18,
+            decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(5)),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(5)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 28,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: ParishColors.goldAccent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(height: 4, decoration: lineDeco),
+                  const SizedBox(height: 5),
+                  SizedBox(
+                    width: 40,
+                    child: Container(height: 4, decoration: lineDeco),
+                  ),
+                ],
+              ),
             ),
-            title: const Text('Dark Mode (Marian Nocturnal Theme)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            subtitle: const Text('Saved per account across sign-in sessions', style: TextStyle(fontSize: 12)),
-            value: AppThemeController.isDarkMode,
-            onChanged: (val) {
-              AppThemeController.toggleTheme(val, userId: user?.userId);
-              setState(() {});
-            },
           ),
         ],
       ),
@@ -52747,75 +53260,68 @@ class _ProfileViewState extends State<ProfileView> {
   // ===========================================================================
 
   Widget _buildSecurityCard(BuildContext context, String email) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.borderGrey),
-      ),
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.security, color: ParishColors.marianBlueAdaptive, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Security Governance & Privacy',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-              ),
-            ],
-          ),
-          const Divider(height: 24),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Account Password', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text('Update via secure email OTP', style: TextStyle(fontSize: 11, color: ParishColors.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.2),
-                  foregroundColor: ParishColors.marianBlueAdaptive,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                ),
-                onPressed: () => showForgotPasswordDialog(context, initialIdentifier: email),
-                icon: const Icon(Icons.lock_reset, size: 15),
-                label: const Text('Change', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+          _cardHeader(Icons.security, 'Security Governance & Privacy'),
+          const SizedBox(height: 16),
 
           Container(
-            width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: ParishColors.borderGrey),
+            ),
+            child: Row(
+              children: [
+                _iconBadge(Icons.lock_outline),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Account Password', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Text('Update via secure email OTP', style: TextStyle(fontSize: 11, color: ParishColors.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.2),
+                    foregroundColor: ParishColors.marianBlueAdaptive,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  ),
+                  onPressed: () => showForgotPasswordDialog(context, initialIdentifier: email),
+                  icon: const Icon(Icons.lock_reset, size: 15),
+                  label: const Text('Change', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: ParishColors.oliveGreen.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.30)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.shield_outlined, color: ParishColors.oliveGreen, size: 18),
-                const SizedBox(width: 8),
+                const Icon(Icons.shield_outlined, color: ParishColors.oliveGreen, size: 20),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'Protected under Philippine Data Privacy Act of 2012 (RA 10173) and Codex Iuris Canonici (Canon 535). All sacramental entries and financial registers are confidential and protected by Row-Level Security (RLS).',
-                    style: TextStyle(fontSize: 11, color: ParishColors.textMuted, height: 1.35),
+                    style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted, height: 1.4),
                   ),
                 ),
               ],
@@ -52831,39 +53337,26 @@ class _ProfileViewState extends State<ProfileView> {
   // ===========================================================================
 
   Widget _buildLegalGovernanceCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.borderGrey),
-      ),
+    return _card(
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          _iconBadge(Icons.policy_outlined, color: ParishColors.marianBlue),
+          const SizedBox(width: 12),
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.policy_outlined, color: ParishColors.marianBlue, size: 22),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Legal & Governance', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 2),
-                      Text('Terms & RA 10173 Privacy Policy', style: TextStyle(fontSize: 11, color: ParishColors.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
-                ),
+                Text('Legal & Governance', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text('Terms & RA 10173 Privacy Policy', style: TextStyle(fontSize: 11, color: ParishColors.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          TextButton(
+          TextButton.icon(
             onPressed: () => showTermsAndConditionsModal(context, isReadOnly: true),
-            child: const Text('View', style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+            icon: const Icon(Icons.arrow_forward_rounded, size: 16, color: ParishColors.marianBlue),
+            label: const Text('View', style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
           ),
         ],
       ),
@@ -52874,22 +53367,26 @@ class _ProfileViewState extends State<ProfileView> {
   // Logout Button
   // ===========================================================================
 
-  Widget _buildLogoutButton(BuildContext context) {
+  Widget _buildLogoutButton(BuildContext context, {bool compact = false}) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
+      height: compact ? 46 : 52,
       child: ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
           backgroundColor: ParishColors.mercyRed,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 1,
         ),
         onPressed: () => _confirmLogout(context),
-        icon: const Icon(Icons.logout, size: 20),
-        label: const Text(
+        icon: Icon(Icons.logout, size: compact ? 18 : 20),
+        label: Text(
           'LOG OUT OF SYSTEM',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+          style: TextStyle(
+            fontSize: compact ? 13 : 15,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
         ),
       ),
     );
@@ -52899,27 +53396,50 @@ class _ProfileViewState extends State<ProfileView> {
   // Info Tile Component
   // ===========================================================================
 
-  Widget _buildInfoTile(IconData icon, String label, String value, {Widget? trailing}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(icon, color: ParishColors.marianBlueAdaptive, size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildInfoTile(
+      IconData icon,
+      String label,
+      String value, {
+        Widget? trailing,
+        VoidCallback? onTap,
+      }) {
+    return Material(
+      color: ParishColors.backgroundLight,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: ParishColors.borderGrey),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(label, style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
-              const SizedBox(height: 2),
-              Text(
-                value,
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+              _iconBadge(icon),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted)),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    ),
+                  ],
+                ),
               ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing,
+              ],
             ],
           ),
         ),
-        if (trailing != null) trailing,
-      ],
+      ),
     );
   }
 }
@@ -63383,9 +63903,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
           color: ParishColors.marianBlue,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 16 : 28,
-              vertical: isMobile ? 14 : 24,
+            padding: EdgeInsets.fromLTRB(
+              isMobile ? 16 : 28,
+              isMobile ? 14 : 24,
+              isMobile ? 16 : 28,
+              isMobile ? 110 : 36,
             ),
             child: Center(
               child: ConstrainedBox(
@@ -100132,9 +100654,11 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                         color: ParishColors.marianBlue,
                                         child: SingleChildScrollView(
                                                 physics: const AlwaysScrollableScrollPhysics(),
-                                                padding: EdgeInsets.symmetric(
-                                                        horizontal: isMobile ? 16 : 28,
-                                                        vertical: isMobile ? 14 : 24,
+                                                padding: EdgeInsets.fromLTRB(
+                                                        isMobile ? 16 : 28,
+                                                        isMobile ? 14 : 24,
+                                                        isMobile ? 16 : 28,
+                                                        isMobile ? 110 : 36,
                                                 ),
                                                 child: Center(
                                                         child: ConstrainedBox(
@@ -107892,9 +108416,11 @@ class _SmartArchiveViewState extends State<SmartArchiveView> {
               color: ParishColors.marianBlue,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.symmetric(
-                  horizontal: isMobile ? 16 : 28,
-                  vertical: isMobile ? 14 : 24,
+                padding: EdgeInsets.fromLTRB(
+                  isMobile ? 16 : 28,
+                  isMobile ? 14 : 24,
+                  isMobile ? 16 : 28,
+                  isMobile ? 110 : 36,
                 ),
                 child: Center(
                   child: ConstrainedBox(
