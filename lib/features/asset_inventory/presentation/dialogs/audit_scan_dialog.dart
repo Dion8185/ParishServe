@@ -40,8 +40,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _nfcInputController = TextEditingController();
   final TextEditingController _auditNotesController = TextEditingController();
-  final TextEditingController _quantityChangeReasonController = TextEditingController();
-  final TextEditingController _quantityInputController = TextEditingController();
+  final TextEditingController _quantityChangeReasonController =
+      TextEditingController();
+  final TextEditingController _quantityInputController =
+      TextEditingController();
 
   MobileScannerController? _scannerController;
 
@@ -74,7 +76,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
   final List<String> _operationalStatusOptions = [
     'Available',
-    'In Use',
+
     'In Storage',
     'Under Maintenance',
     'Damaged',
@@ -345,7 +347,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       } else {
         setState(() {
           _searchError =
-          'No item record found for "$clean". Please check the Control Number, RFID tag, or QR Code.';
+              'No item record found for "$clean". Please check the Control Number, RFID tag, or QR Code.';
           _isSearching = false;
           _hasProcessedScan = false;
         });
@@ -389,8 +391,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           if (filePath != null && filePath.isNotEmpty) {
             _initScannerController();
             if (_scannerController != null) {
-              final BarcodeCapture? capture =
-              await _scannerController!.analyzeImage(filePath);
+              final BarcodeCapture? capture = await _scannerController!
+                  .analyzeImage(filePath);
               if (capture != null && capture.barcodes.isNotEmpty) {
                 final raw = capture.barcodes.first.rawValue;
                 if (raw != null) {
@@ -406,7 +408,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No clear QR code detected in the selected image. Please try another photo.'),
+            content: Text(
+              'No clear QR code detected in the selected image. Please try another photo.',
+            ),
             backgroundColor: ParishColors.goldAccent,
           ),
         );
@@ -425,7 +429,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
     if (qtyChange != 0 && _quantityChangeReasonController.text.trim().isEmpty) {
       setState(() {
-        _searchError = 'Please provide a reason for the quantity change (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"} units).';
+        _searchError =
+            'Please provide a reason for the quantity change (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"} units).';
       });
       return;
     }
@@ -461,7 +466,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
       String qtySummary = '$newQty units';
       if (qtyChange != 0) {
-        qtySummary = '$newQty units (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"})';
+        qtySummary =
+            '$newQty units (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"})';
       }
 
       setState(() {
@@ -529,10 +535,15 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             children: [
               // Header Banner
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: ParishColors.marianBlueSurface,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
                   border: Border(bottom: BorderSide(color: borderGrey)),
                 ),
                 child: Row(
@@ -543,7 +554,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         color: ParishColors.marianBlue,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 20),
+                      child: const Icon(
+                        Icons.qr_code_scanner,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -552,7 +567,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         children: [
                           Text(
                             'Inventory Item Audit',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: textDark,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -585,21 +604,36 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       if (_successBannerMessage != null) ...[
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                           margin: const EdgeInsets.only(bottom: 14),
                           decoration: BoxDecoration(
                             color: ParishColors.oliveGreenSurface,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.4)),
+                            border: Border.all(
+                              color: ParishColors.oliveGreen.withValues(
+                                alpha: 0.4,
+                              ),
+                            ),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20),
+                              const Icon(
+                                Icons.check_circle,
+                                color: ParishColors.oliveGreen,
+                                size: 20,
+                              ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
                                   _successBannerMessage!,
-                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.oliveGreen,
+                                  ),
                                 ),
                               ),
                               IconButton(
@@ -607,7 +641,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                                 color: ParishColors.oliveGreen,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
-                                onPressed: () => setState(() => _successBannerMessage = null),
+                                onPressed: () => setState(
+                                  () => _successBannerMessage = null,
+                                ),
                               ),
                             ],
                           ),
@@ -626,12 +662,20 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 20),
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: ParishColors.mercyRed,
+                                size: 20,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   _searchError!,
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.mercyRed,
+                                  ),
                                 ),
                               ),
                             ],
@@ -645,9 +689,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         else if (_currentScanMode == AuditScanMode.liveCamera)
                           _buildLiveCameraScannerView()
                         else if (_currentScanMode == AuditScanMode.nfcListening)
-                            _buildNfcReaderView()
-                          else if (_currentScanMode == AuditScanMode.manualEntry)
-                              _buildManualLookupView(),
+                          _buildNfcReaderView()
+                        else if (_currentScanMode == AuditScanMode.manualEntry)
+                          _buildManualLookupView(),
                       ],
 
                       if (_isSearching)
@@ -666,16 +710,22 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
               // Modal Footer Actions
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: cardWhite,
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(20),
+                  ),
                   border: Border(top: BorderSide(color: borderGrey)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    if (_currentScanMode != AuditScanMode.selectMode && _scannedAsset == null)
+                    if (_currentScanMode != AuditScanMode.selectMode &&
+                        _scannedAsset == null)
                       TextButton.icon(
                         onPressed: _resetToModeSelection,
                         icon: const Icon(Icons.swap_horiz, size: 16),
@@ -684,7 +734,13 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                     else
                       TextButton(
                         onPressed: _handleModalDismiss,
-                        child: Text('Finish & Close', style: TextStyle(color: textMuted, fontWeight: FontWeight.bold)),
+                        child: Text(
+                          'Finish & Close',
+                          style: TextStyle(
+                            color: textMuted,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
 
                     if (_scannedAsset != null)
@@ -694,7 +750,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(color: borderGrey),
                               foregroundColor: textDark,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
                             ),
                             onPressed: _armForNextScan,
                             icon: const Icon(Icons.skip_next, size: 16),
@@ -705,20 +764,41 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: ParishColors.oliveGreen,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                             onPressed: _isRecordingAudit
                                 ? null
                                 : () => _commitAuditInspection(
-                              _currentScanMode == AuditScanMode.nfcListening ? 'RFID_NFC' : 'QR_SCAN',
-                            ),
+                                    _currentScanMode ==
+                                            AuditScanMode.nfcListening
+                                        ? 'RFID_NFC'
+                                        : 'QR_SCAN',
+                                  ),
                             icon: _isRecordingAudit
-                                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                : const Icon(Icons.check_circle_outline, size: 18),
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.check_circle_outline,
+                                    size: 18,
+                                  ),
                             label: Text(
                               _isRecordingAudit ? 'Saving...' : 'Save Audit',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ],
@@ -746,7 +826,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       children: [
         Text(
           'Choose Audit Method',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: textDark,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
@@ -767,7 +851,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
         _buildMethodCard(
           title: 'Wireless RFID / NFC Sensor',
-          subtitle: 'Detect wireless RFID or NFC tags on metal vessels and furnishings.',
+          subtitle:
+              'Detect wireless RFID or NFC tags on metal vessels and furnishings.',
           icon: Icons.nfc,
           badgeLabel: 'WIRELESS',
           badgeColor: ParishColors.goldAccent,
@@ -777,7 +862,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
         _buildMethodCard(
           title: 'Control Number Search',
-          subtitle: 'Search directly by Control Number or item name with instant suggestions.',
+          subtitle:
+              'Search directly by Control Number or item name with instant suggestions.',
           icon: Icons.keyboard_outlined,
           badgeLabel: 'MANUAL',
           badgeColor: ParishColors.oliveGreen,
@@ -841,7 +927,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1.5,
+                        ),
                         decoration: BoxDecoration(
                           color: badgeColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
@@ -891,16 +980,27 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.desktop_windows_outlined, size: 44, color: ParishColors.marianBlueLight),
+            const Icon(
+              Icons.desktop_windows_outlined,
+              size: 44,
+              color: ParishColors.marianBlueLight,
+            ),
             const SizedBox(height: 10),
             const Text(
               'Desktop Environment Detected',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
               'Upload a QR photo or use the Control Number search to audit items.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 11.5),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 11.5,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -910,13 +1010,19 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
               alignment: WrapAlignment.center,
               children: [
                 ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: _pickImageAndScan,
                   icon: const Icon(Icons.image, size: 18),
                   label: const Text('Upload QR Photo'),
                 ),
                 OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white70), foregroundColor: Colors.white),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white70),
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: _startManualLookup,
                   icon: const Icon(Icons.keyboard, size: 18),
                   label: const Text('Search by Number'),
@@ -936,11 +1042,19 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           children: [
             const Row(
               children: [
-                Icon(Icons.videocam_outlined, color: ParishColors.marianBlue, size: 18),
+                Icon(
+                  Icons.videocam_outlined,
+                  color: ParishColors.marianBlue,
+                  size: 18,
+                ),
                 SizedBox(width: 6),
                 Text(
                   'Camera Scanner Active',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.marianBlue),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: ParishColors.marianBlue,
+                  ),
                 ),
               ],
             ),
@@ -976,12 +1090,25 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.no_photography_outlined, size: 40, color: ParishColors.mercyRed),
+                              const Icon(
+                                Icons.no_photography_outlined,
+                                size: 40,
+                                color: ParishColors.mercyRed,
+                              ),
                               const SizedBox(height: 10),
-                              const Text('Camera Unavailable', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              const Text(
+                                'Camera Unavailable',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               const SizedBox(height: 14),
                               ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: ParishColors.marianBlue,
+                                  foregroundColor: Colors.white,
+                                ),
                                 onPressed: _pickImageAndScan,
                                 icon: const Icon(Icons.image, size: 16),
                                 label: const Text('Upload QR Photo'),
@@ -998,7 +1125,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   width: 170,
                   height: 170,
                   decoration: BoxDecoration(
-                    border: Border.all(color: ParishColors.goldAccent, width: 2.5),
+                    border: Border.all(
+                      color: ParishColors.goldAccent,
+                      width: 2.5,
+                    ),
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
@@ -1006,7 +1136,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 Positioned(
                   bottom: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.65),
                       borderRadius: BorderRadius.circular(20),
@@ -1017,7 +1150,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         IconButton(
                           icon: Icon(
                             _isTorchOn ? Icons.flash_on : Icons.flash_off,
-                            color: _isTorchOn ? ParishColors.goldAccent : Colors.white,
+                            color: _isTorchOn
+                                ? ParishColors.goldAccent
+                                : Colors.white,
                             size: 20,
                           ),
                           onPressed: () async {
@@ -1030,7 +1165,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           tooltip: 'Flashlight',
                         ),
                         IconButton(
-                          icon: const Icon(Icons.cameraswitch, color: Colors.white, size: 20),
+                          icon: const Icon(
+                            Icons.cameraswitch,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                           onPressed: () async {
                             if (_scannerController == null) return;
                             try {
@@ -1040,7 +1179,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           tooltip: 'Switch Camera',
                         ),
                         IconButton(
-                          icon: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 20),
+                          icon: const Icon(
+                            Icons.photo_library_outlined,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                           onPressed: _pickImageAndScan,
                           tooltip: 'Upload QR Photo',
                         ),
@@ -1070,7 +1213,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       decoration: BoxDecoration(
         color: ParishColors.goldLight,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.goldAccent.withValues(alpha: 0.6)),
+        border: Border.all(
+          color: ParishColors.goldAccent.withValues(alpha: 0.6),
+        ),
       ),
       child: Column(
         children: [
@@ -1083,7 +1228,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   SizedBox(width: 8),
                   Text(
                     'Wireless Sensor Active',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ParishColors.goldAccent),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: ParishColors.goldAccent,
+                    ),
                   ),
                 ],
               ),
@@ -1098,13 +1247,24 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),
-            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            child: const Icon(Icons.sensors, size: 42, color: ParishColors.goldAccent),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.sensors,
+              size: 42,
+              color: ParishColors.goldAccent,
+            ),
           ),
           const SizedBox(height: 12),
           Text(
             'Hold Device Near Wireless Tag',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: textDark),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13.5,
+              color: textDark,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
@@ -1119,14 +1279,22 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
               Expanded(
                 child: TextField(
                   controller: _nfcInputController,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'e.g. 04:A2:4B:9C',
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   onSubmitted: _searchAndLoadAsset,
                 ),
@@ -1136,11 +1304,19 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ParishColors.goldAccent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 onPressed: () => _searchAndLoadAsset(_nfcInputController.text),
-                child: const Text('Find Tag', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'Find Tag',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
@@ -1172,7 +1348,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Search by Control Number or Name', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+              const Text(
+                'Search by Control Number or Name',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+              ),
               IconButton(
                 icon: const Icon(Icons.close, size: 16),
                 padding: EdgeInsets.zero,
@@ -1182,7 +1361,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             ],
           ),
           const SizedBox(height: 4),
-          Text('Enter the Control Number or item name to locate it directly.', style: TextStyle(fontSize: 11, color: textMuted)),
+          Text(
+            'Enter the Control Number or item name to locate it directly.',
+            style: TextStyle(fontSize: 11, color: textMuted),
+          ),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -1190,25 +1372,40 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 child: TextField(
                   controller: _manualInputController,
                   autofocus: true,
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'e.g. C-FF 2026-001 or Church Pew',
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     suffixIcon: _isLoadingSuggestions
-                        ? const Padding(padding: EdgeInsets.all(10), child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)))
+                        ? const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
                         : (_manualInputController.text.isNotEmpty
-                        ? IconButton(
-                      icon: const Icon(Icons.clear, size: 16),
-                      onPressed: () {
-                        _manualInputController.clear();
-                        setState(() => _liveSuggestions = []);
-                      },
-                    )
-                        : null),
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _manualInputController.clear();
+                                    setState(() => _liveSuggestions = []);
+                                  },
+                                )
+                              : null),
                   ),
                   onSubmitted: _searchAndLoadAsset,
                 ),
@@ -1218,12 +1415,21 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ParishColors.marianBlue,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                onPressed: () => _searchAndLoadAsset(_manualInputController.text),
+                onPressed: () =>
+                    _searchAndLoadAsset(_manualInputController.text),
                 icon: const Icon(Icons.search, size: 16),
-                label: const Text('Search', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                label: const Text(
+                  'Search',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
@@ -1234,7 +1440,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: ParishColors.marianBlue.withValues(alpha: 0.3),
+                ),
               ),
               child: ListView.separated(
                 shrinkWrap: true,
@@ -1249,10 +1457,17 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       _searchAndLoadAsset(suggestion.controlNumber);
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       child: Row(
                         children: [
-                          Icon(suggestion.classificationIcon, size: 16, color: ParishColors.marianBlue),
+                          Icon(
+                            suggestion.classificationIcon,
+                            size: 16,
+                            color: ParishColors.marianBlue,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(
@@ -1260,14 +1475,35 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                               children: [
                                 Row(
                                   children: [
-                                    Text(suggestion.controlNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ParishColors.marianBlue)),
+                                    Text(
+                                      suggestion.controlNumber,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: ParishColors.marianBlue,
+                                      ),
+                                    ),
                                     const SizedBox(width: 6),
                                     Flexible(
-                                      child: Text('• ${suggestion.itemName}', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: textDark), overflow: TextOverflow.ellipsis),
+                                      child: Text(
+                                        '• ${suggestion.itemName}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: textDark,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                Text('Location: ${suggestion.displayLocation} • Qty: ${suggestion.quantity} • ${suggestion.conditionStatus}', style: TextStyle(fontSize: 10.5, color: textMuted)),
+                                Text(
+                                  'Location: ${suggestion.displayLocation} • Qty: ${suggestion.quantity} • ${suggestion.conditionStatus}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: textMuted,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1319,11 +1555,19 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20),
+                  const Icon(
+                    Icons.check_circle,
+                    color: ParishColors.oliveGreen,
+                    size: 20,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Item Found in Registry',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.oliveGreen),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: ParishColors.oliveGreen,
+                    ),
                   ),
                 ],
               ),
@@ -1335,7 +1579,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 ),
                 child: Text(
                   '${asset.quantity} unit(s) registered',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
                 ),
               ),
             ],
@@ -1377,25 +1625,40 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   children: [
                     Text(
                       asset.itemName,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
                         Text(
                           'Control No: ${asset.controlNumber}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.marianBlue,
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: asset.conditionSurfaceColor,
                             borderRadius: BorderRadius.circular(3),
                           ),
                           child: Text(
                             asset.conditionStatus,
-                            style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: asset.conditionColor),
+                            style: TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.bold,
+                              color: asset.conditionColor,
+                            ),
                           ),
                         ),
                       ],
@@ -1425,34 +1688,74 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _buildSpecItem('Current Status', asset.operationalStatus)),
-                    Expanded(child: _buildSpecItem('Acquisition Date', '${asset.formattedAcquisitionDate} (${asset.modeOfAcquisition})')),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Current Status',
+                        asset.operationalStatus,
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Acquisition Date',
+                        '${asset.formattedAcquisitionDate} (${asset.modeOfAcquisition})',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: _buildSpecItem('Size / Dimensions', asset.dimensions ?? '—')),
-                    Expanded(child: _buildSpecItem('Color', asset.color ?? '—')),
-                    Expanded(child: _buildSpecItem('Brand / Model', asset.model ?? '—')),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Size / Dimensions',
+                        asset.dimensions ?? '—',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem('Color', asset.color ?? '—'),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Brand / Model',
+                        asset.model ?? '—',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: _buildSpecItem('Unit Price', asset.formattedUnitPrice)),
-                    Expanded(child: _buildSpecItem('Total Value', asset.formattedTotalCost)),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Unit Price',
+                        asset.formattedUnitPrice,
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Total Value',
+                        asset.formattedTotalCost,
+                      ),
+                    ),
                     if (asset.rfidTag != null && asset.rfidTag!.isNotEmpty)
-                      Expanded(child: _buildSpecItem('RFID Tag', asset.rfidTag!)),
+                      Expanded(
+                        child: _buildSpecItem('RFID Tag', asset.rfidTag!),
+                      ),
                   ],
                 ),
                 if (asset.others != null && asset.others!.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text('Markings / Details: ${asset.others}', style: TextStyle(fontSize: 11, color: textDark)),
+                  Text(
+                    'Markings / Details: ${asset.others}',
+                    style: TextStyle(fontSize: 11, color: textDark),
+                  ),
                 ],
                 if (asset.remarks != null && asset.remarks!.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text('Notes: ${asset.remarks}', style: TextStyle(fontSize: 11, color: textMuted)),
+                  Text(
+                    'Notes: ${asset.remarks}',
+                    style: TextStyle(fontSize: 11, color: textMuted),
+                  ),
                 ],
               ],
             ),
@@ -1478,21 +1781,34 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   children: [
                     const Text(
                       'Quantity Count & Adjustments',
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.marianBlue,
+                      ),
                     ),
                     if (qtyDiff != 0)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: qtyDiff > 0 ? ParishColors.oliveGreenSurface : ParishColors.mercyRedSurface,
+                          color: qtyDiff > 0
+                              ? ParishColors.oliveGreenSurface
+                              : ParishColors.mercyRedSurface,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          qtyDiff > 0 ? '+$qtyDiff units added' : '$qtyDiff units deducted',
+                          qtyDiff > 0
+                              ? '+$qtyDiff units added'
+                              : '$qtyDiff units deducted',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: qtyDiff > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                            color: qtyDiff > 0
+                                ? ParishColors.oliveGreen
+                                : ParishColors.mercyRed,
                           ),
                         ),
                       ),
@@ -1506,14 +1822,21 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Previous: ${asset.quantity} units', style: TextStyle(fontSize: 11, color: textMuted)),
+                          Text(
+                            'Previous: ${asset.quantity} units',
+                            style: TextStyle(fontSize: 11, color: textMuted),
+                          ),
                           const SizedBox(height: 2),
-                          Text('Updated Total: $_auditQuantity units',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: qtyDiff != 0 ? ParishColors.marianBlue : textDark,
-                              )),
+                          Text(
+                            'Updated Total: $_auditQuantity units',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: qtyDiff != 0
+                                  ? ParishColors.marianBlue
+                                  : textDark,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1522,14 +1845,17 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         IconButton(
                           style: IconButton.styleFrom(
                             backgroundColor: ParishColors.backgroundLight,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                           icon: const Icon(Icons.remove, size: 16),
                           onPressed: _auditQuantity > 0
                               ? () => setState(() {
-                            _auditQuantity--;
-                            _quantityInputController.text = '$_auditQuantity';
-                          })
+                                  _auditQuantity--;
+                                  _quantityInputController.text =
+                                      '$_auditQuantity';
+                                })
                               : null,
                         ),
                         SizedBox(
@@ -1538,8 +1864,13 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                             controller: _quantityInputController,
                             keyboardType: TextInputType.number,
                             textAlign: TextAlign.center,
-                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
                             decoration: const InputDecoration(
                               isDense: true,
                               contentPadding: EdgeInsets.symmetric(vertical: 8),
@@ -1556,7 +1887,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         IconButton(
                           style: IconButton.styleFrom(
                             backgroundColor: ParishColors.backgroundLight,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                           icon: const Icon(Icons.add, size: 16),
                           onPressed: () => setState(() {
@@ -1572,14 +1905,25 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 // Accountability Reason Required if Quantity Changed
                 if (qtyDiff != 0) ...[
                   const SizedBox(height: 10),
-                  Text('Reason for Quantity Change *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
+                  Text(
+                    'Reason for Quantity Change *',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   TextField(
                     controller: _quantityChangeReasonController,
                     decoration: const InputDecoration(
-                      hintText: 'e.g. 2 units damaged during parish event, or new donation received',
+                      hintText:
+                          'e.g. 2 units damaged during parish event, or new donation received',
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -1596,7 +1940,14 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Verified Condition *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
+                    Text(
+                      'Verified Condition *',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
                       value: _selectedCondition,
@@ -1605,11 +1956,27 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         filled: true,
                         fillColor: ParishColors.backgroundLight,
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
-                      items: _conditionOptions.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12)))).toList(),
-                      onChanged: (val) => setState(() => _selectedCondition = val!),
+                      items: _conditionOptions
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c,
+                              child: Text(
+                                c,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) =>
+                          setState(() => _selectedCondition = val!),
                     ),
                   ],
                 ),
@@ -1619,7 +1986,14 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Current Item Status *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
+                    Text(
+                      'Current Item Status *',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
                       value: _selectedStatus,
@@ -1628,11 +2002,27 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         filled: true,
                         fillColor: ParishColors.backgroundLight,
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
-                      items: _operationalStatusOptions.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12)))).toList(),
-                      onChanged: (val) => setState(() => _selectedStatus = val!),
+                      items: _operationalStatusOptions
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(
+                                s,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) =>
+                          setState(() => _selectedStatus = val!),
                     ),
                   ],
                 ),
@@ -1642,18 +2032,28 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           const SizedBox(height: 12),
 
           // 3. INSPECTION NOTES
-          Text('Inspection Notes (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
+          Text(
+            'Inspection Notes (Optional)',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: textDark,
+            ),
+          ),
           const SizedBox(height: 4),
           TextField(
             controller: _auditNotesController,
             maxLines: 2,
             style: TextStyle(fontSize: 12.5, color: textDark),
             decoration: InputDecoration(
-              hintText: 'e.g. Verified in church sacristy, clean and ready for use',
+              hintText:
+                  'e.g. Verified in church sacristy, clean and ready for use',
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           ),
         ],
@@ -1665,8 +2065,24 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 10, color: ParishColors.textMuted, fontWeight: FontWeight.w600)),
-        Text(value, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: ParishColors.textMuted,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.bold,
+            color: ParishColors.textDark,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }

@@ -2,6 +2,7 @@
 // FILE: lib/features/asset_inventory/presentation/pages/asset_references_page.dart
 // =============================================================================
 
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_reference_models.dart';
@@ -70,83 +71,115 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(isEdit ? 'Edit Location' : 'Add New Location', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          content: SizedBox(
-            width: 440,
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: acronymController,
-                    enabled: !isEdit,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(labelText: 'Acronym * (e.g. C, S, PEAC)', border: OutlineInputBorder()),
-                    validator: (v) => (v?.trim().isEmpty ?? true) ? 'Acronym is required.' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Location Name * (e.g. Church)', border: OutlineInputBorder()),
-                    validator: (v) => (v?.trim().isEmpty ?? true) ? 'Location name is required.' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: descController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder()),
-                  ),
-                  if (isEdit) ...[
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Active Status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                      value: isActive,
-                      onChanged: (val) => setModalState(() => isActive = val),
+      builder: (ctx) {
+        final screenWidth = MediaQuery.of(ctx).size.width;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(
+              isEdit ? 'Edit Location' : 'Add New Location',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ParishColors.textDark),
+            ),
+            content: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: min(screenWidth - 48, 440)),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: acronymController,
+                      enabled: !isEdit,
+                      textCapitalization: TextCapitalization.characters,
+                      style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      decoration: InputDecoration(
+                        labelText: 'Acronym * (e.g. C, S, PEAC)',
+                        labelStyle: TextStyle(color: ParishColors.textDark),
+                        hintText: 'e.g. C, S, PEAC',
+                        hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                        border: const OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: ParishColors.borderGrey)),
+                      ),
+                      validator: (v) => (v?.trim().isEmpty ?? true) ? 'Acronym is required.' : null,
                     ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: nameController,
+                      style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                      decoration: InputDecoration(
+                        labelText: 'Location Name * (e.g. Church)',
+                        labelStyle: TextStyle(color: ParishColors.textDark),
+                        hintText: 'e.g. Church Main Nave',
+                        hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                        border: const OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: ParishColors.borderGrey)),
+                      ),
+                      validator: (v) => (v?.trim().isEmpty ?? true) ? 'Location name is required.' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: descController,
+                      maxLines: 2,
+                      style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+                      decoration: InputDecoration(
+                        labelText: 'Description (Optional)',
+                        labelStyle: TextStyle(color: ParishColors.textDark),
+                        hintText: 'e.g. Main church sanctuary and altar area',
+                        hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                        border: const OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: ParishColors.borderGrey)),
+                      ),
+                    ),
+                    if (isEdit) ...[
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        activeColor: ParishColors.oliveGreen,
+                        title: const Text('Active Status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        value: isActive,
+                        onChanged: (val) => setModalState(() => isActive = val),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
-              onPressed: () async {
-                if (!formKey.currentState!.validate()) return;
-                try {
-                  if (isEdit) {
-                    await AssetReferenceService.updateLocation(
-                      locationId: itemToEdit.locationId,
-                      locationName: nameController.text.trim(),
-                      description: descController.text.trim(),
-                      isActive: isActive,
-                    );
-                  } else {
-                    await AssetReferenceService.createLocation(
-                      acronym: acronymController.text.trim(),
-                      locationName: nameController.text.trim(),
-                      description: descController.text.trim(),
-                    );
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: ParishColors.textMuted))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+                onPressed: () async {
+                  if (!formKey.currentState!.validate()) return;
+                  try {
+                    if (isEdit) {
+                      await AssetReferenceService.updateLocation(
+                        locationId: itemToEdit.locationId,
+                        locationName: nameController.text.trim(),
+                        description: descController.text.trim(),
+                        isActive: isActive,
+                      );
+                    } else {
+                      await AssetReferenceService.createLocation(
+                        acronym: acronymController.text.trim(),
+                        locationName: nameController.text.trim(),
+                        description: descController.text.trim(),
+                      );
+                    }
+                    if (!mounted) return;
+                    Navigator.pop(ctx);
+                    _loadReferences();
+                    widget.onReferencesUpdated?.call();
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
                   }
-                  if (!mounted) return;
-                  Navigator.pop(ctx);
-                  _loadReferences();
-                  widget.onReferencesUpdated?.call();
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                }
-              },
-              child: Text(isEdit ? 'Update' : 'Save Location'),
-            ),
-          ],
-        ),
-      ),
+                },
+                child: Text(isEdit ? 'Update' : 'Save Location'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -160,83 +193,115 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(isEdit ? 'Edit Classification' : 'Add New Classification', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          content: SizedBox(
-            width: 440,
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: acronymController,
-                    enabled: !isEdit,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(labelText: 'Acronym * (e.g. SI, SV, FF)', border: OutlineInputBorder()),
-                    validator: (v) => (v?.trim().isEmpty ?? true) ? 'Acronym is required.' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Classification Name * (e.g. Sacred Image)', border: OutlineInputBorder()),
-                    validator: (v) => (v?.trim().isEmpty ?? true) ? 'Classification name is required.' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: descController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder()),
-                  ),
-                  if (isEdit) ...[
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Active Status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                      value: isActive,
-                      onChanged: (val) => setModalState(() => isActive = val),
+      builder: (ctx) {
+        final screenWidth = MediaQuery.of(ctx).size.width;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(
+              isEdit ? 'Edit Classification' : 'Add New Classification',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ParishColors.textDark),
+            ),
+            content: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: min(screenWidth - 48, 440)),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: acronymController,
+                      enabled: !isEdit,
+                      textCapitalization: TextCapitalization.characters,
+                      style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                      decoration: InputDecoration(
+                        labelText: 'Acronym * (e.g. SI, SV, FF)',
+                        labelStyle: TextStyle(color: ParishColors.textDark),
+                        hintText: 'e.g. SI, SV, FF',
+                        hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                        border: const OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: ParishColors.borderGrey)),
+                      ),
+                      validator: (v) => (v?.trim().isEmpty ?? true) ? 'Acronym is required.' : null,
                     ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: nameController,
+                      style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                      decoration: InputDecoration(
+                        labelText: 'Classification Name * (e.g. Sacred Image)',
+                        labelStyle: TextStyle(color: ParishColors.textDark),
+                        hintText: 'e.g. Sacred Image',
+                        hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                        border: const OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: ParishColors.borderGrey)),
+                      ),
+                      validator: (v) => (v?.trim().isEmpty ?? true) ? 'Classification name is required.' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: descController,
+                      maxLines: 2,
+                      style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+                      decoration: InputDecoration(
+                        labelText: 'Description (Optional)',
+                        labelStyle: TextStyle(color: ParishColors.textDark),
+                        hintText: 'e.g. Statues, sacred representations and icons',
+                        hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                        border: const OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: ParishColors.borderGrey)),
+                      ),
+                    ),
+                    if (isEdit) ...[
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        activeColor: ParishColors.oliveGreen,
+                        title: const Text('Active Status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        value: isActive,
+                        onChanged: (val) => setModalState(() => isActive = val),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
-              onPressed: () async {
-                if (!formKey.currentState!.validate()) return;
-                try {
-                  if (isEdit) {
-                    await AssetReferenceService.updateClassification(
-                      classificationId: itemToEdit.classificationId,
-                      classificationName: nameController.text.trim(),
-                      description: descController.text.trim(),
-                      isActive: isActive,
-                    );
-                  } else {
-                    await AssetReferenceService.createClassification(
-                      acronym: acronymController.text.trim(),
-                      classificationName: nameController.text.trim(),
-                      description: descController.text.trim(),
-                    );
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: ParishColors.textMuted))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+                onPressed: () async {
+                  if (!formKey.currentState!.validate()) return;
+                  try {
+                    if (isEdit) {
+                      await AssetReferenceService.updateClassification(
+                        classificationId: itemToEdit.classificationId,
+                        classificationName: nameController.text.trim(),
+                        description: descController.text.trim(),
+                        isActive: isActive,
+                      );
+                    } else {
+                      await AssetReferenceService.createClassification(
+                        acronym: acronymController.text.trim(),
+                        classificationName: nameController.text.trim(),
+                        description: descController.text.trim(),
+                      );
+                    }
+                    if (!mounted) return;
+                    Navigator.pop(ctx);
+                    _loadReferences();
+                    widget.onReferencesUpdated?.call();
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
                   }
-                  if (!mounted) return;
-                  Navigator.pop(ctx);
-                  _loadReferences();
-                  widget.onReferencesUpdated?.call();
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                }
-              },
-              child: Text(isEdit ? 'Update' : 'Save Classification'),
-            ),
-          ],
-        ),
-      ),
+                },
+                child: Text(isEdit ? 'Update' : 'Save Classification'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -246,60 +311,86 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
     final cardWhite = ParishColors.cardWhite;
     final textMuted = ParishColors.textMuted;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: cardWhite,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Locations & Classifications Management',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
-            Text('Master reference data used to auto-generate diocesan control numbers',
-                style: TextStyle(fontSize: 12, color: textMuted)),
-          ],
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: ParishColors.marianBlue,
-          indicatorColor: ParishColors.marianBlue,
-          tabs: [
-            Tab(text: 'Locations (${_locations.length})'),
-            Tab(text: 'Classifications (${_classifications.length})'),
-          ],
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-          ? Center(child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed)))
-          : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildLocationsList(),
-          _buildClassificationsList(),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool isMobile = constraints.maxWidth < 620;
+
+        return Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhite,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Locations & Classifications Management',
+                  style: TextStyle(fontSize: isMobile ? 16 : 18, fontWeight: FontWeight.bold, color: textDark),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  'Master reference data used to auto-generate diocesan control numbers',
+                  style: TextStyle(fontSize: isMobile ? 10.5 : 12, color: textMuted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            bottom: TabBar(
+              controller: _tabController,
+              labelColor: ParishColors.marianBlue,
+              indicatorColor: ParishColors.marianBlue,
+              tabs: [
+                Tab(text: 'Locations (${_locations.length})'),
+                Tab(text: 'Classifications (${_classifications.length})'),
+              ],
+            ),
+          ),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage != null
+              ? Center(child: Text(_errorMessage!, style: TextStyle(color: ParishColors.mercyRed)))
+              : TabBarView(
+            controller: _tabController,
+            children: [
+              _buildLocationsList(isMobile),
+              _buildClassificationsList(isMobile),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildLocationsList() {
+  Widget _buildLocationsList(bool isMobile) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Parish Storage Locations', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Expanded(
+                child: Text(
+                  'Parish Storage Locations',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 14 : 16, color: ParishColors.textDark),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.oliveGreen, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.oliveGreen,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: isMobile ? 8 : 10),
+                ),
                 onPressed: () => _openLocationFormDialog(),
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add Location'),
@@ -328,7 +419,7 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
                       height: 44,
                       decoration: BoxDecoration(color: ParishColors.marianBlueSurface, borderRadius: BorderRadius.circular(8)),
                       child: Center(
-                        child: Text(loc.acronym, style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                        child: Text(loc.acronym, style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -336,14 +427,24 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(loc.locationName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text(
+                            loc.locationName,
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.textDark),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           if (loc.description != null && loc.description!.isNotEmpty)
-                            Text(loc.description!, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                            Text(
+                              loc.description!,
+                              style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 18, color: ParishColors.marianBlue),
+                      icon: Icon(Icons.edit_outlined, size: 18, color: ParishColors.marianBlue),
                       onPressed: () => _openLocationFormDialog(loc),
                     ),
                   ],
@@ -356,18 +457,30 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
     );
   }
 
-  Widget _buildClassificationsList() {
+  Widget _buildClassificationsList(bool isMobile) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Property Classifications', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Expanded(
+                child: Text(
+                  'Property Classifications',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 14 : 16, color: ParishColors.textDark),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.oliveGreen, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.oliveGreen,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: isMobile ? 8 : 10),
+                ),
                 onPressed: () => _openClassificationFormDialog(),
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add Classification'),
@@ -396,7 +509,7 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
                       height: 44,
                       decoration: BoxDecoration(color: ParishColors.goldLight, borderRadius: BorderRadius.circular(8)),
                       child: Center(
-                        child: Text(cls.acronym, style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
+                        child: Text(cls.acronym, style: TextStyle(fontWeight: FontWeight.bold, color: ParishColors.goldAccent)),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -404,14 +517,24 @@ class _AssetReferencesPageState extends State<AssetReferencesPage> with SingleTi
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(cls.classificationName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text(
+                            cls.classificationName,
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ParishColors.textDark),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           if (cls.description != null && cls.description!.isNotEmpty)
-                            Text(cls.description!, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                            Text(
+                              cls.description!,
+                              style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 18, color: ParishColors.marianBlue),
+                      icon: Icon(Icons.edit_outlined, size: 18, color: ParishColors.marianBlue),
                       onPressed: () => _openClassificationFormDialog(cls),
                     ),
                   ],

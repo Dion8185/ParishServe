@@ -33,8 +33,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _nfcInputController = TextEditingController();
   final TextEditingController _auditNotesController = TextEditingController();
-  final TextEditingController _quantityChangeReasonController = TextEditingController();
-  final TextEditingController _quantityInputController = TextEditingController();
+  final TextEditingController _quantityChangeReasonController =
+      TextEditingController();
+  final TextEditingController _quantityInputController =
+      TextEditingController();
 
   MobileScannerController? _scannerController;
 
@@ -65,7 +67,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
   final List<String> _operationalStatusOptions = [
     'Available',
-    'In Use',
+
     'In Storage',
     'Under Maintenance',
     'Damaged',
@@ -281,7 +283,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     final clean = query.trim();
     if (clean.isEmpty) return;
 
-    // Unmount scanner widget before killing camera hardware
     setState(() {
       _isSearching = true;
       _searchError = null;
@@ -290,7 +291,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       _liveSuggestions = [];
     });
 
-    // Stop camera and release tracks so the camera turns off
     await _safeStopCamera();
 
     try {
@@ -309,7 +309,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
         });
       } else {
         setState(() {
-          _searchError = 'No item record found for "$clean". Please check the Control Number, RFID tag, or QR Code.';
+          _searchError =
+              'No item record found for "$clean". Please check the Control Number, RFID tag, or QR Code.';
           _isSearching = false;
           _hasProcessedScan = false;
         });
@@ -353,7 +354,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           if (filePath != null && filePath.isNotEmpty) {
             _initScannerController();
             if (_scannerController != null) {
-              final BarcodeCapture? capture = await _scannerController!.analyzeImage(filePath);
+              final BarcodeCapture? capture = await _scannerController!
+                  .analyzeImage(filePath);
               if (capture != null && capture.barcodes.isNotEmpty) {
                 final raw = capture.barcodes.first.rawValue;
                 if (raw != null) {
@@ -368,8 +370,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No clear QR code detected in the selected image. Please try another photo.'),
+          SnackBar(
+            content: const Text(
+              'No clear QR code detected in the selected image. Please try another photo.',
+            ),
             backgroundColor: ParishColors.goldAccent,
           ),
         );
@@ -388,7 +392,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
     if (qtyChange != 0 && _quantityChangeReasonController.text.trim().isEmpty) {
       setState(() {
-        _searchError = 'Please provide a reason for the quantity change (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"} units).';
+        _searchError =
+            'Please provide a reason for the quantity change (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"} units).';
       });
       return;
     }
@@ -422,7 +427,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
       String qtySummary = '$newQty units';
       if (qtyChange != 0) {
-        qtySummary = '$newQty units (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"})';
+        qtySummary =
+            '$newQty units (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"})';
       }
 
       setState(() {
@@ -435,7 +441,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
         _quantityChangeReasonController.clear();
         _manualInputController.clear();
         _nfcInputController.clear();
-        _successBannerMessage = 'Audit saved for $completedControlNo: $qtySummary • $verifiedCondition • Status: $verifiedStatus.';
+        _successBannerMessage =
+            'Audit saved for $completedControlNo: $qtySummary • $verifiedCondition • Status: $verifiedStatus.';
       });
 
       if (_lastActiveMode == AuditScanMode.liveCamera) {
@@ -455,7 +462,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   }
 
   Future<void> _handlePop() async {
-    // Unmount scanner view and release web camera tracks before leaving screen
     if (mounted) {
       setState(() => _currentScanMode = AuditScanMode.selectMode);
     }
@@ -472,152 +478,221 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        await _handlePop();
-      },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhite,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
-            onPressed: _handlePop,
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Item Inventory Audit',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
-              Text('Scan QR stickers, read wireless tags, or search item numbers',
-                  style: TextStyle(fontSize: 12, color: textMuted)),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.mode_standby, color: ParishColors.marianBlue),
-              tooltip: 'Change Mode',
-              onPressed: _resetToModeSelection,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool isMobile = constraints.maxWidth < 620;
+
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            await _handlePop();
+          },
+          child: Scaffold(
+            backgroundColor: ParishColors.backgroundLight,
+            appBar: AppBar(
+              backgroundColor: cardWhite,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: ParishColors.marianBlue,
+                ),
+                onPressed: _handlePop,
+              ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Item Inventory Audit',
+                    style: TextStyle(
+                      fontSize: isMobile ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                  ),
+                  Text(
+                    'Scan QR stickers, read wireless tags, or search item numbers',
+                    style: TextStyle(
+                      fontSize: isMobile ? 10.5 : 12,
+                      color: textMuted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.mode_standby,
+                    color: ParishColors.marianBlue,
+                  ),
+                  tooltip: 'Change Mode',
+                  onPressed: _resetToModeSelection,
+                ),
+                const SizedBox(width: 8),
+              ],
             ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 800),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_successBannerMessage != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        margin: const EdgeInsets.only(bottom: 14),
-                        decoration: BoxDecoration(
-                          color: ParishColors.oliveGreenSurface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _successBannerMessage!,
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+            body: SafeArea(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(isMobile ? 14 : 20),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_successBannerMessage != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            margin: const EdgeInsets.only(bottom: 14),
+                            decoration: BoxDecoration(
+                              color: ParishColors.oliveGreenSurface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: ParishColors.oliveGreen.withOpacity(0.4),
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 16),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () => setState(() => _successBannerMessage = null),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: ParishColors.oliveGreen,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _successBannerMessage!,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.oliveGreen,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, size: 16),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () => setState(
+                                    () => _successBannerMessage = null,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
+                          ),
+                        ],
 
-                    if (_searchError != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 14),
-                        decoration: BoxDecoration(
-                          color: ParishColors.mercyRedSurface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: ParishColors.mercyRed),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(_searchError!,
-                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed)),
+                        if (_searchError != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 14),
+                            decoration: BoxDecoration(
+                              color: ParishColors.mercyRedSurface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: ParishColors.mercyRed),
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: ParishColors.mercyRed,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _searchError!,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.mercyRed,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
 
-                    if (_scannedAsset == null) ...[
-                      // Mode Switcher Tabs
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: cardWhite,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: borderGrey),
-                        ),
-                        child: Row(
-                          children: [
-                            _buildModeTab(AuditScanMode.liveCamera, 'Camera QR', Icons.qr_code_scanner),
-                            _buildModeTab(AuditScanMode.nfcListening, 'Wireless Tag', Icons.nfc),
-                            _buildModeTab(AuditScanMode.manualEntry, 'Search Number', Icons.keyboard_outlined),
-                          ],
-                        ),
-                      ),
+                        if (_scannedAsset == null) ...[
+                          // Mode Switcher Tabs
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: cardWhite,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: borderGrey),
+                            ),
+                            child: Row(
+                              children: [
+                                _buildModeTab(
+                                  AuditScanMode.liveCamera,
+                                  isMobile ? 'Camera' : 'Camera QR',
+                                  Icons.qr_code_scanner,
+                                  isMobile,
+                                ),
+                                _buildModeTab(
+                                  AuditScanMode.nfcListening,
+                                  isMobile ? 'Wireless' : 'Wireless Tag',
+                                  Icons.nfc,
+                                  isMobile,
+                                ),
+                                _buildModeTab(
+                                  AuditScanMode.manualEntry,
+                                  isMobile ? 'Search' : 'Search Number',
+                                  Icons.keyboard_outlined,
+                                  isMobile,
+                                ),
+                              ],
+                            ),
+                          ),
 
-                      if (_currentScanMode == AuditScanMode.selectMode)
-                        _buildModeSelectionGrid()
-                      else if (_currentScanMode == AuditScanMode.liveCamera)
-                        _buildLiveCameraScannerView()
-                      else if (_currentScanMode == AuditScanMode.nfcListening)
-                          _buildNfcReaderView()
-                        else if (_currentScanMode == AuditScanMode.manualEntry)
+                          if (_currentScanMode == AuditScanMode.selectMode)
+                            _buildModeSelectionGrid()
+                          else if (_currentScanMode == AuditScanMode.liveCamera)
+                            _buildLiveCameraScannerView()
+                          else if (_currentScanMode ==
+                              AuditScanMode.nfcListening)
+                            _buildNfcReaderView()
+                          else if (_currentScanMode ==
+                              AuditScanMode.manualEntry)
                             _buildManualLookupView(),
-                    ],
+                        ],
 
-                    if (_isSearching)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(32.0),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    else if (_scannedAsset != null) ...[
-                      const SizedBox(height: 10),
-                      _buildAssetAuditVerificationForm(),
-                    ],
-                  ],
+                        if (_isSearching)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32.0),
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        else if (_scannedAsset != null) ...[
+                          const SizedBox(height: 10),
+                          _buildAssetAuditVerificationForm(isMobile),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildModeTab(AuditScanMode mode, String label, IconData icon) {
+  Widget _buildModeTab(
+    AuditScanMode mode,
+    String label,
+    IconData icon,
+    bool isMobile,
+  ) {
     final isSelected = _currentScanMode == mode;
     return Expanded(
       child: InkWell(
@@ -627,7 +702,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           if (mode == AuditScanMode.manualEntry) _startManualLookup();
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: EdgeInsets.symmetric(vertical: isMobile ? 8 : 10),
           decoration: BoxDecoration(
             color: isSelected ? ParishColors.marianBlue : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
@@ -635,15 +710,21 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 16, color: isSelected ? Colors.white : ParishColors.textMuted),
-              const SizedBox(width: 6),
+              Icon(
+                icon,
+                size: isMobile ? 15 : 16,
+                color: isSelected ? Colors.white : ParishColors.textMuted,
+              ),
+              const SizedBox(width: 5),
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: isMobile ? 11.5 : 12.5,
                   fontWeight: FontWeight.bold,
                   color: isSelected ? Colors.white : ParishColors.textMuted,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -655,16 +736,40 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   Widget _buildModeSelectionGrid() {
     return Column(
       children: [
-        _buildMethodCard('QR Code Camera Scanner', 'Scan printed stickers on parish items.', Icons.camera_alt, ParishColors.marianBlue, _startCameraScanner),
+        _buildMethodCard(
+          'QR Code Camera Scanner',
+          'Scan printed stickers on parish items.',
+          Icons.camera_alt,
+          ParishColors.marianBlue,
+          _startCameraScanner,
+        ),
         const SizedBox(height: 10),
-        _buildMethodCard('Wireless Tag Reader', 'Detect RFID or NFC tags on metal vessels and furnishings.', Icons.nfc, ParishColors.goldAccent, _startNfcListener),
+        _buildMethodCard(
+          'Wireless Tag Reader',
+          'Detect RFID or NFC tags on metal vessels and furnishings.',
+          Icons.nfc,
+          ParishColors.goldAccent,
+          _startNfcListener,
+        ),
         const SizedBox(height: 10),
-        _buildMethodCard('Control Number Search', 'Find items directly by Control Number or name.', Icons.keyboard, ParishColors.oliveGreen, _startManualLookup),
+        _buildMethodCard(
+          'Control Number Search',
+          'Find items directly by Control Number or name.',
+          Icons.keyboard,
+          ParishColors.oliveGreen,
+          _startManualLookup,
+        ),
       ],
     );
   }
 
-  Widget _buildMethodCard(String title, String subtitle, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildMethodCard(
+    String title,
+    String subtitle,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -679,7 +784,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           children: [
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
               child: Icon(icon, color: color, size: 24),
             ),
             const SizedBox(width: 14),
@@ -687,8 +795,20 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
-                  Text(subtitle, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: ParishColors.textMuted,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -711,12 +831,26 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           children: [
             const Icon(Icons.desktop_windows, size: 48, color: Colors.white70),
             const SizedBox(height: 12),
-            const Text('Desktop Camera Unavailable', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text(
+              'Desktop Camera Unavailable',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text('Upload a saved QR photo or search by Control Number.', style: TextStyle(color: Colors.white70, fontSize: 12), textAlign: TextAlign.center),
+            const Text(
+              'Upload a saved QR photo or search by Control Number.',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+              ),
               onPressed: _pickImageAndScan,
               icon: const Icon(Icons.image),
               label: const Text('Upload QR Photo'),
@@ -749,14 +883,20 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                   width: 200,
                   height: 200,
                   decoration: BoxDecoration(
-                    border: Border.all(color: ParishColors.goldAccent, width: 3),
+                    border: Border.all(
+                      color: ParishColors.goldAccent,
+                      width: 3,
+                    ),
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
                 Positioned(
                   bottom: 14,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.65),
                       borderRadius: BorderRadius.circular(20),
@@ -764,7 +904,11 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                     child: Row(
                       children: [
                         IconButton(
-                          icon: Icon(_isTorchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 20),
+                          icon: Icon(
+                            _isTorchOn ? Icons.flash_on : Icons.flash_off,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                           onPressed: () async {
                             if (_scannerController == null) return;
                             await _scannerController!.toggleTorch();
@@ -772,14 +916,22 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                           },
                         ),
                         IconButton(
-                          icon: const Icon(Icons.cameraswitch, color: Colors.white, size: 20),
+                          icon: const Icon(
+                            Icons.cameraswitch,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                           onPressed: () async {
                             if (_scannerController == null) return;
                             await _scannerController!.switchCamera();
                           },
                         ),
                         IconButton(
-                          icon: const Icon(Icons.photo_library, color: Colors.white, size: 20),
+                          icon: const Icon(
+                            Icons.photo_library,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                           onPressed: _pickImageAndScan,
                         ),
                       ],
@@ -805,24 +957,44 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       ),
       child: Column(
         children: [
-          const Icon(Icons.sensors, size: 54, color: ParishColors.goldAccent),
+          Icon(Icons.sensors, size: 54, color: ParishColors.goldAccent),
           const SizedBox(height: 12),
-          Text('Hold Device Near Wireless Tag',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: ParishColors.textDark)),
+          Text(
+            'Hold Device Near Wireless Tag',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: ParishColors.textDark,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text('For sacred vessels and items with attached tags.',
-              style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+          Text(
+            'For sacred vessels and items with attached tags.',
+            style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _nfcInputController,
-                  decoration: const InputDecoration(
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                  decoration: InputDecoration(
                     hintText: 'e.g. 04:A2:4B:9C',
+                    hintStyle: TextStyle(
+                      fontSize: 12.5,
+                      color: ParishColors.textMuted,
+                    ),
                     filled: true,
                     fillColor: Colors.white,
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: ParishColors.borderGrey),
+                    ),
                     isDense: true,
                   ),
                   onSubmitted: _searchAndLoadAsset,
@@ -830,7 +1002,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
               ),
               const SizedBox(width: 8),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.goldAccent, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.goldAccent,
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () => _searchAndLoadAsset(_nfcInputController.text),
                 child: const Text('Find Tag'),
               ),
@@ -852,19 +1027,37 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Search Item Number or Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          const Text(
+            'Search Item Number or Name',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
           const SizedBox(height: 6),
           TextField(
             controller: _manualInputController,
             autofocus: true,
+            style: TextStyle(fontSize: 13.5, color: ParishColors.textDark),
             decoration: InputDecoration(
               hintText: 'e.g. C-FF 2026-001 or Church Pew',
+              hintStyle: TextStyle(
+                fontSize: 12.5,
+                color: ParishColors.textMuted,
+              ),
               filled: true,
               fillColor: ParishColors.backgroundLight,
               border: const OutlineInputBorder(),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: ParishColors.borderGrey),
+              ),
               isDense: true,
               suffixIcon: _isLoadingSuggestions
-                  ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)))
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
                   : null,
             ),
             onSubmitted: _searchAndLoadAsset,
@@ -885,8 +1078,17 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                   final s = _liveSuggestions[idx];
                   return ListTile(
                     dense: true,
-                    title: Text(s.controlNumber, style: const TextStyle(fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-                    subtitle: Text('${s.itemName} • Qty: ${s.quantity} • ${s.displayLocation}'),
+                    title: Text(
+                      s.controlNumber,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.marianBlue,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${s.itemName} • Qty: ${s.quantity} • ${s.displayLocation}',
+                      style: TextStyle(color: ParishColors.textMuted),
+                    ),
                     onTap: () {
                       _manualInputController.text = s.controlNumber;
                       _searchAndLoadAsset(s.controlNumber);
@@ -902,10 +1104,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   }
 
   // ===========================================================================
-  // 5. Complete Inline Specifications & Verification Form
+  // 5. Complete Inline Specifications & Verification Form (Responsive)
   // ===========================================================================
 
-  Widget _buildAssetAuditVerificationForm() {
+  Widget _buildAssetAuditVerificationForm(bool isMobile) {
     final asset = _scannedAsset!;
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
@@ -913,7 +1115,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     final int qtyDiff = _quantityDifference;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(16),
@@ -925,26 +1127,44 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 22),
-                  SizedBox(width: 8),
+                  Icon(
+                    Icons.check_circle,
+                    color: ParishColors.oliveGreen,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     'Item Found in Registry',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: ParishColors.oliveGreen),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: ParishColors.oliveGreen,
+                    ),
                   ),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: ParishColors.marianBlueSurface, borderRadius: BorderRadius.circular(6)),
-                child: Text('${asset.quantity} unit(s) registered', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                decoration: BoxDecoration(
+                  color: ParishColors.marianBlueSurface,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${asset.quantity} unit(s) registered',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
+                ),
               ),
             ],
           ),
           const Divider(height: 18),
 
-          // COMPLETE SPECIFICATIONS PANEL
+          // Specifications Summary
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -977,27 +1197,51 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(asset.itemName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark)),
+                    Text(
+                      asset.itemName,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        Text('Control No: ${asset.controlNumber}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                        Text(
+                          'Control No: ${asset.controlNumber}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.marianBlue,
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: asset.conditionSurfaceColor,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             asset.conditionStatus,
-                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: asset.conditionColor),
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: asset.conditionColor,
+                            ),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text('Category: ${asset.displayClassification} • Location: ${asset.displayLocation}', style: TextStyle(fontSize: 12, color: textMuted)),
+                    Text(
+                      'Category: ${asset.displayClassification} • Location: ${asset.displayLocation}',
+                      style: TextStyle(fontSize: 12, color: textMuted),
+                    ),
                   ],
                 ),
               ),
@@ -1005,7 +1249,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           ),
           const SizedBox(height: 14),
 
-          // Full Specs Grid
+          // Full Specs Grid (Responsive)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -1018,43 +1262,83 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _buildSpecItem('Current Status', asset.operationalStatus)),
-                    Expanded(child: _buildSpecItem('Acquisition Date', '${asset.formattedAcquisitionDate} (${asset.modeOfAcquisition})')),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Current Status',
+                        asset.operationalStatus,
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Acquisition Date',
+                        '${asset.formattedAcquisitionDate} (${asset.modeOfAcquisition})',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: _buildSpecItem('Size / Dimensions', asset.dimensions ?? '—')),
-                    Expanded(child: _buildSpecItem('Color', asset.color ?? '—')),
-                    Expanded(child: _buildSpecItem('Brand / Model', asset.model ?? '—')),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Size / Dimensions',
+                        asset.dimensions ?? '—',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem('Color', asset.color ?? '—'),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Brand / Model',
+                        asset.model ?? '—',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: _buildSpecItem('Unit Price', asset.formattedUnitPrice)),
-                    Expanded(child: _buildSpecItem('Total Value', asset.formattedTotalCost)),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Unit Price',
+                        asset.formattedUnitPrice,
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem(
+                        'Total Value',
+                        asset.formattedTotalCost,
+                      ),
+                    ),
                     if (asset.rfidTag != null && asset.rfidTag!.isNotEmpty)
-                      Expanded(child: _buildSpecItem('RFID Tag', asset.rfidTag!)),
+                      Expanded(
+                        child: _buildSpecItem('RFID Tag', asset.rfidTag!),
+                      ),
                   ],
                 ),
                 if (asset.others != null && asset.others!.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text('Markings / Details: ${asset.others}', style: TextStyle(fontSize: 11.5, color: textDark)),
+                  Text(
+                    'Markings / Details: ${asset.others}',
+                    style: TextStyle(fontSize: 11.5, color: textDark),
+                  ),
                 ],
                 if (asset.remarks != null && asset.remarks!.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text('Notes: ${asset.remarks}', style: TextStyle(fontSize: 11.5, color: textMuted)),
+                  Text(
+                    'Notes: ${asset.remarks}',
+                    style: TextStyle(fontSize: 11.5, color: textMuted),
+                  ),
                 ],
               ],
             ),
           ),
           const SizedBox(height: 16),
 
-          // 1. QUANTITY ADJUSTMENT TRACKING
+          // Quantity Adjustments Card
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: EdgeInsets.all(isMobile ? 12 : 14),
             decoration: BoxDecoration(
               color: ParishColors.cardWhite,
               borderRadius: BorderRadius.circular(10),
@@ -1069,23 +1353,36 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
+                    Text(
                       'Quantity Count & Adjustments',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.marianBlue,
+                      ),
                     ),
                     if (qtyDiff != 0)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: qtyDiff > 0 ? ParishColors.oliveGreenSurface : ParishColors.mercyRedSurface,
+                          color: qtyDiff > 0
+                              ? ParishColors.oliveGreenSurface
+                              : ParishColors.mercyRedSurface,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          qtyDiff > 0 ? '+$qtyDiff units added' : '$qtyDiff units deducted',
+                          qtyDiff > 0
+                              ? '+$qtyDiff units added'
+                              : '$qtyDiff units deducted',
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.bold,
-                            color: qtyDiff > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                            color: qtyDiff > 0
+                                ? ParishColors.oliveGreen
+                                : ParishColors.mercyRed,
                           ),
                         ),
                       ),
@@ -1099,14 +1396,21 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Previous: ${asset.quantity} units', style: TextStyle(fontSize: 11.5, color: textMuted)),
+                          Text(
+                            'Previous: ${asset.quantity} units',
+                            style: TextStyle(fontSize: 11.5, color: textMuted),
+                          ),
                           const SizedBox(height: 2),
-                          Text('Updated Total: $_auditQuantity units',
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.bold,
-                                color: qtyDiff != 0 ? ParishColors.marianBlue : textDark,
-                              )),
+                          Text(
+                            'Updated Total: $_auditQuantity units',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                              color: qtyDiff != 0
+                                  ? ParishColors.marianBlue
+                                  : textDark,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1115,14 +1419,17 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                         IconButton(
                           style: IconButton.styleFrom(
                             backgroundColor: ParishColors.backgroundLight,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                           icon: const Icon(Icons.remove, size: 18),
                           onPressed: _auditQuantity > 0
                               ? () => setState(() {
-                            _auditQuantity--;
-                            _quantityInputController.text = '$_auditQuantity';
-                          })
+                                  _auditQuantity--;
+                                  _quantityInputController.text =
+                                      '$_auditQuantity';
+                                })
                               : null,
                         ),
                         SizedBox(
@@ -1131,8 +1438,14 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                             controller: _quantityInputController,
                             keyboardType: TextInputType.number,
                             textAlign: TextAlign.center,
-                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: textDark,
+                            ),
                             decoration: const InputDecoration(
                               isDense: true,
                               contentPadding: EdgeInsets.symmetric(vertical: 8),
@@ -1149,7 +1462,9 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                         IconButton(
                           style: IconButton.styleFrom(
                             backgroundColor: ParishColors.backgroundLight,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                           icon: const Icon(Icons.add, size: 18),
                           onPressed: () => setState(() {
@@ -1164,15 +1479,34 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
                 if (qtyDiff != 0) ...[
                   const SizedBox(height: 10),
-                  Text('Reason for Quantity Change *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
+                  Text(
+                    'Reason for Quantity Change *',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   TextField(
                     controller: _quantityChangeReasonController,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. 2 units damaged during parish event, or new donation received',
+                    style: TextStyle(fontSize: 12.5, color: textDark),
+                    decoration: InputDecoration(
+                      hintText:
+                          'e.g. 2 units damaged during parish event, or new donation received',
+                      hintStyle: TextStyle(
+                        fontSize: 12,
+                        color: ParishColors.textMuted,
+                      ),
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      border: const OutlineInputBorder(),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: borderGrey),
+                      ),
                     ),
                   ),
                 ],
@@ -1181,80 +1515,229 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           ),
           const SizedBox(height: 14),
 
-          // 2. STATUS & CONDITION
-          Row(
-            children: [
-              Expanded(
-                child: Column(
+          // Condition & Status (Responsive)
+          isMobile
+              ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Verified Condition *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Verified Condition *',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    DropdownButtonFormField<String>(
-                      value: _selectedCondition,
-                      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                      items: _conditionOptions.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12.5)))).toList(),
-                      onChanged: (val) => setState(() => _selectedCondition = val!),
+                    _buildConditionDropdown(),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Current Item Status *',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _buildStatusDropdown(),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Verified Condition *',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _buildConditionDropdown(),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Current Item Status *',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _buildStatusDropdown(),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Current Item Status *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    DropdownButtonFormField<String>(
-                      value: _selectedStatus,
-                      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                      items: _operationalStatusOptions.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12.5)))).toList(),
-                      onChanged: (val) => setState(() => _selectedStatus = val!),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 12),
 
-          // 3. INSPECTION NOTES
-          const Text('Inspection Notes (Optional)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+          // Inspection Notes
+          const Text(
+            'Inspection Notes (Optional)',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 4),
           TextField(
             controller: _auditNotesController,
             maxLines: 2,
-            decoration: const InputDecoration(hintText: 'e.g. In good condition, verified on-site in main church nave', border: OutlineInputBorder(), isDense: true),
+            style: TextStyle(fontSize: 12.5, color: textDark),
+            decoration: InputDecoration(
+              hintText:
+                  'e.g. In good condition, verified on-site in main church nave',
+              hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+              border: const OutlineInputBorder(),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: borderGrey),
+              ),
+              isDense: true,
+            ),
           ),
           const SizedBox(height: 18),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton(
-                onPressed: _startCameraScanner,
-                child: const Text('Cancel / Next Item'),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ParishColors.oliveGreen,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          // Action Buttons
+          isMobile
+              ? Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: ParishColors.oliveGreen,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: _isRecordingAudit
+                            ? null
+                            : () => _commitAuditInspection(
+                                _currentScanMode == AuditScanMode.nfcListening
+                                    ? 'RFID_NFC'
+                                    : 'QR_SCAN',
+                              ),
+                        icon: _isRecordingAudit
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.check),
+                        label: Text(
+                          _isRecordingAudit ? 'Saving...' : 'Save Audit',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: _startCameraScanner,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                        child: const Text('Cancel / Next Item'),
+                      ),
+                    ),
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    OutlinedButton(
+                      onPressed: _startCameraScanner,
+                      child: const Text('Cancel / Next Item'),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.oliveGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                      ),
+                      onPressed: _isRecordingAudit
+                          ? null
+                          : () => _commitAuditInspection(
+                              _currentScanMode == AuditScanMode.nfcListening
+                                  ? 'RFID_NFC'
+                                  : 'QR_SCAN',
+                            ),
+                      icon: _isRecordingAudit
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.check),
+                      label: Text(
+                        _isRecordingAudit ? 'Saving...' : 'Save Audit',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
-                onPressed: _isRecordingAudit
-                    ? null
-                    : () => _commitAuditInspection(_currentScanMode == AuditScanMode.nfcListening ? 'RFID_NFC' : 'QR_SCAN'),
-                icon: _isRecordingAudit
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Icon(Icons.check),
-                label: Text(_isRecordingAudit ? 'Saving...' : 'Save Audit', style: const TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildConditionDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedCondition,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: ParishColors.borderGrey),
+        ),
+        isDense: true,
+      ),
+      items: _conditionOptions
+          .map(
+            (c) => DropdownMenuItem(
+              value: c,
+              child: Text(c, style: const TextStyle(fontSize: 12.5)),
+            ),
+          )
+          .toList(),
+      onChanged: (val) => setState(() => _selectedCondition = val!),
+    );
+  }
+
+  Widget _buildStatusDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedStatus,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: ParishColors.borderGrey),
+        ),
+        isDense: true,
+      ),
+      items: _operationalStatusOptions
+          .map(
+            (s) => DropdownMenuItem(
+              value: s,
+              child: Text(s, style: const TextStyle(fontSize: 12.5)),
+            ),
+          )
+          .toList(),
+      onChanged: (val) => setState(() => _selectedStatus = val!),
     );
   }
 
@@ -1262,8 +1745,24 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 10, color: ParishColors.textMuted, fontWeight: FontWeight.w600)),
-        Text(value, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: ParishColors.textMuted,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.bold,
+            color: ParishColors.textDark,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }

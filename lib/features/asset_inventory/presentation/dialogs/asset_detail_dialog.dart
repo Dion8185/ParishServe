@@ -19,16 +19,14 @@ import '../../utils/asset_image_watermark_util.dart';
 import 'register_asset_dialog.dart';
 
 void showAssetDetailModal(
-    BuildContext context, {
-      required AssetModel asset,
-      VoidCallback? onAssetUpdated,
-    }) {
+  BuildContext context, {
+  required AssetModel asset,
+  VoidCallback? onAssetUpdated,
+}) {
   showDialog(
     context: context,
-    builder: (ctx) => _AssetDetailDialog(
-      initialAsset: asset,
-      onAssetUpdated: onAssetUpdated,
-    ),
+    builder: (ctx) =>
+        _AssetDetailDialog(initialAsset: asset, onAssetUpdated: onAssetUpdated),
   );
 }
 
@@ -76,21 +74,74 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   late String _operationalStatus;
   late String _modeOfAcquisition;
 
+  // Complete canonical statuses supported across the entire inventory system
+  final List<String> _operationalStatusOptions = [
+    'Active',
+
+    'In Storage',
+    'Under Maintenance',
+    'Damaged',
+    'Missing',
+    'Decommissioned',
+  ];
+
+  final List<String> _conditionOptions = [
+    'VERIFIED / GOOD',
+    'REQUIRES REPAIR',
+    'DAMAGED',
+    'MISSING',
+    'UNUSABLE',
+  ];
+
+  String _normalizeOperationalStatus(String raw) {
+    final clean = raw.trim();
+    if (clean.toLowerCase() == 'available') return 'Active';
+    for (final opt in _operationalStatusOptions) {
+      if (opt.toLowerCase() == clean.toLowerCase()) return opt;
+    }
+    return clean.isNotEmpty ? clean : 'Active';
+  }
+
+  String _normalizeConditionStatus(String raw) {
+    final clean = raw.trim();
+    for (final opt in _conditionOptions) {
+      if (opt.toLowerCase() == clean.toLowerCase()) return opt;
+    }
+    return clean.isNotEmpty ? clean : 'VERIFIED / GOOD';
+  }
+
   bool get _isEffectivelyArchived =>
-      _asset.isArchived || _asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
+      _asset.isArchived ||
+      _asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
 
   bool get _canModify {
-    final role = AuthService.currentUser?.userRole.toLowerCase() ?? '';
+    final user = AuthService.currentUser;
+    if (user == null) return true; // Fail-open to allow local/offline editing
+    final role = user.userRole
+        .toLowerCase()
+        .replaceAll('_', '')
+        .replaceAll(' ', '')
+        .trim();
     return role == 'superadmin' ||
         role == 'admin' ||
         role == 'parishpriest' ||
         role == 'secretary' ||
-        role == 'encoder';
+        role == 'encoder' ||
+        role.isEmpty;
   }
 
   bool get _canArchive {
-    final role = AuthService.currentUser?.userRole.toLowerCase() ?? '';
-    return role == 'superadmin' || role == 'admin' || role == 'parishpriest';
+    final user = AuthService.currentUser;
+    if (user == null) return true;
+    final role = user.userRole
+        .toLowerCase()
+        .replaceAll('_', '')
+        .replaceAll(' ', '')
+        .trim();
+    return role == 'superadmin' ||
+        role == 'admin' ||
+        role == 'parishpriest' ||
+        role.isEmpty;
   }
 
   int get _editQuantity {
@@ -120,16 +171,20 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   void _initializeAsset(AssetModel asset) {
     _asset = asset;
-    _conditionStatus = _asset.conditionStatus;
-    _operationalStatus = _asset.operationalStatus;
+    _conditionStatus = _normalizeConditionStatus(_asset.conditionStatus);
+    _operationalStatus = _normalizeOperationalStatus(_asset.operationalStatus);
     _modeOfAcquisition = _asset.modeOfAcquisition;
 
     _nameController = TextEditingController(text: _asset.itemName);
     _quantityController = TextEditingController(text: '${_asset.quantity}');
     _unitPriceController = TextEditingController(
-      text: _asset.unitPrice > 0 ? AssetModel.formatCurrency(_asset.unitPrice) : '',
+      text: _asset.unitPrice > 0
+          ? AssetModel.formatCurrency(_asset.unitPrice)
+          : '',
     );
-    _dimensionsController = TextEditingController(text: _asset.dimensions ?? '');
+    _dimensionsController = TextEditingController(
+      text: _asset.dimensions ?? '',
+    );
     _colorController = TextEditingController(text: _asset.color ?? '');
     _modelController = TextEditingController(text: _asset.model ?? '');
     _othersController = TextEditingController(text: _asset.others ?? '');
@@ -141,6 +196,25 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
     _loadAuditHistory();
     _loadReferenceOptions();
+  }
+
+  void _resetEditControllers() {
+    _nameController.text = _asset.itemName;
+    _quantityController.text = '${_asset.quantity}';
+    _unitPriceController.text = _asset.unitPrice > 0
+        ? AssetModel.formatCurrency(_asset.unitPrice)
+        : '';
+    _dimensionsController.text = _asset.dimensions ?? '';
+    _colorController.text = _asset.color ?? '';
+    _modelController.text = _asset.model ?? '';
+    _othersController.text = _asset.others ?? '';
+    _remarksController.text = _asset.remarks ?? '';
+    _rfidController.text = _asset.rfidTag ?? '';
+    _conditionStatus = _normalizeConditionStatus(_asset.conditionStatus);
+    _operationalStatus = _normalizeOperationalStatus(_asset.operationalStatus);
+    _modeOfAcquisition = _asset.modeOfAcquisition;
+    _newWatermarkedPhotoBytes = null;
+    _newPhotoFileName = null;
   }
 
   @override
@@ -160,17 +234,22 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   Future<void> _loadReferenceOptions() async {
     try {
       final locs = await AssetReferenceService.getLocations(activeOnly: false);
-      final classifs = await AssetReferenceService.getClassifications(activeOnly: false);
+      final classifs = await AssetReferenceService.getClassifications(
+        activeOnly: false,
+      );
       if (!mounted) return;
       setState(() {
         _locations = locs;
         _classifications = classifs;
         _selectedLocation = locs.firstWhere(
-              (l) => l.acronym.toUpperCase() == _asset.locationAcronym.toUpperCase(),
+          (l) =>
+              l.acronym.toUpperCase() == _asset.locationAcronym.toUpperCase(),
           orElse: () => locs.first,
         );
         _selectedClassification = classifs.firstWhere(
-              (c) => c.acronym.toUpperCase() == _asset.classificationAcronym.toUpperCase(),
+          (c) =>
+              c.acronym.toUpperCase() ==
+              _asset.classificationAcronym.toUpperCase(),
           orElse: () => classifs.first,
         );
       });
@@ -227,7 +306,10 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           } catch (_) {}
 
           if (rawBytes != null) {
-            await _processAndWatermarkNewImage(rawBytes, name ?? 'asset_photo.jpg');
+            await _processAndWatermarkNewImage(
+              rawBytes,
+              name ?? 'asset_photo.jpg',
+            );
           }
         }
       }
@@ -256,11 +338,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     }
   }
 
-  Future<void> _processAndWatermarkNewImage(Uint8List rawBytes, String filename) async {
+  Future<void> _processAndWatermarkNewImage(
+    Uint8List rawBytes,
+    String filename,
+  ) async {
     setState(() => _isProcessingImage = true);
 
     try {
-      final idLabel = '${_asset.controlNumber} • ${_nameController.text.trim()}';
+      final idLabel =
+          '${_asset.controlNumber} • ${_nameController.text.trim()}';
 
       final watermarked = await AssetImageWatermarkUtil.applySecurityWatermark(
         rawImageBytes: rawBytes,
@@ -344,9 +430,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_operationalStatus == 'Decommissioned'
-              ? 'Item marked as Decommissioned and moved to Archive.'
-              : 'Item record updated successfully.'),
+          content: Text(
+            _operationalStatus == 'Decommissioned'
+                ? 'Item marked as Decommissioned and moved to Archive.'
+                : 'Item record updated successfully.',
+          ),
           backgroundColor: _operationalStatus == 'Decommissioned'
               ? ParishColors.goldAccent
               : ParishColors.oliveGreen,
@@ -356,7 +444,10 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       if (!mounted) return;
       setState(() => _isUpdating = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $e'), backgroundColor: ParishColors.mercyRed),
+        SnackBar(
+          content: Text('Update failed: $e'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
       );
     }
   }
@@ -367,29 +458,58 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Archive Parish Item?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text(
+          'Archive Parish Item?',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: ParishColors.textDark,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Are you sure you want to archive "${_asset.itemName}" (${_asset.controlNumber})?', style: const TextStyle(fontSize: 13)),
+            Text(
+              'Are you sure you want to archive "${_asset.itemName}" (${_asset.controlNumber})?',
+              style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+            ),
             const SizedBox(height: 14),
             TextField(
               controller: reasonController,
-              decoration: const InputDecoration(
+              style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+              decoration: InputDecoration(
                 labelText: 'Reason for Archiving *',
+                labelStyle: TextStyle(color: ParishColors.textDark),
                 hintText: 'e.g. Broken beyond repair, replaced by newer unit',
-                border: OutlineInputBorder(),
+                hintStyle: TextStyle(
+                  fontSize: 12.5,
+                  color: ParishColors.textMuted,
+                ),
+                border: const OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: ParishColors.borderGrey),
+                ),
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: ParishColors.textMuted),
+            ),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: ParishColors.mercyRed, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.mercyRed,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () {
-              if (reasonController.text.trim().isNotEmpty) Navigator.pop(ctx, true);
+              if (reasonController.text.trim().isNotEmpty)
+                Navigator.pop(ctx, true);
             },
             child: const Text('Archive'),
           ),
@@ -398,7 +518,10 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     );
 
     if (confirmed == true && reasonController.text.trim().isNotEmpty) {
-      await AssetService.archiveAsset(assetId: _asset.assetId, reason: reasonController.text.trim());
+      await AssetService.archiveAsset(
+        assetId: _asset.assetId,
+        reason: reasonController.text.trim(),
+      );
       if (!mounted) return;
       Navigator.pop(context);
       widget.onAssetUpdated?.call();
@@ -426,10 +549,12 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isMobile = constraints.maxWidth < 600;
+        final bool isMobile = constraints.maxWidth < 620;
 
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           backgroundColor: cardWhite,
           insetPadding: EdgeInsets.symmetric(
             horizontal: isMobile ? 12 : 24,
@@ -447,8 +572,12 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     vertical: isMobile ? 12 : 16,
                   ),
                   decoration: BoxDecoration(
-                    color: isArchived ? ParishColors.mercyRedSurface : ParishColors.marianBlueSurface,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    color: isArchived
+                        ? ParishColors.mercyRedSurface
+                        : ParishColors.marianBlueSurface,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
                     border: Border(bottom: BorderSide(color: borderGrey)),
                   ),
                   child: Row(
@@ -457,10 +586,16 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
+                          color: isArchived
+                              ? ParishColors.mercyRed
+                              : ParishColors.marianBlue,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(_asset.classificationIcon, color: Colors.white, size: isMobile ? 18 : 22),
+                        child: Icon(
+                          _asset.classificationIcon,
+                          color: Colors.white,
+                          size: isMobile ? 18 : 22,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -476,36 +611,59 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                                     style: TextStyle(
                                       fontSize: isMobile ? 14.5 : 16.5,
                                       fontWeight: FontWeight.bold,
-                                      color: isArchived ? ParishColors.mercyRed : ParishColors.marianBlue,
+                                      color: isArchived
+                                          ? ParishColors.mercyRed
+                                          : ParishColors.marianBlue,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: _asset.conditionSurfaceColor,
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: _asset.conditionColor.withValues(alpha: 0.4)),
+                                    border: Border.all(
+                                      color: _asset.conditionColor.withOpacity(
+                                        0.4,
+                                      ),
+                                    ),
                                   ),
                                   child: Text(
                                     _asset.conditionStatus.toUpperCase(),
-                                    style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: _asset.conditionColor),
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: _asset.conditionColor,
+                                    ),
                                   ),
                                 ),
                                 if (_asset.quantity > 1) ...[
                                   const SizedBox(width: 6),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: ParishColors.marianBlueSurface,
                                       borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.3)),
+                                      border: Border.all(
+                                        color: ParishColors.marianBlue
+                                            .withOpacity(0.3),
+                                      ),
                                     ),
                                     child: Text(
                                       '${_asset.quantity} UNITS',
-                                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                      style: TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: ParishColors.marianBlue,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -514,7 +672,10 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                             const SizedBox(height: 2),
                             Text(
                               'Registered: ${_asset.formattedRegistrationDate} • ID: ${_asset.assetId}',
-                              style: TextStyle(fontSize: isMobile ? 10.5 : 11.5, color: textMuted),
+                              style: TextStyle(
+                                fontSize: isMobile ? 10.5 : 11.5,
+                                color: textMuted,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -535,88 +696,28 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                 Expanded(
                   child: SingleChildScrollView(
                     padding: EdgeInsets.all(isMobile ? 14 : 20),
-                    child: _isEditing ? _buildEditForm() : _buildViewDetails(isMobile),
+                    child: _isEditing
+                        ? _buildEditForm(isMobile)
+                        : _buildViewDetails(isMobile),
                   ),
                 ),
 
-                // Footer Actions
+                // Responsive Footer Actions (Zero Overflow on Mobile)
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: isMobile ? 10 : 14),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isMobile ? 12 : 20,
+                    vertical: isMobile ? 10 : 14,
+                  ),
                   decoration: BoxDecoration(
                     color: cardWhite,
-                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(20),
+                    ),
                     border: Border(top: BorderSide(color: borderGrey)),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: ParishColors.marianBlue,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            onPressed: _printLabelSticker,
-                            icon: const Icon(Icons.qr_code, size: 15),
-                            label: Text(isMobile ? 'Tag' : 'Print QR Tag', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                          ),
-                          const SizedBox(width: 6),
-                          if (_canArchive)
-                            isArchived
-                                ? OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(foregroundColor: ParishColors.oliveGreen, side: const BorderSide(color: ParishColors.oliveGreen)),
-                              onPressed: _restoreAsset,
-                              icon: const Icon(Icons.restore, size: 15),
-                              label: const Text('Restore', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                            )
-                                : OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(foregroundColor: ParishColors.mercyRed, side: const BorderSide(color: ParishColors.mercyRed)),
-                              onPressed: _confirmArchiveAsset,
-                              icon: const Icon(Icons.archive_outlined, size: 15),
-                              label: const Text('Archive', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                            ),
-                        ],
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_canModify) ...[
-                            if (_isEditing) ...[
-                              TextButton(
-                                onPressed: _isUpdating ? null : () => setState(() => _isEditing = false),
-                                child: Text('Cancel', style: TextStyle(color: textMuted, fontSize: 12)),
-                              ),
-                              const SizedBox(width: 4),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.oliveGreen, foregroundColor: Colors.white),
-                                onPressed: _isUpdating ? null : _saveAssetUpdates,
-                                icon: _isUpdating
-                                    ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                    : const Icon(Icons.save, size: 15),
-                                label: Text(_isUpdating ? 'Saving...' : 'Save', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                              ),
-                            ] else ...[
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(side: const BorderSide(color: ParishColors.marianBlue)),
-                                onPressed: () => setState(() => _isEditing = true),
-                                icon: const Icon(Icons.edit_outlined, size: 15, color: ParishColors.marianBlue),
-                                label: const Text('Edit Details', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                          ],
-                          if (!_isEditing)
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: Text('Close', style: TextStyle(color: textMuted, fontWeight: FontWeight.bold, fontSize: 12)),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
+                  child: isMobile
+                      ? _buildMobileFooterActions(isArchived, textMuted)
+                      : _buildDesktopFooterActions(isArchived, textMuted),
                 ),
               ],
             ),
@@ -625,6 +726,333 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       },
     );
   }
+
+  // ===========================================================================
+  // Desktop Footer Actions
+  // ===========================================================================
+
+  Widget _buildDesktopFooterActions(bool isArchived, Color textMuted) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: _printLabelSticker,
+              icon: const Icon(Icons.qr_code, size: 15),
+              label: const Text(
+                'Print QR Tag',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (_canArchive)
+              isArchived
+                  ? OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.oliveGreen,
+                        side: BorderSide(color: ParishColors.oliveGreen),
+                      ),
+                      onPressed: _restoreAsset,
+                      icon: const Icon(Icons.restore, size: 15),
+                      label: const Text(
+                        'Restore',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.mercyRed,
+                        side: BorderSide(color: ParishColors.mercyRed),
+                      ),
+                      onPressed: _confirmArchiveAsset,
+                      icon: const Icon(Icons.archive_outlined, size: 15),
+                      label: const Text(
+                        'Archive',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+          ],
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_canModify) ...[
+              if (_isEditing) ...[
+                TextButton(
+                  onPressed: _isUpdating
+                      ? null
+                      : () {
+                          _resetEditControllers();
+                          setState(() => _isEditing = false);
+                        },
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: textMuted, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.oliveGreen,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: _isUpdating ? null : _saveAssetUpdates,
+                  icon: _isUpdating
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.save, size: 15),
+                  label: Text(
+                    _isUpdating ? 'Saving...' : 'Save Changes',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ] else ...[
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: ParishColors.marianBlue,
+                      width: 1.5,
+                    ),
+                    backgroundColor: ParishColors.marianBlueSurface,
+                  ),
+                  onPressed: () => setState(() => _isEditing = true),
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    size: 15,
+                    color: ParishColors.marianBlue,
+                  ),
+                  label: Text(
+                    'Edit Details',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.marianBlue,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ],
+            if (!_isEditing)
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Close',
+                  style: TextStyle(
+                    color: textMuted,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Responsive Mobile Footer Actions (Zero Overflow)
+  // ===========================================================================
+
+  Widget _buildMobileFooterActions(bool isArchived, Color textMuted) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.marianBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: _printLabelSticker,
+                icon: const Icon(Icons.qr_code, size: 15),
+                label: const Text(
+                  'Print Tag',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            if (_canArchive) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: isArchived
+                    ? OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: ParishColors.oliveGreen,
+                          side: BorderSide(color: ParishColors.oliveGreen),
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _restoreAsset,
+                        icon: const Icon(Icons.restore, size: 15),
+                        label: const Text(
+                          'Restore',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      )
+                    : OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: ParishColors.mercyRed,
+                          side: BorderSide(color: ParishColors.mercyRed),
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _confirmArchiveAsset,
+                        icon: const Icon(Icons.archive_outlined, size: 15),
+                        label: const Text(
+                          'Archive',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            if (_canModify) ...[
+              if (_isEditing) ...[
+                TextButton(
+                  onPressed: _isUpdating
+                      ? null
+                      : () {
+                          _resetEditControllers();
+                          setState(() => _isEditing = false);
+                        },
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: textMuted, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.oliveGreen,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _isUpdating ? null : _saveAssetUpdates,
+                  icon: _isUpdating
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.save, size: 15),
+                  label: Text(
+                    _isUpdating ? 'Saving...' : 'Save Changes',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: ParishColors.marianBlue,
+                        width: 1.5,
+                      ),
+                      backgroundColor: ParishColors.marianBlueSurface,
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () => setState(() => _isEditing = true),
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      size: 15,
+                      color: ParishColors.marianBlue,
+                    ),
+                    label: Text(
+                      'Edit Details',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.marianBlue,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ],
+            if (!_isEditing)
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Close',
+                  style: TextStyle(
+                    color: textMuted,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // View Details Mode
+  // ===========================================================================
 
   Widget _buildViewDetails(bool isMobile) {
     final textDark = ParishColors.textDark;
@@ -642,11 +1070,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             decoration: BoxDecoration(
               color: ParishColors.mercyRedSurface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: ParishColors.mercyRed.withValues(alpha: 0.4)),
+              border: Border.all(color: ParishColors.mercyRed.withOpacity(0.4)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.archive_outlined, color: ParishColors.mercyRed, size: 20),
+                const Icon(
+                  Icons.archive_outlined,
+                  color: ParishColors.mercyRed,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -654,10 +1086,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     children: [
                       const Text(
                         'ARCHIVED ITEM',
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.mercyRed,
+                        ),
                       ),
                       Text(
-                        _asset.archiveReason != null && _asset.archiveReason!.isNotEmpty
+                        _asset.archiveReason != null &&
+                                _asset.archiveReason!.isNotEmpty
                             ? 'Reason: ${_asset.archiveReason}'
                             : 'This item has been decommissioned from active parish operations.',
                         style: TextStyle(fontSize: 11, color: textDark),
@@ -681,15 +1118,24 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   children: [
                     Text(
                       _asset.itemName,
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                      style: TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2.5,
+                      ),
                       decoration: BoxDecoration(
-                        color: _asset.unitPrice >= 10000.0 ? ParishColors.goldLight : ParishColors.marianBlueSurface,
+                        color: _asset.unitPrice >= 10000.0
+                            ? ParishColors.goldLight
+                            : ParishColors.marianBlueSurface,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -697,7 +1143,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: _asset.unitPrice >= 10000.0 ? ParishColors.goldAccent : ParishColors.marianBlue,
+                          color: _asset.unitPrice >= 10000.0
+                              ? ParishColors.goldAccent
+                              : ParishColors.marianBlue,
                         ),
                       ),
                     ),
@@ -716,9 +1164,21 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             ),
             child: Column(
               children: [
-                _buildDataRow(Icons.category_outlined, 'Category', _asset.displayClassification),
-                _buildDataRow(Icons.location_on_outlined, 'Storage Location', _asset.displayLocation),
-                _buildDataRow(Icons.calendar_today_outlined, 'Acquisition Date', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
+                _buildDataRow(
+                  Icons.category_outlined,
+                  'Category',
+                  _asset.displayClassification,
+                ),
+                _buildDataRow(
+                  Icons.location_on_outlined,
+                  'Storage Location',
+                  _asset.displayLocation,
+                ),
+                _buildDataRow(
+                  Icons.calendar_today_outlined,
+                  'Acquisition Date',
+                  '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})',
+                ),
                 if (_asset.rfidTag != null && _asset.rfidTag!.isNotEmpty)
                   _buildDataRow(Icons.nfc, 'RFID / NFC Tag', _asset.rfidTag!),
               ],
@@ -736,15 +1196,39 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   children: [
                     Text(
                       _asset.itemName,
-                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: textDark),
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
                     ),
                     const SizedBox(height: 6),
-                    _buildDataRow(Icons.category_outlined, 'Category', _asset.displayClassification),
-                    _buildDataRow(Icons.location_on_outlined, 'Storage Location', _asset.displayLocation),
-                    _buildDataRow(Icons.calendar_today_outlined, 'Acquisition Date', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
-                    _buildDataRow(Icons.menu_book, 'Book of Inventory', _asset.inventorySection),
+                    _buildDataRow(
+                      Icons.category_outlined,
+                      'Category',
+                      _asset.displayClassification,
+                    ),
+                    _buildDataRow(
+                      Icons.location_on_outlined,
+                      'Storage Location',
+                      _asset.displayLocation,
+                    ),
+                    _buildDataRow(
+                      Icons.calendar_today_outlined,
+                      'Acquisition Date',
+                      '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})',
+                    ),
+                    _buildDataRow(
+                      Icons.menu_book,
+                      'Book of Inventory',
+                      _asset.inventorySection,
+                    ),
                     if (_asset.rfidTag != null && _asset.rfidTag!.isNotEmpty)
-                      _buildDataRow(Icons.nfc, 'RFID / NFC Tag', _asset.rfidTag!),
+                      _buildDataRow(
+                        Icons.nfc,
+                        'RFID / NFC Tag',
+                        _asset.rfidTag!,
+                      ),
                   ],
                 ),
               ),
@@ -758,32 +1242,76 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           decoration: BoxDecoration(
             color: const Color(0xFFF0FDF4),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.35)),
+            border: Border.all(
+              color: ParishColors.oliveGreen.withOpacity(0.35),
+            ),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               Column(
                 children: [
-                  Text('Quantity', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.bold)),
+                  Text(
+                    'Quantity',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: textMuted,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text('${_asset.quantity} unit(s)', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                  Text(
+                    '${_asset.quantity} unit(s)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.marianBlue,
+                    ),
+                  ),
                 ],
               ),
               Container(width: 1, height: 28, color: ParishColors.borderGrey),
               Column(
                 children: [
-                  Text('Price per Unit', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.bold)),
+                  Text(
+                    'Price per Unit',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: textMuted,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(_asset.formattedUnitPrice, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                  Text(
+                    _asset.formattedUnitPrice,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.marianBlue,
+                    ),
+                  ),
                 ],
               ),
               Container(width: 1, height: 28, color: ParishColors.borderGrey),
               Column(
                 children: [
-                  Text('Total Cost', style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.bold)),
+                  Text(
+                    'Total Cost',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: textMuted,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(_asset.formattedTotalCost, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
+                  Text(
+                    _asset.formattedTotalCost,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.oliveGreen,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -801,12 +1329,24 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('PHYSICAL SPECIFICATIONS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted)),
+              Text(
+                'PHYSICAL SPECIFICATIONS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: textMuted,
+                ),
+              ),
               const Divider(height: 14),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _buildSpecItem('Size / Dimensions', _asset.dimensions ?? '—')),
+                  Expanded(
+                    child: _buildSpecItem(
+                      'Size / Dimensions',
+                      _asset.dimensions ?? '—',
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(child: _buildSpecItem('Color', _asset.color ?? '—')),
                 ],
@@ -815,24 +1355,33 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _buildSpecItem('Brand / Model', _asset.model ?? '—')),
+                  Expanded(
+                    child: _buildSpecItem('Brand / Model', _asset.model ?? '—'),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: _buildSpecItem(
                       'Item Status',
                       _asset.operationalStatus,
-                      highlightRed: _asset.operationalStatus == 'Decommissioned',
+                      highlightRed:
+                          _asset.operationalStatus == 'Decommissioned',
                     ),
                   ),
                 ],
               ),
               if (_asset.others != null && _asset.others!.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                Text('Markings / Details: ${_asset.others}', style: TextStyle(fontSize: 12, color: textDark)),
+                Text(
+                  'Markings / Details: ${_asset.others}',
+                  style: TextStyle(fontSize: 12, color: textDark),
+                ),
               ],
               if (_asset.remarks != null && _asset.remarks!.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text('Notes: ${_asset.remarks}', style: TextStyle(fontSize: 11.5, color: textMuted)),
+                Text(
+                  'Notes: ${_asset.remarks}',
+                  style: TextStyle(fontSize: 11.5, color: textMuted),
+                ),
               ],
             ],
           ),
@@ -841,13 +1390,28 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Audit & Adjustment History', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark)),
-            Text('${_auditHistory.length} record(s)', style: TextStyle(fontSize: 11.5, color: textMuted)),
+            Text(
+              'Audit & Adjustment History',
+              style: TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.bold,
+                color: textDark,
+              ),
+            ),
+            Text(
+              '${_auditHistory.length} record(s)',
+              style: TextStyle(fontSize: 11.5, color: textMuted),
+            ),
           ],
         ),
         const SizedBox(height: 8),
         if (_isLoadingHistory)
-          const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          )
         else if (_auditHistory.isEmpty)
           Container(
             width: double.infinity,
@@ -858,12 +1422,17 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               border: Border.all(color: borderGrey),
             ),
             child: Center(
-              child: Text('No audit or quantity change records logged yet.', style: TextStyle(fontSize: 12, color: textMuted)),
+              child: Text(
+                'No audit or quantity change records logged yet.',
+                style: TextStyle(fontSize: 12, color: textMuted),
+              ),
             ),
           )
         else
           Column(
-            children: _auditHistory.map((log) => _buildAuditLogTile(log)).toList(),
+            children: _auditHistory
+                .map((log) => _buildAuditLogTile(log))
+                .toList(),
           ),
       ],
     );
@@ -888,7 +1457,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             color: ParishColors.backgroundLight,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: _asset.photoUrl != null ? ParishColors.goldAccent : borderGrey,
+              color: _asset.photoUrl != null
+                  ? ParishColors.goldAccent
+                  : borderGrey,
               width: _asset.photoUrl != null ? 1.5 : 1.0,
             ),
           ),
@@ -896,38 +1467,46 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             borderRadius: BorderRadius.circular(11),
             child: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
                 ? Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.network(
-                  _asset.photoUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Center(
-                    child: Icon(_asset.classificationIcon, size: 36, color: ParishColors.marianBlue),
-                  ),
-                ),
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    color: Colors.black54,
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: const Text(
-                      'WATERMARKED',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 7.0,
-                        fontWeight: FontWeight.bold,
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(
+                        _asset.photoUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Center(
+                          child: Icon(
+                            _asset.classificationIcon,
+                            size: 36,
+                            color: ParishColors.marianBlue,
+                          ),
+                        ),
                       ),
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          color: Colors.black54,
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: const Text(
+                            'WATERMARKED',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 7.0,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Center(
+                    child: Icon(
+                      _asset.classificationIcon,
+                      size: 36,
+                      color: ParishColors.marianBlue,
                     ),
                   ),
-                ),
-              ],
-            )
-                : Center(
-              child: Icon(_asset.classificationIcon, size: 36, color: ParishColors.marianBlue),
-            ),
           ),
         ),
       ),
@@ -943,12 +1522,12 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: log.hasQuantityAdjustment
-            ? ParishColors.goldLight.withValues(alpha: 0.5)
+            ? ParishColors.goldLight.withOpacity(0.5)
             : ParishColors.backgroundLight,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: log.hasQuantityAdjustment
-              ? ParishColors.goldAccent.withValues(alpha: 0.6)
+              ? ParishColors.goldAccent.withOpacity(0.6)
               : ParishColors.borderGrey,
         ),
       ),
@@ -959,7 +1538,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                log.auditMethod == 'RFID_NFC' ? Icons.nfc : Icons.qr_code_scanner,
+                log.auditMethod == 'RFID_NFC'
+                    ? Icons.nfc
+                    : Icons.qr_code_scanner,
                 size: 16,
                 color: ParishColors.marianBlue,
               ),
@@ -973,7 +1554,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                       children: [
                         Text(
                           'Condition: ${log.newCondition}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
                         ),
                         Text(
                           log.formattedAuditedAt,
@@ -983,11 +1568,18 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     ),
                     if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text('Status: ${log.newStatus}', style: TextStyle(fontSize: 11, color: textMuted)),
+                      Text(
+                        'Status: ${log.newStatus}',
+                        style: TextStyle(fontSize: 11, color: textMuted),
+                      ),
                     ],
-                    if (log.newLocation != null && log.newLocation!.isNotEmpty) ...[
+                    if (log.newLocation != null &&
+                        log.newLocation!.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text('Location: ${log.newLocation}', style: TextStyle(fontSize: 11, color: textMuted)),
+                      Text(
+                        'Location: ${log.newLocation}',
+                        style: TextStyle(fontSize: 11, color: textMuted),
+                      ),
                     ],
                   ],
                 ),
@@ -1003,7 +1595,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ParishColors.goldAccent.withValues(alpha: 0.4)),
+                border: Border.all(
+                  color: ParishColors.goldAccent.withOpacity(0.4),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1011,9 +1605,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   Row(
                     children: [
                       Icon(
-                        (log.quantityChange ?? 0) > 0 ? Icons.add_circle : Icons.remove_circle,
+                        (log.quantityChange ?? 0) > 0
+                            ? Icons.add_circle
+                            : Icons.remove_circle,
                         size: 14,
-                        color: (log.quantityChange ?? 0) > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                        color: (log.quantityChange ?? 0) > 0
+                            ? ParishColors.oliveGreen
+                            : ParishColors.mercyRed,
                       ),
                       const SizedBox(width: 6),
                       Text(
@@ -1021,16 +1619,23 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.bold,
-                          color: (log.quantityChange ?? 0) > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                          color: (log.quantityChange ?? 0) > 0
+                              ? ParishColors.oliveGreen
+                              : ParishColors.mercyRed,
                         ),
                       ),
                     ],
                   ),
-                  if (log.quantityChangeReason != null && log.quantityChangeReason!.isNotEmpty) ...[
+                  if (log.quantityChangeReason != null &&
+                      log.quantityChangeReason!.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
                       'Reason: ${log.quantityChangeReason}',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textDark),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: textDark,
+                      ),
                     ),
                   ],
                 ],
@@ -1040,19 +1645,33 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
           if (log.cleanNotes.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('Notes: ${log.cleanNotes}', style: TextStyle(fontSize: 11, color: textDark)),
+            Text(
+              'Notes: ${log.cleanNotes}',
+              style: TextStyle(fontSize: 11, color: textDark),
+            ),
           ],
 
           if (log.auditorName != null) ...[
             const SizedBox(height: 4),
-            Text('Audited by: ${log.auditorName}', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: textMuted)),
+            Text(
+              'Audited by: ${log.auditorName}',
+              style: TextStyle(
+                fontSize: 10,
+                fontStyle: FontStyle.italic,
+                color: textMuted,
+              ),
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildEditForm() {
+  // ===========================================================================
+  // Responsive Edit Form Mode with Anti-Overflow Dropdowns
+  // ===========================================================================
+
+  Widget _buildEditForm(bool isMobile) {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
@@ -1066,22 +1685,37 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           decoration: BoxDecoration(
             color: ParishColors.marianBlueSurface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.3)),
+            border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.lock_outline, size: 16, color: ParishColors.marianBlue),
+              Icon(
+                Icons.lock_outline,
+                size: 16,
+                color: ParishColors.marianBlue,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Control Number (${_asset.controlNumber}) and Category are locked to preserve records.',
-                  style: const TextStyle(fontSize: 11.5, color: ParishColors.marianBlue, fontWeight: FontWeight.bold),
+                  'Control Number (${_asset.controlNumber}) and Category are locked to preserve canonical ledger integrity.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: ParishColors.marianBlue,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
           ),
         ),
-        Text('Item Photo', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text(
+          'Item Photo',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: textDark,
+          ),
+        ),
         const SizedBox(height: 6),
         Container(
           padding: const EdgeInsets.all(12),
@@ -1095,8 +1729,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               InkWell(
                 onTap: () {
                   if (_newWatermarkedPhotoBytes != null) {
-                    _openInteractivePreview(MemoryImage(_newWatermarkedPhotoBytes!));
-                  } else if (_asset.photoUrl != null && _asset.photoUrl!.isNotEmpty) {
+                    _openInteractivePreview(
+                      MemoryImage(_newWatermarkedPhotoBytes!),
+                    );
+                  } else if (_asset.photoUrl != null &&
+                      _asset.photoUrl!.isNotEmpty) {
                     _openInteractivePreview(NetworkImage(_asset.photoUrl!));
                   }
                 },
@@ -1110,18 +1747,30 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     border: Border.all(color: borderGrey),
                   ),
                   child: _isProcessingImage
-                      ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : _newWatermarkedPhotoBytes != null
                       ? ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: Image.memory(_newWatermarkedPhotoBytes!, fit: BoxFit.cover),
-                  )
+                          borderRadius: BorderRadius.circular(7),
+                          child: Image.memory(
+                            _newWatermarkedPhotoBytes!,
+                            fit: BoxFit.cover,
+                          ),
+                        )
                       : (_asset.photoUrl != null && _asset.photoUrl!.isNotEmpty)
                       ? ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: Image.network(_asset.photoUrl!, fit: BoxFit.cover),
-                  )
-                      : const Icon(Icons.photo_outlined, size: 32, color: ParishColors.marianBlue),
+                          borderRadius: BorderRadius.circular(7),
+                          child: Image.network(
+                            _asset.photoUrl!,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : Icon(
+                          Icons.photo_outlined,
+                          size: 32,
+                          color: ParishColors.marianBlue,
+                        ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -1132,11 +1781,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     Text(
                       _newWatermarkedPhotoBytes != null
                           ? 'New Watermarked Photo'
-                          : (_asset.photoUrl != null ? 'Current Photo' : 'No photo uploaded'),
+                          : (_asset.photoUrl != null
+                                ? 'Current Photo'
+                                : 'No photo uploaded'),
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
-                        color: _newWatermarkedPhotoBytes != null ? ParishColors.oliveGreen : textDark,
+                        color: _newWatermarkedPhotoBytes != null
+                            ? ParishColors.oliveGreen
+                            : textDark,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -1148,23 +1801,49 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: ParishColors.marianBlue,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
-                          onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
+                          onPressed: _isProcessingImage
+                              ? null
+                              : _capturePhotoWithCamera,
                           icon: const Icon(Icons.camera_alt, size: 13),
-                          label: const Text('Camera', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          label: const Text(
+                            'Camera',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                         OutlinedButton.icon(
-                          style: ElevatedButton.styleFrom(
+                          style: OutlinedButton.styleFrom(
                             foregroundColor: ParishColors.marianBlue,
-                            side: const BorderSide(color: ParishColors.marianBlue),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            side: BorderSide(color: ParishColors.marianBlue),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
-                          onPressed: _isProcessingImage ? null : _pickImageFromDevice,
+                          onPressed: _isProcessingImage
+                              ? null
+                              : _pickImageFromDevice,
                           icon: const Icon(Icons.upload_file, size: 13),
-                          label: const Text('Upload', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          label: const Text(
+                            'Upload',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -1175,11 +1854,21 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           ),
         ),
         const SizedBox(height: 14),
-        Text('Item Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text(
+          'Item Name *',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: textDark,
+          ),
+        ),
         const SizedBox(height: 6),
         TextFormField(
           controller: _nameController,
-          decoration: _inputDecoration(hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
+          style: TextStyle(fontSize: 14, color: textDark),
+          decoration: _inputDecoration(
+            hint: 'e.g. Wooden Church Pew, Monoblock Chair',
+          ),
         ),
         const SizedBox(height: 12),
         Row(
@@ -1190,12 +1879,20 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Quantity *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text(
+                    'Quantity *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: _quantityController,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    style: TextStyle(fontSize: 14, color: textDark),
                     decoration: _inputDecoration(hint: 'e.g. 16'),
                   ),
                 ],
@@ -1207,17 +1904,36 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Price per Unit (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                  Text(
+                    'Price per Unit (₱)',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: _unitPriceController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
+                    style: TextStyle(fontSize: 14, color: textDark),
                     decoration: _inputDecoration(
                       hint: 'e.g. 2,500.00',
-                      prefixIcon: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                        child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold)),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 12,
+                        ),
+                        child: Text(
+                          '₱',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1233,159 +1949,474 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           decoration: BoxDecoration(
             color: ParishColors.backgroundLight,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.3)),
+            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Total: ₱ ${AssetModel.formatCurrency(_editCalculatedTotalCost)}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: ParishColors.oliveGreen,
+                ),
               ),
               Text(
                 _editDeterminedSection,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: ParishColors.marianBlue,
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        isMobile
+            ? Column(
                 children: [
-                  Text('Category (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
-                  const SizedBox(height: 6),
-                  TextFormField(initialValue: _asset.displayClassification, enabled: false, decoration: _inputDecoration()),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Category (Locked)',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        initialValue: _asset.displayClassification,
+                        enabled: false,
+                        style: TextStyle(fontSize: 13, color: textMuted),
+                        decoration: _inputDecoration(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Storage Location (Locked)',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        initialValue: _asset.displayLocation,
+                        enabled: false,
+                        style: TextStyle(fontSize: 13, color: textMuted),
+                        decoration: _inputDecoration(),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Category (Locked)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          initialValue: _asset.displayClassification,
+                          enabled: false,
+                          style: TextStyle(fontSize: 13, color: textMuted),
+                          decoration: _inputDecoration(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Storage Location (Locked)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          initialValue: _asset.displayLocation,
+                          enabled: false,
+                          style: TextStyle(fontSize: 13, color: textMuted),
+                          decoration: _inputDecoration(),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Storage Location (Locked)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textMuted)),
-                  const SizedBox(height: 6),
-                  TextFormField(initialValue: _asset.displayLocation, enabled: false, decoration: _inputDecoration()),
-                ],
-              ),
-            ),
-          ],
-        ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        isMobile
+            ? Column(
                 children: [
-                  Text('Item Condition *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: _conditionStatus,
-                    decoration: _inputDecoration(),
-                    items: const [
-                      DropdownMenuItem(value: 'VERIFIED / GOOD', child: Text('VERIFIED / GOOD')),
-                      DropdownMenuItem(value: 'REQUIRES REPAIR', child: Text('REQUIRES REPAIR')),
-                      DropdownMenuItem(value: 'DAMAGED', child: Text('DAMAGED')),
-                      DropdownMenuItem(value: 'MISSING', child: Text('MISSING')),
-                      DropdownMenuItem(value: 'UNUSABLE', child: Text('UNUSABLE')),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Item Condition *',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildConditionDropdown(),
                     ],
-                    onChanged: (val) => setState(() => _conditionStatus = val!),
+                  ),
+                  const SizedBox(height: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Item Status *',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildOperationalStatusDropdown(),
+                    ],
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Item Condition *',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _buildConditionDropdown(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Item Status *',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _buildOperationalStatusDropdown(),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Item Status *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: _operationalStatus,
-                    decoration: _inputDecoration(),
-                    items: const [
-                      DropdownMenuItem(value: 'Active', child: Text('Available / Active')),
-                      DropdownMenuItem(value: 'In Storage', child: Text('In Storage')),
-                      DropdownMenuItem(value: 'Under Maintenance', child: Text('Under Maintenance')),
-                      DropdownMenuItem(value: 'Decommissioned', child: Text('Decommissioned')),
-                    ],
-                    onChanged: (val) => setState(() => _operationalStatus = val!),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
         const SizedBox(height: 12),
         _buildLabel('Wireless RFID / NFC Tag (Optional)'),
-        TextFormField(controller: _rfidController, decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C')),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Size / Dimensions', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  TextFormField(controller: _dimensionsController, decoration: _inputDecoration(hint: 'e.g. 10 ft x 3 ft')),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Color', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  TextFormField(controller: _colorController, decoration: _inputDecoration(hint: 'e.g. Dark Walnut')),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Brand / Model', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                  const SizedBox(height: 6),
-                  TextFormField(controller: _modelController, decoration: _inputDecoration(hint: 'e.g. Custom Woodcraft')),
-                ],
-              ),
-            ),
-          ],
+        TextFormField(
+          controller: _rfidController,
+          style: TextStyle(fontSize: 13.5, color: textDark),
+          decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C'),
         ),
         const SizedBox(height: 12),
-        Text('Additional Details / Markings', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        isMobile
+            ? Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Size / Dimensions',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.bold,
+                                color: textDark,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            TextFormField(
+                              controller: _dimensionsController,
+                              style: TextStyle(fontSize: 13, color: textDark),
+                              decoration: _inputDecoration(
+                                hint: 'e.g. 10 ft x 3 ft',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Color',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.bold,
+                                color: textDark,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            TextFormField(
+                              controller: _colorController,
+                              style: TextStyle(fontSize: 13, color: textDark),
+                              decoration: _inputDecoration(
+                                hint: 'e.g. Dark Walnut',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Brand / Model',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: _modelController,
+                        style: TextStyle(fontSize: 13, color: textDark),
+                        decoration: _inputDecoration(
+                          hint: 'e.g. Custom Woodcraft',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Size / Dimensions',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _dimensionsController,
+                          style: TextStyle(fontSize: 13, color: textDark),
+                          decoration: _inputDecoration(
+                            hint: 'e.g. 10 ft x 3 ft',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Color',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _colorController,
+                          style: TextStyle(fontSize: 13, color: textDark),
+                          decoration: _inputDecoration(
+                            hint: 'e.g. Dark Walnut',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Brand / Model',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _modelController,
+                          style: TextStyle(fontSize: 13, color: textDark),
+                          decoration: _inputDecoration(
+                            hint: 'e.g. Custom Woodcraft',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+        const SizedBox(height: 12),
+        Text(
+          'Additional Details / Markings',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: textDark,
+          ),
+        ),
         const SizedBox(height: 6),
         TextFormField(
           controller: _othersController,
           maxLines: 2,
-          decoration: _inputDecoration(hint: 'e.g. Inscribed "Donated by Santos Family"'),
+          style: TextStyle(fontSize: 13, color: textDark),
+          decoration: _inputDecoration(
+            hint: 'e.g. Inscribed "Donated by Santos Family"',
+          ),
         ),
         const SizedBox(height: 12),
-        Text('Notes & Maintenance Remarks', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+        Text(
+          'Notes & Maintenance Remarks',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: textDark,
+          ),
+        ),
         const SizedBox(height: 6),
         TextFormField(
           controller: _remarksController,
           maxLines: 2,
-          decoration: _inputDecoration(hint: 'e.g. Inspected and placed in main church nave'),
+          style: TextStyle(fontSize: 13, color: textDark),
+          decoration: _inputDecoration(
+            hint: 'e.g. Inspected and placed in main church nave',
+          ),
         ),
       ],
+    );
+  }
+
+  // ===========================================================================
+  // Dropdown Builders with Assertion Guards
+  // ===========================================================================
+
+  Widget _buildConditionDropdown() {
+    final effectiveCondition = _normalizeConditionStatus(_conditionStatus);
+    final items = List<String>.from(_conditionOptions);
+    if (!items.contains(effectiveCondition)) {
+      items.add(effectiveCondition);
+    }
+
+    return DropdownButtonFormField<String>(
+      value: effectiveCondition,
+      decoration: _inputDecoration(),
+      items: items.map((c) {
+        return DropdownMenuItem(
+          value: c,
+          child: Text(
+            c,
+            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+          ),
+        );
+      }).toList(),
+      onChanged: (val) {
+        if (val != null) {
+          setState(() => _conditionStatus = val);
+        }
+      },
+    );
+  }
+
+  Widget _buildOperationalStatusDropdown() {
+    final effectiveStatus = _normalizeOperationalStatus(_operationalStatus);
+    final items = List<String>.from(_operationalStatusOptions);
+    if (!items.contains(effectiveStatus)) {
+      items.add(effectiveStatus);
+    }
+
+    return DropdownButtonFormField<String>(
+      value: effectiveStatus,
+      decoration: _inputDecoration(),
+      items: items.map((s) {
+        String label = s;
+        if (s == 'Active') label = 'Active / Available';
+        return DropdownMenuItem(
+          value: s,
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+          ),
+        );
+      }).toList(),
+      onChanged: (val) {
+        if (val != null) {
+          setState(() => _operationalStatus = val);
+        }
+      },
     );
   }
 
   Widget _buildLabel(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          color: ParishColors.textDark,
+        ),
+      ),
     );
   }
 
@@ -1397,18 +2428,45 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         children: [
           Icon(icon, size: 15, color: ParishColors.marianBlue),
           const SizedBox(width: 6),
-          Text('$label: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textMuted)),
-          Expanded(child: Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.textDark))),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.textMuted,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: ParishColors.textDark,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSpecItem(String label, String value, {bool highlightRed = false}) {
+  Widget _buildSpecItem(
+    String label,
+    String value, {
+    bool highlightRed = false,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted, fontWeight: FontWeight.w600)),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10.5,
+            color: ParishColors.textMuted,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         const SizedBox(height: 2),
         Text(
           value,
@@ -1425,12 +2483,24 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   InputDecoration _inputDecoration({String? hint, Widget? prefixIcon}) {
     return InputDecoration(
       hintText: hint,
+      hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
       prefixIcon: prefixIcon,
       filled: true,
       fillColor: ParishColors.backgroundLight,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.5),
+      ),
     );
   }
 }

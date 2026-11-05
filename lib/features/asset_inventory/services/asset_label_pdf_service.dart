@@ -17,29 +17,32 @@ class AssetLabelPdfService {
   static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
-  /// Generates a printable sticker label for an asset
+  // Exact fixed card dimensions matching Image 1 (fits 3 columns on standard A4)
+  static const double stickerWidth = 63.0 * PdfPageFormat.mm; // ~178.6 pt
+  static const double stickerHeight = 35.0 * PdfPageFormat.mm; // ~99.2 pt
+
+  /// Generates a single printable sticker label centered on label roll paper
   static Future<Uint8List> generateSingleAssetLabelPdf(AssetModel asset) async {
     const pageFormat = PdfPageFormat(
       70 * PdfPageFormat.mm,
       38 * PdfPageFormat.mm,
-      marginAll: 2 * PdfPageFormat.mm,
+      marginAll: 1.5 * PdfPageFormat.mm,
     );
 
     final fontRegular = await PdfGoogleFonts.arimoRegular();
     final fontBold = await PdfGoogleFonts.arimoBold();
 
     final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(
-        base: fontRegular,
-        bold: fontBold,
-      ),
+      theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
     );
 
     pdf.addPage(
       pw.Page(
         pageFormat: pageFormat,
         build: (context) {
-          return _buildSingleAssetSticker(asset, fontRegular, fontBold);
+          return pw.Center(
+            child: _buildSingleAssetSticker(asset, fontRegular, fontBold),
+          );
         },
       ),
     );
@@ -47,20 +50,19 @@ class AssetLabelPdfService {
     return pdf.save();
   }
 
-  /// Generates a full sheet of asset labels (A4 with 3x8 = 24 labels grid)
-  static Future<Uint8List> generateBatchAssetLabelsPdf(List<AssetModel> assets) async {
+  /// Generates batch asset labels on standard A4 sheet in fixed-size cards (3 columns, up to 21 labels per page)
+  static Future<Uint8List> generateBatchAssetLabelsPdf(
+    List<AssetModel> assets,
+  ) async {
     const pageFormat = PdfPageFormat.a4;
     final fontRegular = await PdfGoogleFonts.arimoRegular();
     final fontBold = await PdfGoogleFonts.arimoBold();
 
     final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(
-        base: fontRegular,
-        bold: fontBold,
-      ),
+      theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
     );
 
-    const int labelsPerPage = 24;
+    const int labelsPerPage = 21; // 3 columns x 7 rows
     for (int i = 0; i < assets.length; i += labelsPerPage) {
       final pageAssets = assets.sublist(
         i,
@@ -70,13 +72,14 @@ class AssetLabelPdfService {
       pdf.addPage(
         pw.Page(
           pageFormat: pageFormat,
-          margin: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          margin: const pw.EdgeInsets.symmetric(
+            horizontal: 7.0 * PdfPageFormat.mm,
+            vertical: 9.0 * PdfPageFormat.mm,
+          ),
           build: (context) {
-            return pw.GridView(
-              crossAxisCount: 3,
-              childAspectRatio: 1.85,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
+            return pw.Wrap(
+              spacing: 3.5 * PdfPageFormat.mm,
+              runSpacing: 4.5 * PdfPageFormat.mm,
               children: pageAssets.map((asset) {
                 return _buildSingleAssetSticker(asset, fontRegular, fontBold);
               }).toList(),
@@ -106,42 +109,49 @@ class AssetLabelPdfService {
   }
 
   // ===========================================================================
-  // Individual Sticker Layout Builder
+  // Reference Sticker Layout (Fixed Size matching Image 1 exactly)
   // ===========================================================================
 
   static pw.Widget _buildSingleAssetSticker(
-      AssetModel asset,
-      pw.Font fontRegular,
-      pw.Font fontBold,
-      ) {
-    final qrData = asset.qrCodeToken.isNotEmpty ? asset.qrCodeToken : asset.controlNumber;
+    AssetModel asset,
+    pw.Font fontRegular,
+    pw.Font fontBold,
+  ) {
+    final qrData = asset.qrCodeToken.isNotEmpty
+        ? asset.qrCodeToken
+        : asset.controlNumber;
     final displayControlNo = asset.controlNumber;
 
-    final locationText = asset.locationName != null && asset.locationName!.isNotEmpty
+    final locationText =
+        asset.locationName != null && asset.locationName!.isNotEmpty
         ? asset.locationName!
         : asset.locationAcronym;
 
-    final classificationText = asset.classificationName != null && asset.classificationName!.isNotEmpty
+    final classificationText =
+        asset.classificationName != null && asset.classificationName!.isNotEmpty
         ? asset.classificationName!
         : asset.classificationAcronym;
 
     return pw.Container(
+      width: stickerWidth,
+      height: stickerHeight,
       decoration: pw.BoxDecoration(
         color: PdfColors.white,
-        borderRadius: pw.BorderRadius.circular(5),
+        borderRadius: pw.BorderRadius.circular(6),
         border: pw.Border.all(color: marianBlue, width: 1.2),
       ),
-      padding: const pw.EdgeInsets.all(5),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          // Left: Scannable QR Code
+          // Left: Scannable QR Code Box
           pw.Column(
             mainAxisAlignment: pw.MainAxisAlignment.center,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
               pw.Container(
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 padding: const pw.EdgeInsets.all(2),
                 decoration: pw.BoxDecoration(
                   color: PdfColors.white,
@@ -153,7 +163,7 @@ class AssetLabelPdfService {
                   data: qrData,
                 ),
               ),
-              pw.SizedBox(height: 1),
+              pw.SizedBox(height: 2),
               pw.Text(
                 'DSP-SJP2',
                 style: pw.TextStyle(
@@ -165,107 +175,155 @@ class AssetLabelPdfService {
               ),
             ],
           ),
-          pw.SizedBox(width: 6),
+          pw.SizedBox(width: 5),
 
-          // Right: Parish Branding & Control Coordinates
+          // Right: Parish Details & Control Coordinates
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
-              mainAxisAlignment: pw.MainAxisAlignment.center,
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
+                // Top Header Row: Parish Title, Section Badge & Qty
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Text(
-                      'ST. JOHN PAUL II PARISH',
-                      style: pw.TextStyle(
-                        font: fontBold,
-                        fontSize: 6.2,
-                        fontWeight: pw.FontWeight.bold,
-                        color: marianBlue,
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'ST. JOHN PAUL II PARISH',
+                            style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 6.2,
+                              fontWeight: pw.FontWeight.bold,
+                              color: marianBlue,
+                            ),
+                            maxLines: 1,
+                          ),
+                          pw.Text(
+                            'Diocese of San Pablo • Property Tag',
+                            style: pw.TextStyle(
+                              font: fontRegular,
+                              fontSize: 4.6,
+                              color: textMuted,
+                            ),
+                            maxLines: 1,
+                          ),
+                        ],
                       ),
-                      maxLines: 1,
                     ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 2.5, vertical: 0.8),
-                      decoration: pw.BoxDecoration(
-                        color: asset.unitPrice >= 10000.0 ? PdfColors.amber100 : PdfColors.blue50,
-                        borderRadius: pw.BorderRadius.circular(2),
-                      ),
-                      child: pw.Text(
-                        asset.inventorySectionCode,
-                        style: pw.TextStyle(
-                          font: fontBold,
-                          fontSize: 4.5,
-                          fontWeight: pw.FontWeight.bold,
-                          color: asset.unitPrice >= 10000.0 ? goldAccent : marianBlue,
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 3.5,
+                            vertical: 1.0,
+                          ),
+                          decoration: pw.BoxDecoration(
+                            color: asset.unitPrice >= 10000.0
+                                ? PdfColors.amber100
+                                : PdfColors.blue50,
+                            borderRadius: pw.BorderRadius.circular(2.5),
+                          ),
+                          child: pw.Text(
+                            asset.inventorySectionCode,
+                            style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 4.5,
+                              fontWeight: pw.FontWeight.bold,
+                              color: asset.unitPrice >= 10000.0
+                                  ? goldAccent
+                                  : marianBlue,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (asset.quantity > 1) ...[
+                          pw.SizedBox(height: 1),
+                          pw.Text(
+                            'Qty: ${asset.quantity}',
+                            style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 5.0,
+                              color: marianBlue,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      'Diocese of San Pablo • Property Tag',
-                      style: pw.TextStyle(
-                        font: fontRegular,
-                        fontSize: 4.8,
-                        color: textMuted,
-                      ),
-                    ),
-                    if (asset.quantity > 1)
-                      pw.Text(
-                        'Qty: ${asset.quantity}',
-                        style: pw.TextStyle(
-                          font: fontBold,
-                          fontSize: 4.8,
-                          color: marianBlue,
-                        ),
-                      ),
-                  ],
-                ),
+
+                // Gold Accent Separator Line
                 pw.Container(
-                  margin: const pw.EdgeInsets.symmetric(vertical: 1.5),
-                  height: 0.5,
+                  margin: const pw.EdgeInsets.symmetric(vertical: 1.0),
+                  height: 0.8,
                   color: goldAccent,
                 ),
+
+                // Control Number
                 pw.Text(
                   displayControlNo,
                   style: pw.TextStyle(
                     font: fontBold,
-                    fontSize: 8.5,
+                    fontSize: 8.8,
                     fontWeight: pw.FontWeight.bold,
                     color: textDark,
                   ),
                   maxLines: 1,
                 ),
-                pw.SizedBox(height: 0.5),
+
+                // Item Name
                 pw.Text(
                   asset.itemName,
                   style: pw.TextStyle(
                     font: fontBold,
-                    fontSize: 6.0,
+                    fontSize: 6.2,
                     fontWeight: pw.FontWeight.bold,
                     color: marianBlue,
                   ),
                   maxLines: 1,
                 ),
-                pw.SizedBox(height: 2),
+
+                // Bottom Metadata Row: Location, Classification & Acq Date
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
                     pw.Expanded(
-                      child: pw.Text(
-                        'Location: $locationText\nClassification: $classificationText',
-                        style: pw.TextStyle(font: fontRegular, fontSize: 4.5, color: textMuted, lineSpacing: 1.1),
-                        maxLines: 2,
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Location: $locationText',
+                            style: pw.TextStyle(
+                              font: fontRegular,
+                              fontSize: 4.3,
+                              color: textMuted,
+                            ),
+                            maxLines: 1,
+                          ),
+                          pw.Text(
+                            'Classification: $classificationText',
+                            style: pw.TextStyle(
+                              font: fontRegular,
+                              fontSize: 4.3,
+                              color: textMuted,
+                            ),
+                            maxLines: 1,
+                          ),
+                        ],
                       ),
                     ),
                     pw.Text(
                       'Acq: ${asset.formattedAcquisitionDate}',
-                      style: pw.TextStyle(font: fontBold, fontSize: 5.0, color: textDark),
+                      style: pw.TextStyle(
+                        font: fontBold,
+                        fontSize: 4.8,
+                        color: textDark,
+                      ),
                     ),
                   ],
                 ),
