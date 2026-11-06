@@ -1,7 +1,3 @@
-// =============================================================================
-// FILE: lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart
-// =============================================================================
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
@@ -148,11 +144,13 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
 
   String get _displayPaymentMode {
     final lower = widget.paymentMode.toLowerCase();
-    if (lower == 'cash' || lower.contains('cash')) return 'Cash';
-    if (lower == 'gcash' || lower.contains('gcash')) return 'GCash';
+    if (lower == 'cheque' || lower.contains('cheque') || lower.contains('check')) return 'Cheque';
+    if (lower == 'gcash' || lower.contains('gcash') || lower.contains('online')) return 'GCash';
     if (lower == 'gratis' || lower.contains('gratis')) return 'Gratis';
+    if (lower == 'cash' || lower.contains('cash')) return 'Cash';
 
     final details = _currentTransactionDetails?.toLowerCase() ?? '';
+    if (details.contains('tender mode: cheque') || details.contains('cheque no')) return 'Cheque';
     if (details.contains('tender mode: gcash') || details.contains('gcash ref')) return 'GCash';
     if (details.contains('tender mode: gratis')) return 'Gratis';
     return 'Cash';
@@ -160,7 +158,8 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
 
   Color get _tenderBadgeColor {
     final mode = _displayPaymentMode.toLowerCase();
-    if (mode.contains('gcash')) return const Color(0xFF005CEE);
+    if (mode.contains('cheque') || mode.contains('check')) return const Color(0xFF6D28D9);
+    if (mode.contains('gcash') || mode.contains('online')) return const Color(0xFF005CEE);
     if (mode.contains('gratis')) return ParishColors.goldAccent;
     return ParishColors.oliveGreen;
   }
@@ -224,7 +223,13 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
             ? rightAmount
             : '₱ $rightAmount';
         items.add(_ItemizedLine(title: title, rateInfo: rate, itemAmount: formattedAmt));
-      } else if (clean.startsWith('Remarks:') || clean.startsWith('GCash Ref:') || clean.startsWith('Tender:')) {
+      } else if (clean.startsWith('Remarks:') ||
+          clean.startsWith('GCash Ref:') ||
+          clean.startsWith('Tender:') ||
+          clean.startsWith('Tender Mode:') ||
+          clean.startsWith('Bank Name:') ||
+          clean.startsWith('Cheque No:') ||
+          clean.startsWith('Cheque No.:')) {
         notes.add(clean);
       } else if (!clean.toLowerCase().contains('cash tendered') && !clean.toUpperCase().startsWith('[VOIDED')) {
         items.add(_ItemizedLine(title: clean, rateInfo: '', itemAmount: ''));
@@ -623,8 +628,10 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                           Icon(Icons.payments_outlined, size: 14, color: tenderColor)
                         else if (_displayPaymentMode == 'GCash')
                             Icon(Icons.qr_code_2, size: 14, color: tenderColor)
-                          else if (_displayPaymentMode == 'Gratis')
-                              Icon(Icons.volunteer_activism, size: 14, color: tenderColor),
+                          else if (_displayPaymentMode == 'Cheque')
+                              Icon(Icons.fact_check_outlined, size: 14, color: tenderColor)
+                            else if (_displayPaymentMode == 'Gratis')
+                                Icon(Icons.volunteer_activism, size: 14, color: tenderColor),
                         const SizedBox(width: 5),
                         Text(
                           _isVoided ? 'VOIDED' : _displayPaymentMode.toUpperCase(),
@@ -662,8 +669,6 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                       color: textColorMuted,
                     ),
                   ),
-
-                  // Staff-only: PDF Layout Preview
                   if (_isStaff)
                     TextButton.icon(
                       style: TextButton.styleFrom(
@@ -839,7 +844,6 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
       actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       actions: [
         if (_isStaff) ...[
-          // 1. Staff-Only: Void Receipt Action (Hidden if already voided)
           if (!_isVoided)
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
@@ -854,13 +858,10 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                   : const Icon(Icons.block, size: 16),
               label: Text(_isVoiding ? 'Voiding...' : 'Void Receipt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
             ),
-
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Close', style: TextStyle(color: textColorMuted)),
           ),
-
-          // 2. Staff-Only: 80mm Thermal Slip Print Option
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
@@ -874,8 +875,6 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                 : const Icon(Icons.receipt, size: 16),
             label: Text(_isVoided ? 'Print Void Slip' : '80mm Slip', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
           ),
-
-          // 3. Staff-Only: Standard Official Voucher / Document Print Option
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: _isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
@@ -895,7 +894,6 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
             ),
           ),
         ] else ...[
-          // Client / Parishioner side: Clean Close Button ONLY (Staff buttons removed)
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ParishColors.marianBlue,

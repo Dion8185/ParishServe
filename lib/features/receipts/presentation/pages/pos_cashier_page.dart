@@ -1,7 +1,3 @@
-// =============================================================================
-// FILE: lib/features/receipts/presentation/pages/pos_cashier_page.dart
-// =============================================================================
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
@@ -302,7 +298,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Handle Bar
                   Center(
                     child: Container(
                       width: 40,
@@ -314,8 +309,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
                       ),
                     ),
                   ),
-
-                  // Header with Count & Clear Slip
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -353,8 +346,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     ],
                   ),
                   const Divider(height: 18),
-
-                  // Scrollable Cart Item List
                   Flexible(
                     child: _cart.isEmpty
                         ? Padding(
@@ -423,10 +414,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                       },
                     ),
                   ),
-
                   const Divider(height: 20),
-
-                  // Subtotal & Full Checkout Button
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -438,7 +426,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     ],
                   ),
                   const SizedBox(height: 14),
-
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -628,7 +615,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
             ),
           ),
           const SizedBox(height: 14),
-
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -653,7 +639,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
             ),
           ),
           const SizedBox(height: 20),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -669,7 +654,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
             ],
           ),
           const SizedBox(height: 12),
-
           _filteredCatalog.isEmpty
               ? Container(
             width: double.infinity,
@@ -852,7 +836,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
             ],
           ),
           const Divider(height: 24),
-
           Expanded(
             child: _cart.isEmpty
                 ? Center(
@@ -927,9 +910,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
               },
             ),
           ),
-
           const Divider(height: 24),
-
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -997,7 +978,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               children: [
-                // Pull-up chevron and item tally
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -1049,6 +1029,9 @@ class _PosCashierPageState extends State<PosCashierPage> {
   }
 }
 
+// =============================================================================
+// CHECKOUT MODAL WITH CASH (PHYSICAL & ONLINE) AND CHEQUE SUPPORT
+// =============================================================================
 class _CheckoutModal extends StatefulWidget {
   final List<PosCartItem> cartItems;
   final double totalAmount;
@@ -1070,11 +1053,30 @@ class _CheckoutModalState extends State<_CheckoutModal> {
   final _payorContactController = TextEditingController();
   final _tenderedController = TextEditingController();
   final _gcashRefController = TextEditingController();
+  final _bankNameController = TextEditingController();
+  final _chequeNumberController = TextEditingController();
   final _remarksController = TextEditingController();
 
-  String _paymentMode = 'Cash';
+  // Primary payment category: 'Cash', 'Cheque', 'Gratis'
+  String _paymentCategory = 'Cash';
+  // Sub-option for cash: 'Physical', 'Online'
+  String _cashSubtype = 'Physical';
+
   bool _isProcessing = false;
   String? _errorMessage;
+
+  final List<String> _commonBanks = [
+    'BDO Unibank',
+    'BPI (Bank of the Philippine Islands)',
+    'Metrobank',
+    'Land Bank of the Philippines',
+    'China Bank',
+    'RCBC',
+    'Security Bank',
+    'UnionBank',
+    'PNB',
+    'Other / Rural Bank',
+  ];
 
   @override
   void initState() {
@@ -1089,6 +1091,8 @@ class _CheckoutModalState extends State<_CheckoutModal> {
     _payorContactController.dispose();
     _tenderedController.dispose();
     _gcashRefController.dispose();
+    _bankNameController.dispose();
+    _chequeNumberController.dispose();
     _remarksController.dispose();
     super.dispose();
   }
@@ -1096,9 +1100,14 @@ class _CheckoutModalState extends State<_CheckoutModal> {
   double get _tenderedAmount => double.tryParse(_tenderedController.text.trim()) ?? 0.0;
   double get _changeAmount => (_tenderedAmount - widget.totalAmount).clamp(0.0, 999999.0);
 
+  String get _resolvedPaymentMode {
+    if (_paymentCategory == 'Cheque') return 'Cheque';
+    if (_paymentCategory == 'Gratis') return 'Gratis';
+    return _cashSubtype == 'Online' ? 'GCash' : 'Cash';
+  }
+
   String _resolveTransactionTypeCategory() {
     if (widget.cartItems.isEmpty) return 'donation';
-
     final category = widget.cartItems.first.item.category.toLowerCase();
     if (category.contains('sacrament')) return 'sacrament';
     if (category.contains('intention')) return 'mass_intention';
@@ -1111,7 +1120,7 @@ class _CheckoutModalState extends State<_CheckoutModal> {
 
     if (!_formKey.currentState!.validate()) return;
 
-    if (_paymentMode == 'Cash' && _tenderedAmount < widget.totalAmount) {
+    if (_paymentCategory == 'Cash' && _cashSubtype == 'Physical' && _tenderedAmount < widget.totalAmount) {
       setState(() => _errorMessage = 'Tendered cash is less than the total amount due.');
       return;
     }
@@ -1134,22 +1143,46 @@ class _CheckoutModalState extends State<_CheckoutModal> {
           .map((c) => '• ${c.item.title} x${c.quantity}\n  @ ₱${c.customPrice.toStringAsFixed(2)} = ₱${c.total.toStringAsFixed(2)}')
           .join('\n');
 
+      final detailsBuffer = StringBuffer(lineDetails);
+
       final userRemarks = _remarksController.text.trim();
-      final fullDetails = userRemarks.isNotEmpty ? '$lineDetails\nRemarks: $userRemarks' : lineDetails;
+      if (userRemarks.isNotEmpty) {
+        detailsBuffer.write('\nRemarks: $userRemarks');
+      }
+
+      // Format Tender Metadata
+      if (_paymentCategory == 'Cheque') {
+        detailsBuffer.write('\nTender Mode: Cheque');
+        detailsBuffer.write('\nBank Name: ${_bankNameController.text.trim()}');
+        detailsBuffer.write('\nCheque No.: ${_chequeNumberController.text.trim()}');
+      } else if (_paymentCategory == 'Cash' && _cashSubtype == 'Online') {
+        detailsBuffer.write('\nTender Mode: GCash');
+        final ref = _gcashRefController.text.trim();
+        if (ref.isNotEmpty) detailsBuffer.write('\nGCash Ref: $ref');
+      } else if (_paymentCategory == 'Gratis') {
+        detailsBuffer.write('\nTender Mode: Gratis');
+      } else {
+        detailsBuffer.write('\nTender Mode: Cash\nCash Tendered: ₱${_tenderedAmount.toStringAsFixed(2)} (Change: ₱${_changeAmount.toStringAsFixed(2)})');
+      }
+
       final resolvedType = _resolveTransactionTypeCategory();
+      final effectiveAmount = _paymentCategory == 'Gratis' ? 0.00 : widget.totalAmount;
 
       final record = await SecretaryService.createTransaction(
         payorName: _payorNameController.text.trim(),
         payorContact: _payorContactController.text.trim(),
         relatedService: summaryServices,
-        transactionDetails: fullDetails,
-        transactionAmount: _paymentMode == 'Gratis' ? 0.00 : widget.totalAmount,
+        transactionDetails: detailsBuffer.toString(),
+        transactionAmount: effectiveAmount,
         transactionType: resolvedType,
+        paymentMode: _resolvedPaymentMode,
+        bankName: _paymentCategory == 'Cheque' ? _bankNameController.text.trim() : null,
+        chequeNumber: _paymentCategory == 'Cheque' ? _chequeNumberController.text.trim() : null,
       );
 
       if (!mounted) return;
       Navigator.pop(context);
-      widget.onPaid(record, _paymentMode);
+      widget.onPaid(record, _resolvedPaymentMode);
     } catch (e) {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -1170,8 +1203,8 @@ class _CheckoutModalState extends State<_CheckoutModal> {
       backgroundColor: cardWhite,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Container(
-        width: 520,
-        constraints: const BoxConstraints(maxHeight: 700),
+        width: 540,
+        constraints: const BoxConstraints(maxHeight: 740),
         child: Column(
           children: [
             Container(
@@ -1269,81 +1302,266 @@ class _CheckoutModalState extends State<_CheckoutModal> {
                         decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
                       ),
                       const SizedBox(height: 16),
-                      Text('Payment Tender Mode *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+
+                      // Payment Type Selector (Cash vs Cheque)
+                      Text('Payment Type *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
-                      DropdownButtonFormField<String>(
-                        value: _paymentMode,
-                        isExpanded: true,
-                        items: const [
-                          DropdownMenuItem(value: 'Cash', child: Text('Cash (Secretariat Desk)')),
-                          DropdownMenuItem(value: 'GCash', child: Text('GCash (Direct Transfer)')),
-                          DropdownMenuItem(value: 'Gratis', child: Text('Gratis (Canonically Exempt)')),
-                        ],
-                        onChanged: (val) => setState(() => _paymentMode = val!),
-                        decoration: _inputDecoration(),
-                      ),
-                      const SizedBox(height: 14),
-                      if (_paymentMode == 'Cash') ...[
-                        Row(
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: borderGrey),
+                        ),
+                        child: Row(
                           children: [
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                                  const SizedBox(height: 6),
-                                  TextFormField(
-                                    controller: _tenderedController,
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
-                                    decoration: _inputDecoration(hint: '0.00'),
+                              child: InkWell(
+                                onTap: () => setState(() => _paymentCategory = 'Cash'),
+                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: _paymentCategory == 'Cash' ? ParishColors.marianBlue : Colors.transparent,
+                                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
                                   ),
-                                ],
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.payments_outlined, size: 16, color: _paymentCategory == 'Cash' ? Colors.white : textDark),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Cash (Cash / Online)',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: _paymentCategory == 'Cash' ? Colors.white : textDark,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 12),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    height: 48,
-                                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                                    alignment: Alignment.centerLeft,
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.backgroundLight,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: borderGrey),
-                                    ),
-                                    child: Text(
-                                      '₱ ${_changeAmount.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: _changeAmount >= 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
-                                      ),
-                                    ),
+                              child: InkWell(
+                                onTap: () => setState(() => _paymentCategory = 'Cheque'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: _paymentCategory == 'Cheque' ? const Color(0xFF6D28D9) : Colors.transparent,
                                   ),
-                                ],
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.fact_check_outlined, size: 16, color: _paymentCategory == 'Cheque' ? Colors.white : textDark),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Cheque',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: _paymentCategory == 'Cheque' ? Colors.white : textDark,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () => setState(() => _paymentCategory = 'Gratis'),
+                                borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: _paymentCategory == 'Gratis' ? ParishColors.goldAccent : Colors.transparent,
+                                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.volunteer_activism_outlined, size: 16, color: _paymentCategory == 'Gratis' ? Colors.white : textDark),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Gratis',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: _paymentCategory == 'Gratis' ? Colors.white : textDark,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 14),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // If CASH: Sub-mode selection (Physical vs Online)
+                      if (_paymentCategory == 'Cash') ...[
+                        Row(
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Physical Cash (Secretariat Desk)'),
+                              selected: _cashSubtype == 'Physical',
+                              selectedColor: ParishColors.oliveGreen,
+                              labelStyle: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: _cashSubtype == 'Physical' ? Colors.white : textDark,
+                              ),
+                              onSelected: (_) => setState(() => _cashSubtype = 'Physical'),
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('Online (GCash Transfer)'),
+                              selected: _cashSubtype == 'Online',
+                              selectedColor: const Color(0xFF005CEE),
+                              labelStyle: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: _cashSubtype == 'Online' ? Colors.white : textDark,
+                              ),
+                              onSelected: (_) => setState(() => _cashSubtype = 'Online'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        if (_cashSubtype == 'Physical') ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                    const SizedBox(height: 6),
+                                    TextFormField(
+                                      controller: _tenderedController,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+                                      decoration: _inputDecoration(hint: '0.00'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      height: 48,
+                                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                                      alignment: Alignment.centerLeft,
+                                      decoration: BoxDecoration(
+                                        color: ParishColors.backgroundLight,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: borderGrey),
+                                      ),
+                                      child: Text(
+                                        '₱ ${_changeAmount.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: _changeAmount >= 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+
+                        if (_cashSubtype == 'Online') ...[
+                          Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _gcashRefController,
+                            validator: (v) => _cashSubtype == 'Online' && (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
+                            style: TextStyle(fontSize: 14, color: textDark),
+                            decoration: _inputDecoration(hint: 'e.g. 1002 9847 1120'),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
                       ],
-                      if (_paymentMode == 'GCash') ...[
-                        Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _gcashRefController,
-                          validator: (v) => _paymentMode == 'GCash' && (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
-                          style: TextStyle(fontSize: 14, color: textDark),
-                          decoration: _inputDecoration(hint: 'e.g. 1002 9847 1120'),
+
+                      // If CHEQUE: Bank Name and Cheque Number Inputs
+                      if (_paymentCategory == 'Cheque') ...[
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F3FF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFDDD6FE)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.fact_check, size: 18, color: Color(0xFF6D28D9)),
+                                  SizedBox(width: 8),
+                                  Text('Cheque Payment Details', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF6D28D9))),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              Text('Issuing Bank Name *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
+                              const SizedBox(height: 6),
+                              Autocomplete<String>(
+                                optionsBuilder: (TextEditingValue textEditingValue) {
+                                  if (textEditingValue.text.isEmpty) return _commonBanks;
+                                  return _commonBanks.where((b) => b.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                                },
+                                onSelected: (String selection) {
+                                  _bankNameController.text = selection;
+                                },
+                                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                                  if (_bankNameController.text.isNotEmpty && controller.text.isEmpty) {
+                                    controller.text = _bankNameController.text;
+                                  }
+                                  return TextFormField(
+                                    controller: controller,
+                                    focusNode: focusNode,
+                                    validator: (v) => _paymentCategory == 'Cheque' && (v?.trim().isEmpty ?? true)
+                                        ? 'Bank name is required'
+                                        : null,
+                                    onChanged: (val) => _bankNameController.text = val,
+                                    style: TextStyle(fontSize: 14, color: textDark),
+                                    decoration: _inputDecoration(hint: 'e.g. BDO Unibank, BPI, Landbank'),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 12),
+
+                              Text('Cheque Number *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
+                              const SizedBox(height: 6),
+                              TextFormField(
+                                controller: _chequeNumberController,
+                                validator: (v) => _paymentCategory == 'Cheque' && (v?.trim().isEmpty ?? true)
+                                    ? 'Cheque number is required'
+                                    : null,
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                                decoration: _inputDecoration(hint: 'e.g. 0001234567'),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 14),
                       ],
+
                       Text('Internal Remarks / Specific Purpose', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
                       const SizedBox(height: 6),
                       TextFormField(
