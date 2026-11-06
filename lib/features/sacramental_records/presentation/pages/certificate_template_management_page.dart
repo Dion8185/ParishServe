@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -50,6 +51,7 @@ class _CertificateTemplateManagementPageState
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final ScrollController _horizontalScrollController = ScrollController();
   Timer? _debounceTimer;
 
   List<CertificateTemplateModel> _allTemplates = [];
@@ -83,6 +85,7 @@ class _CertificateTemplateManagementPageState
     _debounceTimer?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _horizontalScrollController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -701,7 +704,8 @@ class _CertificateTemplateManagementPageState
               },
               icon: const Icon(Icons.print, size: 18),
               label: const Text('Print Preview',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                  style:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
             ),
           ],
         );
@@ -1352,17 +1356,202 @@ class _CertificateTemplateManagementPageState
   }
 
   // ===========================================================================
-  // Full-Width Responsive Table View (Zero Trailing Whitespace)
+  // Full-Width Responsive Table View (Fits large screens without forced scroll)
   // ===========================================================================
 
   Widget _buildFullWidthTableView(List<CertificateTemplateModel> templates) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final double containerWidth = constraints.maxWidth;
-        // Dynamically compute spacing across available width to prevent right-edge blank space
-        const double estimatedContentWidth = 720.0;
-        double dynamicSpacing = (containerWidth - estimatedContentWidth) / 6;
-        if (dynamicSpacing < 18.0) dynamicSpacing = 18.0;
+        // Check if the current viewport is large enough to show all columns directly
+        final bool isLargeScreen = containerWidth >= 960;
+
+        // Dynamic spacing calibrated to the container width so large screens never force horizontal overflow
+        final double columnSpacing = isLargeScreen
+            ? ((containerWidth - 780) / 6).clamp(12.0, 26.0)
+            : 16.0;
+
+        final double maxTemplateNameWidth = isLargeScreen
+            ? (containerWidth * 0.22).clamp(180.0, 320.0)
+            : 200.0;
+
+        final double maxSignatoryWidth = isLargeScreen
+            ? (containerWidth * 0.16).clamp(120.0, 200.0)
+            : 140.0;
+
+        final tableWidget = DataTable(
+          columnSpacing: columnSpacing,
+          horizontalMargin: isLargeScreen ? 18 : 12,
+          headingRowHeight: 44,
+          dataRowMinHeight: 48,
+          dataRowMaxHeight: 56,
+          headingRowColor:
+          WidgetStateProperty.all(ParishColors.marianBlueSurface),
+          headingTextStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: ParishColors.marianBlue,
+            fontSize: 12.5,
+          ),
+          dataTextStyle:
+          TextStyle(fontSize: 12.5, color: ParishColors.textDark),
+          columns: const [
+            DataColumn(label: Text('Sacrament')),
+            DataColumn(label: Text('Template Name')),
+            DataColumn(label: Text('Mode')),
+            DataColumn(label: Text('Paper Size')),
+            DataColumn(label: Text('Signatory')),
+            DataColumn(label: Text('Default')),
+            DataColumn(label: Text('Actions')),
+          ],
+          rows: templates.map((t) {
+            final accent = _getSacramentColor(t.sacramentType);
+            final surface = _getSacramentSurfaceColor(t.sacramentType);
+
+            return DataRow(
+              cells: [
+                DataCell(
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: surface,
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(color: accent.withOpacity(0.35)),
+                    ),
+                    child: Text(
+                      t.sacramentType.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: accent,
+                      ),
+                    ),
+                  ),
+                ),
+                DataCell(
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxTemplateNameWidth),
+                    child: Text(
+                      t.templateName,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+                DataCell(
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: t.styleConfig.useVisualCanvas
+                          ? const Color(0xFF0F172A)
+                          : ParishColors.marianBlueSurface,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      t.styleConfig.useVisualCanvas ? 'Visual Canva' : 'Simple',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: t.styleConfig.useVisualCanvas
+                            ? Colors.cyanAccent
+                            : ParishColors.marianBlue,
+                      ),
+                    ),
+                  ),
+                ),
+                DataCell(
+                  Text(
+                    '${t.paperSize} (${t.orientation})',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                DataCell(
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxSignatoryWidth),
+                    child: Text(
+                      t.signatoryName,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+                DataCell(
+                  t.isDefault
+                      ? Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: ParishColors.goldLight,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                          color: ParishColors.goldAccent.withOpacity(0.6),
+                          width: 0.8),
+                    ),
+                    child: const Text(
+                      'YES',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF78350F),
+                      ),
+                    ),
+                  )
+                      : Text(
+                    '—',
+                    style: TextStyle(color: ParishColors.textMuted),
+                  ),
+                ),
+                DataCell(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.picture_as_pdf,
+                            size: 17, color: ParishColors.marianBlue),
+                        tooltip: 'Preview PDF',
+                        splashRadius: 18,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _previewTemplate(t),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 17),
+                        tooltip: 'Duplicate',
+                        splashRadius: 18,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _duplicateTemplate(t),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 17),
+                        tooltip: 'Edit Template',
+                        splashRadius: 18,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _openTemplateEditor(t),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.archive_outlined,
+                            size: 17, color: ParishColors.mercyRed),
+                        tooltip: 'Archive',
+                        splashRadius: 18,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _archiveTemplate(t),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+        );
 
         return Container(
           width: double.infinity,
@@ -1373,143 +1562,28 @@ class _CertificateTemplateManagementPageState
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: containerWidth),
-                child: DataTable(
-                  columnSpacing: dynamicSpacing,
-                  horizontalMargin: 22,
-                  headingRowColor:
-                  WidgetStateProperty.all(ParishColors.marianBlueSurface),
-                  headingTextStyle: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: ParishColors.marianBlue,
-                    fontSize: 12.5,
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              child: Scrollbar(
+                controller: _horizontalScrollController,
+                thumbVisibility: !isLargeScreen,
+                trackVisibility: false,
+                child: SingleChildScrollView(
+                  controller: _horizontalScrollController,
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: containerWidth,
+                    ),
+                    child: tableWidget,
                   ),
-                  dataTextStyle:
-                  TextStyle(fontSize: 12.5, color: ParishColors.textDark),
-                  columns: const [
-                    DataColumn(label: Text('Sacrament')),
-                    DataColumn(label: Text('Template Name')),
-                    DataColumn(label: Text('Mode')),
-                    DataColumn(label: Text('Paper Size')),
-                    DataColumn(label: Text('Signatory')),
-                    DataColumn(label: Text('Default')),
-                    DataColumn(label: Text('Actions')),
-                  ],
-                  rows: templates.map((t) {
-                    final accent = _getSacramentColor(t.sacramentType);
-                    final surface = _getSacramentSurfaceColor(t.sacramentType);
-
-                    return DataRow(
-                      cells: [
-                        DataCell(
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: surface,
-                              borderRadius: BorderRadius.circular(5),
-                              border:
-                              Border.all(color: accent.withOpacity(0.35)),
-                            ),
-                            child: Text(
-                              t.sacramentType.toUpperCase(),
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: accent),
-                            ),
-                          ),
-                        ),
-                        DataCell(
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 220),
-                            child: Text(
-                              t.templateName,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        DataCell(
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: t.styleConfig.useVisualCanvas
-                                  ? const Color(0xFF0F172A)
-                                  : ParishColors.marianBlueSurface,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              t.styleConfig.useVisualCanvas
-                                  ? 'Visual Canva'
-                                  : 'Simple',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: t.styleConfig.useVisualCanvas
-                                    ? Colors.cyanAccent
-                                    : ParishColors.marianBlue,
-                              ),
-                            ),
-                          ),
-                        ),
-                        DataCell(Text('${t.paperSize} (${t.orientation})')),
-                        DataCell(
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 180),
-                            child: Text(t.signatoryName,
-                                overflow: TextOverflow.ellipsis),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            t.isDefault ? 'YES' : '—',
-                            style: TextStyle(
-                              fontWeight: t.isDefault
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: t.isDefault
-                                  ? ParishColors.goldAccent
-                                  : ParishColors.textMuted,
-                            ),
-                          ),
-                        ),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.picture_as_pdf,
-                                    size: 17, color: ParishColors.marianBlue),
-                                tooltip: 'Preview PDF',
-                                onPressed: () => _previewTemplate(t),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.copy, size: 17),
-                                tooltip: 'Duplicate',
-                                onPressed: () => _duplicateTemplate(t),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.edit_outlined, size: 17),
-                                tooltip: 'Edit Template',
-                                onPressed: () => _openTemplateEditor(t),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.archive_outlined,
-                                    size: 17, color: ParishColors.mercyRed),
-                                tooltip: 'Archive',
-                                onPressed: () => _archiveTemplate(t),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
                 ),
               ),
             ),
@@ -2074,8 +2148,8 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
                             color: accent.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child:
-                          Icon(Icons.archive, color: accent, size: 20),
+                          child: Icon(Icons.archive,
+                              color: accent, size: 20),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -2108,7 +2182,8 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
                           ),
                           onPressed: () =>
                               _confirmPermanentlyDelete(item),
-                          icon: const Icon(Icons.delete_forever, size: 14),
+                          icon:
+                          const Icon(Icons.delete_forever, size: 14),
                           label: const Text('Delete',
                               style: TextStyle(fontSize: 11)),
                         ),

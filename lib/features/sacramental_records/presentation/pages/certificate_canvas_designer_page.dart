@@ -2,6 +2,7 @@
 // FILE: lib/features/sacramental_records/presentation/pages/certificate_canvas_designer_page.dart
 // =============================================================================
 
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/certificate_canvas_element.dart';
@@ -63,6 +64,10 @@ class _CertificateCanvasDesignerPageState
     '{Middle Name}': 'Santos',
     '{Last Name}': 'Dela Cruz',
     '{Date of Birth}': 'May 15, 2005',
+    '{nth Day of Birth}': '15th',
+    '{Day of Birth}': '15',
+    '{Month of Birth}': 'May',
+    '{Year of Birth}': '2005',
     '{Place of Birth}': 'Santa Cruz, Laguna',
     '{Gender}': 'Male',
     '{Legitimacy}': 'Catholic (Cath.)',
@@ -74,38 +79,80 @@ class _CertificateCanvasDesignerPageState
     '{Sponsor 2}': 'Elena Ramos',
     '{Other Sponsors}': 'Mateo Gonzales, Sofia Ramirez',
     '{Date of Baptism}': 'June 20, 2005',
+    '{nth Day}': '20th',
+    '{nth Day of Baptism}': '20th',
+    '{Day of Baptism}': '20',
+    '{Month of Baptism}': 'June',
+    '{Year of Baptism}': '2005',
     '{Place of Baptism}': 'Saint John Paul II Parish',
     '{Church of Baptism}': 'Saint John Paul II Parish',
     '{Date of Confirmation}': 'October 12, 2017',
+    '{nth Day of Confirmation}': '12th',
+    '{Day of Confirmation}': '12',
+    '{Month of Confirmation}': 'October',
+    '{Year of Confirmation}': '2017',
     '{Place of Confirmation}': 'Saint John Paul II Parish',
     '{Date of Communion}': 'April 18, 2014',
     '{Date of First Communion}': 'April 18, 2014',
+    '{nth Day of Communion}': '18th',
+    '{nth Day of First Communion}': '18th',
+    '{Day of Communion}': '18',
+    '{Month of Communion}': 'April',
+    '{Month of First Communion}': 'April',
+    '{Year of Communion}': '2014',
+    '{Year of First Communion}': '2014',
     '{Place of First Communion}': 'Saint John Paul II Parish',
     '{Groom Name}': 'Juan Dela Cruz',
     '{Groom Age}': '28',
     '{Groom Civil Status}': 'Single',
+    '{Groom Date of Birth}': 'May 15, 1998',
+    '{nth Day of Groom Birth}': '15th',
+    '{Month of Groom Birth}': 'May',
+    '{Year of Groom Birth}': '1998',
     '{Groom Father\'s Name}': 'Roberto Dela Cruz',
     '{Groom Mother\'s Name}': 'Teresa Mendoza',
     '{Bride Name}': 'Maria Santos',
     '{Bride Age}': '26',
     '{Bride Civil Status}': 'Single',
+    '{Bride Date of Birth}': 'August 22, 2000',
+    '{nth Day of Bride Birth}': '22nd',
+    '{Month of Bride Birth}': 'August',
+    '{Year of Bride Birth}': '2000',
     '{Bride Father\'s Name}': 'Fernando Santos',
     '{Bride Mother\'s Name}': 'Lucia Aquino',
     '{Marriage Type}': 'Between Catholics',
     '{Date of Marriage}': 'February 14, 2024',
+    '{nth Day of Marriage}': '14th',
+    '{Day of Marriage}': '14',
+    '{Month of Marriage}': 'February',
+    '{Year of Marriage}': '2024',
     '{Place of Marriage}': 'Saint John Paul II Parish',
     '{Marriage License Number}': 'ML-2024-08912',
     '{Solemnizer Name}': 'Rev. Fr. Roy G. Reyes',
     '{Date of Death}': 'March 01, 2026',
+    '{nth Day of Death}': '1st',
+    '{Day of Death}': '1',
+    '{Month of Death}': 'March',
+    '{Year of Death}': '2026',
     '{Date of Burial}': 'March 04, 2026',
+    '{nth Day of Burial}': '4th',
+    '{Day of Burial}': '4',
+    '{Month of Burial}': 'March',
+    '{Year of Burial}': '2026',
     '{Place of Death}': 'Santa Cruz, Laguna',
     '{Place of Burial}': 'Sta. Cruz Catholic Cemetery',
     '{Cause of Death}': 'Cardiorespiratory Arrest',
     '{Spouse\'s Name}': 'Maria Santos',
     '{Date of Reception}': 'August 15, 2025',
-    '{Place of Reception}': 'Saint John Paul II Parish',
+    '{nth Day of Reception}': '15th',
+    '{Day of Reception}': '15',
+    '{Month of Reception}': 'August',
+    '{Year of Reception}': '2025',
     '{Prior Church}': 'Lutheran Church of the Philippines',
     '{Prior Baptism Date}': 'January 10, 2000',
+    '{nth Day of Prior Baptism}': '10th',
+    '{Month of Prior Baptism}': 'January',
+    '{Year of Prior Baptism}': '2000',
     '{Witness 1}': 'Pedro Reyes',
     '{Witness 2}': 'Elena Ramos',
     '{Minister Name}': 'Rev. Fr. Roy G. Reyes',
@@ -115,6 +162,14 @@ class _CertificateCanvasDesignerPageState
     '{Registry Reference}': 'Book 14, Page 82, Line 03',
     '{Purpose}': 'For Legal / Personal Records',
     '{Date Issued}': 'November 03, 2026',
+    '{nth Day Issued}': '3rd',
+    '{nth Day of Issue}': '3rd',
+    '{Day Issued}': '3',
+    '{Day of Issue}': '3',
+    '{Month of Issue}': 'November',
+    '{Month Issued}': 'November',
+    '{Year of Issue}': '2026',
+    '{Year Issued}': '2026',
     '{Year}': '2026',
     '{Record Number}': 'FCM-2026-0001',
     '{Age}': '19',
@@ -484,11 +539,20 @@ class _CertificateCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // Tag Insertion & Text Editor Modal
+  // Tag Insertion & Enlarged Text Editor Modal with Cursor Position Tracking
   // ===========================================================================
 
   Future<void> _openTextEditorModal(CertificateCanvasElement element) async {
     final controller = TextEditingController(text: element.text);
+    final focusNode = FocusNode();
+    TextSelection lastSelection = TextSelection.collapsed(offset: element.text.length);
+
+    controller.addListener(() {
+      if (controller.selection.isValid) {
+        lastSelection = controller.selection;
+      }
+    });
+
     final allTags = PlaceholderRegistry.getPlaceholdersFor(widget.template.sacramentType);
 
     final List<String> personalTags = [];
@@ -498,139 +562,293 @@ class _CertificateCanvasDesignerPageState
 
     for (final tag in allTags) {
       final t = tag.toLowerCase();
-      if (t.contains('father') || t.contains('mother') || t.contains('godfather') || t.contains('godmother') || t.contains('sponsor') || t.contains('spouse')) {
+      if (t.contains('father') ||
+          t.contains('mother') ||
+          t.contains('godfather') ||
+          t.contains('godmother') ||
+          t.contains('sponsor') ||
+          t.contains('spouse') ||
+          t.contains('witness')) {
         familyTags.add(tag);
-      } else if (t.contains('date of') || t.contains('minister') || t.contains('church') || t.contains('place of')) {
+      } else if (t.contains('date') ||
+          t.contains('day') ||
+          t.contains('month') ||
+          t.contains('year') ||
+          t.contains('minister') ||
+          t.contains('church') ||
+          t.contains('place') ||
+          t.contains('reception') ||
+          t.contains('communion') ||
+          t.contains('baptism') ||
+          t.contains('confirmation') ||
+          t.contains('burial') ||
+          t.contains('death') ||
+          t.contains('marriage') ||
+          t.contains('prior')) {
         liturgyTags.add(tag);
-      } else if (t.contains('book') || t.contains('page') || t.contains('line') || t.contains('reference') || t.contains('purpose') || t.contains('issued') || t.contains('year') || t.contains('record')) {
+      } else if (t.contains('book') ||
+          t.contains('page') ||
+          t.contains('line') ||
+          t.contains('reference') ||
+          t.contains('purpose') ||
+          t.contains('record')) {
         registryTags.add(tag);
       } else {
         personalTags.add(tag);
       }
     }
 
-    String activeTab = 'Personal';
+    String activeTab = 'Dates & Liturgy';
+
+    void insertTagAtCursor(String tag, void Function(void Function()) setModalState) {
+      final currentText = controller.text;
+      int start = controller.selection.baseOffset;
+      int end = controller.selection.extentOffset;
+
+      if (start < 0) {
+        start = lastSelection.baseOffset;
+      }
+      if (end < 0) {
+        end = lastSelection.extentOffset;
+      }
+
+      if (start < 0 || start > currentText.length) {
+        start = currentText.length;
+      }
+      if (end < 0 || end > currentText.length) {
+        end = start;
+      }
+
+      final selStart = min(start, end);
+      final selEnd = max(start, end);
+
+      final insertion = '$tag ';
+      final newText = currentText.replaceRange(selStart, selEnd, insertion);
+      final newCursorPos = selStart + insertion.length;
+
+      lastSelection = TextSelection.collapsed(offset: newCursorPos);
+      controller.value = TextEditingValue(
+        text: newText,
+        selection: lastSelection,
+      );
+      setModalState(() {});
+      focusNode.requestFocus();
+    }
 
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          List<String> visibleTags;
-          switch (activeTab) {
-            case 'Family':
-              visibleTags = familyTags;
-              break;
-            case 'Liturgy':
-              visibleTags = liturgyTags;
-              break;
-            case 'Registry':
-              visibleTags = registryTags;
-              break;
-            case 'Personal':
-            default:
-              visibleTags = personalTags;
-              break;
-          }
+      builder: (ctx) {
+        final screenHeight = MediaQuery.of(ctx).size.height;
+        final screenWidth = MediaQuery.of(ctx).size.width;
+        final isMobileDialog = screenWidth < 650;
 
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            backgroundColor: ParishColors.cardWhite,
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Edit Text & Placeholders', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                IconButton(icon: const Icon(Icons.close, size: 20), onPressed: () => Navigator.pop(ctx)),
-              ],
-            ),
-            content: SizedBox(
-              width: 540,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        color: ParishColors.backgroundLight,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: ParishColors.borderGrey),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            List<String> visibleTags;
+            switch (activeTab) {
+              case 'Family':
+                visibleTags = familyTags;
+                break;
+              case 'Personal':
+                visibleTags = personalTags;
+                break;
+              case 'Registry':
+                visibleTags = registryTags;
+                break;
+              case 'Dates & Liturgy':
+              default:
+                visibleTags = liturgyTags;
+                break;
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              backgroundColor: ParishColors.cardWhite,
+              titlePadding: const EdgeInsets.fromLTRB(20, 16, 14, 10),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const Icon(Icons.edit_note, color: ParishColors.marianBlue, size: 24),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Edit Text & Placeholders',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 22),
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              content: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 740,
+                  maxHeight: screenHeight * 0.82,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Category Filter Selector
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: ParishColors.borderGrey),
+                        ),
+                        child: Row(
+                          children: [
+                            _buildModalTabItem('Dates & Liturgy', Icons.church_outlined, activeTab, () {
+                              setModalState(() => activeTab = 'Dates & Liturgy');
+                            }),
+                            _buildModalTabItem('Personal', Icons.person_outline, activeTab, () {
+                              setModalState(() => activeTab = 'Personal');
+                            }),
+                            _buildModalTabItem('Family', Icons.people_outline, activeTab, () {
+                              setModalState(() => activeTab = 'Family');
+                            }),
+                            _buildModalTabItem('Registry', Icons.menu_book_outlined, activeTab, () {
+                              setModalState(() => activeTab = 'Registry');
+                            }),
+                          ],
+                        ),
                       ),
-                      child: Row(
+                      const SizedBox(height: 12),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _buildModalTabItem('Personal', Icons.person_outline, activeTab, () {
-                            setModalState(() => activeTab = 'Personal');
-                          }),
-                          _buildModalTabItem('Family', Icons.people_outline, activeTab, () {
-                            setModalState(() => activeTab = 'Family');
-                          }),
-                          _buildModalTabItem('Liturgy', Icons.church_outlined, activeTab, () {
-                            setModalState(() => activeTab = 'Liturgy');
-                          }),
-                          _buildModalTabItem('Registry', Icons.menu_book_outlined, activeTab, () {
-                            setModalState(() => activeTab = 'Registry');
-                          }),
+                          Text(
+                            'Tap any tag to insert directly at the cursor position:',
+                            style: TextStyle(fontSize: 12, color: ParishColors.textMuted, fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            '${visibleTags.length} tags',
+                            style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                          ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 8),
 
-                    Text(
-                      'Tap to insert canonical $activeTab tags:',
-                      style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: visibleTags.map((tag) {
-                          return ActionChip(
-                            label: Text(tag, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                            backgroundColor: ParishColors.goldLight,
-                            side: BorderSide(color: ParishColors.goldAccent.withOpacity(0.6)),
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            onPressed: () {
-                              final text = controller.text;
-                              controller.text = '$text $tag';
-                              setModalState(() {});
-                            },
-                          );
-                        }).toList(),
+                      // Interactive Tag Cloud Container
+                      Container(
+                        constraints: const BoxConstraints(minHeight: 52, maxHeight: 160),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: ParishColors.borderGrey),
+                        ),
+                        child: SingleChildScrollView(
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: visibleTags.map((tag) {
+                              return ActionChip(
+                                avatar: const Icon(Icons.add, size: 13, color: ParishColors.goldAccent),
+                                label: Text(
+                                  tag,
+                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF78350F)),
+                                ),
+                                backgroundColor: ParishColors.goldLight,
+                                side: BorderSide(color: ParishColors.goldAccent.withOpacity(0.6)),
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                                onPressed: () => insertTagAtCursor(tag, setModalState),
+                              );
+                            }).toList(),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
+                      const SizedBox(height: 16),
 
-                    TextFormField(
-                      controller: controller,
-                      maxLines: 5,
-                      style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
-                      decoration: const InputDecoration(
-                        labelText: 'Text Content (Auto-wraps identically to PDF)',
-                        border: OutlineInputBorder(),
+                      Text(
+                        'Text Content & Wording:',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+
+                      // Enlarged Text Field Area
+                      TextFormField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        minLines: isMobileDialog ? 6 : 9,
+                        maxLines: 16,
+                        onTap: () {
+                          if (controller.selection.isValid) {
+                            lastSelection = controller.selection;
+                          }
+                        },
+                        onChanged: (_) {
+                          if (controller.selection.isValid) {
+                            lastSelection = controller.selection;
+                          }
+                        },
+                        style: TextStyle(
+                          fontSize: 15.0,
+                          color: ParishColors.textDark,
+                          height: 1.55,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Text Content (Auto-wraps identically to PDF)',
+                          labelStyle: TextStyle(fontSize: 13.5, color: ParishColors.textMuted),
+                          alignLabelWithHint: true,
+                          contentPadding: const EdgeInsets.all(16),
+                          filled: true,
+                          fillColor: ParishColors.backgroundLight,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: ParishColors.borderGrey),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: ParishColors.marianBlue, foregroundColor: Colors.white),
-                onPressed: () {
-                  _pushHistorySnapshot();
-                  _updateSelectedElement(element.copyWith(text: controller.text));
-                  Navigator.pop(ctx);
-                },
-                child: const Text('Apply Changes'),
-              ),
-            ],
-          );
-        },
-      ),
+              actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              actions: [
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () {
+                    _pushHistorySnapshot();
+                    _updateSelectedElement(element.copyWith(text: controller.text));
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Apply Changes', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -651,12 +869,15 @@ class _CertificateCanvasDesignerPageState
             children: [
               Icon(icon, size: 14, color: isSelected ? Colors.white : ParishColors.textMuted),
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                  color: isSelected ? Colors.white : ParishColors.textDark,
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? Colors.white : ParishColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -738,7 +959,7 @@ class _CertificateCanvasDesignerPageState
       fontFamily: fontFamily,
       fontFamilyFallback: fontFallback,
       color: textColor,
-      height: 1.35, // Perfectly mirrors PDF lineSpacing calculation (fontSize * 0.35)
+      height: 1.35,
     );
   }
 
@@ -1168,7 +1389,6 @@ class _CertificateCanvasDesignerPageState
                 // Interactive Workspace
                 Expanded(
                   child: GestureDetector(
-                    // Tapping background deselects elements
                     onTap: () => setState(() {
                       _selectedElementId = null;
                       _activeMobilePanel = MobileToolPanel.none;
@@ -2030,14 +2250,12 @@ class _CertificateCanvasDesignerPageState
       width: boxWidth,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        // Selection behavior: Tap selects element. Touching/swiping unselected DOES NOT MOVE.
         onTap: () {
           setState(() {
             _selectedElementId = element.id;
             _toolMode = CanvasToolMode.select;
           });
         },
-        // Intentional Movement: ONLY occurs when element is already selected
         onPanStart: (isSelected && _toolMode == CanvasToolMode.select)
             ? (_) => _pushHistorySnapshot()
             : null,
@@ -2055,14 +2273,11 @@ class _CertificateCanvasDesignerPageState
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Pure content without padding displacement (matching PDF bounds exactly)
             SizedBox(
               width: boxWidth,
               height: isSeal ? boxHeight : elementHeight,
               child: contentWidget,
             ),
-
-            // Selection Outline Overlay (Zero displacement on element text)
             if (isSelected)
               Positioned.fill(
                 child: IgnorePointer(
@@ -2075,8 +2290,6 @@ class _CertificateCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Designated MOVE Handle Anchor
             if (isSelected)
               Positioned(
                 top: -24,
@@ -2112,8 +2325,6 @@ class _CertificateCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Pinned Left Edge Width Handle
             if (isSelected && !isSeal && element.elementType != 'signature_line')
               Positioned(
                 right: -6,
@@ -2139,8 +2350,6 @@ class _CertificateCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Pinned Bottom Edge Height Handle
             if (isSelected && !isSeal && element.elementType != 'signature_line')
               Positioned(
                 bottom: -8,
@@ -2166,8 +2375,6 @@ class _CertificateCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Corner Resize Handle
             if (isSelected && !isSeal && element.elementType != 'signature_line')
               Positioned(
                 right: -6,
