@@ -1,7 +1,3 @@
-// =============================================================================
-// FILE: lib/features/receipts/services/secretary_service.dart
-// =============================================================================
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 
@@ -57,7 +53,7 @@ class SecretaryService {
         .eq('service_request_id', serviceRequestId);
   }
 
-  /// Register a new transaction with automatic enum resolution
+  /// Register a new transaction with automatic enum resolution and tender mode fields
   static Future<Map<String, dynamic>> createTransaction({
     required String payorName,
     String? payorContact,
@@ -65,6 +61,9 @@ class SecretaryService {
     required String transactionDetails,
     required double transactionAmount,
     String? transactionType,
+    String? paymentMode,
+    String? bankName,
+    String? chequeNumber,
     String? relatedAppointmentId,
     String? relatedRequestId,
     String? relatedIssuanceId,
@@ -145,6 +144,9 @@ class SecretaryService {
         'transaction_amount': transactionAmount,
         'payment_required_status': transactionAmount > 0,
         'transaction_status': 'paid',
+        'payment_mode': paymentMode ?? 'Cash',
+        'bank_name': (bankName != null && bankName.trim().isNotEmpty) ? bankName.trim() : null,
+        'cheque_number': (chequeNumber != null && chequeNumber.trim().isNotEmpty) ? chequeNumber.trim() : null,
         'related_appointment_id': relatedAppointmentId,
         'related_request_id': relatedRequestId,
         'related_issuance_id': relatedIssuanceId,
