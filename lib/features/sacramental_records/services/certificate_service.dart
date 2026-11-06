@@ -597,6 +597,7 @@ class CertificateService {
     String? qrVerificationUrl,
     String? transactionId,
     String? receiptNumber,
+    DateTime? issueDate,
   }) async {
     final effectiveVerificationId =
         verificationId ?? generateSecureVerificationId();
@@ -609,7 +610,7 @@ class CertificateService {
       throw 'Authentication required. Please sign in to issue an official certificate.';
     }
 
-    final now = DateTime.now();
+    final now = issueDate ?? DateTime.now();
 
     String? pdfPath;
     final isOnline = await RecordsSyncService.instance.checkConnectivity();

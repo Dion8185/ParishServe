@@ -318,6 +318,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
+    final upperDateBound = (dateType == 2) ? DateTime(2100) : now;
 
     if (dateType == 0) {
       initialDate = _registryDate;
@@ -329,9 +330,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {

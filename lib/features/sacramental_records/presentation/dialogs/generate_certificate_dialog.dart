@@ -8,7 +8,6 @@ import 'package:printing/printing.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/database/local_database_service.dart';
 import '../../../receipts/models/pos_item_model.dart';
-import '../../../receipts/presentation/dialogs/receipt_detail_dialog.dart';
 import '../../../receipts/services/particulars_service.dart';
 import '../../../receipts/services/receipt_pdf_generator.dart';
 import '../../../receipts/services/secretary_service.dart';
@@ -16,6 +15,7 @@ import '../../models/certificate_template_model.dart';
 import '../../services/certificate_pdf_generator.dart';
 import '../../services/certificate_service.dart';
 import '../../utils/placeholder_registry.dart';
+import '../../validators/sacramental_validators.dart';
 
 /// Opens the full-page Certificate Generation Desk
 Future<void> showGenerateCertificateModal(
@@ -76,6 +76,9 @@ class _GenerateCertificatePageState
   bool _isGenerating = false;
   String? _errorMessage;
 
+  DateTime _dateReleased = DateTime.now();
+  bool _dateReleasedHasError = false;
+
   List<CertificateTemplateModel> _availableTemplates = [];
   CertificateTemplateModel? _selectedTemplate;
 
@@ -98,6 +101,26 @@ class _GenerateCertificatePageState
       return custom.isEmpty ? 'General Legal / Personal Records' : custom;
     }
     return _selectedPurposePreset;
+  }
+
+  Future<void> _selectDateReleased(BuildContext context) async {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final initial = _dateReleased.isBefore(todayStart) ? todayStart : _dateReleased;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: todayStart,
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _dateReleased = picked;
+        _dateReleasedHasError = false;
+      });
+    }
   }
 
   @override
@@ -358,6 +381,7 @@ class _GenerateCertificatePageState
       sacramentType: widget.sacramentType,
       recordData: widget.rawRecordData,
       purpose: _effectivePurpose,
+      issueDate: _dateReleased,
     );
     return PlaceholderRegistry.renderTemplate(
       _selectedTemplate!.bodyWording,
@@ -420,6 +444,7 @@ class _GenerateCertificatePageState
                   purpose: _effectivePurpose,
                   verificationId: previewVerificationId,
                   qrVerificationUrl: previewQrUrl,
+                  issueDate: _dateReleased,
                 ),
                 useActions: false,
                 allowPrinting: false,
@@ -466,6 +491,15 @@ class _GenerateCertificatePageState
     if (_selectedTemplate == null) return;
     setState(() => _errorMessage = null);
 
+    final releaseDateErr = SacramentalValidators.validateCertificateReleaseDate(_dateReleased);
+    if (releaseDateErr != null) {
+      setState(() {
+        _dateReleasedHasError = true;
+        _errorMessage = releaseDateErr;
+      });
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -487,6 +521,7 @@ class _GenerateCertificatePageState
         purpose: _effectivePurpose,
         verificationId: verificationId,
         qrVerificationUrl: qrVerificationUrl,
+        issueDate: _dateReleased,
       );
 
       String? linkedTransactionId;
@@ -542,6 +577,7 @@ class _GenerateCertificatePageState
         qrVerificationUrl: qrVerificationUrl,
         transactionId: linkedTransactionId,
         receiptNumber: linkedReceiptNumber,
+        issueDate: _dateReleased,
       );
 
       if (!mounted) return;
@@ -1099,6 +1135,49 @@ class _GenerateCertificatePageState
               ),
             ),
           ],
+          const SizedBox(height: 18),
+
+          Text('3. Date Released (Present & Future Only)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark)),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => _selectDateReleased(context),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: ParishColors.backgroundLight,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _dateReleasedHasError ? Colors.red : borderGrey,
+                  width: _dateReleasedHasError ? 1.5 : 1.0,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today, size: 18, color: ParishColors.marianBlue),
+                      const SizedBox(width: 10),
+                      Text(
+                        '${PlaceholderRegistry.monthNames[_dateReleased.month - 1]} ${PlaceholderRegistry.formatOrdinal(_dateReleased.day)}, ${_dateReleased.year}',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textDark),
+                      ),
+                    ],
+                  ),
+                  const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                ],
+              ),
+            ),
+          ),
+          if (_dateReleasedHasError) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Date Released must be today or a future date.',
+              style: TextStyle(fontSize: 12, color: Colors.red),
+            ),
+          ],
         ],
       ),
     );
@@ -1122,7 +1201,7 @@ class _GenerateCertificatePageState
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '3. Record in Receipt Ledger',
+                  '4. Record in Receipt Ledger',
                   style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
                 ),
               ),
@@ -1220,7 +1299,7 @@ class _GenerateCertificatePageState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '4. Rendered Certificate Text',
+                '5. Rendered Certificate Text',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark),
               ),
               TextButton.icon(

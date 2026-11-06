@@ -271,6 +271,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
+    final upperDateBound = (dateType == 0) ? DateTime(2100) : now;
 
     if (dateType == 0) {
       initialDate = _dateOfReception ?? now;
@@ -282,9 +283,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -344,9 +345,12 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       _scrollToTop();
       return false;
     }
-    final notFutureDate = SacramentalValidators.validateNotFutureDate(_dateOfReception, 'Date of Reception');
-    if (notFutureDate != null) {
-      setState(() => _errorMessage = notFutureDate);
+    final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
+    if (receptionError != null) {
+      setState(() {
+        _dateOfReceptionHasError = true;
+        _errorMessage = receptionError;
+      });
       _scrollToTop();
       return false;
     }
@@ -369,13 +373,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
     if (placeError != null) {
       setState(() => _errorMessage = placeError);
-      _scrollToTop();
-      return false;
-    }
-
-    final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
-    if (receptionError != null) {
-      setState(() => _errorMessage = receptionError);
       _scrollToTop();
       return false;
     }

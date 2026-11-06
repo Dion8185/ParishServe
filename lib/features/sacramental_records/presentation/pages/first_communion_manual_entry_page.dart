@@ -214,6 +214,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
+    final upperDateBound = (dateType == 0) ? DateTime(2100) : now;
 
     if (dateType == 0) {
       initialDate = _dateOfCommunion ?? now;
@@ -223,9 +224,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -275,13 +276,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
         _dateOfCommunionHasError = true;
         _errorMessage = 'Date of First Holy Communion is required.';
       });
-      _scrollToTop();
-      return false;
-    }
-
-    final communionDateNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfCommunion, 'Date of First Holy Communion');
-    if (communionDateNotFuture != null) {
-      setState(() => _errorMessage = communionDateNotFuture);
       _scrollToTop();
       return false;
     }

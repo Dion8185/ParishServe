@@ -364,7 +364,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     if (dateType == 4) initialDate = _licenseDateRegistered ?? now;
     if (dateType == 5) initialDate = _crasmValidityDate ?? now;
 
-    final DateTime upperDateBound = (dateType == 5) ? now.add(const Duration(days: 3650)) : now;
+    final DateTime upperDateBound = (dateType == 3)
+        ? DateTime(2100)
+        : ((dateType == 5) ? now.add(const Duration(days: 3650)) : now);
 
     final picked = await showDatePicker(
       context: context,
@@ -469,13 +471,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
         _dateOfMarriageHasError = true;
         _errorMessage = 'Date of Marriage is required.';
       });
-      _scrollToTop();
-      return false;
-    }
-
-    final marriageNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfMarriage, 'Date of Marriage');
-    if (marriageNotFuture != null) {
-      setState(() => _errorMessage = marriageNotFuture);
       _scrollToTop();
       return false;
     }

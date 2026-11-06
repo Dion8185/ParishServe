@@ -528,11 +528,9 @@ class SacramentalValidators {
     return '$totalDays day(s) old';
   }
 
-  /// Validates Date of Baptism relative to Date of Birth and today.
+  /// Validates Date of Baptism relative to Date of Birth (Past, Present, and Future dates allowed).
   static String? validateBaptismDate(DateTime? baptismDate, DateTime? dob) {
     if (baptismDate == null) return 'Date of Baptism is required.';
-    final notFutureErr = validateNotFutureDate(baptismDate, 'Date of Baptism', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (dob != null && baptismDate.isBefore(dob)) {
       return 'Date of Baptism cannot be earlier than Date of Birth.';
@@ -540,11 +538,9 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates Confirmation Date relative to required prior Baptism Date and today.
+  /// Validates Confirmation Date relative to required prior Baptism Date (Past, Present, and Future dates allowed).
   static String? validateConfirmationDate(DateTime? confirmationDate, DateTime? baptismDate) {
     if (confirmationDate == null) return 'Date of Confirmation is required.';
-    final notFutureErr = validateNotFutureDate(confirmationDate, 'Date of Confirmation', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (baptismDate != null && confirmationDate.isBefore(baptismDate)) {
       return 'Date of Confirmation cannot be earlier than Date of Baptism.';
@@ -552,11 +548,9 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates First Holy Communion date relative to prior Baptism Date and today.
+  /// Validates First Holy Communion date relative to prior Baptism Date (Past, Present, and Future dates allowed).
   static String? validateCommunionDate(DateTime? communionDate, DateTime? baptismDate) {
     if (communionDate == null) return 'Date of First Holy Communion is required.';
-    final notFutureErr = validateNotFutureDate(communionDate, 'Date of First Holy Communion', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (baptismDate != null && communionDate.isBefore(baptismDate)) {
       return 'Date of First Communion cannot be earlier than Date of Baptism.';
@@ -564,15 +558,10 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates Death and Burial dates consistency and non-future bounds.
+  /// Validates Death and Burial dates consistency (Past, Present, and Future dates allowed).
   static String? validateBurialDate(DateTime? burialDate, DateTime? deathDate) {
     if (deathDate == null) return 'Date of Death is required.';
-    final notFutureDeath = validateNotFutureDate(deathDate, 'Date of Death', isRequired: true);
-    if (notFutureDeath != null) return notFutureDeath;
-
     if (burialDate == null) return 'Date of Burial is required.';
-    final notFutureBurial = validateNotFutureDate(burialDate, 'Date of Burial', isRequired: true);
-    if (notFutureBurial != null) return notFutureBurial;
 
     if (burialDate.isBefore(deathDate)) {
       return 'Date of Burial cannot be earlier than Date of Death.';
@@ -580,14 +569,24 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates Reception into Full Communion (Conversion) date relative to birth date.
+  /// Validates Reception into Full Communion (Conversion) date relative to birth date (Past, Present, and Future dates allowed).
   static String? validateReceptionDate(DateTime? receptionDate, DateTime? dob) {
     if (receptionDate == null) return 'Date of Reception into Full Communion is required.';
-    final notFutureErr = validateNotFutureDate(receptionDate, 'Date of Reception', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (dob != null && receptionDate.isBefore(dob)) {
       return 'Date of Reception cannot be earlier than Date of Birth.';
+    }
+    return null;
+  }
+
+  /// Validates Certificate Date of Release (Present and Future dates only; no past dates).
+  static String? validateCertificateReleaseDate(DateTime? releaseDate) {
+    if (releaseDate == null) return 'Date Released is required.';
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    if (releaseDate.isBefore(todayStart)) {
+      return 'Date Released must be today or a future date.';
     }
     return null;
   }
