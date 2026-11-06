@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/receipts/services/receipt_pdf_generator.dart
+// =============================================================================
+
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
@@ -20,9 +24,54 @@ class ReceiptPdfGenerator {
   // In-memory cache for loaded Unicode TrueType fonts
   static final Map<String, pw.Font> _fontCache = {};
 
+  static const List<String> monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
   // ===========================================================================
-  // Unicode TrueType Font Resolver (Resolves "no Unicode support" warnings)
+  // 1. Ordinal Number Formatter & Date Decomposition
   // ===========================================================================
+
+  static String formatOrdinal(int number) {
+    if (number <= 0) return '$number';
+    final mod100 = number % 100;
+    if (mod100 >= 11 && mod100 <= 13) {
+      return '${number}th';
+    }
+    switch (number % 10) {
+      case 1:
+        return '${number}st';
+      case 2:
+        return '${number}nd';
+      case 3:
+        return '${number}rd';
+      default:
+        return '${number}th';
+    }
+  }
+
+  static Map<String, String> _decomposeDate(DateTime date) {
+    final monthName = monthNames[date.month - 1];
+    final ordinalDay = formatOrdinal(date.day);
+    final dayStr = '${date.day}';
+    final yearStr = '${date.year}';
+    final formatted =
+        '$monthName ${date.day}, ${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+
+    return {
+      'formatted': formatted,
+      'ordinalDay': ordinalDay,
+      'day': dayStr,
+      'month': monthName,
+      'year': yearStr,
+    };
+  }
+
+  // ===========================================================================
+  // 2. Unicode TrueType Font Resolver
+  // ===========================================================================
+
   static Future<pw.Font> _resolveUnicodePdfFont(
       String fontFamily, {
         bool isBold = false,
@@ -102,7 +151,6 @@ class ReceiptPdfGenerator {
           break;
       }
     } catch (_) {
-      // Offline fallback
       loadedFont = _fallbackType1Font(fontFamily, isBold: isBold, isItalic: isItalic);
     }
 
@@ -111,7 +159,8 @@ class ReceiptPdfGenerator {
     return loadedFont;
   }
 
-  static pw.Font _fallbackType1Font(String fontFamily, {bool isBold = false, bool isItalic = false}) {
+  static pw.Font _fallbackType1Font(String fontFamily,
+      {bool isBold = false, bool isItalic = false}) {
     switch (fontFamily.toLowerCase()) {
       case 'sans':
       case 'trebuchet':
@@ -139,9 +188,6 @@ class ReceiptPdfGenerator {
     }
   }
 
-  // ===========================================================================
-  // Unicode Sanitizer
-  // ===========================================================================
   static String sanitizePdfText(String text) {
     return text
         .replaceAll('•', '-')
@@ -156,9 +202,6 @@ class ReceiptPdfGenerator {
         .replaceAll('’', "'");
   }
 
-  // ===========================================================================
-  // Amount in Words Conversion Engine
-  // ===========================================================================
   static String convertAmountToWords(double amount) {
     if (amount <= 0) return 'Zero Pesos Only';
 
@@ -228,7 +271,24 @@ class ReceiptPdfGenerator {
     }
   }
 
-  /// Compiles the official print-ready PDF binary for an ecclesiastical receipt (with void overlay support)
+  static pw.Alignment _resolvePdfBoxAlignment(String textAlign, String verticalAlign) {
+    double x = 0.0;
+    if (textAlign == 'left') x = -1.0;
+    if (textAlign == 'right') x = 1.0;
+    if (textAlign == 'center' || textAlign == 'justify') x = 0.0;
+
+    double y = 0.0;
+    if (verticalAlign == 'top') y = -1.0;
+    if (verticalAlign == 'center' || verticalAlign == 'middle') y = 0.0;
+    if (verticalAlign == 'bottom') y = 1.0;
+
+    return pw.Alignment(x, y);
+  }
+
+  // ===========================================================================
+  // 3. Main PDF Generation Entry Point
+  // ===========================================================================
+
   static Future<Uint8List> generateReceiptPdf({
     required String receiptNumber,
     required String payorName,
@@ -242,6 +302,8 @@ class ReceiptPdfGenerator {
     bool isThermalRoll = false,
     bool isVoided = false,
     String? voidReason,
+    String? bankName,
+    String? chequeNumber,
   }) async {
     final activeTemplate = template ?? await ReceiptTemplateService.getDefaultTemplate();
     final style = activeTemplate.styleConfig;
@@ -260,6 +322,40 @@ class ReceiptPdfGenerator {
         }
       }
     }
+
+    // Resolve Cheque Metadata from parameters or embedded transaction lines
+    String? resolvedBank = bankName?.trim();
+    String? resolvedCheque = chequeNumber?.trim();
+
+    if (resolvedBank == null || resolvedBank.isEmpty) {
+      for (final line in transactionDetails.split('\n')) {
+        final clean = line.replaceAll('•', '').replaceAll('-', '').trim();
+        if (clean.toLowerCase().startsWith('bank name:')) {
+          resolvedBank = clean.substring(10).trim();
+          break;
+        }
+      }
+    }
+
+    if (resolvedCheque == null || resolvedCheque.isEmpty) {
+      for (final line in transactionDetails.split('\n')) {
+        final clean = line.replaceAll('•', '').replaceAll('-', '').trim();
+        if (clean.toLowerCase().startsWith('cheque no.:') ||
+            clean.toLowerCase().startsWith('cheque no:')) {
+          resolvedCheque = clean.split(':').last.trim();
+          break;
+        }
+      }
+    }
+
+    final bool isChequeTender = paymentMode.toLowerCase().contains('cheque') ||
+        (resolvedCheque != null && resolvedCheque.isNotEmpty);
+
+    final String bankDisplay = resolvedBank ?? (isChequeTender ? 'Unspecified Bank' : '—');
+    final String chequeDisplay = resolvedCheque ?? (isChequeTender ? 'Unspecified Cheque' : '—');
+    final String chequeDetailsDisplay = isChequeTender
+        ? 'Bank: $bankDisplay | Cheque No: $chequeDisplay'
+        : '—';
 
     PdfPageFormat pageFormat;
     if (isThermalRoll) {
@@ -296,17 +392,20 @@ class ReceiptPdfGenerator {
     final signatureImage = await _fetchNetworkImage(activeTemplate.signatureImageUrl);
 
     final now = DateTime.now();
-    final issuedDate = dateString ??
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    final cashierName = AuthService.currentUser?.fullName ?? 'Parish Secretariat';
+    final parsedDate = (dateString != null && dateString.isNotEmpty)
+        ? (DateTime.tryParse(dateString) ?? now)
+        : now;
+    final dateParts = _decomposeDate(parsedDate);
 
+    final issuedDate = dateString ?? dateParts['formatted']!;
+    final cashierName = AuthService.currentUser?.fullName ?? 'Parish Secretariat';
     final amountInWordsText = convertAmountToWords(amount);
 
     final rawCleanDetails = sanitizePdfText(
       transactionDetails.isNotEmpty ? transactionDetails : relatedService,
     );
 
-    // Strip Cash Tendered from printed receipt
+    // Strip internal cash tendered lines from public receipt body
     final cleanDetails = rawCleanDetails
         .split('\n')
         .where((line) {
@@ -323,6 +422,11 @@ class ReceiptPdfGenerator {
       '{Payor Name}': payorName,
       '{Contact}': payorContact ?? '-',
       '{Date}': issuedDate,
+      '{nth Day}': dateParts['ordinalDay']!,
+      '{nth Day of Issue}': dateParts['ordinalDay']!,
+      '{Day of Issue}': dateParts['day']!,
+      '{Month of Issue}': dateParts['month']!,
+      '{Year of Issue}': dateParts['year']!,
       '{Amount}': 'P ${amount.toStringAsFixed(2)}',
       '{Total}': 'P ${amount.toStringAsFixed(2)}',
       '{Amount in Words}': amountInWordsText,
@@ -330,6 +434,11 @@ class ReceiptPdfGenerator {
       '{Total in Words}': amountInWordsText,
       '{Total In Words}': amountInWordsText,
       '{Payment Mode}': paymentMode.toUpperCase(),
+      '{Tender Mode}': paymentMode.toUpperCase(),
+      '{Bank Name}': bankDisplay,
+      '{Cheque Number}': chequeDisplay,
+      '{Cheque No}': chequeDisplay,
+      '{Cheque Details}': chequeDetailsDisplay,
       '{Service}': relatedService,
       '{Particulars}': cleanDetails,
       '{Details}': cleanDetails,
@@ -341,15 +450,17 @@ class ReceiptPdfGenerator {
     };
 
     final qrUrl = 'https://parishserve.web.app/verify-receipt?rec=$receiptNumber';
-    final bool isCanvaMode = style.useVisualCanvas && style.canvasElements.isNotEmpty && !isThermalRoll;
+    final bool isCanvaMode =
+        style.useVisualCanvas && style.canvasElements.isNotEmpty && !isThermalRoll;
 
-    // Pre-resolve TrueType fonts for canvas elements
+    // Pre-resolve TrueType fonts for visual canvas elements
     final Map<String, pw.Font> elementFonts = {};
     if (isCanvaMode) {
       for (final el in style.canvasElements) {
         final key = '${el.fontFamily}_${el.isBold}';
         if (!elementFonts.containsKey(key)) {
-          elementFonts[key] = await _resolveUnicodePdfFont(el.fontFamily, isBold: el.isBold);
+          elementFonts[key] =
+          await _resolveUnicodePdfFont(el.fontFamily, isBold: el.isBold);
         }
       }
     }
@@ -375,10 +486,13 @@ class ReceiptPdfGenerator {
               boldFont: boldFont,
               isVoided: effectiveVoided,
               voidReason: effectiveVoidReason,
+              bankName: isChequeTender ? bankDisplay : null,
+              chequeNumber: isChequeTender ? chequeDisplay : null,
             );
           }
 
-          final bool isEcclesiastical = activeTemplate.paperSize.toLowerCase().contains('ecclesiastical');
+          final bool isEcclesiastical =
+          activeTemplate.paperSize.toLowerCase().contains('ecclesiastical');
 
           return pw.Stack(
             children: [
@@ -397,7 +511,8 @@ class ReceiptPdfGenerator {
               if (isCanvaMode)
                 ...style.canvasElements.map((element) {
                   final key = '${element.fontFamily}_${element.isBold}';
-                  final elemFont = elementFonts[key] ?? (element.isBold ? boldFont : baseFont);
+                  final elemFont =
+                      elementFonts[key] ?? (element.isBold ? boldFont : baseFont);
 
                   return _buildCanvaReceiptPdfElement(
                     element: element,
@@ -415,7 +530,8 @@ class ReceiptPdfGenerator {
                 })
               else
                 pw.Padding(
-                  padding: _resolveStructuredPadding(activeTemplate.paperSize, activeTemplate.orientation),
+                  padding: _resolveStructuredPadding(
+                      activeTemplate.paperSize, activeTemplate.orientation),
                   child: _buildStructuredReceiptLayout(
                     template: activeTemplate,
                     style: style,
@@ -436,6 +552,8 @@ class ReceiptPdfGenerator {
                     baseFont: baseFont,
                     boldFont: boldFont,
                     italicFont: italicFont,
+                    bankName: isChequeTender ? bankDisplay : null,
+                    chequeNumber: isChequeTender ? chequeDisplay : null,
                   ),
                 ),
 
@@ -469,6 +587,8 @@ class ReceiptPdfGenerator {
     bool isThermalRoll = false,
     bool isVoided = false,
     String? voidReason,
+    String? bankName,
+    String? chequeNumber,
   }) async {
     final pdfBytes = await generateReceiptPdf(
       receiptNumber: receiptNumber,
@@ -483,6 +603,8 @@ class ReceiptPdfGenerator {
       isThermalRoll: isThermalRoll,
       isVoided: isVoided,
       voidReason: voidReason,
+      bankName: bankName,
+      chequeNumber: chequeNumber,
     );
 
     await Printing.layoutPdf(
@@ -499,8 +621,9 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // Void Watermark Stamp Overlay
+  // 4. Void Watermark Stamp Overlay
   // ===========================================================================
+
   static pw.Widget _buildVoidedWatermarkOverlay({
     required bool isEcclesiastical,
     required pw.Font boldFont,
@@ -510,15 +633,17 @@ class ReceiptPdfGenerator {
     return pw.Positioned.fill(
       child: pw.Center(
         child: pw.Transform.rotate(
-          angle: -0.22, // ~13 degrees
+          angle: -0.22,
           child: pw.Container(
             padding: pw.EdgeInsets.symmetric(
               horizontal: isEcclesiastical ? 20 : 36,
               vertical: isEcclesiastical ? 8 : 14,
             ),
             decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.red800, width: isEcclesiastical ? 2.5 : 4.0),
-              color: const PdfColor(1.0, 0.9, 0.9, 0.82), // Light translucent red backdrop
+              border: pw.Border.all(
+                  color: PdfColors.red800,
+                  width: isEcclesiastical ? 2.5 : 4.0),
+              color: const PdfColor(1.0, 0.9, 0.9, 0.82),
               borderRadius: pw.BorderRadius.circular(6),
             ),
             child: pw.Column(
@@ -565,6 +690,323 @@ class ReceiptPdfGenerator {
     );
   }
 
+  // ===========================================================================
+  // 5. 1:1 Canva Element PDF Renderer with Unified Bounding Boxes
+  // ===========================================================================
+
+  static pw.Widget _buildCanvaReceiptPdfElement({
+    required CertificateCanvasElement element,
+    required ReceiptTemplateModel template,
+    required Map<String, String> placeholderValues,
+    required double pageWidth,
+    required double pageHeight,
+    required Uint8List? dioceseLogo,
+    required Uint8List? parishSeal,
+    required Uint8List? signatureImage,
+    required String qrUrl,
+    required pw.Font elemFont,
+    required pw.Font boldFont,
+  }) {
+    // Mathematical 1:1 Coordinate & Bounding Box Parity with Designer
+    final double elementWidth = (element.width ?? 0.84) * pageWidth;
+    final double? elementHeight =
+    element.height != null ? element.height! * pageHeight : null;
+    final double pixelCenterX = element.x * pageWidth;
+    final double pixelCenterY = element.y * pageHeight;
+
+    final double sealSize = element.fontSize * 4.0;
+    final bool isSeal = element.elementType.contains('seal');
+    final double boxWidth = isSeal ? sealSize : elementWidth;
+    final double boxHeight = isSeal
+        ? sealSize
+        : (elementHeight ?? (element.fontSize * 1.5));
+
+    final double left = pixelCenterX - (boxWidth / 2);
+    final double top = pixelCenterY - (boxHeight / 2);
+
+    if (element.elementType == 'diocese_seal') {
+      return pw.Positioned(
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: boxWidth,
+          height: boxHeight,
+          child: _buildIndividualSealPdfWidget(
+            isParish: false,
+            diameter: sealSize,
+            sealBytes: dioceseLogo,
+            sealColor: _hexToPdfColor(element.colorHex),
+            boldFont: boldFont,
+          ),
+        ),
+      );
+    }
+
+    if (element.elementType == 'parish_seal') {
+      return pw.Positioned(
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: boxWidth,
+          height: boxHeight,
+          child: _buildIndividualSealPdfWidget(
+            isParish: true,
+            diameter: sealSize,
+            sealBytes: parishSeal,
+            sealColor: _hexToPdfColor(element.colorHex),
+            boldFont: boldFont,
+          ),
+        ),
+      );
+    }
+
+    if (element.elementType == 'signature_line' ||
+        element.elementType == 'signature') {
+      return pw.Positioned(
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: pw.Column(
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              if (signatureImage != null)
+                pw.Container(
+                  height: 24,
+                  child: pw.Image(pw.MemoryImage(signatureImage),
+                      fit: pw.BoxFit.contain),
+                )
+              else
+                pw.SizedBox(height: 18),
+              pw.Container(
+                width: elementWidth,
+                height: 1.0,
+                color: _hexToPdfColor(element.colorHex),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (element.elementType == 'signatory') {
+      final resolvedText = sanitizePdfText(
+          _replacePlaceholders(element.text, placeholderValues));
+      return pw.Positioned(
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              if (signatureImage != null)
+                pw.Container(
+                  height: 24,
+                  child: pw.Image(pw.MemoryImage(signatureImage),
+                      fit: pw.BoxFit.contain),
+                )
+              else
+                pw.SizedBox(height: 18),
+              pw.Container(
+                width: 140,
+                decoration: const pw.BoxDecoration(
+                  border: pw.Border(
+                    top: pw.BorderSide(color: textDark, width: 0.8),
+                  ),
+                ),
+                padding: const pw.EdgeInsets.only(top: 2),
+                child: pw.Text(
+                  resolvedText,
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: elemFont,
+                    fontSize: element.fontSize,
+                    color: _hexToPdfColor(element.colorHex),
+                    lineSpacing: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (element.elementType == 'qr') {
+      return pw.Positioned(
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: boxWidth,
+          height: boxHeight,
+          child: pw.Center(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              mainAxisSize: pw.MainAxisSize.min,
+              children: [
+                pw.Container(
+                  width: 48,
+                  height: 48,
+                  padding: const pw.EdgeInsets.all(2),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.white,
+                    border: pw.Border.all(color: borderGrey, width: 0.6),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: qrUrl,
+                  ),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  'QR AUTHENTIC',
+                  style: pw.TextStyle(
+                    font: boldFont,
+                    fontSize: 6.0,
+                    color: PdfColors.grey700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (element.elementType == 'title') {
+      final resolvedText = sanitizePdfText(
+          _replacePlaceholders(element.text, placeholderValues));
+      final titleColor = _hexToPdfColor(element.colorHex);
+
+      return pw.Positioned(
+        left: left,
+        top: top,
+        child: pw.SizedBox(
+          width: elementWidth,
+          child: pw.Center(
+            child: pw.Container(
+              width: 320,
+              padding: const pw.EdgeInsets.symmetric(vertical: 4),
+              decoration: template.backgroundMode == 'None'
+                  ? null
+                  : const pw.BoxDecoration(
+                border: pw.Border(
+                  bottom: pw.BorderSide(color: goldAccent, width: 2.0),
+                ),
+              ),
+              child: pw.Text(
+                resolvedText.toUpperCase(),
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  font: elemFont,
+                  fontSize: element.fontSize,
+                  fontWeight: element.isBold
+                      ? pw.FontWeight.bold
+                      : pw.FontWeight.normal,
+                  letterSpacing: 1.5,
+                  color: titleColor,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final resolvedText = sanitizePdfText(
+        _replacePlaceholders(element.text, placeholderValues));
+    final isBold = element.isBold;
+    final elemColor = _hexToPdfColor(element.colorHex);
+
+    pw.TextAlign align;
+    switch (element.textAlign.toLowerCase()) {
+      case 'right':
+        align = pw.TextAlign.right;
+        break;
+      case 'center':
+        align = pw.TextAlign.center;
+        break;
+      case 'left':
+      default:
+        align = pw.TextAlign.left;
+        break;
+    }
+
+    double letterSpacing = 0.0;
+    if (element.fontFamily.toLowerCase() == 'cinzel') letterSpacing = 2.0;
+
+    return pw.Positioned(
+      left: left,
+      top: top,
+      child: pw.Container(
+        width: elementWidth,
+        height: elementHeight,
+        alignment:
+        _resolvePdfBoxAlignment(element.textAlign, element.verticalAlign),
+        child: pw.Text(
+          resolvedText,
+          textAlign: align,
+          style: pw.TextStyle(
+            font: elemFont,
+            fontSize: element.fontSize,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: elemColor,
+            letterSpacing: letterSpacing,
+            lineSpacing: 3.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _buildIndividualSealPdfWidget({
+    required bool isParish,
+    required double diameter,
+    required Uint8List? sealBytes,
+    required PdfColor sealColor,
+    required pw.Font boldFont,
+  }) {
+    final String fallbackLabel = isParish ? 'SJP2' : 'DSP';
+
+    if (sealBytes != null) {
+      return pw.Center(
+        child: pw.Image(
+          pw.MemoryImage(sealBytes),
+          width: diameter,
+          height: diameter,
+          fit: pw.BoxFit.contain,
+        ),
+      );
+    }
+
+    return pw.Container(
+      width: diameter,
+      height: diameter,
+      decoration: pw.BoxDecoration(
+        color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Center(
+        child: pw.Text(
+          fallbackLabel,
+          style: pw.TextStyle(
+            font: boldFont,
+            fontSize: diameter * 0.22,
+            fontWeight: pw.FontWeight.bold,
+            color: sealColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 6. Structured Canonical Voucher Layout
+  // ===========================================================================
+
   static pw.Widget _buildStructuredReceiptLayout({
     required ReceiptTemplateModel template,
     required ReceiptStyleConfig style,
@@ -585,15 +1027,21 @@ class ReceiptPdfGenerator {
     required pw.Font baseFont,
     required pw.Font boldFont,
     required pw.Font italicFont,
+    String? bankName,
+    String? chequeNumber,
   }) {
-    final bool isEcclesiastical = template.paperSize.toLowerCase().contains('ecclesiastical');
+    final bool isEcclesiastical =
+    template.paperSize.toLowerCase().contains('ecclesiastical');
     final bool isPlain = template.backgroundMode == 'None';
     final lines = template.headerLines;
 
     final detailLines = cleanDetails
         .split('\n')
         .map((l) => l.trim())
-        .where((l) => l.isNotEmpty && !l.toLowerCase().contains('cash tendered') && !l.toLowerCase().contains('change:'))
+        .where((l) =>
+    l.isNotEmpty &&
+        !l.toLowerCase().contains('cash tendered') &&
+        !l.toLowerCase().contains('change:'))
         .toList();
 
     return pw.Column(
@@ -609,7 +1057,8 @@ class ReceiptPdfGenerator {
                 width: isEcclesiastical ? 40 : 50,
                 height: isEcclesiastical ? 40 : 50,
                 child: dioceseLogo != null
-                    ? pw.Image(pw.MemoryImage(dioceseLogo), fit: pw.BoxFit.contain)
+                    ? pw.Image(pw.MemoryImage(dioceseLogo),
+                    fit: pw.BoxFit.contain)
                     : _buildFallbackEmblem('DSP', boldFont),
               )
             else
@@ -620,17 +1069,28 @@ class ReceiptPdfGenerator {
                 children: [
                   pw.Text(
                     lines.isNotEmpty ? lines[0] : 'Diocese of San Pablo',
-                    style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 8.5 : 9.5, color: textDark),
+                    style: pw.TextStyle(
+                        font: boldFont,
+                        fontSize: isEcclesiastical ? 8.5 : 9.5,
+                        color: textDark),
                   ),
                   pw.SizedBox(height: 1),
                   pw.Text(
                     lines.length > 1 ? lines[1] : 'Saint John Paul II Parish',
-                    style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 12 : 14, color: isPlain ? textDark : marianBlue),
+                    style: pw.TextStyle(
+                        font: boldFont,
+                        fontSize: isEcclesiastical ? 12 : 14,
+                        color: isPlain ? textDark : marianBlue),
                   ),
                   pw.SizedBox(height: 1),
                   pw.Text(
-                    lines.length > 2 ? lines.sublist(2).join(', ') : 'Santa Cruz, Laguna',
-                    style: pw.TextStyle(font: baseFont, fontSize: isEcclesiastical ? 7.5 : 8.5, color: textMuted),
+                    lines.length > 2
+                        ? lines.sublist(2).join(', ')
+                        : 'Santa Cruz, Laguna',
+                    style: pw.TextStyle(
+                        font: baseFont,
+                        fontSize: isEcclesiastical ? 7.5 : 8.5,
+                        color: textMuted),
                   ),
                 ],
               ),
@@ -641,7 +1101,8 @@ class ReceiptPdfGenerator {
                 width: isEcclesiastical ? 40 : 50,
                 height: isEcclesiastical ? 40 : 50,
                 child: parishSeal != null
-                    ? pw.Image(pw.MemoryImage(parishSeal), fit: pw.BoxFit.contain)
+                    ? pw.Image(pw.MemoryImage(parishSeal),
+                    fit: pw.BoxFit.contain)
                     : _buildFallbackEmblem('SJP2', boldFont),
               )
             else
@@ -660,7 +1121,9 @@ class ReceiptPdfGenerator {
               decoration: isPlain
                   ? null
                   : const pw.BoxDecoration(
-                border: pw.Border(bottom: pw.BorderSide(color: goldAccent, width: 1.5)),
+                border: pw.Border(
+                    bottom: pw.BorderSide(
+                        color: goldAccent, width: 1.5)),
               ),
               child: pw.Text(
                 template.receiptTitle.toUpperCase(),
@@ -674,10 +1137,17 @@ class ReceiptPdfGenerator {
             ),
             pw.Row(
               children: [
-                pw.Text('RECEIPT NO: ', style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 8.0 : 9.0, color: textMuted)),
+                pw.Text('RECEIPT NO: ',
+                    style: pw.TextStyle(
+                        font: boldFont,
+                        fontSize: isEcclesiastical ? 8.0 : 9.0,
+                        color: textMuted)),
                 pw.Text(
                   receiptNumber,
-                  style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 9.5 : 10.5, color: isPlain ? textDark : marianBlue),
+                  style: pw.TextStyle(
+                      font: boldFont,
+                      fontSize: isEcclesiastical ? 9.5 : 10.5,
+                      color: isPlain ? textDark : marianBlue),
                 ),
               ],
             ),
@@ -705,17 +1175,33 @@ class ReceiptPdfGenerator {
               pw.Expanded(
                 child: pw.RichText(
                   text: pw.TextSpan(
-                    style: pw.TextStyle(font: baseFont, fontSize: isEcclesiastical ? 8.5 : 9.5, color: textDark),
+                    style: pw.TextStyle(
+                        font: baseFont,
+                        fontSize: isEcclesiastical ? 8.5 : 9.5,
+                        color: textDark),
                     children: [
-                      pw.TextSpan(text: 'Received From: ', style: pw.TextStyle(font: boldFont, color: textMuted)),
-                      pw.TextSpan(text: payorName, style: pw.TextStyle(font: boldFont, color: textDark)),
+                      pw.TextSpan(
+                          text: 'Received From: ',
+                          style: pw.TextStyle(
+                              font: boldFont, color: textMuted)),
+                      pw.TextSpan(
+                          text: payorName,
+                          style: pw.TextStyle(
+                              font: boldFont, color: textDark)),
                       if (payorContact != null && payorContact.isNotEmpty)
-                        pw.TextSpan(text: '  ($payorContact)', style: const pw.TextStyle(fontSize: 8.0, color: textMuted)),
+                        pw.TextSpan(
+                            text: '  ($payorContact)',
+                            style: const pw.TextStyle(
+                                fontSize: 8.0, color: textMuted)),
                     ],
                   ),
                 ),
               ),
-              pw.Text('Date: $issuedDate', style: pw.TextStyle(font: baseFont, fontSize: isEcclesiastical ? 8.0 : 9.0, color: textMuted)),
+              pw.Text('Date: $issuedDate',
+                  style: pw.TextStyle(
+                      font: baseFont,
+                      fontSize: isEcclesiastical ? 8.0 : 9.0,
+                      color: textMuted)),
             ],
           ),
         ),
@@ -742,8 +1228,16 @@ class ReceiptPdfGenerator {
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('PARTICULARS / OFFERING DETAILS', style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 7.5 : 8.5, color: textMuted)),
-                    pw.Text('AMOUNT', style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 7.5 : 8.5, color: textMuted)),
+                    pw.Text('PARTICULARS / OFFERING DETAILS',
+                        style: pw.TextStyle(
+                            font: boldFont,
+                            fontSize: isEcclesiastical ? 7.5 : 8.5,
+                            color: textMuted)),
+                    pw.Text('AMOUNT',
+                        style: pw.TextStyle(
+                            font: boldFont,
+                            fontSize: isEcclesiastical ? 7.5 : 8.5,
+                            color: textMuted)),
                   ],
                 ),
                 pw.Divider(thickness: 0.5, color: borderGrey),
@@ -754,7 +1248,8 @@ class ReceiptPdfGenerator {
                     final parts = line.split('=');
                     final left = parts[0].replaceAll('-', '').trim();
                     final right = parts.length > 1 ? parts[1].trim() : '';
-                    final amtDisplay = right.startsWith('P') ? right : 'P $right';
+                    final amtDisplay =
+                    right.startsWith('P') ? right : 'P $right';
 
                     return pw.Padding(
                       padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
@@ -762,18 +1257,42 @@ class ReceiptPdfGenerator {
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
                           pw.Expanded(
-                            child: pw.Text(left, style: pw.TextStyle(font: baseFont, fontSize: isEcclesiastical ? 8.5 : 9.5, color: textDark)),
+                            child: pw.Text(left,
+                                style: pw.TextStyle(
+                                    font: baseFont,
+                                    fontSize: isEcclesiastical ? 8.5 : 9.5,
+                                    color: textDark)),
                           ),
-                          pw.Text(amtDisplay, style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 9.0 : 10.0, color: isPlain ? textDark : marianBlue)),
+                          pw.Text(amtDisplay,
+                              style: pw.TextStyle(
+                                  font: boldFont,
+                                  fontSize: isEcclesiastical ? 9.0 : 10.0,
+                                  color: isPlain ? textDark : marianBlue)),
                         ],
                       ),
                     );
                   }
                   return pw.Padding(
                     padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-                    child: pw.Text(line, style: pw.TextStyle(font: baseFont, fontSize: isEcclesiastical ? 8.5 : 9.5, color: textDark)),
+                    child: pw.Text(line,
+                        style: pw.TextStyle(
+                            font: baseFont,
+                            fontSize: isEcclesiastical ? 8.5 : 9.5,
+                            color: textDark)),
                   );
                 }),
+
+                if (bankName != null && chequeNumber != null) ...[
+                  pw.SizedBox(height: 3),
+                  pw.Text(
+                    'Cheque Tender: Bank $bankName (Cheque No: $chequeNumber)',
+                    style: pw.TextStyle(
+                      font: boldFont,
+                      fontSize: isEcclesiastical ? 8.0 : 9.0,
+                      color: const PdfColor(0.43, 0.16, 0.85),
+                    ),
+                  ),
+                ],
 
                 pw.Spacer(),
                 // AMOUNT IN WORDS ROW
@@ -781,14 +1300,26 @@ class ReceiptPdfGenerator {
                   width: double.infinity,
                   padding: const pw.EdgeInsets.symmetric(vertical: 3),
                   decoration: const pw.BoxDecoration(
-                    border: pw.Border(top: pw.BorderSide(color: borderGrey, width: 0.5)),
+                    border: pw.Border(
+                        top: pw.BorderSide(color: borderGrey, width: 0.5)),
                   ),
                   child: pw.RichText(
                     text: pw.TextSpan(
-                      style: pw.TextStyle(font: baseFont, fontSize: isEcclesiastical ? 8.0 : 9.0, color: textDark),
+                      style: pw.TextStyle(
+                          font: baseFont,
+                          fontSize: isEcclesiastical ? 8.0 : 9.0,
+                          color: textDark),
                       children: [
-                        pw.TextSpan(text: 'Amount in Words: ', style: pw.TextStyle(font: boldFont, color: textMuted)),
-                        pw.TextSpan(text: amountInWordsText, style: pw.TextStyle(font: boldFont, fontStyle: pw.FontStyle.italic, color: textDark)),
+                        pw.TextSpan(
+                            text: 'Amount in Words: ',
+                            style: pw.TextStyle(
+                                font: boldFont, color: textMuted)),
+                        pw.TextSpan(
+                            text: amountInWordsText,
+                            style: pw.TextStyle(
+                                font: boldFont,
+                                fontStyle: pw.FontStyle.italic,
+                                color: textDark)),
                       ],
                     ),
                   ),
@@ -811,7 +1342,8 @@ class ReceiptPdfGenerator {
                     width: isEcclesiastical ? 42 : 48,
                     height: isEcclesiastical ? 42 : 48,
                     padding: const pw.EdgeInsets.all(2),
-                    decoration: pw.BoxDecoration(border: pw.Border.all(color: borderGrey, width: 0.6)),
+                    decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: borderGrey, width: 0.6)),
                     child: pw.BarcodeWidget(
                       barcode: pw.Barcode.qrCode(),
                       data: qrUrl,
@@ -821,15 +1353,29 @@ class ReceiptPdfGenerator {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('Tender Mode: ${paymentMode.toUpperCase()}', style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 7.0 : 8.0)),
-                      pw.Text('Canonical verification token', style: pw.TextStyle(font: baseFont, fontSize: 6.0, color: textMuted)),
-                      pw.Text('TOTUS TUUS', style: pw.TextStyle(font: boldFont, fontSize: 6.5, color: isPlain ? textMuted : goldAccent, letterSpacing: 0.8)),
+                      pw.Text('Tender Mode: ${paymentMode.toUpperCase()}',
+                          style: pw.TextStyle(
+                              font: boldFont,
+                              fontSize: isEcclesiastical ? 7.0 : 8.0)),
+                      pw.Text('Canonical verification token',
+                          style: pw.TextStyle(
+                              font: baseFont,
+                              fontSize: 6.0,
+                              color: textMuted)),
+                      pw.Text('TOTUS TUUS',
+                          style: pw.TextStyle(
+                              font: boldFont,
+                              fontSize: 6.5,
+                              color: isPlain ? textMuted : goldAccent,
+                              letterSpacing: 0.8)),
                     ],
                   ),
                 ],
               )
             else
-              pw.Text('Tender Mode: ${paymentMode.toUpperCase()}', style: pw.TextStyle(font: boldFont, fontSize: 8.0)),
+              pw.Text('Tender Mode: ${paymentMode.toUpperCase()}',
+                  style: pw.TextStyle(
+                      font: boldFont, fontSize: 8.0)),
 
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -837,18 +1383,29 @@ class ReceiptPdfGenerator {
                 if (signatureImage != null)
                   pw.Container(
                     height: isEcclesiastical ? 20 : 26,
-                    child: pw.Image(pw.MemoryImage(signatureImage), fit: pw.BoxFit.contain),
+                    child: pw.Image(pw.MemoryImage(signatureImage),
+                        fit: pw.BoxFit.contain),
                   )
                 else
                   pw.SizedBox(height: isEcclesiastical ? 16 : 20),
                 pw.Container(
                   width: isEcclesiastical ? 130 : 160,
-                  decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(color: textDark, width: 0.8))),
+                  decoration: const pw.BoxDecoration(
+                      border: pw.Border(
+                          top: pw.BorderSide(color: textDark, width: 0.8))),
                   padding: const pw.EdgeInsets.only(top: 2),
                   child: pw.Column(
                     children: [
-                      pw.Text(cashierName, style: pw.TextStyle(font: boldFont, fontSize: isEcclesiastical ? 8.0 : 9.0, color: textDark)),
-                      pw.Text(template.cashierTitle, style: pw.TextStyle(font: baseFont, fontSize: isEcclesiastical ? 6.5 : 7.5, color: textMuted)),
+                      pw.Text(cashierName,
+                          style: pw.TextStyle(
+                              font: boldFont,
+                              fontSize: isEcclesiastical ? 8.0 : 9.0,
+                              color: textDark)),
+                      pw.Text(template.cashierTitle,
+                          style: pw.TextStyle(
+                              font: baseFont,
+                              fontSize: isEcclesiastical ? 6.5 : 7.5,
+                              color: textMuted)),
                     ],
                   ),
                 ),
@@ -860,156 +1417,9 @@ class ReceiptPdfGenerator {
     );
   }
 
-  static pw.Widget _buildCanvaReceiptPdfElement({
-    required CertificateCanvasElement element,
-    required ReceiptTemplateModel template,
-    required Map<String, String> placeholderValues,
-    required double pageWidth,
-    required double pageHeight,
-    required Uint8List? dioceseLogo,
-    required Uint8List? parishSeal,
-    required Uint8List? signatureImage,
-    required String qrUrl,
-    required pw.Font elemFont,
-    required pw.Font boldFont,
-  }) {
-    final double elementWidth = (element.width ?? 0.84) * pageWidth;
-    final double? elementHeight = element.height != null ? element.height! * pageHeight : null;
-    final double pixelCenterX = element.x * pageWidth;
-    final double pixelCenterY = element.y * pageHeight;
-    final double left = pixelCenterX - (elementWidth / 2);
-    final double top = elementHeight != null
-        ? pixelCenterY - (elementHeight / 2)
-        : pixelCenterY - 14;
-
-    if (element.elementType == 'diocese_seal') {
-      final double diameter = element.fontSize * 4.0;
-      return pw.Positioned(
-        left: pixelCenterX - (diameter / 2),
-        top: pixelCenterY - (diameter / 2),
-        child: pw.SizedBox(
-          width: diameter,
-          height: diameter,
-          child: dioceseLogo != null
-              ? pw.Image(pw.MemoryImage(dioceseLogo), fit: pw.BoxFit.contain)
-              : _buildFallbackEmblem('DSP', boldFont),
-        ),
-      );
-    }
-
-    if (element.elementType == 'parish_seal') {
-      final double diameter = element.fontSize * 4.0;
-      return pw.Positioned(
-        left: pixelCenterX - (diameter / 2),
-        top: pixelCenterY - (diameter / 2),
-        child: pw.SizedBox(
-          width: diameter,
-          height: diameter,
-          child: parishSeal != null
-              ? pw.Image(pw.MemoryImage(parishSeal), fit: pw.BoxFit.contain)
-              : _buildFallbackEmblem('SJP2', boldFont),
-        ),
-      );
-    }
-
-    if (element.elementType == 'signature_line' || element.elementType == 'signature') {
-      return pw.Positioned(
-        left: left,
-        top: pixelCenterY - 10,
-        child: pw.SizedBox(
-          width: elementWidth,
-          child: pw.Column(
-            children: [
-              if (signatureImage != null)
-                pw.Container(
-                  height: 24,
-                  child: pw.Image(pw.MemoryImage(signatureImage), fit: pw.BoxFit.contain),
-                )
-              else
-                pw.SizedBox(height: 18),
-              pw.Container(
-                width: elementWidth,
-                height: 1.0,
-                color: _hexToPdfColor(element.colorHex),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (element.elementType == 'signatory') {
-      final resolvedText = sanitizePdfText(_replacePlaceholders(element.text, placeholderValues));
-      return pw.Positioned(
-        left: left,
-        top: top,
-        child: pw.SizedBox(
-          width: elementWidth,
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              if (signatureImage != null)
-                pw.Container(
-                  height: 24,
-                  child: pw.Image(pw.MemoryImage(signatureImage), fit: pw.BoxFit.contain),
-                )
-              else
-                pw.SizedBox(height: 18),
-              pw.Container(
-                width: elementWidth * 0.85,
-                decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(color: textDark, width: 0.8))),
-                padding: const pw.EdgeInsets.only(top: 2),
-                child: pw.Text(
-                  resolvedText,
-                  textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    font: elemFont,
-                    fontSize: element.fontSize,
-                    color: _hexToPdfColor(element.colorHex),
-                    lineSpacing: 1.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (element.elementType == 'qr') {
-      return pw.Positioned(
-        left: pixelCenterX - 24,
-        top: pixelCenterY - 24,
-        child: pw.Container(
-          width: 48,
-          height: 48,
-          padding: const pw.EdgeInsets.all(2),
-          decoration: pw.BoxDecoration(border: pw.Border.all(color: borderGrey, width: 0.6)),
-          child: pw.BarcodeWidget(barcode: pw.Barcode.qrCode(), data: qrUrl),
-        ),
-      );
-    }
-
-    final resolvedText = sanitizePdfText(_replacePlaceholders(element.text, placeholderValues));
-    return pw.Positioned(
-      left: left,
-      top: top,
-      child: pw.SizedBox(
-        width: elementWidth,
-        height: elementHeight,
-        child: pw.Text(
-          resolvedText,
-          textAlign: _resolveTextAlign(element.textAlign),
-          style: pw.TextStyle(
-            font: elemFont,
-            fontSize: element.fontSize,
-            color: _hexToPdfColor(element.colorHex),
-            lineSpacing: 1.6,
-          ),
-        ),
-      ),
-    );
-  }
+  // ===========================================================================
+  // 7. Thermal 80mm Roll Generator
+  // ===========================================================================
 
   static pw.Widget _buildThermalRollContent({
     required String receiptNumber,
@@ -1026,11 +1436,12 @@ class ReceiptPdfGenerator {
     required pw.Font boldFont,
     bool isVoided = false,
     String? voidReason,
+    String? bankName,
+    String? chequeNumber,
   }) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        // Prominent Warning if Voided
         if (isVoided) ...[
           pw.Container(
             width: double.infinity,
@@ -1041,40 +1452,60 @@ class ReceiptPdfGenerator {
             ),
             child: pw.Column(
               children: [
-                pw.Text('*** VOID / CANCELLED RECEIPT ***', style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: PdfColors.red800)),
+                pw.Text('*** VOID / CANCELLED RECEIPT ***',
+                    style: pw.TextStyle(
+                        font: boldFont,
+                        fontSize: 8.5,
+                        color: PdfColors.red800)),
                 if (voidReason != null && voidReason.isNotEmpty)
-                  pw.Text(voidReason, textAlign: pw.TextAlign.center, style: pw.TextStyle(font: baseFont, fontSize: 6.5, color: PdfColors.red800)),
+                  pw.Text(voidReason,
+                      textAlign: pw.TextAlign.center,
+                      style: pw.TextStyle(
+                          font: baseFont,
+                          fontSize: 6.5,
+                          color: PdfColors.red800)),
               ],
             ),
           ),
           pw.SizedBox(height: 4),
         ],
 
-        pw.Text('DIOCESE OF SAN PABLO', style: pw.TextStyle(font: baseFont, fontSize: 8, color: textMuted)),
-        pw.Text('ST. JOHN PAUL II PARISH', style: pw.TextStyle(font: boldFont, fontSize: 11, color: isVoided ? PdfColors.red800 : textDark)),
-        pw.Text('Brgy. Labuin, Santa Cruz, Laguna', style: pw.TextStyle(font: baseFont, fontSize: 8, color: textMuted)),
+        pw.Text('DIOCESE OF SAN PABLO',
+            style: pw.TextStyle(font: baseFont, fontSize: 8, color: textMuted)),
+        pw.Text('ST. JOHN PAUL II PARISH',
+            style: pw.TextStyle(
+                font: boldFont,
+                fontSize: 11,
+                color: isVoided ? PdfColors.red800 : textDark)),
+        pw.Text('Brgy. Labuin, Santa Cruz, Laguna',
+            style: pw.TextStyle(font: baseFont, fontSize: 8, color: textMuted)),
         pw.SizedBox(height: 6),
-        pw.Text(isVoided ? 'OFFICIAL RECEIPT (VOIDED)' : 'OFFICIAL RECEIPT', style: pw.TextStyle(font: boldFont, fontSize: 9)),
+        pw.Text(isVoided ? 'OFFICIAL RECEIPT (VOIDED)' : 'OFFICIAL RECEIPT',
+            style: pw.TextStyle(font: boldFont, fontSize: 9)),
         pw.Divider(thickness: 0.5, color: borderGrey),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Receipt No:', style: pw.TextStyle(font: baseFont, fontSize: 8)),
-            pw.Text(receiptNumber, style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
+            pw.Text('Receipt No:',
+                style: pw.TextStyle(font: baseFont, fontSize: 8)),
+            pw.Text(receiptNumber,
+                style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
           ],
         ),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text('Date:', style: pw.TextStyle(font: baseFont, fontSize: 8)),
-            pw.Text(issuedDate, style: pw.TextStyle(font: baseFont, fontSize: 8)),
+            pw.Text(issuedDate,
+                style: pw.TextStyle(font: baseFont, fontSize: 8)),
           ],
         ),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text('Payor:', style: pw.TextStyle(font: baseFont, fontSize: 8)),
-            pw.Text(payorName, style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
+            pw.Text(payorName,
+                style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
           ],
         ),
         pw.Divider(thickness: 0.5, color: borderGrey),
@@ -1085,6 +1516,17 @@ class ReceiptPdfGenerator {
             style: pw.TextStyle(font: baseFont, fontSize: 8, lineSpacing: 1.5),
           ),
         ),
+        if (bankName != null && chequeNumber != null) ...[
+          pw.SizedBox(height: 3),
+          pw.Align(
+            alignment: pw.Alignment.centerLeft,
+            child: pw.Text(
+              'Cheque: Bank $bankName (No: $chequeNumber)',
+              style: pw.TextStyle(
+                  font: boldFont, fontSize: 7.5, color: PdfColors.purple800),
+            ),
+          ),
+        ],
         pw.SizedBox(height: 4),
         pw.Align(
           alignment: pw.Alignment.centerLeft,
@@ -1097,7 +1539,8 @@ class ReceiptPdfGenerator {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Mode: ${paymentMode.toUpperCase()}', style: pw.TextStyle(font: baseFont, fontSize: 8.5)),
+            pw.Text('Mode: ${paymentMode.toUpperCase()}',
+                style: pw.TextStyle(font: baseFont, fontSize: 8.5)),
             pw.Text(
               'TOTAL: P ${amount.toStringAsFixed(2)}',
               style: pw.TextStyle(
@@ -1110,17 +1553,24 @@ class ReceiptPdfGenerator {
           ],
         ),
         pw.Divider(thickness: 0.5, color: borderGrey),
-        pw.Text('Cashier: $cashierName', style: const pw.TextStyle(fontSize: 7.5, color: textMuted)),
+        pw.Text('Cashier: $cashierName',
+            style: const pw.TextStyle(fontSize: 7.5, color: textMuted)),
         pw.Text(
-          isVoided ? 'VOIDED TRANSACTION - NON-NEGOTIABLE' : 'Thank you for your offering. Totus Tuus.',
-          style: pw.TextStyle(fontSize: 7, color: isVoided ? PdfColors.red800 : textMuted, fontWeight: isVoided ? pw.FontWeight.bold : null),
+          isVoided
+              ? 'VOIDED TRANSACTION - NON-NEGOTIABLE'
+              : 'Thank you for your offering. Totus Tuus.',
+          style: pw.TextStyle(
+              fontSize: 7,
+              color: isVoided ? PdfColors.red800 : textMuted,
+              fontWeight: isVoided ? pw.FontWeight.bold : null),
         ),
       ],
     );
   }
 
   static pw.Widget _buildDefaultReceiptVectorBorder(String paperSize) {
-    final bool isEcclesiastical = paperSize.toLowerCase().contains('ecclesiastical');
+    final bool isEcclesiastical =
+    paperSize.toLowerCase().contains('ecclesiastical');
     return pw.Positioned.fill(
       child: pw.Padding(
         padding: pw.EdgeInsets.all(isEcclesiastical ? 10.0 : 16.0),
@@ -1148,7 +1598,8 @@ class ReceiptPdfGenerator {
         borderRadius: pw.BorderRadius.circular(4),
       ),
       child: pw.Center(
-        child: pw.Text(label, style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: textDark)),
+        child: pw.Text(label,
+            style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: textDark)),
       ),
     );
   }
@@ -1159,18 +1610,6 @@ class ReceiptPdfGenerator {
       output = output.replaceAll(tag, val);
     });
     return output;
-  }
-
-  static pw.TextAlign _resolveTextAlign(String align) {
-    switch (align.toLowerCase()) {
-      case 'left':
-        return pw.TextAlign.left;
-      case 'right':
-        return pw.TextAlign.right;
-      case 'center':
-      default:
-        return pw.TextAlign.center;
-    }
   }
 
   static Future<Uint8List?> _fetchNetworkImage(String? url) async {
