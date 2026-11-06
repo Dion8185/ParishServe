@@ -19,6 +19,7 @@ import '../../services/first_communion_service.dart';
 import '../../services/matrimony_service.dart';
 import '../../services/death_service.dart';
 import '../../services/conversion_service.dart';
+import '../../services/sacrament_csv_service.dart';
 import '../dialogs/manual_entry_dialog.dart';
 import 'baptism_manual_entry_page.dart';
 import 'certificate_template_management_page.dart';
@@ -28,6 +29,7 @@ import 'first_communion_manual_entry_page.dart';
 import 'matrimony_manual_entry_page.dart';
 import 'death_manual_entry_page.dart';
 import 'conversion_manual_entry_page.dart';
+import 'sacrament_csv_import_page.dart';
 import 'sacrament_record_detail_page.dart';
 
 enum RegistryViewMode { cards, table }
@@ -69,6 +71,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   List<ConversionRecordModel> _conversionRecords = [];
 
   bool _isLoading = false;
+  bool _isExporting = false;
   String? _fetchError;
   String _searchQuery = '';
   bool _isLoadedFromSqlite = false;
@@ -78,13 +81,16 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   int _currentPage = 0;
   int _rowsPerPage = 10;
 
+  // Sorting State ('canonical', 'book', 'page', 'line', 'date', 'name')
+  // For First Communion: ('year', 'control_number', 'date', 'name')
+  String _sortBy = 'canonical';
+  bool _sortAscending = true;
+
   // Advanced Filters State
   DateTimeRange? _selectedDateRange;
   String _selectedEntryStatusFilter = 'All';
 
   // Exact Locator State (Book No. + Page No. + Line No. applied together).
-  // For First Communion these map to: Year + Control No. (line is unused).
-  // 'All' means "Any".
   String _selectedBookFilter = 'All';
   String _selectedPageFilter = 'All';
   String _selectedLineFilter = 'All';
@@ -249,7 +255,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   }
 
   // ===========================================================================
-  // Search (debounced, same behaviour as the main registers dashboard)
+  // Search
   // ===========================================================================
 
   void _onSearchChanged(String value) {
@@ -273,10 +279,312 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   }
 
   // ===========================================================================
-  // Exact Locator: Book No. + Page No. + Line No. (cascading selection)
+  // Sorting Engine (Book, Page, Line, Canonical, Date, Name)
   // ===========================================================================
 
-  /// One row per record: [book, page, line]. For First Communion: [year, control no., ''].
+  int _compareNumericalStrings(String a, String b) {
+    final ai = int.tryParse(a.trim());
+    final bi = int.tryParse(b.trim());
+    if (ai != null && bi != null) return ai.compareTo(bi);
+    if (ai != null) return -1;
+    if (bi != null) return 1;
+    return a.trim().toLowerCase().compareTo(b.trim().toLowerCase());
+  }
+
+  String get _sortLabel {
+    if (_isCommunionRegistry) {
+      switch (_sortBy) {
+        case 'year':
+        case 'book':
+          return 'Year';
+        case 'control_number':
+        case 'page':
+        case 'canonical':
+          return 'Control No.';
+        case 'date':
+          return 'Date';
+        case 'name':
+          return 'Name';
+        default:
+          return 'Year';
+      }
+    }
+
+    switch (_sortBy) {
+      case 'book':
+        return 'Book';
+      case 'page':
+        return 'Page';
+      case 'line':
+        return 'Line';
+      case 'canonical':
+        return 'Book, Page, Line';
+      case 'date':
+        return 'Date';
+      case 'name':
+        return 'Name';
+      default:
+        return 'Book, Page, Line';
+    }
+  }
+
+  void _onColumnSort(String field) {
+    setState(() {
+      if (_sortBy == field) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortBy = field;
+        _sortAscending = true;
+      }
+      _currentPage = 0;
+    });
+  }
+
+  int? _getSortColumnIndex() {
+    if (_isCommunionRegistry) {
+      switch (_sortBy) {
+        case 'year':
+        case 'book':
+          return 0;
+        case 'control_number':
+        case 'page':
+        case 'canonical':
+          return 1;
+        case 'name':
+          return 2;
+        case 'date':
+          return 3;
+        default:
+          return null;
+      }
+    }
+
+    switch (_sortBy) {
+      case 'book':
+        return 0;
+      case 'page':
+        return 1;
+      case 'line':
+        return 2;
+      case 'canonical':
+        return 0;
+      case 'name':
+        return 3;
+      case 'date':
+        if (widget.sacramentName == 'Matrimony') return 4;
+        if (widget.sacramentName == 'Death') return 6;
+        return 5;
+      default:
+        return null;
+    }
+  }
+
+  int _compareBaptism(BaptismRecordModel a, BaptismRecordModel b) {
+    int res = 0;
+    switch (_sortBy) {
+      case 'book':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'page':
+        res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'line':
+        res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        break;
+      case 'canonical':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'date':
+        res = a.dateOfBaptism.compareTo(b.dateOfBaptism);
+        break;
+      case 'name':
+        res = a.childFullName.toLowerCase().compareTo(b.childFullName.toLowerCase());
+        break;
+      default:
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+    }
+    return _sortAscending ? res : -res;
+  }
+
+  int _compareConfirmation(ConfirmationRecordModel a, ConfirmationRecordModel b) {
+    int res = 0;
+    switch (_sortBy) {
+      case 'book':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'page':
+        res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'line':
+        res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        break;
+      case 'canonical':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'date':
+        res = a.dateOfConfirmation.compareTo(b.dateOfConfirmation);
+        break;
+      case 'name':
+        res = a.confirmandFullName.toLowerCase().compareTo(b.confirmandFullName.toLowerCase());
+        break;
+      default:
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+    }
+    return _sortAscending ? res : -res;
+  }
+
+  int _compareCommunion(FirstCommunionRecordModel a, FirstCommunionRecordModel b) {
+    int res = 0;
+    switch (_sortBy) {
+      case 'year':
+      case 'book':
+        res = a.year.compareTo(b.year);
+        if (res == 0) res = _compareNumericalStrings(a.controlNumber, b.controlNumber);
+        break;
+      case 'control_number':
+      case 'page':
+      case 'canonical':
+        res = _compareNumericalStrings(a.controlNumber, b.controlNumber);
+        if (res == 0) res = a.year.compareTo(b.year);
+        break;
+      case 'date':
+        res = a.dateOfCommunion.compareTo(b.dateOfCommunion);
+        break;
+      case 'name':
+        res = a.communicantFullName.toLowerCase().compareTo(b.communicantFullName.toLowerCase());
+        break;
+      default:
+        res = a.year.compareTo(b.year);
+        if (res == 0) res = _compareNumericalStrings(a.controlNumber, b.controlNumber);
+    }
+    return _sortAscending ? res : -res;
+  }
+
+  int _compareMatrimony(MatrimonyRecordModel a, MatrimonyRecordModel b) {
+    int res = 0;
+    switch (_sortBy) {
+      case 'book':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'page':
+        res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'line':
+        res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        break;
+      case 'canonical':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'date':
+        res = a.dateOfMarriage.compareTo(b.dateOfMarriage);
+        break;
+      case 'name':
+        res = a.groomFullName.toLowerCase().compareTo(b.groomFullName.toLowerCase());
+        break;
+      default:
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+    }
+    return _sortAscending ? res : -res;
+  }
+
+  int _compareDeath(DeathRecordModel a, DeathRecordModel b) {
+    int res = 0;
+    switch (_sortBy) {
+      case 'book':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'page':
+        res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'line':
+        res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        break;
+      case 'canonical':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'date':
+        res = a.dateOfBurial.compareTo(b.dateOfBurial);
+        break;
+      case 'name':
+        res = a.deceasedFullName.toLowerCase().compareTo(b.deceasedFullName.toLowerCase());
+        break;
+      default:
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+    }
+    return _sortAscending ? res : -res;
+  }
+
+  int _compareConversion(ConversionRecordModel a, ConversionRecordModel b) {
+    int res = 0;
+    switch (_sortBy) {
+      case 'book':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'page':
+        res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'line':
+        res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        if (res == 0) res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        break;
+      case 'canonical':
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+        if (res == 0) res = _compareNumericalStrings(a.pageNumber, b.pageNumber);
+        if (res == 0) res = _compareNumericalStrings(a.lineNumber, b.lineNumber);
+        break;
+      case 'date':
+        res = a.dateOfReception.compareTo(b.dateOfReception);
+        break;
+      case 'name':
+        res = a.convertFullName.toLowerCase().compareTo(b.convertFullName.toLowerCase());
+        break;
+      default:
+        res = _compareNumericalStrings(a.bookNumber, b.bookNumber);
+    }
+    return _sortAscending ? res : -res;
+  }
+
+  // ===========================================================================
+  // Exact Locator: Book No. + Page No. + Line No.
+  // ===========================================================================
+
   List<List<String>> get _locatorRows {
     switch (widget.sacramentName) {
       case 'Baptism':
@@ -331,15 +639,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
     return parts.join(' • ');
   }
 
-  int _compareLocatorValues(String a, String b) {
-    final ai = int.tryParse(a);
-    final bi = int.tryParse(b);
-    if (ai != null && bi != null) return ai.compareTo(bi);
-    if (ai != null) return -1;
-    if (bi != null) return 1;
-    return a.toLowerCase().compareTo(b.toLowerCase());
-  }
-
   bool _valueMatches(String recordValue, String selected) {
     if (selected == 'All') return true;
     final a = recordValue.trim();
@@ -350,15 +649,12 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
     return a.toLowerCase() == b.toLowerCase();
   }
 
-  /// All three parts must match at the same time.
   bool _matchesLocator(String book, String page, String line) {
     return _valueMatches(book, _selectedBookFilter) &&
         _valueMatches(page, _selectedPageFilter) &&
         _valueMatches(line, _selectedLineFilter);
   }
 
-  /// Options for one locator field, narrowed by the fields before it
-  /// (Book narrows Page, Book + Page narrow Line).
   List<String> _locatorOptions(int index) {
     final sel = _locatorSelection;
     final values = <String>{};
@@ -372,7 +668,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       }
       if (ok && row[index].isNotEmpty) values.add(row[index]);
     }
-    final sorted = values.toList()..sort(_compareLocatorValues);
+    final sorted = values.toList()..sort(_compareNumericalStrings);
     return ['All', ...sorted];
   }
 
@@ -412,7 +708,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   }
 
   // ===========================================================================
-  // Advanced Filter Computation & List Getters
+  // Filter Computation & List Getters
   // ===========================================================================
 
   bool _matchesDateRange(DateTime date) {
@@ -463,6 +759,8 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       _selectedPageFilter = 'All';
       _selectedLineFilter = 'All';
       _selectedEntryStatusFilter = 'All';
+      _sortBy = 'canonical';
+      _sortAscending = true;
       _currentPage = 0;
     });
   }
@@ -474,18 +772,22 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       return true;
     }).toList();
 
-    if (_searchQuery.trim().isEmpty) return list;
-    final q = _searchQuery.toLowerCase();
-    return list.where((r) {
-      final nameMatch = r.childFullName.toLowerCase().contains(q);
-      final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
-          'page ${r.pageNumber}'.toLowerCase().contains(q) ||
-          'line ${r.lineNumber}'.toLowerCase().contains(q);
-      final parentMatch = r.fatherFullName.toLowerCase().contains(q) ||
-          r.motherFullName.toLowerCase().contains(q);
-      final idMatch = r.recordId.toLowerCase().contains(q);
-      return nameMatch || bookMatch || parentMatch || idMatch;
-    }).toList();
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((r) {
+        final nameMatch = r.childFullName.toLowerCase().contains(q);
+        final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
+            'page ${r.pageNumber}'.toLowerCase().contains(q) ||
+            'line ${r.lineNumber}'.toLowerCase().contains(q);
+        final parentMatch = r.fatherFullName.toLowerCase().contains(q) ||
+            r.motherFullName.toLowerCase().contains(q);
+        final idMatch = r.recordId.toLowerCase().contains(q);
+        return nameMatch || bookMatch || parentMatch || idMatch;
+      }).toList();
+    }
+
+    list.sort(_compareBaptism);
+    return list;
   }
 
   List<ConfirmationRecordModel> get _filteredConfirmationRecords {
@@ -496,19 +798,23 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       return true;
     }).toList();
 
-    if (_searchQuery.trim().isEmpty) return list;
-    final q = _searchQuery.toLowerCase();
-    return list.where((r) {
-      final nameMatch = r.confirmandFullName.toLowerCase().contains(q);
-      final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
-          'page ${r.pageNumber}'.toLowerCase().contains(q) ||
-          'line ${r.lineNumber}'.toLowerCase().contains(q);
-      final parentMatch = r.fatherFullName.toLowerCase().contains(q) ||
-          r.motherFullName.toLowerCase().contains(q);
-      final churchMatch = r.churchBaptized.toLowerCase().contains(q);
-      final idMatch = r.recordId.toLowerCase().contains(q);
-      return nameMatch || bookMatch || parentMatch || churchMatch || idMatch;
-    }).toList();
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((c) {
+        final nameMatch = c.confirmandFullName.toLowerCase().contains(q);
+        final bookMatch = 'book ${c.bookNumber}'.toLowerCase().contains(q) ||
+            'page ${c.pageNumber}'.toLowerCase().contains(q) ||
+            'line ${c.lineNumber}'.toLowerCase().contains(q);
+        final parentMatch = c.fatherFullName.toLowerCase().contains(q) ||
+            c.motherFullName.toLowerCase().contains(q);
+        final churchMatch = c.churchBaptized.toLowerCase().contains(q);
+        final idMatch = c.recordId.toLowerCase().contains(q);
+        return nameMatch || bookMatch || parentMatch || churchMatch || idMatch;
+      }).toList();
+    }
+
+    list.sort(_compareConfirmation);
+    return list;
   }
 
   List<FirstCommunionRecordModel> get _filteredFirstCommunionRecords {
@@ -518,16 +824,20 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       return true;
     }).toList();
 
-    if (_searchQuery.trim().isEmpty) return list;
-    final q = _searchQuery.toLowerCase();
-    return list.where((r) {
-      final nameMatch = r.communicantFullName.toLowerCase().contains(q);
-      final controlMatch = r.controlNumber.toLowerCase().contains(q);
-      final yearMatch = r.year.toString().contains(q);
-      final parishMatch = r.baptismParish.toLowerCase().contains(q);
-      final idMatch = r.recordId.toLowerCase().contains(q);
-      return nameMatch || controlMatch || yearMatch || parishMatch || idMatch;
-    }).toList();
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((r) {
+        final nameMatch = r.communicantFullName.toLowerCase().contains(q);
+        final controlMatch = r.controlNumber.toLowerCase().contains(q);
+        final yearMatch = r.year.toString().contains(q);
+        final parishMatch = r.baptismParish.toLowerCase().contains(q);
+        final idMatch = r.recordId.toLowerCase().contains(q);
+        return nameMatch || controlMatch || yearMatch || parishMatch || idMatch;
+      }).toList();
+    }
+
+    list.sort(_compareCommunion);
+    return list;
   }
 
   List<MatrimonyRecordModel> get _filteredMatrimonyRecords {
@@ -538,17 +848,21 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       return true;
     }).toList();
 
-    if (_searchQuery.trim().isEmpty) return list;
-    final q = _searchQuery.toLowerCase();
-    return list.where((r) {
-      final nameMatch = r.groomFullName.toLowerCase().contains(q) ||
-          r.brideFullName.toLowerCase().contains(q);
-      final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
-          'page ${r.pageNumber}'.toLowerCase().contains(q) ||
-          'line ${r.lineNumber}'.toLowerCase().contains(q);
-      final idMatch = r.recordId.toLowerCase().contains(q);
-      return nameMatch || bookMatch || idMatch;
-    }).toList();
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((r) {
+        final nameMatch = r.groomFullName.toLowerCase().contains(q) ||
+            r.brideFullName.toLowerCase().contains(q);
+        final bookMatch = 'book ${r.bookNumber}'.toLowerCase().contains(q) ||
+            'page ${r.pageNumber}'.toLowerCase().contains(q) ||
+            'line ${r.lineNumber}'.toLowerCase().contains(q);
+        final idMatch = r.recordId.toLowerCase().contains(q);
+        return nameMatch || bookMatch || idMatch;
+      }).toList();
+    }
+
+    list.sort(_compareMatrimony);
+    return list;
   }
 
   List<DeathRecordModel> get _filteredDeathRecords {
@@ -558,17 +872,21 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       return true;
     }).toList();
 
-    if (_searchQuery.trim().isEmpty) return list;
-    final q = _searchQuery.toLowerCase();
-    return list.where((d) {
-      final nameMatch = d.deceasedFullName.toLowerCase().contains(q);
-      final bookMatch = 'book ${d.bookNumber}'.toLowerCase().contains(q) ||
-          'page ${d.pageNumber}'.toLowerCase().contains(q) ||
-          'line ${d.lineNumber}'.toLowerCase().contains(q);
-      final placeMatch = d.placeOfBurial.toLowerCase().contains(q);
-      final idMatch = d.recordId.toLowerCase().contains(q);
-      return nameMatch || bookMatch || placeMatch || idMatch;
-    }).toList();
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((d) {
+        final nameMatch = d.deceasedFullName.toLowerCase().contains(q);
+        final bookMatch = 'book ${d.bookNumber}'.toLowerCase().contains(q) ||
+            'page ${d.pageNumber}'.toLowerCase().contains(q) ||
+            'line ${d.lineNumber}'.toLowerCase().contains(q);
+        final placeMatch = d.placeOfBurial.toLowerCase().contains(q);
+        final idMatch = d.recordId.toLowerCase().contains(q);
+        return nameMatch || bookMatch || placeMatch || idMatch;
+      }).toList();
+    }
+
+    list.sort(_compareDeath);
+    return list;
   }
 
   List<ConversionRecordModel> get _filteredConversionRecords {
@@ -578,18 +896,107 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
       return true;
     }).toList();
 
-    if (_searchQuery.trim().isEmpty) return list;
-    final q = _searchQuery.toLowerCase();
-    return list.where((c) {
-      final nameMatch = c.convertFullName.toLowerCase().contains(q);
-      final bookMatch = 'book ${c.bookNumber}'.toLowerCase().contains(q) ||
-          'page ${c.pageNumber}'.toLowerCase().contains(q) ||
-          'line ${c.lineNumber}'.toLowerCase().contains(q);
-      final parentMatch = c.fatherFullName.toLowerCase().contains(q) ||
-          c.motherFullName.toLowerCase().contains(q);
-      final idMatch = c.recordId.toLowerCase().contains(q);
-      return nameMatch || bookMatch || parentMatch || idMatch;
-    }).toList();
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((c) {
+        final nameMatch = c.convertFullName.toLowerCase().contains(q);
+        final bookMatch = 'book ${c.bookNumber}'.toLowerCase().contains(q) ||
+            'page ${c.pageNumber}'.toLowerCase().contains(q) ||
+            'line ${c.lineNumber}'.toLowerCase().contains(q);
+        final parentMatch = c.fatherFullName.toLowerCase().contains(q) ||
+            c.motherFullName.toLowerCase().contains(q);
+        final idMatch = c.recordId.toLowerCase().contains(q);
+        return nameMatch || bookMatch || parentMatch || idMatch;
+      }).toList();
+    }
+
+    list.sort(_compareConversion);
+    return list;
+  }
+
+  // ===========================================================================
+  // CSV Export & Import Handlers
+  // ===========================================================================
+
+  Future<void> _exportCsv() async {
+    setState(() => _isExporting = true);
+
+    try {
+      List<Map<String, dynamic>> rawRecords = [];
+
+      switch (widget.sacramentName) {
+        case 'Baptism':
+          rawRecords = _filteredBaptismRecords.map((r) => r.toMap()).toList();
+          break;
+        case 'Confirmation':
+          rawRecords = _filteredConfirmationRecords.map((r) => r.toMap()).toList();
+          break;
+        case 'First Communion':
+          rawRecords = _filteredFirstCommunionRecords.map((r) => r.toMap()).toList();
+          break;
+        case 'Matrimony':
+          rawRecords = _filteredMatrimonyRecords.map((r) => r.toMap()).toList();
+          break;
+        case 'Death':
+          rawRecords = _filteredDeathRecords.map((r) => r.toMap()).toList();
+          break;
+        case 'Conversion':
+          rawRecords = _filteredConversionRecords.map((r) => r.toMap()).toList();
+          break;
+      }
+
+      if (rawRecords.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No ${widget.sacramentName} records found to export.'),
+            backgroundColor: widget.themeColor,
+          ),
+        );
+        setState(() => _isExporting = false);
+        return;
+      }
+
+      await SacramentCsvService.exportAndDownloadCsv(
+        sacramentName: widget.sacramentName,
+        records: rawRecords,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exported ${rawRecords.length} ${widget.sacramentName.toLowerCase()} records to ${SacramentCsvService.getExpectedFileName(widget.sacramentName)}.'),
+          backgroundColor: ParishColors.oliveGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export error: $e'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  void _openImportPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SacramentCsvImportPage(
+          sacramentName: widget.sacramentName,
+          themeColor: widget.themeColor,
+          surfaceColor: widget.surfaceColor,
+        ),
+      ),
+    ).then((result) {
+      if (result == true) {
+        _loadRecords();
+      }
+    });
   }
 
   // ===========================================================================
@@ -660,6 +1067,173 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   }
 
   // ===========================================================================
+  // Quick Sort Bottom Sheet Modal
+  // ===========================================================================
+
+  void _openSortBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: ParishColors.cardWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final isCommunion = _isCommunionRegistry;
+
+          final sortOptions = isCommunion
+              ? [
+            {'field': 'year', 'label': 'Archival Year', 'icon': Icons.calendar_today},
+            {'field': 'control_number', 'label': 'Control Number', 'icon': Icons.tag},
+            {'field': 'date', 'label': 'Communion Date', 'icon': Icons.event},
+            {'field': 'name', 'label': 'Communicant Name', 'icon': Icons.sort_by_alpha},
+          ]
+              : [
+            {'field': 'canonical', 'label': 'Canonical (Book → Page → Line)', 'icon': Icons.menu_book},
+            {'field': 'book', 'label': 'Book Number', 'icon': Icons.bookmark_outline},
+            {'field': 'page', 'label': 'Page Number', 'icon': Icons.find_in_page_outlined},
+            {'field': 'line', 'label': 'Line Number', 'icon': Icons.format_list_numbered},
+            {'field': 'date', 'label': 'Sacrament Date', 'icon': Icons.event},
+            {'field': 'name', 'label': 'Primary Name', 'icon': Icons.sort_by_alpha},
+          ];
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: ParishColors.borderGrey,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.sort, color: widget.themeColor, size: 22),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Sort Records',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                        InkWell(
+                          onTap: () {
+                            setState(() => _sortAscending = !_sortAscending);
+                            setSheetState(() {});
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: widget.surfaceColor,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: widget.themeColor.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _sortAscending ? 'Ascending (1-9)' : 'Descending (9-1)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: widget.themeColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(
+                                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                                  size: 16,
+                                  color: widget.themeColor,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 16),
+                    Text(
+                      'Choose primary sort field:',
+                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    ),
+                    const SizedBox(height: 10),
+                    ...sortOptions.map((opt) {
+                      final field = opt['field'] as String;
+                      final label = opt['label'] as String;
+                      final icon = opt['icon'] as IconData;
+                      final isSelected = _sortBy == field;
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? widget.surfaceColor : ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected ? widget.themeColor : ParishColors.borderGrey,
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(icon, color: isSelected ? widget.themeColor : ParishColors.textMuted, size: 20),
+                          title: Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              color: isSelected ? widget.themeColor : ParishColors.textDark,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? Icon(
+                            _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                            size: 18,
+                            color: widget.themeColor,
+                          )
+                              : null,
+                          onTap: () {
+                            setState(() {
+                              if (_sortBy == field) {
+                                _sortAscending = !_sortAscending;
+                              } else {
+                                _sortBy = field;
+                              }
+                              _currentPage = 0;
+                            });
+                            Navigator.pop(ctx);
+                          },
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ===========================================================================
   // Advanced Filter Modal Bottom Sheet
   // ===========================================================================
 
@@ -710,7 +1284,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                             Icon(Icons.tune, color: widget.themeColor, size: 22),
                             const SizedBox(width: 8),
                             Text(
-                              'Advanced Filters',
+                              'Advanced Filters & Sorting',
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.bold,
@@ -719,10 +1293,14 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                             ),
                           ],
                         ),
-                        if (_hasActiveAdvancedFilters)
+                        if (_hasActiveAdvancedFilters || _sortBy != 'canonical' || !_sortAscending)
                           TextButton(
                             onPressed: () {
                               _resetAdvancedFilters();
+                              setState(() {
+                                _sortBy = 'canonical';
+                                _sortAscending = true;
+                              });
                               setSheetState(() {});
                               Navigator.pop(ctx);
                             },
@@ -738,6 +1316,74 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                       ],
                     ),
                     const Divider(height: 14),
+
+                    // Sort Order Section
+                    Text(
+                      'Sort Order',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _sortBy,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            items: (isCommunion
+                                ? [
+                              {'value': 'year', 'label': 'Year'},
+                              {'value': 'control_number', 'label': 'Control Number'},
+                              {'value': 'date', 'label': 'Date'},
+                              {'value': 'name', 'label': 'Name'},
+                            ]
+                                : [
+                              {'value': 'canonical', 'label': 'Canonical (Book → Page → Line)'},
+                              {'value': 'book', 'label': 'Book Number'},
+                              {'value': 'page', 'label': 'Page Number'},
+                              {'value': 'line', 'label': 'Line Number'},
+                              {'value': 'date', 'label': 'Sacrament Date'},
+                              {'value': 'name', 'label': 'Name'},
+                            ])
+                                .map((m) => DropdownMenuItem(
+                              value: m['value']!,
+                              child: Text(m['label']!, style: const TextStyle(fontSize: 13)),
+                            ))
+                                .toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _sortBy = val;
+                                  _currentPage = 0;
+                                });
+                                setSheetState(() {});
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          style: IconButton.styleFrom(
+                            backgroundColor: widget.surfaceColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: Icon(
+                            _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                            color: widget.themeColor,
+                            size: 20,
+                          ),
+                          tooltip: _sortAscending ? 'Ascending' : 'Descending',
+                          onPressed: () {
+                            setState(() => _sortAscending = !_sortAscending);
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
 
                     // 1. Physical Book Number / Year Filter
                     Text(
@@ -838,7 +1484,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                     ),
                     const SizedBox(height: 14),
 
-                    // 3. Entry Status Filter (Where Applicable)
+                    // 3. Entry Status Filter
                     if (hasStatusField) ...[
                       Text(
                         'Canonical Entry Status',
@@ -897,7 +1543,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   }
 
   // ===========================================================================
-  // Search Bar (matches the main Sacramental Registers dashboard)
+  // Search Bar
   // ===========================================================================
 
   Widget _buildSearchBar() {
@@ -1007,6 +1653,12 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                 active: _hasActiveAdvancedFilters,
                 onTap: _openAdvancedFilterBottomSheet,
               ),
+              _buildToolbarButton(
+                label: 'Sort: $_sortLabel',
+                icon: _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                active: _sortBy != 'canonical' || !_sortAscending,
+                onTap: _openSortBottomSheet,
+              ),
             ],
           ),
         ),
@@ -1044,7 +1696,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
   }
 
   // ===========================================================================
-  // Locate Entry Panel: Book No. + Page No. + Line No. together
+  // Locate Entry Panel
   // ===========================================================================
 
   Widget _buildLocatorDropdown({
@@ -1288,7 +1940,6 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
     List paginatedDeath = [];
     List paginatedConversion = [];
 
-    // Compute totalCount first so the current page can be clamped before slicing.
     List activeList = [];
     if (isBaptism) {
       activeList = _filteredBaptismRecords;
@@ -1316,7 +1967,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
     if (isDeath) paginatedDeath = pageSlice;
     if (isConversion) paginatedConversion = pageSlice;
 
-    final bool isSearchOrFilterActive = _searchQuery.isNotEmpty || _hasActiveAdvancedFilters;
+    final bool isSearchOrFilterActive = _searchQuery.isNotEmpty || _hasActiveAdvancedFilters || _sortBy != 'canonical' || !_sortAscending;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1346,6 +1997,16 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
             ),
             actions: [
               IconButton(
+                icon: Icon(Icons.file_upload_outlined, color: widget.themeColor),
+                tooltip: 'Import ${widget.sacramentName} CSV',
+                onPressed: _openImportPage,
+              ),
+              IconButton(
+                icon: Icon(Icons.file_download_outlined, color: widget.themeColor),
+                tooltip: 'Export ${widget.sacramentName} CSV',
+                onPressed: _isExporting ? null : _exportCsv,
+              ),
+              IconButton(
                 icon: Icon(Icons.design_services_outlined, color: widget.themeColor),
                 tooltip: 'Certificate Templates Studio',
                 onPressed: _openCertificateTemplates,
@@ -1353,7 +2014,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
               IconButton(
                 icon: Icon(Icons.refresh, color: widget.themeColor),
                 onPressed: _loadRecords,
-                tooltip: 'Refresh Records (Sync with SQLite/Cloud)',
+                tooltip: 'Refresh Records',
               ),
             ],
           ),
@@ -1564,24 +2225,43 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                       ),
                       const SizedBox(height: 18),
 
-                      // Search bar (same design as the main registers dashboard)
+                      // Search bar
                       _buildSearchBar(),
                       const SizedBox(height: 10),
 
-                      // Locate Entry + Filter + View toggle
+                      // Locate Entry + Filter + Sort + Import/Export + View toggle
                       _buildSearchToolbar(),
 
                       // Book • Page • Line locator panel
                       if (_showLocator) _buildLocatorPanel(),
 
-                      // Active Filter Chips Display
-                      if (_hasActiveAdvancedFilters) ...[
+                      // Active Filter & Sort Chips Display
+                      if (_hasActiveAdvancedFilters || _sortBy != 'canonical' || !_sortAscending) ...[
                         const SizedBox(height: 10),
                         Wrap(
                           spacing: 6,
                           runSpacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
+                            if (_sortBy != 'canonical' || !_sortAscending)
+                              Chip(
+                                avatar: Icon(
+                                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                                  size: 14,
+                                  color: widget.themeColor,
+                                ),
+                                label: Text(
+                                  'Sort: $_sortLabel (${_sortAscending ? "Asc" : "Desc"})',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textDarkColor),
+                                ),
+                                backgroundColor: widget.surfaceColor,
+                                deleteIcon: const Icon(Icons.close, size: 14),
+                                onDeleted: () => setState(() {
+                                  _sortBy = 'canonical';
+                                  _sortAscending = true;
+                                  _currentPage = 0;
+                                }),
+                              ),
                             if (_hasLocatorSelection)
                               Chip(
                                 avatar: Icon(Icons.pin_drop_outlined, size: 14, color: widget.themeColor),
@@ -1621,12 +2301,12 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                               ),
                             ActionChip(
                               label: const Text(
-                                'Clear Filters',
+                                'Clear All',
                                 style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
                               ),
                               backgroundColor: ParishColors.mercyRedSurface,
                               side: BorderSide(color: ParishColors.mercyRed.withOpacity(0.3)),
-                              onPressed: _resetAdvancedFilters,
+                              onPressed: _resetEverything,
                             ),
                           ],
                         ),
@@ -1640,7 +2320,7 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
                           Expanded(
                             child: Text(
                               isSearchOrFilterActive
-                                  ? '$totalCount ${totalCount == 1 ? 'match' : 'matches'} found'
+                                  ? '$totalCount ${totalCount == 1 ? 'match' : 'matches'} found (Sorted by $_sortLabel)'
                                   : '${widget.sacramentName} Entries ($totalCount)',
                               style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDarkColor),
                               overflow: TextOverflow.ellipsis,
@@ -1975,15 +2655,30 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
     List<DataRow> rows = [];
 
     if (isBaptism) {
-      columns = const [
-        DataColumn(label: Text('Book')),
-        DataColumn(label: Text('Page')),
-        DataColumn(label: Text('Line')),
-        DataColumn(label: Text('Child Full Name')),
-        DataColumn(label: Text('Date of Birth')),
-        DataColumn(label: Text('Date of Baptism')),
-        DataColumn(label: Text('Parents')),
-        DataColumn(label: Text('Action')),
+      columns = [
+        DataColumn(
+          label: const Text('Book'),
+          onSort: (col, asc) => _onColumnSort('book'),
+        ),
+        DataColumn(
+          label: const Text('Page'),
+          onSort: (col, asc) => _onColumnSort('page'),
+        ),
+        DataColumn(
+          label: const Text('Line'),
+          onSort: (col, asc) => _onColumnSort('line'),
+        ),
+        DataColumn(
+          label: const Text('Child Full Name'),
+          onSort: (col, asc) => _onColumnSort('name'),
+        ),
+        const DataColumn(label: Text('Date of Birth')),
+        DataColumn(
+          label: const Text('Date of Baptism'),
+          onSort: (col, asc) => _onColumnSort('date'),
+        ),
+        const DataColumn(label: Text('Parents')),
+        const DataColumn(label: Text('Action')),
       ];
       rows = bList.map((r) {
         return DataRow(cells: [
@@ -2008,15 +2703,30 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
         ]);
       }).toList();
     } else if (isConfirmation) {
-      columns = const [
-        DataColumn(label: Text('Book')),
-        DataColumn(label: Text('Page')),
-        DataColumn(label: Text('Line')),
-        DataColumn(label: Text('Confirmand Full Name')),
-        DataColumn(label: Text('Date of Birth')),
-        DataColumn(label: Text('Date of Confirmation')),
-        DataColumn(label: Text('Parents')),
-        DataColumn(label: Text('Action')),
+      columns = [
+        DataColumn(
+          label: const Text('Book'),
+          onSort: (col, asc) => _onColumnSort('book'),
+        ),
+        DataColumn(
+          label: const Text('Page'),
+          onSort: (col, asc) => _onColumnSort('page'),
+        ),
+        DataColumn(
+          label: const Text('Line'),
+          onSort: (col, asc) => _onColumnSort('line'),
+        ),
+        DataColumn(
+          label: const Text('Confirmand Full Name'),
+          onSort: (col, asc) => _onColumnSort('name'),
+        ),
+        const DataColumn(label: Text('Date of Birth')),
+        DataColumn(
+          label: const Text('Date of Confirmation'),
+          onSort: (col, asc) => _onColumnSort('date'),
+        ),
+        const DataColumn(label: Text('Parents')),
+        const DataColumn(label: Text('Action')),
       ];
       rows = cList.map((c) {
         final s2Text = c.sponsor2FullName != null ? ' & ${c.sponsor2FullName} (S2)' : '';
@@ -2042,13 +2752,25 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
         ]);
       }).toList();
     } else if (isCommunion) {
-      columns = const [
-        DataColumn(label: Text('Year')),
-        DataColumn(label: Text('Control #')),
-        DataColumn(label: Text('Communicant Name')),
-        DataColumn(label: Text('Date of Communion')),
-        DataColumn(label: Text('Baptism Parish')),
-        DataColumn(label: Text('Action')),
+      columns = [
+        DataColumn(
+          label: const Text('Year'),
+          onSort: (col, asc) => _onColumnSort('year'),
+        ),
+        DataColumn(
+          label: const Text('Control #'),
+          onSort: (col, asc) => _onColumnSort('control_number'),
+        ),
+        DataColumn(
+          label: const Text('Communicant Name'),
+          onSort: (col, asc) => _onColumnSort('name'),
+        ),
+        DataColumn(
+          label: const Text('Date of Communion'),
+          onSort: (col, asc) => _onColumnSort('date'),
+        ),
+        const DataColumn(label: Text('Baptism Parish')),
+        const DataColumn(label: Text('Action')),
       ];
       rows = fList.map((fcm) {
         final parents = (fcm.fatherFullName != '—' || fcm.motherFullName != '—')
@@ -2074,14 +2796,29 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
         ]);
       }).toList();
     } else if (isMatrimony) {
-      columns = const [
-        DataColumn(label: Text('Book')),
-        DataColumn(label: Text('Page')),
-        DataColumn(label: Text('Line')),
-        DataColumn(label: Text('Groom & Bride')),
-        DataColumn(label: Text('Date of Marriage')),
-        DataColumn(label: Text('Marriage Type')),
-        DataColumn(label: Text('Action')),
+      columns = [
+        DataColumn(
+          label: const Text('Book'),
+          onSort: (col, asc) => _onColumnSort('book'),
+        ),
+        DataColumn(
+          label: const Text('Page'),
+          onSort: (col, asc) => _onColumnSort('page'),
+        ),
+        DataColumn(
+          label: const Text('Line'),
+          onSort: (col, asc) => _onColumnSort('line'),
+        ),
+        DataColumn(
+          label: const Text('Groom & Bride'),
+          onSort: (col, asc) => _onColumnSort('name'),
+        ),
+        DataColumn(
+          label: const Text('Date of Marriage'),
+          onSort: (col, asc) => _onColumnSort('date'),
+        ),
+        const DataColumn(label: Text('Marriage Type')),
+        const DataColumn(label: Text('Action')),
       ];
       rows = mList.map((m) {
         final couple = '${m.groomFullName} & ${m.brideFullName}';
@@ -2106,15 +2843,30 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
         ]);
       }).toList();
     } else if (isDeath) {
-      columns = const [
-        DataColumn(label: Text('Book')),
-        DataColumn(label: Text('Page')),
-        DataColumn(label: Text('Line')),
-        DataColumn(label: Text('Deceased Name')),
-        DataColumn(label: Text('Age')),
-        DataColumn(label: Text('Date of Death')),
-        DataColumn(label: Text('Date of Burial')),
-        DataColumn(label: Text('Action')),
+      columns = [
+        DataColumn(
+          label: const Text('Book'),
+          onSort: (col, asc) => _onColumnSort('book'),
+        ),
+        DataColumn(
+          label: const Text('Page'),
+          onSort: (col, asc) => _onColumnSort('page'),
+        ),
+        DataColumn(
+          label: const Text('Line'),
+          onSort: (col, asc) => _onColumnSort('line'),
+        ),
+        DataColumn(
+          label: const Text('Deceased Name'),
+          onSort: (col, asc) => _onColumnSort('name'),
+        ),
+        const DataColumn(label: Text('Age')),
+        const DataColumn(label: Text('Date of Death')),
+        DataColumn(
+          label: const Text('Date of Burial'),
+          onSort: (col, asc) => _onColumnSort('date'),
+        ),
+        const DataColumn(label: Text('Action')),
       ];
       rows = dList.map((d) {
         final spouseOrParents = d.spouseFullName != '—' ? 'Spouse: ${d.spouseFullName}' : 'Parents: ${d.parentsFullName}';
@@ -2140,15 +2892,30 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
         ]);
       }).toList();
     } else if (isConversion) {
-      columns = const [
-        DataColumn(label: Text('Book')),
-        DataColumn(label: Text('Page')),
-        DataColumn(label: Text('Line')),
-        DataColumn(label: Text('Convert Name')),
-        DataColumn(label: Text('Date of Birth')),
-        DataColumn(label: Text('Date of Reception')),
-        DataColumn(label: Text('Prior Church')),
-        DataColumn(label: Text('Action')),
+      columns = [
+        DataColumn(
+          label: const Text('Book'),
+          onSort: (col, asc) => _onColumnSort('book'),
+        ),
+        DataColumn(
+          label: const Text('Page'),
+          onSort: (col, asc) => _onColumnSort('page'),
+        ),
+        DataColumn(
+          label: const Text('Line'),
+          onSort: (col, asc) => _onColumnSort('line'),
+        ),
+        DataColumn(
+          label: const Text('Convert Name'),
+          onSort: (col, asc) => _onColumnSort('name'),
+        ),
+        const DataColumn(label: Text('Date of Birth')),
+        DataColumn(
+          label: const Text('Date of Reception'),
+          onSort: (col, asc) => _onColumnSort('date'),
+        ),
+        const DataColumn(label: Text('Prior Church')),
+        const DataColumn(label: Text('Action')),
       ];
       rows = cnList.map((cnv) {
         return DataRow(cells: [
@@ -2188,6 +2955,8 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
               child: DataTable(
+                sortColumnIndex: _getSortColumnIndex(),
+                sortAscending: _sortAscending,
                 columns: columns,
                 rows: rows,
                 headingRowColor: WidgetStateProperty.all(widget.surfaceColor),
@@ -2429,3 +3198,4 @@ class _SacramentRegistryPageState extends State<SacramentRegistryPage>
     );
   }
 }
+

@@ -1205,7 +1205,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
           _buildDataRow('Date of Baptism', _val('date_of_baptism'), 'Parish / Church', _val('place_of_baptism')),
           _buildDataRow('Officiating Minister', 'Rev. Fr. ${_fullName('minister')}'),
           _buildDataRow('Stipend (₱)', _val('stipend'), 'Entry Status', _val('entry_status')),
-          if (_val('remarks') != '—') _buildDataRow('Marginal Annotations', _val('remarks')),
+          if (_val('remarks') != '—') _buildDataRow('Remarks', _val('remarks')),
         ]),
       ],
     );
@@ -1232,7 +1232,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
           _buildDataRow('Date of Confirmation', _val('date_of_confirmation'), 'Parish', _val('parish_name')),
           _buildDataRow('Officiating Bishop/Minister', 'Rev. Fr. ${_fullName('minister')}', 'Stipend (₱)', _val('stipend')),
           _buildDataRow('Entry Status', _val('entry_status')),
-          if (_val('remarks') != '—') _buildDataRow('Marginal Annotations', _val('remarks')),
+          if (_val('remarks') != '—') _buildDataRow('Remarks', _val('remarks')),
         ]),
       ],
     );
@@ -1289,7 +1289,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
           _buildDataRow('Minister Name', 'Rev. Fr. ${_fullName('solemnizer')}'),
           _buildDataRow('CRASM Number', _val('crasm_number'), 'CRASM Validity', _val('crasm_validity_date')),
           _buildDataRow('Stipend (₱)', _val('stipend'), 'Entry Status', _val('entry_status')),
-          if (_val('remarks') != '—') _buildDataRow('Marginal Annotations', _val('remarks')),
+          if (_val('remarks') != '—') _buildDataRow('Remarks', _val('remarks')),
         ]),
       ],
     );
@@ -1342,7 +1342,7 @@ class _SacramentRecordDetailPageState extends State<SacramentRecordDetailPage> {
           _buildDataRow('Witness 1', _fullName('witness_1'), 'Witness 2', _fullName('witness_2')),
           _buildDataRow('Officiating Minister', 'Rev. Fr. ${_fullName('minister')}'),
           _buildDataRow('Is Gratis?', _val('is_gratis'), 'Entry Status', _val('entry_status')),
-          if (_val('remarks') != '—') _buildDataRow('Marginal Annotations', _val('remarks')),
+          if (_val('remarks') != '—') _buildDataRow('Remarks', _val('remarks')),
         ]),
       ],
     );
