@@ -69,8 +69,17 @@ msix_config:
   display_name: ParishServe
   publisher_display_name: Saint John Paul II Parish
   identity_name: com.parishserve.records
+  msix_version: 1.0.0.0
   capabilities:
     - webcam
+    - internetClient
+  logo_path: images/logo-jp2.png
+  execution_alias: parishserve
+
+  windows:
+    generate: true
+    image_path: "images/logo-jp2.png"
+    icon_size: 256
 
 flutter_launcher_icons:
   android: "launcher_icon"

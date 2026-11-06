@@ -138,7 +138,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     _lineNumberController.text = data['line_number']?.toString() ?? '';
     _entryStatus = data['entry_status']?.toString() ?? 'ORIGINAL';
     _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
-    _existingCanonicalNotes = data['canonical_notes']?.toString();
+    _existingCanonicalNotes = data['remarks']?.toString();
 
     _confirmandFirstNameController.text = data['confirmand_first_name']?.toString() ?? '';
     _confirmandMiddleNameController.text = data['confirmand_middle_name']?.toString() ?? '';
@@ -455,7 +455,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     newData.forEach((key, newVal) {
       if (key == 'created_at' ||
           key == 'date_encoded' ||
-          key == 'canonical_notes' ||
+          key == 'remarks' ||
           key == 'registry_date' ||
           key == 'entry_status') {
         return;
@@ -890,7 +890,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         'entry_status': isEditMode
             ? (widget.initialData!['entry_status']?.toString() ?? 'ORIGINAL')
             : 'CORRECTED',
-        'canonical_notes': compiledCanonicalNotes,
+        'remarks': compiledCanonicalNotes,
 
         'confirmand_first_name': _confirmandFirstNameController.text.trim(),
         'confirmand_middle_name': _confirmandMiddleNameController.text.trim().isEmpty ? null : _confirmandMiddleNameController.text.trim(),
