@@ -30,7 +30,7 @@ class ReceiptPdfGenerator {
   ];
 
   // ===========================================================================
-  // 1. Ordinal Number Formatter & Date Decomposition
+  // 1. Ordinal Number Formatter & Date Decomposition (Date Only, No Time)
   // ===========================================================================
 
   static String formatOrdinal(int number) {
@@ -51,13 +51,14 @@ class ReceiptPdfGenerator {
     }
   }
 
+  /// Decomposes date into date-only components (strictly without hours and minutes)
   static Map<String, String> _decomposeDate(DateTime date) {
     final monthName = monthNames[date.month - 1];
     final ordinalDay = formatOrdinal(date.day);
     final dayStr = '${date.day}';
     final yearStr = '${date.year}';
-    final formatted =
-        '$monthName ${date.day}, ${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    // Clean canonical date format without time
+    final formatted = '$monthName ${date.day}, ${date.year}';
 
     return {
       'formatted': formatted,
@@ -286,7 +287,72 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // 3. Main PDF Generation Entry Point
+  // 3. Strict Particulars (Items Only) & Remarks Extraction
+  // ===========================================================================
+
+  /// Parses the stored transaction lines to strictly extract item titles and isolate remarks.
+  /// Eliminates prices, math (@, =), totals, tender metadata, bank, and cheque info.
+  static (String pureParticulars, String extractedRemarks) _extractParticularsAndRemarks({
+    required String rawDetails,
+    required String fallbackService,
+  }) {
+    final List<String> items = [];
+    final List<String> remarksList = [];
+
+    for (final rawLine in rawDetails.split('\n')) {
+      final clean = rawLine.replaceAll('•', '').replaceAll('-', '').trim();
+      if (clean.isEmpty) continue;
+
+      final lower = clean.toLowerCase();
+
+      // Check for remarks
+      if (lower.startsWith('remarks:')) {
+        final r = clean.substring(8).trim();
+        if (r.isNotEmpty) remarksList.add(r);
+        continue;
+      }
+
+      // Skip tender metadata, change, and amounts
+      if (lower.startsWith('tender mode:') ||
+          lower.startsWith('tender:') ||
+          lower.startsWith('bank name:') ||
+          lower.startsWith('cheque no:') ||
+          lower.startsWith('cheque no.:') ||
+          lower.startsWith('gcash ref:') ||
+          lower.startsWith('cash tendered') ||
+          lower.startsWith('words:') ||
+          lower.startsWith('amount in words:') ||
+          clean.toUpperCase().startsWith('[VOIDED')) {
+        continue;
+      }
+
+      // Check for itemized pattern: "Item Title x3 @ P150.00 = P450.00"
+      if (clean.contains('@') && clean.contains('=')) {
+        final beforeAt = clean.split('@').first.trim();
+        final qtyMatch = RegExp(r'^(.*?)\s*x(\d+)$', caseSensitive: false).firstMatch(beforeAt);
+
+        if (qtyMatch != null) {
+          final title = qtyMatch.group(1)?.trim() ?? beforeAt;
+          final qty = int.tryParse(qtyMatch.group(2) ?? '1') ?? 1;
+          for (int i = 0; i < qty; i++) {
+            items.add(title);
+          }
+        } else {
+          items.add(beforeAt);
+        }
+      } else {
+        items.add(clean);
+      }
+    }
+
+    final pureParticulars = items.isNotEmpty ? items.join(', ') : fallbackService;
+    final extractedRemarks = remarksList.isNotEmpty ? remarksList.join(' | ') : '';
+
+    return (pureParticulars, extractedRemarks);
+  }
+
+  // ===========================================================================
+  // 4. Main PDF Generation Entry Point
   // ===========================================================================
 
   static Future<Uint8List> generateReceiptPdf({
@@ -323,7 +389,7 @@ class ReceiptPdfGenerator {
       }
     }
 
-    // Resolve Cheque Metadata from parameters or embedded transaction lines
+    // Resolve Cheque Metadata
     String? resolvedBank = bankName?.trim();
     String? resolvedCheque = chequeNumber?.trim();
 
@@ -353,9 +419,6 @@ class ReceiptPdfGenerator {
 
     final String bankDisplay = resolvedBank ?? (isChequeTender ? 'Unspecified Bank' : '—');
     final String chequeDisplay = resolvedCheque ?? (isChequeTender ? 'Unspecified Cheque' : '—');
-    final String chequeDetailsDisplay = isChequeTender
-        ? 'Bank: $bankDisplay | Cheque No: $chequeDisplay'
-        : '—';
 
     PdfPageFormat pageFormat;
     if (isThermalRoll) {
@@ -392,60 +455,43 @@ class ReceiptPdfGenerator {
     final signatureImage = await _fetchNetworkImage(activeTemplate.signatureImageUrl);
 
     final now = DateTime.now();
-    final parsedDate = (dateString != null && dateString.isNotEmpty)
-        ? (DateTime.tryParse(dateString) ?? now)
-        : now;
+    DateTime parsedDate = now;
+    if (dateString != null && dateString.trim().isNotEmpty) {
+      parsedDate = DateTime.tryParse(dateString.trim()) ?? now;
+    }
+    // Clean formatted date without time
     final dateParts = _decomposeDate(parsedDate);
+    final issuedDateOnly = dateParts['formatted']!;
 
-    final issuedDate = dateString ?? dateParts['formatted']!;
     final cashierName = AuthService.currentUser?.fullName ?? 'Parish Secretariat';
     final amountInWordsText = convertAmountToWords(amount);
 
-    final rawCleanDetails = sanitizePdfText(
-      transactionDetails.isNotEmpty ? transactionDetails : relatedService,
+    // Strictly separate pure item names from remarks
+    final parsedContent = _extractParticularsAndRemarks(
+      rawDetails: transactionDetails,
+      fallbackService: relatedService,
     );
+    final pureParticulars = sanitizePdfText(parsedContent.$1);
+    final remarksOnly = sanitizePdfText(parsedContent.$2);
 
-    // Strip internal cash tendered lines from public receipt body
-    final cleanDetails = rawCleanDetails
-        .split('\n')
-        .where((line) {
-      final l = line.toLowerCase();
-      return !l.contains('cash tendered') && !l.contains('(change:');
-    })
-        .join('\n')
-        .trim();
-
+    // Cleaned, Non-Redundant Placeholder Map
     final placeholderMap = <String, String>{
       '{Receipt Number}': receiptNumber,
-      '{Receipt No}': receiptNumber,
-      '{Payor}': payorName,
       '{Payor Name}': payorName,
       '{Contact}': payorContact ?? '-',
-      '{Date}': issuedDate,
+      '{Date}': issuedDateOnly, // Strictly date only, no time
       '{nth Day}': dateParts['ordinalDay']!,
-      '{nth Day of Issue}': dateParts['ordinalDay']!,
-      '{Day of Issue}': dateParts['day']!,
       '{Month of Issue}': dateParts['month']!,
       '{Year of Issue}': dateParts['year']!,
+      '{Particulars}': pureParticulars, // Strictly items only (e.g. Certificate, Certificate, Certificate)
+      '{Remarks}': remarksOnly, // Dedicated remarks tag
       '{Amount}': 'P ${amount.toStringAsFixed(2)}',
-      '{Total}': 'P ${amount.toStringAsFixed(2)}',
       '{Amount in Words}': amountInWordsText,
-      '{Amount In Words}': amountInWordsText,
-      '{Total in Words}': amountInWordsText,
-      '{Total In Words}': amountInWordsText,
       '{Payment Mode}': paymentMode.toUpperCase(),
-      '{Tender Mode}': paymentMode.toUpperCase(),
       '{Bank Name}': bankDisplay,
       '{Cheque Number}': chequeDisplay,
-      '{Cheque No}': chequeDisplay,
-      '{Cheque Details}': chequeDetailsDisplay,
-      '{Service}': relatedService,
-      '{Particulars}': cleanDetails,
-      '{Details}': cleanDetails,
       '{Cashier}': cashierName,
-      '{Signatory Name}': cashierName,
       '{Cashier Title}': activeTemplate.cashierTitle,
-      '{Signatory Title}': activeTemplate.cashierTitle,
       '{Parish Priest}': activeTemplate.parishPriestName,
     };
 
@@ -474,13 +520,12 @@ class ReceiptPdfGenerator {
             return _buildThermalRollContent(
               receiptNumber: receiptNumber,
               payorName: payorName,
-              payorContact: payorContact,
-              relatedService: relatedService,
-              cleanDetails: cleanDetails,
+              pureParticulars: pureParticulars,
+              remarksOnly: remarksOnly,
               amount: amount,
               amountInWordsText: amountInWordsText,
               paymentMode: paymentMode,
-              issuedDate: issuedDate,
+              issuedDateOnly: issuedDateOnly,
               cashierName: cashierName,
               baseFont: baseFont,
               boldFont: boldFont,
@@ -538,12 +583,12 @@ class ReceiptPdfGenerator {
                     receiptNumber: receiptNumber,
                     payorName: payorName,
                     payorContact: payorContact,
-                    relatedService: relatedService,
-                    cleanDetails: cleanDetails,
+                    pureParticulars: pureParticulars,
+                    remarksOnly: remarksOnly,
                     amount: amount,
                     amountInWordsText: amountInWordsText,
                     paymentMode: paymentMode,
-                    issuedDate: issuedDate,
+                    issuedDateOnly: issuedDateOnly,
                     cashierName: cashierName,
                     dioceseLogo: dioceseLogo,
                     parishSeal: parishSeal,
@@ -557,7 +602,7 @@ class ReceiptPdfGenerator {
                   ),
                 ),
 
-              // PROMINENT CANONICAL VOID / CANCELLED OVERLAY STAMP
+              // Prominent Void Stamp Overlay
               if (effectiveVoided)
                 _buildVoidedWatermarkOverlay(
                   isEcclesiastical: isEcclesiastical,
@@ -621,7 +666,7 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // 4. Void Watermark Stamp Overlay
+  // 5. Void Watermark Stamp Overlay
   // ===========================================================================
 
   static pw.Widget _buildVoidedWatermarkOverlay({
@@ -691,7 +736,7 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // 5. 1:1 Canva Element PDF Renderer with Unified Bounding Boxes
+  // 6. 1:1 Canva Element PDF Renderer
   // ===========================================================================
 
   static pw.Widget _buildCanvaReceiptPdfElement({
@@ -707,7 +752,6 @@ class ReceiptPdfGenerator {
     required pw.Font elemFont,
     required pw.Font boldFont,
   }) {
-    // Mathematical 1:1 Coordinate & Bounding Box Parity with Designer
     final double elementWidth = (element.width ?? 0.84) * pageWidth;
     final double? elementHeight =
     element.height != null ? element.height! * pageHeight : null;
@@ -1004,7 +1048,7 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // 6. Structured Canonical Voucher Layout
+  // 7. Structured Canonical Voucher Layout (Pure Particulars List)
   // ===========================================================================
 
   static pw.Widget _buildStructuredReceiptLayout({
@@ -1013,12 +1057,12 @@ class ReceiptPdfGenerator {
     required String receiptNumber,
     required String payorName,
     String? payorContact,
-    required String relatedService,
-    required String cleanDetails,
+    required String pureParticulars,
+    required String remarksOnly,
     required double amount,
     required String amountInWordsText,
     required String paymentMode,
-    required String issuedDate,
+    required String issuedDateOnly,
     required String cashierName,
     required Uint8List? dioceseLogo,
     required Uint8List? parishSeal,
@@ -1034,15 +1078,6 @@ class ReceiptPdfGenerator {
     template.paperSize.toLowerCase().contains('ecclesiastical');
     final bool isPlain = template.backgroundMode == 'None';
     final lines = template.headerLines;
-
-    final detailLines = cleanDetails
-        .split('\n')
-        .map((l) => l.trim())
-        .where((l) =>
-    l.isNotEmpty &&
-        !l.toLowerCase().contains('cash tendered') &&
-        !l.toLowerCase().contains('change:'))
-        .toList();
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1155,7 +1190,7 @@ class ReceiptPdfGenerator {
         ),
         pw.SizedBox(height: isEcclesiastical ? 6 : 10),
 
-        // C. Payor & Date Row
+        // C. Payor & Clean Date (No Time)
         pw.Container(
           padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: isPlain
@@ -1197,7 +1232,7 @@ class ReceiptPdfGenerator {
                   ),
                 ),
               ),
-              pw.Text('Date: $issuedDate',
+              pw.Text('Date: $issuedDateOnly',
                   style: pw.TextStyle(
                       font: baseFont,
                       fontSize: isEcclesiastical ? 8.0 : 9.0,
@@ -1207,7 +1242,7 @@ class ReceiptPdfGenerator {
         ),
         pw.SizedBox(height: isEcclesiastical ? 6 : 10),
 
-        // D. Itemized Particulars Box
+        // D. Itemized Particulars Box (Strictly Item Names Only)
         pw.Expanded(
           child: pw.Container(
             width: double.infinity,
@@ -1228,7 +1263,7 @@ class ReceiptPdfGenerator {
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('PARTICULARS / OFFERING DETAILS',
+                    pw.Text('PARTICULARS (ITEMS)',
                         style: pw.TextStyle(
                             font: boldFont,
                             fontSize: isEcclesiastical ? 7.5 : 8.5,
@@ -1243,44 +1278,41 @@ class ReceiptPdfGenerator {
                 pw.Divider(thickness: 0.5, color: borderGrey),
                 pw.SizedBox(height: 2),
 
-                ...detailLines.map((line) {
-                  if (line.contains('@') && line.contains('=')) {
-                    final parts = line.split('=');
-                    final left = parts[0].replaceAll('-', '').trim();
-                    final right = parts.length > 1 ? parts[1].trim() : '';
-                    final amtDisplay =
-                    right.startsWith('P') ? right : 'P $right';
-
-                    return pw.Padding(
-                      padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-                      child: pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Expanded(
-                            child: pw.Text(left,
-                                style: pw.TextStyle(
-                                    font: baseFont,
-                                    fontSize: isEcclesiastical ? 8.5 : 9.5,
-                                    color: textDark)),
-                          ),
-                          pw.Text(amtDisplay,
-                              style: pw.TextStyle(
-                                  font: boldFont,
-                                  fontSize: isEcclesiastical ? 9.0 : 10.0,
-                                  color: isPlain ? textDark : marianBlue)),
-                        ],
-                      ),
-                    );
-                  }
-                  return pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-                    child: pw.Text(line,
+                // Pure items listed without prices or math signs
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      child: pw.Text(
+                        pureParticulars,
                         style: pw.TextStyle(
                             font: baseFont,
                             fontSize: isEcclesiastical ? 8.5 : 9.5,
-                            color: textDark)),
-                  );
-                }),
+                            color: textDark),
+                      ),
+                    ),
+                    pw.Text(
+                      'P ${amount.toStringAsFixed(2)}',
+                      style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: isEcclesiastical ? 9.0 : 10.0,
+                          color: isPlain ? textDark : marianBlue),
+                    ),
+                  ],
+                ),
+
+                if (remarksOnly.isNotEmpty) ...[
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Remarks: $remarksOnly',
+                    style: pw.TextStyle(
+                      font: italicFont,
+                      fontSize: isEcclesiastical ? 7.5 : 8.5,
+                      color: textMuted,
+                    ),
+                  ),
+                ],
 
                 if (bankName != null && chequeNumber != null) ...[
                   pw.SizedBox(height: 3),
@@ -1418,19 +1450,18 @@ class ReceiptPdfGenerator {
   }
 
   // ===========================================================================
-  // 7. Thermal 80mm Roll Generator
+  // 8. Thermal 80mm Roll Generator
   // ===========================================================================
 
   static pw.Widget _buildThermalRollContent({
     required String receiptNumber,
     required String payorName,
-    String? payorContact,
-    required String relatedService,
-    required String cleanDetails,
+    required String pureParticulars,
+    required String remarksOnly,
     required double amount,
     required String amountInWordsText,
     required String paymentMode,
-    required String issuedDate,
+    required String issuedDateOnly,
     required String cashierName,
     required pw.Font baseFont,
     required pw.Font boldFont,
@@ -1496,7 +1527,7 @@ class ReceiptPdfGenerator {
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text('Date:', style: pw.TextStyle(font: baseFont, fontSize: 8)),
-            pw.Text(issuedDate,
+            pw.Text(issuedDateOnly,
                 style: pw.TextStyle(font: baseFont, fontSize: 8)),
           ],
         ),
@@ -1512,10 +1543,21 @@ class ReceiptPdfGenerator {
         pw.Align(
           alignment: pw.Alignment.centerLeft,
           child: pw.Text(
-            cleanDetails,
+            pureParticulars,
             style: pw.TextStyle(font: baseFont, fontSize: 8, lineSpacing: 1.5),
           ),
         ),
+        if (remarksOnly.isNotEmpty) ...[
+          pw.SizedBox(height: 2),
+          pw.Align(
+            alignment: pw.Alignment.centerLeft,
+            child: pw.Text(
+              'Remarks: $remarksOnly',
+              style: pw.TextStyle(
+                  font: baseFont, fontSize: 7, color: PdfColors.grey700),
+            ),
+          ),
+        ],
         if (bankName != null && chequeNumber != null) ...[
           pw.SizedBox(height: 3),
           pw.Align(

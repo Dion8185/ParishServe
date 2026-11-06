@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/receipts/services/secretary_service.dart
+// =============================================================================
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 
@@ -262,17 +266,51 @@ class SecretaryService {
     throw 'Failed to void transaction.';
   }
 
+  /// Generates a sequential, canonical receipt number: PREFIX-YYYY-XXXXX.
+  /// Dynamically reads configured starting control sequence, prefix, and year
+  /// from `parish_certificate_settings` (id = 'receipt_control').
   static Future<String> _generateReceiptNumber() async {
-    final year = DateTime.now().year;
+    final currentYear = DateTime.now().year;
+    String prefix = 'REC';
+    int year = currentYear;
+    int baseSeq = 890; // Default fallback baseline (next will be 891)
+
+    // 1. Fetch dynamic settings configured from ParticularsCatalogPage
+    try {
+      final settings = await _client
+          .from('parish_certificate_settings')
+          .select()
+          .eq('id', 'receipt_control')
+          .maybeSingle();
+
+      if (settings != null) {
+        final confPrefix = settings['receipt_prefix']?.toString().trim();
+        if (confPrefix != null && confPrefix.isNotEmpty) {
+          prefix = confPrefix;
+        }
+
+        final confYear = int.tryParse(settings['series_year']?.toString() ?? '');
+        if (confYear != null && confYear > 2000) {
+          year = confYear;
+        }
+
+        final confStart = int.tryParse(settings['starting_sequence']?.toString() ?? '');
+        if (confStart != null && confStart > 0) {
+          baseSeq = confStart - 1;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Query highest existing receipt in this specific series from parish_transactions
     try {
       final res = await _client
           .from('parish_transactions')
           .select('receipt_number')
-          .like('receipt_number', 'REC-$year-%')
+          .like('receipt_number', '$prefix-$year-%')
           .order('receipt_number', ascending: false)
-          .limit(20);
+          .limit(30);
 
-      int highest = 890;
+      int highest = baseSeq;
       for (final item in res) {
         final rNo = item['receipt_number']?.toString() ?? '';
         final parts = rNo.split('-');
@@ -284,12 +322,12 @@ class SecretaryService {
         }
       }
       final nextSeq = (highest + 1).toString().padLeft(5, '0');
-      return 'REC-$year-$nextSeq';
+      return '$prefix-$year-$nextSeq';
     } catch (_) {
       final fallback = (DateTime.now().millisecondsSinceEpoch % 100000)
           .toString()
           .padLeft(5, '0');
-      return 'REC-$year-$fallback';
+      return '$prefix-$year-$fallback';
     }
   }
 }

@@ -58,36 +58,24 @@ class _ReceiptCanvasDesignerPageState
     {'name': 'Pure Black', 'hex': '#000000', 'color': Colors.black},
   ];
 
+  // Curated, non-redundant sample placeholder values for live WYSIWYG rendering
   static const Map<String, String> _samplePlaceholderData = {
     '{Receipt Number}': 'REC-2026-00891',
-    '{Receipt No}': 'REC-2026-00891',
     '{Payor Name}': 'Juan Dela Cruz',
-    '{Payor}': 'Juan Dela Cruz',
     '{Contact}': '0917-123-4567',
-    '{Date}': 'November 07, 2026 10:30 AM',
+    '{Date}': 'November 7, 2026', // Strictly date only, no time
     '{nth Day}': '7th',
-    '{nth Day of Issue}': '7th',
-    '{Day of Issue}': '7',
     '{Month of Issue}': 'November',
     '{Year of Issue}': '2026',
+    '{Particulars}': 'Certificate, Certificate, Certificate', // Strictly pure items list
+    '{Remarks}': 'For Scholarship & Personal Reference',
     '{Amount}': 'P 550.00',
-    '{Total}': 'P 550.00',
     '{Amount in Words}': 'Five Hundred Fifty Pesos Only',
     '{Payment Mode}': 'Cheque',
-    '{Tender Mode}': 'Cheque',
     '{Bank Name}': 'BDO Unibank',
     '{Cheque Number}': '0001284910',
-    '{Cheque No}': '0001284910',
-    '{Cheque Details}': 'Bank: BDO Unibank | Cheque No: 0001284910',
-    '{Service}': 'Baptismal Certificate (Pabuklat)',
-    '{Particulars}':
-    '- Baptismal Certificate (Pabuklat) x1 @ P150.00 = P150.00\n- Thanksgiving Mass Intention x4 @ P100.00 = P400.00',
-    '{Details}':
-    '- Baptismal Certificate (Pabuklat) x1 @ P150.00 = P150.00\n- Thanksgiving Mass Intention x4 @ P100.00 = P400.00',
     '{Cashier}': 'Maria Clara Santos',
-    '{Signatory Name}': 'Maria Clara Santos',
     '{Cashier Title}': 'Parish Cashier / Secretary',
-    '{Signatory Title}': 'Parish Cashier / Secretary',
     '{Parish Priest}': 'Rev. Fr. Roy G. Reyes',
   };
 
@@ -253,7 +241,7 @@ class _ReceiptCanvasDesignerPageState
         CertificateCanvasElement(
           id: 'elem_particulars',
           elementType: 'textbox',
-          text: 'PARTICULARS / OFFERING DETAILS:\n{Particulars}',
+          text: 'PARTICULARS (ITEMS ONLY):\n{Particulars}',
           x: 0.50,
           y: 0.56,
           width: 0.88,
@@ -392,7 +380,7 @@ class _ReceiptCanvasDesignerPageState
       CertificateCanvasElement(
         id: 'elem_particulars',
         elementType: 'textbox',
-        text: 'PARTICULARS / OFFERING DETAILS:\n\n{Particulars}',
+        text: 'PARTICULARS (ITEMS ONLY):\n\n{Particulars}',
         x: 0.50,
         y: 0.48,
         width: 0.84,
@@ -563,7 +551,7 @@ class _ReceiptCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // Tag Insertion & Enlarged Text Editor Modal with Cursor Position Tracking
+  // Tag Insertion & Enlarged Text Editor Modal with Cursor Tracking & Deduplicated Chips
   // ===========================================================================
 
   Future<void> _openTextEditorModal(CertificateCanvasElement element) async {
@@ -578,48 +566,37 @@ class _ReceiptCanvasDesignerPageState
       }
     });
 
-    // Categorized Receipt Placeholder Tags
+    // Strictly deduplicated & clean placeholder sets without redundant aliases
+    final List<String> offeringsAndItemsTags = [
+      '{Particulars}', // Strictly pure items list: e.g. "Certificate, Certificate, Certificate"
+      '{Remarks}',     // Dedicated internal / pastoral remarks tag
+      '{Amount}',
+      '{Amount in Words}',
+    ];
+
     final List<String> tenderAndChequeTags = [
       '{Payment Mode}',
-      '{Tender Mode}',
       '{Bank Name}',
       '{Cheque Number}',
-      '{Cheque No}',
-      '{Cheque Details}',
     ];
 
     final List<String> payorAndDateTags = [
       '{Receipt Number}',
-      '{Receipt No}',
       '{Payor Name}',
-      '{Payor}',
       '{Contact}',
-      '{Date}',
+      '{Date}', // Clean date without time
       '{nth Day}',
-      '{nth Day of Issue}',
-      '{Day of Issue}',
       '{Month of Issue}',
       '{Year of Issue}',
-    ];
-
-    final List<String> amountAndDetailsTags = [
-      '{Amount}',
-      '{Total}',
-      '{Amount in Words}',
-      '{Service}',
-      '{Particulars}',
-      '{Details}',
     ];
 
     final List<String> signatoryTags = [
       '{Cashier}',
       '{Cashier Title}',
-      '{Signatory Name}',
-      '{Signatory Title}',
       '{Parish Priest}',
     ];
 
-    String activeTab = 'Tender & Cheque';
+    String activeTab = 'Items & Remarks';
 
     void insertTagAtCursor(
         String tag, void Function(void Function()) setModalState) {
@@ -668,18 +645,18 @@ class _ReceiptCanvasDesignerPageState
           builder: (context, setModalState) {
             List<String> visibleTags;
             switch (activeTab) {
+              case 'Tender & Cheque':
+                visibleTags = tenderAndChequeTags;
+                break;
               case 'Payor & Date':
                 visibleTags = payorAndDateTags;
-                break;
-              case 'Amount & Details':
-                visibleTags = amountAndDetailsTags;
                 break;
               case 'Signatories':
                 visibleTags = signatoryTags;
                 break;
-              case 'Tender & Cheque':
+              case 'Items & Remarks':
               default:
-                visibleTags = tenderAndChequeTags;
+                visibleTags = offeringsAndItemsTags;
                 break;
             }
 
@@ -727,7 +704,7 @@ class _ReceiptCanvasDesignerPageState
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Category Filter Selector
+                      // Non-redundant Segmented Category Selector
                       Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
@@ -738,6 +715,12 @@ class _ReceiptCanvasDesignerPageState
                         child: Row(
                           children: [
                             _buildModalTabItem(
+                                'Items & Remarks', Icons.receipt_long, activeTab,
+                                    () {
+                                  setModalState(
+                                          () => activeTab = 'Items & Remarks');
+                                }),
+                            _buildModalTabItem(
                                 'Tender & Cheque', Icons.account_balance, activeTab,
                                     () {
                                   setModalState(
@@ -747,11 +730,6 @@ class _ReceiptCanvasDesignerPageState
                                 'Payor & Date', Icons.person_outline, activeTab,
                                     () {
                                   setModalState(() => activeTab = 'Payor & Date');
-                                }),
-                            _buildModalTabItem('Amount & Details',
-                                Icons.receipt_long, activeTab, () {
-                                  setModalState(
-                                          () => activeTab = 'Amount & Details');
                                 }),
                             _buildModalTabItem(
                                 'Signatories', Icons.draw, activeTab, () {
@@ -766,14 +744,14 @@ class _ReceiptCanvasDesignerPageState
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Tap any tag to insert directly at the cursor position:',
+                            'Tap any chip to paste at the current cursor position:',
                             style: TextStyle(
                                 fontSize: 12,
                                 color: ParishColors.textMuted,
                                 fontWeight: FontWeight.w600),
                           ),
                           Text(
-                            '${visibleTags.length} tags',
+                            '${visibleTags.length} clean chips',
                             style: TextStyle(
                                 fontSize: 11, color: ParishColors.textMuted),
                           ),
@@ -800,35 +778,42 @@ class _ReceiptCanvasDesignerPageState
                               final bool isChequeOrBank =
                                   tag.contains('Cheque') ||
                                       tag.contains('Bank');
+                              final bool isRemarks = tag == '{Remarks}';
+
+                              Color chipColor = ParishColors.goldAccent;
+                              Color chipBg = ParishColors.goldLight;
+                              Color chipText = const Color(0xFF78350F);
+
+                              if (isChequeOrBank) {
+                                chipColor = const Color(0xFF6D28D9);
+                                chipBg = const Color(0xFFF5F3FF);
+                                chipText = const Color(0xFF4C1D95);
+                              } else if (isRemarks) {
+                                chipColor = ParishColors.oliveGreen;
+                                chipBg = ParishColors.oliveGreenSurface;
+                                chipText = ParishColors.oliveGreen;
+                              }
+
                               return ActionChip(
                                 avatar: Icon(
                                   Icons.add,
                                   size: 13,
-                                  color: isChequeOrBank
-                                      ? const Color(0xFF6D28D9)
-                                      : ParishColors.goldAccent,
+                                  color: chipColor,
                                 ),
                                 label: Text(
                                   tag,
                                   style: TextStyle(
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.bold,
-                                    color: isChequeOrBank
-                                        ? const Color(0xFF4C1D95)
-                                        : const Color(0xFF78350F),
+                                    color: chipText,
                                   ),
                                 ),
-                                backgroundColor: isChequeOrBank
-                                    ? const Color(0xFFF5F3FF)
-                                    : ParishColors.goldLight,
+                                backgroundColor: chipBg,
                                 side: BorderSide(
-                                  color: isChequeOrBank
-                                      ? const Color(0xFFDDD6FE)
-                                      : ParishColors.goldAccent
-                                      .withOpacity(0.6),
+                                  color: chipColor.withOpacity(0.5),
                                 ),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 3),
+                                    horizontal: 6, vertical: 3),
                                 onPressed: () =>
                                     insertTagAtCursor(tag, setModalState),
                               );
@@ -847,7 +832,7 @@ class _ReceiptCanvasDesignerPageState
                       ),
                       const SizedBox(height: 6),
 
-                      // Enlarged Text Field Area
+                      // Enlarged Text Field Area with Cursor Preservation
                       TextFormField(
                         controller: controller,
                         focusNode: focusNode,
@@ -870,7 +855,7 @@ class _ReceiptCanvasDesignerPageState
                         ),
                         decoration: InputDecoration(
                           labelText:
-                          'Text Content (Auto-wraps identically to PDF)',
+                          'Text Content (Auto-wraps inside element box)',
                           labelStyle: TextStyle(
                               fontSize: 13.5, color: ParishColors.textMuted),
                           alignLabelWithHint: true,
@@ -1061,7 +1046,7 @@ class _ReceiptCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // Mobile Palette Sheets
+  // Mobile Palette Sheets (Cleaned without duplicates)
   // ===========================================================================
 
   void _openMobileAddElementSheet() {
@@ -1134,6 +1119,41 @@ class _ReceiptCanvasDesignerPageState
                         },
                       ),
                       _buildMobileMenuTile(
+                        icon: Icons.receipt_long,
+                        label: 'Particulars (Items)',
+                        color: ParishColors.marianBlue,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _addNewElement(
+                            'textbox',
+                            'PARTICULARS (ITEMS ONLY):\n{Particulars}',
+                            0.56,
+                            width: 0.88,
+                            height: 0.16,
+                            fontSize: 9.5,
+                            textAlign: 'left',
+                          );
+                        },
+                      ),
+                      _buildMobileMenuTile(
+                        icon: Icons.comment_outlined,
+                        label: 'Remarks',
+                        color: ParishColors.oliveGreen,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _addNewElement(
+                            'text',
+                            'Remarks: {Remarks}',
+                            0.68,
+                            width: 0.88,
+                            height: 0.06,
+                            fontSize: 9.0,
+                            colorHex: '#64748B',
+                            textAlign: 'left',
+                          );
+                        },
+                      ),
+                      _buildMobileMenuTile(
                         icon: Icons.account_balance,
                         label: 'Cheque Info',
                         color: const Color(0xFF6D28D9),
@@ -1142,7 +1162,7 @@ class _ReceiptCanvasDesignerPageState
                           _addNewElement(
                             'text',
                             'Bank: {Bank Name}  |  Cheque No: {Cheque Number}',
-                            0.70,
+                            0.72,
                             width: 0.88,
                             height: 0.06,
                             fontSize: 9.5,
@@ -1161,13 +1181,31 @@ class _ReceiptCanvasDesignerPageState
                           _addNewElement(
                             'text',
                             'Amount in Words: {Amount in Words}',
-                            0.74,
+                            0.76,
                             width: 0.88,
                             height: 0.06,
                             fontSize: 9.5,
                             fontWeight: 'bold',
                             colorHex: '#164E87',
                             textAlign: 'left',
+                          );
+                        },
+                      ),
+                      _buildMobileMenuTile(
+                        icon: Icons.monetization_on_outlined,
+                        label: 'Total Amount',
+                        color: ParishColors.textDark,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _addNewElement(
+                            'text',
+                            'TOTAL: {Amount}  ({Payment Mode})',
+                            0.82,
+                            width: 0.50,
+                            fontSize: 12.0,
+                            fontWeight: 'bold',
+                            colorHex: '#1E293B',
+                            textAlign: 'right',
                           );
                         },
                       ),
@@ -1199,28 +1237,11 @@ class _ReceiptCanvasDesignerPageState
                           _addNewElement(
                             'text',
                             'Received From: {Payor Name}    |    Date: {Date}\nContact: {Contact}',
-                            0.40,
+                            0.38,
                             width: 0.88,
                             height: 0.08,
                             fontSize: 9.5,
                             fontWeight: 'bold',
-                            textAlign: 'left',
-                          );
-                        },
-                      ),
-                      _buildMobileMenuTile(
-                        icon: Icons.receipt_long,
-                        label: 'Particulars Box',
-                        color: ParishColors.marianBlue,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _addNewElement(
-                            'textbox',
-                            'PARTICULARS / OFFERING DETAILS:\n\n{Particulars}',
-                            0.58,
-                            width: 0.88,
-                            height: 0.18,
-                            fontSize: 9.5,
                             textAlign: 'left',
                           );
                         },
@@ -1244,13 +1265,13 @@ class _ReceiptCanvasDesignerPageState
                       ),
                       _buildMobileMenuTile(
                         icon: Icons.shield,
-                        label: 'Diocese Logo',
+                        label: 'Diocese Emblem',
                         color: ParishColors.marianBlue,
                         onTap: () {
                           Navigator.pop(ctx);
                           _addNewElement(
                             'diocese_seal',
-                            'Diocese Logo',
+                            'Diocese Emblem',
                             0.88,
                             defaultX: 0.22,
                             width: 0.14,
@@ -1901,7 +1922,8 @@ class _ReceiptCanvasDesignerPageState
                     ? () {
                   _pushHistorySnapshot();
                   _updateSelectedElement(selected.copyWith(
-                      fontSize: selected.fontSize - (isSeal ? 2.0 : 1.0)));
+                      fontSize:
+                      selected.fontSize - (isSeal ? 2.0 : 1.0)));
                 }
                     : null,
               ),
@@ -1925,7 +1947,8 @@ class _ReceiptCanvasDesignerPageState
                     ? () {
                   _pushHistorySnapshot();
                   _updateSelectedElement(selected.copyWith(
-                      fontSize: selected.fontSize + (isSeal ? 2.0 : 1.0)));
+                      fontSize:
+                      selected.fontSize + (isSeal ? 2.0 : 1.0)));
                 }
                     : null,
               ),
@@ -2412,7 +2435,7 @@ class _ReceiptCanvasDesignerPageState
               final isChosen = selected.colorHex == hex;
 
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+                padding: const EdgeInsets.only(right: 5),
                 child: InkWell(
                   onTap: () {
                     _pushHistorySnapshot();
@@ -2667,14 +2690,11 @@ class _ReceiptCanvasDesignerPageState
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Exact content box matching PDF bounds without padding shifts
             SizedBox(
               width: boxWidth,
               height: isSeal ? boxHeight : elementHeight,
               child: contentWidget,
             ),
-
-            // Zero-displacement selection border overlay
             if (isSelected)
               Positioned.fill(
                 child: IgnorePointer(
@@ -2688,8 +2708,6 @@ class _ReceiptCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Dedicated Move Handle
             if (isSelected)
               Positioned(
                 top: -24,
@@ -2733,8 +2751,6 @@ class _ReceiptCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Width Resize Handle
             if (isSelected && !isSeal && element.elementType != 'signature_line')
               Positioned(
                 right: -6,
@@ -2763,8 +2779,6 @@ class _ReceiptCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Height Resize Handle
             if (isSelected && !isSeal && element.elementType != 'signature_line')
               Positioned(
                 bottom: -8,
@@ -2793,8 +2807,6 @@ class _ReceiptCanvasDesignerPageState
                   ),
                 ),
               ),
-
-            // Corner Dual Resize Handle
             if (isSelected && !isSeal && element.elementType != 'signature_line')
               Positioned(
                 right: -6,
@@ -2993,7 +3005,7 @@ class _ReceiptCanvasDesignerPageState
   }
 
   // ===========================================================================
-  // Bottom Element Palette (With Cheque, Particulars & Dynamic Placeholders)
+  // Desktop Bottom Palette (Cleaned, Streamlined & Non-Redundant)
   // ===========================================================================
 
   Widget _buildDesktopBottomPalette(BuildContext context) {
@@ -3023,12 +3035,41 @@ class _ReceiptCanvasDesignerPageState
           ),
           const SizedBox(width: 8),
           _buildQuickActionChip(
+            icon: Icons.receipt_long,
+            label: '+ Particulars (Items)',
+            onTap: () => _addNewElement(
+              'textbox',
+              'PARTICULARS (ITEMS ONLY):\n\n{Particulars}',
+              0.56,
+              width: 0.88,
+              height: 0.16,
+              fontSize: 9.5,
+              textAlign: 'left',
+            ),
+          ),
+          const SizedBox(width: 8),
+          _buildQuickActionChip(
+            icon: Icons.comment_outlined,
+            label: '+ Remarks',
+            onTap: () => _addNewElement(
+              'text',
+              'Remarks: {Remarks}',
+              0.68,
+              width: 0.88,
+              height: 0.06,
+              fontSize: 9.0,
+              colorHex: '#64748B',
+              textAlign: 'left',
+            ),
+          ),
+          const SizedBox(width: 8),
+          _buildQuickActionChip(
             icon: Icons.account_balance,
             label: '+ Cheque Info',
             onTap: () => _addNewElement(
               'text',
               'Bank: {Bank Name}  |  Cheque No: {Cheque Number}',
-              0.70,
+              0.72,
               width: 0.88,
               height: 0.06,
               fontSize: 9.5,
@@ -3044,13 +3085,28 @@ class _ReceiptCanvasDesignerPageState
             onTap: () => _addNewElement(
               'text',
               'Amount in Words: {Amount in Words}',
-              0.74,
+              0.76,
               width: 0.88,
               height: 0.06,
               fontSize: 9.5,
               fontWeight: 'bold',
               colorHex: '#164E87',
               textAlign: 'left',
+            ),
+          ),
+          const SizedBox(width: 8),
+          _buildQuickActionChip(
+            icon: Icons.monetization_on_outlined,
+            label: '+ Total Amount',
+            onTap: () => _addNewElement(
+              'text',
+              'TOTAL: {Amount}  ({Payment Mode})',
+              0.82,
+              width: 0.50,
+              fontSize: 12.0,
+              fontWeight: 'bold',
+              colorHex: '#1E293B',
+              textAlign: 'right',
             ),
           ),
           const SizedBox(width: 8),
@@ -3081,35 +3137,6 @@ class _ReceiptCanvasDesignerPageState
               fontSize: 9.5,
               fontWeight: 'bold',
               textAlign: 'left',
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildQuickActionChip(
-            icon: Icons.receipt_long,
-            label: '+ Particulars Box',
-            onTap: () => _addNewElement(
-              'textbox',
-              'PARTICULARS / OFFERING DETAILS:\n\n{Particulars}',
-              0.56,
-              width: 0.88,
-              height: 0.18,
-              fontSize: 9.5,
-              textAlign: 'left',
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildQuickActionChip(
-            icon: Icons.monetization_on_outlined,
-            label: '+ Total Amount',
-            onTap: () => _addNewElement(
-              'text',
-              'TOTAL: {Amount}',
-              0.78,
-              width: 0.40,
-              fontSize: 12,
-              fontWeight: 'bold',
-              colorHex: '#1E293B',
-              textAlign: 'right',
             ),
           ),
           const SizedBox(width: 8),
@@ -3191,4 +3218,3 @@ class _ReceiptCanvasDesignerPageState
     );
   }
 }
-
