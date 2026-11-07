@@ -10,11 +10,13 @@ import '../dialogs/asset_detail_dialog.dart';
 class AssetItemCard extends StatelessWidget {
   final AssetModel asset;
   final VoidCallback? onRefresh;
+  final VoidCallback? onTap;
 
   const AssetItemCard({
     super.key,
     required this.asset,
     this.onRefresh,
+    this.onTap,
   });
 
   @override
@@ -26,8 +28,7 @@ class AssetItemCard extends StatelessWidget {
 
     final conditionColor = asset.conditionColor;
     final conditionSurface = asset.conditionSurfaceColor;
-    final isDecommissioned = asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
-    final isArchived = asset.isArchived || isDecommissioned;
+    final isArchived = asset.isEffectivelyArchived;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -36,30 +37,32 @@ class AssetItemCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isArchived
-              ? ParishColors.mercyRed.withValues(alpha: 0.4)
+              ? ParishColors.mercyRed.withOpacity(0.4)
               : borderGrey,
           width: isArchived ? 1.4 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withOpacity(0.02),
             blurRadius: 4,
             offset: const Offset(0, 1.5),
           ),
         ],
       ),
       child: InkWell(
-        onTap: () => showAssetDetailModal(
-          context,
-          asset: asset,
-          onAssetUpdated: onRefresh,
-        ),
+        onTap: onTap ??
+                () => showAssetDetailModal(
+              context,
+              asset: asset,
+              onAssetUpdated: onRefresh,
+            ),
         borderRadius: BorderRadius.circular(14),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Photo or Classification Icon Thumbnail
               Container(
                 width: 48,
                 height: 48,
@@ -68,7 +71,9 @@ class AssetItemCard extends StatelessWidget {
                       ? Colors.transparent
                       : ParishColors.marianBlueSurface,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.25)),
+                  border: Border.all(
+                    color: ParishColors.marianBlue.withOpacity(0.25),
+                  ),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(9),
@@ -90,11 +95,13 @@ class AssetItemCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
+
+              // Item Information
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Control Number, Quantity Tag & Condition Pill
+                    // Control Number, Quantity Tag, and Condition Pill
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -115,11 +122,17 @@ class AssetItemCard extends StatelessWidget {
                               ),
                               if (asset.quantity > 1)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1.5,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: ParishColors.marianBlueSurface,
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: ParishColors.marianBlue.withValues(alpha: 0.3)),
+                                    border: Border.all(
+                                      color: ParishColors.marianBlue
+                                          .withOpacity(0.3),
+                                    ),
                                   ),
                                   child: Text(
                                     '${asset.quantity} units',
@@ -132,14 +145,17 @@ class AssetItemCard extends StatelessWidget {
                                 ),
                               if (isArchived)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: ParishColors.mercyRedSurface,
                                     borderRadius: BorderRadius.circular(3),
                                   ),
-                                  child: const Text(
-                                    'ARCHIVED',
-                                    style: TextStyle(
+                                  child: Text(
+                                    asset.operationalStatus.toUpperCase(),
+                                    style: const TextStyle(
                                       fontSize: 7.5,
                                       fontWeight: FontWeight.bold,
                                       color: ParishColors.mercyRed,
@@ -150,12 +166,19 @@ class AssetItemCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 4),
+
+                        // Standardized Condition Badge
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: conditionSurface,
                             borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: conditionColor.withValues(alpha: 0.3)),
+                            border: Border.all(
+                              color: conditionColor.withOpacity(0.3),
+                            ),
                           ),
                           child: Text(
                             asset.conditionStatus.toUpperCase(),
@@ -169,6 +192,7 @@ class AssetItemCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 2),
+
                     Text(
                       asset.itemName,
                       style: TextStyle(
@@ -180,6 +204,7 @@ class AssetItemCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
+
                     Text(
                       '${asset.displayClassification} • ${asset.displayLocation}',
                       style: TextStyle(fontSize: 11, color: textMuted),
@@ -187,13 +212,17 @@ class AssetItemCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
+
                     Wrap(
                       spacing: 6,
                       runSpacing: 3,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: asset.unitPrice >= 10000.0
                                 ? ParishColors.goldLight
@@ -217,9 +246,31 @@ class AssetItemCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: asset.statusSurfaceColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Text(
+                            asset.operationalStatus,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: asset.statusColor,
+                            ),
+                          ),
+                        ),
                         Text(
                           'Acq: ${asset.acquisitionYear}',
-                          style: TextStyle(fontSize: 10.5, color: textMuted, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: textMuted,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                         if (asset.quantity > 1)
                           Text(
@@ -244,6 +295,7 @@ class AssetItemCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
+
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: Icon(Icons.chevron_right, color: borderGrey, size: 16),

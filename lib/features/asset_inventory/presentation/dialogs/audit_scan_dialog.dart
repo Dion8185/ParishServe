@@ -41,9 +41,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   final TextEditingController _nfcInputController = TextEditingController();
   final TextEditingController _auditNotesController = TextEditingController();
   final TextEditingController _quantityChangeReasonController =
-      TextEditingController();
+  TextEditingController();
   final TextEditingController _quantityInputController =
-      TextEditingController();
+  TextEditingController();
 
   MobileScannerController? _scannerController;
 
@@ -61,28 +61,14 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
 
   // Audit state once an asset is located
   AssetModel? _scannedAsset;
-  String _selectedCondition = 'VERIFIED / GOOD';
+  String _selectedCondition = 'Good';
   String _selectedStatus = 'Available';
   int _auditQuantity = 1;
   bool _isRecordingAudit = false;
 
-  final List<String> _conditionOptions = [
-    'VERIFIED / GOOD',
-    'REQUIRES REPAIR',
-    'DAMAGED',
-    'MISSING',
-    'UNUSABLE',
-  ];
-
-  final List<String> _operationalStatusOptions = [
-    'Available',
-
-    'In Storage',
-    'Under Maintenance',
-    'Damaged',
-    'Missing',
-    'Decommissioned',
-  ];
+  // Standardized Canonical Options
+  final List<String> _conditionOptions = AssetModel.standardConditions;
+  final List<String> _operationalStatusOptions = AssetModel.standardStatuses;
 
   bool get _isLiveCameraSupported {
     if (kIsWeb) return true;
@@ -206,12 +192,11 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   String _normalizeStatus(String raw) {
-    final clean = raw.trim();
-    if (clean.toLowerCase() == 'active') return 'Available';
-    for (final opt in _operationalStatusOptions) {
-      if (opt.toLowerCase() == clean.toLowerCase()) return opt;
-    }
-    return 'Available';
+    return AssetModel.normalizeStatus(raw);
+  }
+
+  String _normalizeCondition(String raw) {
+    return AssetModel.normalizeCondition(raw);
   }
 
   Future<void> _startCameraScanner() async {
@@ -230,7 +215,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   Future<void> _startNfcListener() async {
-    // Unmount scanner first, then power down sensor
     setState(() {
       _searchError = null;
       _successBannerMessage = null;
@@ -245,7 +229,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   Future<void> _startManualLookup() async {
-    // Unmount scanner first, then power down sensor
     setState(() {
       _searchError = null;
       _successBannerMessage = null;
@@ -318,7 +301,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     final clean = query.trim();
     if (clean.isEmpty) return;
 
-    // Transition state immediately so scanner view unmounts cleanly
     setState(() {
       _isSearching = true;
       _searchError = null;
@@ -327,7 +309,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       _liveSuggestions = [];
     });
 
-    // Safely stop camera preview while inspecting specs
     await _safeStopCamera();
 
     try {
@@ -337,7 +318,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       if (asset != null) {
         setState(() {
           _scannedAsset = asset;
-          _selectedCondition = asset.conditionStatus;
+          _selectedCondition = _normalizeCondition(asset.conditionStatus);
           _selectedStatus = _normalizeStatus(asset.operationalStatus);
           _auditQuantity = asset.quantity;
           _quantityInputController.text = '${asset.quantity}';
@@ -347,7 +328,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       } else {
         setState(() {
           _searchError =
-              'No item record found for "$clean". Please check the Control Number, RFID tag, or QR Code.';
+          'No item record found for "$clean". Please check the Control Number, RFID tag, or QR Code.';
           _isSearching = false;
           _hasProcessedScan = false;
         });
@@ -430,7 +411,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     if (qtyChange != 0 && _quantityChangeReasonController.text.trim().isEmpty) {
       setState(() {
         _searchError =
-            'Please provide a reason for the quantity change (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"} units).';
+        'Please provide a reason for the quantity change (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"} units).';
       });
       return;
     }
@@ -441,7 +422,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     final completedControlNo = asset.controlNumber;
     final verifiedCondition = _selectedCondition;
     final verifiedStatus = _selectedStatus;
-    final isDecom = verifiedStatus.trim().toLowerCase() == 'decommissioned';
+    final isDecom = verifiedStatus == 'Retired' ||
+        verifiedStatus == 'Disposed' ||
+        verifiedStatus.toLowerCase() == 'decommissioned';
 
     try {
       await AssetService.recordAuditScan(
@@ -467,7 +450,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
       String qtySummary = '$newQty units';
       if (qtyChange != 0) {
         qtySummary =
-            '$newQty units (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"})';
+        '$newQty units (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"})';
       }
 
       setState(() {
@@ -481,8 +464,8 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         _manualInputController.clear();
         _nfcInputController.clear();
         _successBannerMessage = isDecom
-            ? 'Audit saved: $completedControlNo verified as $verifiedCondition and marked as Decommissioned.'
-            : 'Audit saved for $completedControlNo: $qtySummary • $verifiedCondition • Status: $verifiedStatus.';
+            ? 'Audit saved: $completedControlNo verified as $verifiedCondition and marked as $verifiedStatus.'
+            : 'Audit saved for $completedControlNo: $qtySummary • Condition: $verifiedCondition • Status: $verifiedStatus.';
       });
 
       if (_lastActiveMode == AuditScanMode.liveCamera) {
@@ -613,9 +596,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                             color: ParishColors.oliveGreenSurface,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: ParishColors.oliveGreen.withValues(
-                                alpha: 0.4,
-                              ),
+                              color: ParishColors.oliveGreen.withOpacity(0.4),
                             ),
                           ),
                           child: Row(
@@ -642,7 +623,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                                 onPressed: () => setState(
-                                  () => _successBannerMessage = null,
+                                      () => _successBannerMessage = null,
                                 ),
                               ),
                             ],
@@ -689,9 +670,9 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                         else if (_currentScanMode == AuditScanMode.liveCamera)
                           _buildLiveCameraScannerView()
                         else if (_currentScanMode == AuditScanMode.nfcListening)
-                          _buildNfcReaderView()
-                        else if (_currentScanMode == AuditScanMode.manualEntry)
-                          _buildManualLookupView(),
+                            _buildNfcReaderView()
+                          else if (_currentScanMode == AuditScanMode.manualEntry)
+                              _buildManualLookupView(),
                       ],
 
                       if (_isSearching)
@@ -775,24 +756,24 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                             onPressed: _isRecordingAudit
                                 ? null
                                 : () => _commitAuditInspection(
-                                    _currentScanMode ==
-                                            AuditScanMode.nfcListening
-                                        ? 'RFID_NFC'
-                                        : 'QR_SCAN',
-                                  ),
+                              _currentScanMode ==
+                                  AuditScanMode.nfcListening
+                                  ? 'RFID_NFC'
+                                  : 'QR_SCAN',
+                            ),
                             icon: _isRecordingAudit
                                 ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
                                 : const Icon(
-                                    Icons.check_circle_outline,
-                                    size: 18,
-                                  ),
+                              Icons.check_circle_outline,
+                              size: 18,
+                            ),
                             label: Text(
                               _isRecordingAudit ? 'Saving...' : 'Save Audit',
                               style: const TextStyle(
@@ -852,7 +833,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         _buildMethodCard(
           title: 'Wireless RFID / NFC Sensor',
           subtitle:
-              'Detect wireless RFID or NFC tags on metal vessels and furnishings.',
+          'Detect wireless RFID or NFC tags on metal vessels and furnishings.',
           icon: Icons.nfc,
           badgeLabel: 'WIRELESS',
           badgeColor: ParishColors.goldAccent,
@@ -863,7 +844,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         _buildMethodCard(
           title: 'Control Number Search',
           subtitle:
-              'Search directly by Control Number or item name with instant suggestions.',
+          'Search directly by Control Number or item name with instant suggestions.',
           icon: Icons.keyboard_outlined,
           badgeLabel: 'MANUAL',
           badgeColor: ParishColors.oliveGreen,
@@ -902,7 +883,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
+                border: Border.all(color: badgeColor.withOpacity(0.3)),
               ),
               child: Icon(icon, color: badgeColor, size: 22),
             ),
@@ -932,7 +913,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           vertical: 1.5,
                         ),
                         decoration: BoxDecoration(
-                          color: badgeColor.withValues(alpha: 0.15),
+                          color: badgeColor.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -998,7 +979,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             Text(
               'Upload a QR photo or use the Control Number search to audit items.',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.75),
+                color: Colors.white.withOpacity(0.75),
                 fontSize: 11.5,
               ),
               textAlign: TextAlign.center,
@@ -1141,7 +1122,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
+                      color: Colors.black.withOpacity(0.65),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -1214,7 +1195,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         color: ParishColors.goldLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: ParishColors.goldAccent.withValues(alpha: 0.6),
+          color: ParishColors.goldAccent.withOpacity(0.6),
         ),
       ),
       child: Column(
@@ -1377,7 +1358,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                     fontWeight: FontWeight.bold,
                   ),
                   decoration: InputDecoration(
-                    hintText: 'e.g. C-FF 2026-001 or Church Pew',
+                    hintText: 'e.g. C-EE 2024-0001 or Flat Screen TV',
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
@@ -1390,22 +1371,22 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                     ),
                     suffixIcon: _isLoadingSuggestions
                         ? const Padding(
-                            padding: EdgeInsets.all(10),
-                            child: SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
+                      padding: EdgeInsets.all(10),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
                         : (_manualInputController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 16),
-                                  onPressed: () {
-                                    _manualInputController.clear();
-                                    setState(() => _liveSuggestions = []);
-                                  },
-                                )
-                              : null),
+                        ? IconButton(
+                      icon: const Icon(Icons.clear, size: 16),
+                      onPressed: () {
+                        _manualInputController.clear();
+                        setState(() => _liveSuggestions = []);
+                      },
+                    )
+                        : null),
                   ),
                   onSubmitted: _searchAndLoadAsset,
                 ),
@@ -1441,7 +1422,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: ParishColors.marianBlue.withValues(alpha: 0.3),
+                  color: ParishColors.marianBlue.withOpacity(0.3),
                 ),
               ),
               child: ListView.separated(
@@ -1521,7 +1502,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
   }
 
   // ===========================================================================
-  // 5. Complete Inline Specifications & Audit Verification Form
+  // 5. Complete Specifications & Verification Form (Standardized Options)
   // ===========================================================================
 
   Widget _buildAssetAuditVerificationForm() {
@@ -1529,7 +1510,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
-
     final int qtyDiff = _quantityDifference;
 
     return Container(
@@ -1540,7 +1520,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
         border: Border.all(color: ParishColors.oliveGreen, width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: ParishColors.oliveGreen.withValues(alpha: 0.08),
+            color: ParishColors.oliveGreen.withOpacity(0.08),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -1553,14 +1533,14 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
+              const Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.check_circle,
                     color: ParishColors.oliveGreen,
                     size: 20,
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6),
                   Text(
                     'Item Found in Registry',
                     style: TextStyle(
@@ -1590,7 +1570,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           ),
           const Divider(height: 18),
 
-          // COMPLETE SPECIFICATIONS PANEL
+          // Specifications Summary
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1653,7 +1633,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                             borderRadius: BorderRadius.circular(3),
                           ),
                           child: Text(
-                            asset.conditionStatus,
+                            asset.conditionStatus.toUpperCase(),
                             style: TextStyle(
                               fontSize: 8.5,
                               fontWeight: FontWeight.bold,
@@ -1716,7 +1696,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                     ),
                     Expanded(
                       child: _buildSpecItem(
-                        'Brand / Model',
+                        'Model',
                         asset.model ?? '—',
                       ),
                     ),
@@ -1852,10 +1832,10 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           icon: const Icon(Icons.remove, size: 16),
                           onPressed: _auditQuantity > 0
                               ? () => setState(() {
-                                  _auditQuantity--;
-                                  _quantityInputController.text =
-                                      '$_auditQuantity';
-                                })
+                            _auditQuantity--;
+                            _quantityInputController.text =
+                            '$_auditQuantity';
+                          })
                               : null,
                         ),
                         SizedBox(
@@ -1902,7 +1882,6 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                   ],
                 ),
 
-                // Accountability Reason Required if Quantity Changed
                 if (qtyDiff != 0) ...[
                   const SizedBox(height: 10),
                   Text(
@@ -1918,7 +1897,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                     controller: _quantityChangeReasonController,
                     decoration: const InputDecoration(
                       hintText:
-                          'e.g. 2 units damaged during parish event, or new donation received',
+                      'e.g. 2 units damaged during parish event, or new donation received',
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: 10,
@@ -1933,7 +1912,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
           ),
           const SizedBox(height: 14),
 
-          // 2. ITEM STATUS & CONDITION
+          // 2. ITEM STATUS & CONDITION (Standardized)
           Row(
             children: [
               Expanded(
@@ -1964,19 +1943,22 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      items: _conditionOptions
-                          .map(
-                            (c) => DropdownMenuItem(
-                              value: c,
-                              child: Text(
-                                c,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (val) =>
-                          setState(() => _selectedCondition = val!),
+                      items: _conditionOptions.map((c) {
+                        final desc = AssetModel.conditionDescriptions[c] ?? '';
+                        return DropdownMenuItem(
+                          value: c,
+                          child: Text(
+                            desc.isNotEmpty ? '$c ($desc)' : c,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _selectedCondition = val);
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -2010,19 +1992,22 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      items: _operationalStatusOptions
-                          .map(
-                            (s) => DropdownMenuItem(
-                              value: s,
-                              child: Text(
-                                s,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (val) =>
-                          setState(() => _selectedStatus = val!),
+                      items: _operationalStatusOptions.map((s) {
+                        final desc = AssetModel.statusDescriptions[s] ?? '';
+                        return DropdownMenuItem(
+                          value: s,
+                          child: Text(
+                            desc.isNotEmpty ? '$s ($desc)' : s,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _selectedStatus = val);
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -2047,7 +2032,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
             style: TextStyle(fontSize: 12.5, color: textDark),
             decoration: InputDecoration(
               hintText:
-                  'e.g. Verified in church sacristy, clean and ready for use',
+              'e.g. Verified in church sacristy, clean and ready for use',
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,

@@ -32,8 +32,16 @@ class AssetModel {
 
   final String? rfidTag;
   final String qrCodeToken;
-  final String conditionStatus; // 'VERIFIED / GOOD', 'REQUIRES REPAIR', 'DAMAGED', 'MISSING', 'UNUSABLE'
-  final String operationalStatus; // 'Active', 'In Storage', 'Under Maintenance', 'Decommissioned'
+
+  /// Standardized Asset Condition:
+  /// 'New', 'Excellent', 'Good', 'Fair', 'Poor', 'Damaged', 'Unserviceable', 'Unknown'
+  final String conditionStatus;
+
+  /// Standardized Asset Status:
+  /// 'Available', 'In Use', 'Reserved', 'Under Maintenance', 'For Repair',
+  /// 'Missing', 'Lost', 'Retired', 'Disposed', 'Transferred'
+  final String operationalStatus;
+
   final bool isArchived;
   final DateTime? archivedAt;
   final String? archivedBy;
@@ -48,6 +56,58 @@ class AssetModel {
   final DateTime registrationDate;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  // ===========================================================================
+  // Standard Constants & Canonical Lists
+  // ===========================================================================
+
+  static const List<String> standardConditions = [
+    'New',
+    'Excellent',
+    'Good',
+    'Fair',
+    'Poor',
+    'Damaged',
+    'Unserviceable',
+    'Unknown',
+  ];
+
+  static const Map<String, String> conditionDescriptions = {
+    'New': 'Newly acquired',
+    'Excellent': 'Almost like new',
+    'Good': 'Functional, minimal wear',
+    'Fair': 'Functional, noticeable wear',
+    'Poor': 'Functional but needs attention',
+    'Damaged': 'Has physical damage',
+    'Unserviceable': 'Cannot be used in its current state',
+    'Unknown': 'Condition has not been assessed',
+  };
+
+  static const List<String> standardStatuses = [
+    'Available',
+    'In Use',
+    'Reserved',
+    'Under Maintenance',
+    'For Repair',
+    'Missing',
+    'Lost',
+    'Retired',
+    'Disposed',
+    'Transferred',
+  ];
+
+  static const Map<String, String> statusDescriptions = {
+    'Available': 'Available for parish use',
+    'In Use': 'Currently being used',
+    'Reserved': 'Assigned for a scheduled activity',
+    'Under Maintenance': 'Currently being maintained',
+    'For Repair': 'Awaiting repair',
+    'Missing': 'Cannot be located during inventory',
+    'Lost': 'Confirmed lost',
+    'Retired': 'No longer used but still recorded',
+    'Disposed': 'Officially removed from inventory',
+    'Transferred': 'Moved to another parish location',
+  };
 
   AssetModel({
     required this.assetId,
@@ -73,8 +133,8 @@ class AssetModel {
     double? totalCost,
     this.rfidTag,
     required this.qrCodeToken,
-    this.conditionStatus = 'VERIFIED / GOOD',
-    this.operationalStatus = 'Active',
+    this.conditionStatus = 'Good',
+    this.operationalStatus = 'Available',
     this.isArchived = false,
     this.archivedAt,
     this.archivedBy,
@@ -88,6 +148,53 @@ class AssetModel {
     this.createdAt,
     this.updatedAt,
   }) : totalCost = totalCost ?? (quantity * unitPrice);
+
+  /// Normalizes legacy condition strings into standard canonical names
+  static String normalizeCondition(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'Good';
+    final clean = raw.trim();
+
+    for (final cond in standardConditions) {
+      if (cond.toLowerCase() == clean.toLowerCase()) return cond;
+    }
+
+    final upper = clean.toUpperCase();
+    if (upper.contains('NEW')) return 'New';
+    if (upper.contains('EXCELLENT')) return 'Excellent';
+    if (upper.contains('GOOD') || upper.contains('VERIFIED')) return 'Good';
+    if (upper.contains('FAIR')) return 'Fair';
+    if (upper.contains('POOR')) return 'Poor';
+    if (upper.contains('DAMAGED')) return 'Damaged';
+    if (upper.contains('UNSERVICEABLE') || upper.contains('UNUSABLE')) {
+      return 'Unserviceable';
+    }
+    if (upper.contains('REPAIR')) return 'Poor';
+    return clean;
+  }
+
+  /// Normalizes legacy status strings into standard canonical names
+  static String normalizeStatus(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'Available';
+    final clean = raw.trim();
+
+    for (final st in standardStatuses) {
+      if (st.toLowerCase() == clean.toLowerCase()) return st;
+    }
+
+    final lower = clean.toLowerCase();
+    if (lower == 'active') return 'Available';
+    if (lower.contains('storage') || lower.contains('reserved')) return 'Reserved';
+    if (lower.contains('maintenance')) return 'Under Maintenance';
+    if (lower.contains('repair')) return 'For Repair';
+    if (lower.contains('missing')) return 'Missing';
+    if (lower.contains('lost')) return 'Lost';
+    if (lower.contains('decommissioned') || lower.contains('retired')) {
+      return 'Retired';
+    }
+    if (lower.contains('disposed')) return 'Disposed';
+    if (lower.contains('transferred')) return 'Transferred';
+    return clean;
+  }
 
   /// Human-readable date formatted as YYYY-MM-DD
   String get formattedAcquisitionDate {
@@ -132,15 +239,22 @@ class AssetModel {
   /// Section 2: Acquisition price per unit lower than ₱10,000.00
   String get inventorySection {
     if (unitPrice >= 10000.0) {
-      return 'Section 1 — 10,000.00 and Above';
+      return 'Section 1 — ₱10,000.00 and Above';
     } else {
-      return 'Section 2 — Below 10,000.00';
+      return 'Section 2 — Below ₱10,000.00';
     }
   }
 
   /// Concise section tag for compact chips and badges
   String get inventorySectionCode {
     return unitPrice >= 10000.0 ? 'Section 1' : 'Section 2';
+  }
+
+  /// Whether this item is decommissioned, retired, disposed, or marked archived
+  bool get isEffectivelyArchived {
+    if (isArchived) return true;
+    final st = operationalStatus.trim().toLowerCase();
+    return st == 'retired' || st == 'disposed' || st == 'decommissioned';
   }
 
   /// Display string for location (combining name and acronym)
@@ -159,30 +273,98 @@ class AssetModel {
     return classificationAcronym;
   }
 
-  /// Adaptive badge color based on condition status
+  /// Adaptive badge color based on standardized condition status
   Color get conditionColor {
-    final status = conditionStatus.toUpperCase();
-    if (status.contains('GOOD') || status.contains('VERIFIED')) {
-      return ParishColors.oliveGreen;
-    } else if (status.contains('REPAIR') || status.contains('MAINTENANCE')) {
-      return ParishColors.goldAccent;
-    } else if (status.contains('DAMAGED') || status.contains('MISSING') || status.contains('UNUSABLE')) {
-      return ParishColors.mercyRed;
+    final normalized = normalizeCondition(conditionStatus);
+    switch (normalized) {
+      case 'New':
+        return ParishColors.marianBlue;
+      case 'Excellent':
+        return const Color(0xFF0D9488); // Teal
+      case 'Good':
+        return ParishColors.oliveGreen;
+      case 'Fair':
+        return ParishColors.goldAccent;
+      case 'Poor':
+        return const Color(0xFFEA580C); // Deep Orange
+      case 'Damaged':
+      case 'Unserviceable':
+        return ParishColors.mercyRed;
+      case 'Unknown':
+      default:
+        return const Color(0xFF64748B); // Slate Grey
     }
-    return ParishColors.marianBlue;
   }
 
   /// Adaptive badge background surface color
   Color get conditionSurfaceColor {
-    final status = conditionStatus.toUpperCase();
-    if (status.contains('GOOD') || status.contains('VERIFIED')) {
-      return ParishColors.oliveGreenSurface;
-    } else if (status.contains('REPAIR') || status.contains('MAINTENANCE')) {
-      return ParishColors.goldLight;
-    } else if (status.contains('DAMAGED') || status.contains('MISSING') || status.contains('UNUSABLE')) {
-      return ParishColors.mercyRedSurface;
+    final normalized = normalizeCondition(conditionStatus);
+    switch (normalized) {
+      case 'New':
+        return ParishColors.marianBlueSurface;
+      case 'Excellent':
+        return const Color(0xFFCCFBF1);
+      case 'Good':
+        return ParishColors.oliveGreenSurface;
+      case 'Fair':
+        return ParishColors.goldLight;
+      case 'Poor':
+        return const Color(0xFFFFEDD5);
+      case 'Damaged':
+      case 'Unserviceable':
+        return ParishColors.mercyRedSurface;
+      case 'Unknown':
+      default:
+        return const Color(0xFFF1F5F9);
     }
-    return ParishColors.marianBlueSurface;
+  }
+
+  /// Adaptive status color
+  Color get statusColor {
+    final normalized = normalizeStatus(operationalStatus);
+    switch (normalized) {
+      case 'Available':
+        return ParishColors.oliveGreen;
+      case 'In Use':
+        return ParishColors.marianBlue;
+      case 'Reserved':
+        return const Color(0xFF7C3AED); // Indigo
+      case 'Under Maintenance':
+      case 'For Repair':
+        return ParishColors.goldAccent;
+      case 'Missing':
+      case 'Lost':
+      case 'Disposed':
+        return ParishColors.mercyRed;
+      case 'Retired':
+      case 'Transferred':
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  /// Adaptive status surface color
+  Color get statusSurfaceColor {
+    final normalized = normalizeStatus(operationalStatus);
+    switch (normalized) {
+      case 'Available':
+        return ParishColors.oliveGreenSurface;
+      case 'In Use':
+        return ParishColors.marianBlueSurface;
+      case 'Reserved':
+        return const Color(0xFFEDE9FE);
+      case 'Under Maintenance':
+      case 'For Repair':
+        return ParishColors.goldLight;
+      case 'Missing':
+      case 'Lost':
+      case 'Disposed':
+        return ParishColors.mercyRedSurface;
+      case 'Retired':
+      case 'Transferred':
+      default:
+        return const Color(0xFFF1F5F9);
+    }
   }
 
   /// Icon based on classification acronym
@@ -209,7 +391,10 @@ class AssetModel {
     }
   }
 
-  factory AssetModel.fromMap(Map<String, dynamic> map, {List<AssetModel> children = const []}) {
+  factory AssetModel.fromMap(
+      Map<String, dynamic> map, {
+        List<AssetModel> children = const [],
+      }) {
     DateTime parseDate(dynamic value) {
       if (value == null) return DateTime.now();
       return DateTime.tryParse(value.toString()) ?? DateTime.now();
@@ -220,12 +405,15 @@ class AssetModel {
       return DateTime.tryParse(value.toString());
     }
 
-    final acqDate = parseDate(map['date_of_acquisition'] ?? map['acquisition_date']);
-    final int acqYear = int.tryParse(map['acquisition_year']?.toString() ?? '') ?? acqDate.year;
+    final acqDate =
+    parseDate(map['date_of_acquisition'] ?? map['acquisition_date']);
+    final int acqYear =
+        int.tryParse(map['acquisition_year']?.toString() ?? '') ?? acqDate.year;
 
     String? classifName;
     if (map['asset_classifications'] is Map) {
-      classifName = map['asset_classifications']['classification_name']?.toString();
+      classifName =
+          map['asset_classifications']['classification_name']?.toString();
     } else {
       classifName = map['category']?.toString();
     }
@@ -238,16 +426,32 @@ class AssetModel {
     }
 
     final int qty = int.tryParse(map['quantity']?.toString() ?? '') ?? 1;
-    final double rawCost = double.tryParse(map['cost']?.toString() ?? '') ?? 0.0;
-    final double uPrice = double.tryParse(map['unit_price']?.toString() ?? '') ?? (rawCost > 0 ? (rawCost / (qty > 0 ? qty : 1)) : 0.0);
-    final double totCost = double.tryParse(map['total_cost']?.toString() ?? '') ?? (rawCost > 0 ? rawCost : (qty * uPrice));
+    final double rawCost =
+        double.tryParse(map['cost']?.toString() ?? '') ?? 0.0;
+    final double uPrice = double.tryParse(
+      map['unit_price']?.toString() ?? '',
+    ) ??
+        (rawCost > 0 ? (rawCost / (qty > 0 ? qty : 1)) : 0.0);
+    final double totCost = double.tryParse(
+      map['total_cost']?.toString() ?? '',
+    ) ??
+        (rawCost > 0 ? rawCost : (qty * uPrice));
+
+    final rawCondition = map['condition_status']?.toString();
+    final rawStatus =
+        map['operational_status']?.toString() ??
+            map['status']?.toString() ??
+            'Available';
 
     return AssetModel(
-      assetId: map['asset_id']?.toString() ?? map['control_number']?.toString() ?? '',
+      assetId: map['asset_id']?.toString() ??
+          map['control_number']?.toString() ??
+          '',
       controlNumber: map['control_number']?.toString() ?? '',
       itemName: map['item_name']?.toString() ?? '',
       classificationId: map['classification_id']?.toString(),
-      classificationAcronym: map['classification_acronym']?.toString() ?? 'FF',
+      classificationAcronym:
+      map['classification_acronym']?.toString() ?? 'FF',
       classificationName: classifName,
       locationId: map['location_id']?.toString(),
       locationAcronym: map['location_acronym']?.toString() ?? 'C',
@@ -260,24 +464,30 @@ class AssetModel {
       photoUrl: map['photo_url']?.toString(),
       dateOfAcquisition: acqDate,
       acquisitionYear: acqYear,
-      modeOfAcquisition: map['mode_of_acquisition']?.toString() ?? map['acquisition_mode']?.toString() ?? 'Purchase',
+      modeOfAcquisition: map['mode_of_acquisition']?.toString() ??
+          map['acquisition_mode']?.toString() ??
+          'Purchase',
       quantity: qty > 0 ? qty : 1,
       unitPrice: uPrice >= 0 ? uPrice : 0.0,
       totalCost: totCost >= 0 ? totCost : 0.0,
       rfidTag: map['rfid_tag']?.toString(),
-      qrCodeToken: map['qr_code_token']?.toString() ?? map['control_number']?.toString() ?? '',
-      conditionStatus: map['condition_status']?.toString() ?? 'VERIFIED / GOOD',
-      operationalStatus: map['operational_status']?.toString() ?? 'Active',
+      qrCodeToken: map['qr_code_token']?.toString() ??
+          map['control_number']?.toString() ??
+          '',
+      conditionStatus: normalizeCondition(rawCondition),
+      operationalStatus: normalizeStatus(rawStatus),
       isArchived: map['is_archived'] == true,
       archivedAt: parseNullableDate(map['archived_at']),
       archivedBy: map['archived_by']?.toString(),
       archiveReason: map['archive_reason']?.toString(),
       bulkBatchId: map['bulk_batch_id']?.toString(),
-      itemSequenceInBatch: int.tryParse(map['item_sequence_in_batch']?.toString() ?? ''),
+      itemSequenceInBatch:
+      int.tryParse(map['item_sequence_in_batch']?.toString() ?? ''),
       lastAuditedAt: parseNullableDate(map['last_audited_at']),
       auditedBy: map['audited_by']?.toString(),
       createdBy: map['created_by']?.toString(),
-      registrationDate: parseDate(map['registration_date'] ?? map['created_at']),
+      registrationDate:
+      parseDate(map['registration_date'] ?? map['created_at']),
       createdAt: parseNullableDate(map['created_at']),
       updatedAt: parseNullableDate(map['updated_at']),
     );
@@ -292,7 +502,8 @@ class AssetModel {
       'classification_acronym': classificationAcronym.trim().toUpperCase(),
       'location_id': locationId,
       'location_acronym': locationAcronym.trim().toUpperCase(),
-      'dimensions': dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
+      'dimensions':
+      dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
       'color': color?.trim().isEmpty ?? true ? null : color!.trim(),
       'model': model?.trim().isEmpty ?? true ? null : model!.trim(),
       'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
@@ -375,7 +586,8 @@ class AssetModel {
       controlNumber: controlNumber ?? this.controlNumber,
       itemName: itemName ?? this.itemName,
       classificationId: classificationId ?? this.classificationId,
-      classificationAcronym: classificationAcronym ?? this.classificationAcronym,
+      classificationAcronym:
+      classificationAcronym ?? this.classificationAcronym,
       classificationName: classificationName ?? this.classificationName,
       locationId: locationId ?? this.locationId,
       locationAcronym: locationAcronym ?? this.locationAcronym,

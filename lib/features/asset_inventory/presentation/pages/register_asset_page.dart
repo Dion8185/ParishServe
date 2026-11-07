@@ -45,8 +45,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
   DateTime _dateOfAcquisition = DateTime.now();
   String _modeOfAcquisition = 'Purchase';
-  String _conditionStatus = 'VERIFIED / GOOD';
-  String _operationalStatus = 'Active';
+  String _conditionStatus = 'Good';
+  String _operationalStatus = 'Available';
 
   String _previewControlNumber = 'C-FF 2026-001';
 
@@ -65,20 +65,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     'Found / Recovered',
   ];
 
-  final List<String> _conditions = [
-    'VERIFIED / GOOD',
-    'REQUIRES REPAIR',
-    'DAMAGED',
-    'MISSING',
-    'UNUSABLE',
-  ];
+  // Standardized Canonical Condition Options
+  final List<String> _conditions = AssetModel.standardConditions;
 
-  final List<String> _operationalStatuses = [
-    'Active',
-    'In Storage',
-    'Under Maintenance',
-    'Decommissioned',
-  ];
+  // Standardized Canonical Status Options
+  final List<String> _operationalStatuses = AssetModel.standardStatuses;
 
   @override
   void initState() {
@@ -232,9 +223,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   }
 
   Future<void> _processAndWatermarkImage(
-    Uint8List rawBytes,
-    String filename,
-  ) async {
+      Uint8List rawBytes,
+      String filename,
+      ) async {
     setState(() => _isProcessingImage = true);
     try {
       final label = _itemNameController.text.trim().isNotEmpty
@@ -401,798 +392,803 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
           body: _isLoadingReferences
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-                  padding: EdgeInsets.all(isMobile ? 16 : 24),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+            padding: EdgeInsets.all(isMobile ? 16 : 24),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_errorMessage != null) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: ParishColors.mercyRedSurface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: ParishColors.mercyRed,
+                            ),
+                          ),
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: ParishColors.mercyRed,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      // Control Number Preview Banner
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: ParishColors.goldLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: ParishColors.goldAccent.withOpacity(
+                              0.6,
+                            ),
+                          ),
+                        ),
+                        child: Row(
                           children: [
-                            if (_errorMessage != null) ...[
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                margin: const EdgeInsets.only(bottom: 16),
-                                decoration: BoxDecoration(
-                                  color: ParishColors.mercyRedSurface,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: ParishColors.mercyRed,
-                                  ),
-                                ),
-                                child: Text(
-                                  _errorMessage!,
-                                  style: TextStyle(
-                                    color: ParishColors.mercyRed,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-
-                            // Control Number Preview Banner
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: ParishColors.goldLight,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: ParishColors.goldAccent.withOpacity(
-                                    0.6,
-                                  ),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.qr_code_2,
-                                    color: ParishColors.goldAccent,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Generated Control Number:',
-                                          style: TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.goldAccent,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _previewControlNumber,
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                            color: textDark,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            const Icon(
+                              Icons.qr_code_2,
+                              color: ParishColors.goldAccent,
+                              size: 24,
                             ),
-                            const SizedBox(height: 20),
-
-                            // Photo Section
-                            _buildLabel('Item Photo'),
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: _watermarkedPhotoBytes != null
-                                    ? ParishColors.oliveGreenSurface
-                                    : cardWhite,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: _watermarkedPhotoBytes != null
-                                      ? ParishColors.oliveGreen
-                                      : borderGrey,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  InkWell(
-                                    onTap: _watermarkedPhotoBytes != null
-                                        ? _openInteractiveImagePreview
-                                        : null,
-                                    child: Container(
-                                      width: 80,
-                                      height: 80,
-                                      decoration: BoxDecoration(
-                                        color: ParishColors.backgroundLight,
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(color: borderGrey),
-                                      ),
-                                      child: _isProcessingImage
-                                          ? const Center(
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                          : _watermarkedPhotoBytes != null
-                                          ? ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(9),
-                                              child: Image.memory(
-                                                _watermarkedPhotoBytes!,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            )
-                                          : const Icon(
-                                              Icons.image,
-                                              size: 36,
-                                              color: ParishColors.marianBlue,
-                                            ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _watermarkedPhotoBytes != null
-                                              ? 'Security Watermark Embedded'
-                                              : 'Take or Upload Item Photo',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13.5,
-                                            color: textDark,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Photos are stamped with permanent control number and timestamp.',
-                                          style: TextStyle(
-                                            fontSize: 11.5,
-                                            color: textMuted,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          children: [
-                                            ElevatedButton.icon(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor:
-                                                    ParishColors.marianBlue,
-                                                foregroundColor: Colors.white,
-                                              ),
-                                              onPressed: _isProcessingImage
-                                                  ? null
-                                                  : _capturePhotoWithCamera,
-                                              icon: const Icon(
-                                                Icons.camera_alt,
-                                                size: 16,
-                                              ),
-                                              label: const Text('Camera'),
-                                            ),
-                                            OutlinedButton.icon(
-                                              onPressed: _isProcessingImage
-                                                  ? null
-                                                  : _pickImageFromDevice,
-                                              icon: const Icon(
-                                                Icons.upload_file,
-                                                size: 16,
-                                              ),
-                                              label: const Text('Upload Image'),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            _buildLabel('Item Name *'),
-                            TextFormField(
-                              controller: _itemNameController,
-                              validator: (v) => (v?.trim().isEmpty ?? true)
-                                  ? 'Please enter the item name.'
-                                  : null,
-                              style: TextStyle(fontSize: 14, color: textDark),
-                              decoration: _inputDecoration(
-                                hint:
-                                    'e.g. Wooden Church Pew, Monoblock Chair, Wireless Mic',
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Quantity & Pricing Card
-                            Container(
-                              padding: EdgeInsets.all(isMobile ? 14 : 18),
-                              decoration: BoxDecoration(
-                                color: cardWhite,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: borderGrey),
-                              ),
+                            const SizedBox(width: 12),
+                            Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        'Quantity & Value',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: ParishColors.marianBlueSurface,
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          _determinedInventorySection,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.marianBlue,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                  const Text(
+                                    'Generated Control Number:',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.goldAccent,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _previewControlNumber,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: textDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Photo Section
+                      _buildLabel('Item Photo'),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: _watermarkedPhotoBytes != null
+                              ? ParishColors.oliveGreenSurface
+                              : cardWhite,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _watermarkedPhotoBytes != null
+                                ? ParishColors.oliveGreen
+                                : borderGrey,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            InkWell(
+                              onTap: _watermarkedPhotoBytes != null
+                                  ? _openInteractiveImagePreview
+                                  : null,
+                              child: Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  color: ParishColors.backgroundLight,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: borderGrey),
+                                ),
+                                child: _isProcessingImage
+                                    ? const Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                    : _watermarkedPhotoBytes != null
+                                    ? ClipRRect(
+                                  borderRadius:
+                                  BorderRadius.circular(9),
+                                  child: Image.memory(
+                                    _watermarkedPhotoBytes!,
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                                    : const Icon(
+                                  Icons.image,
+                                  size: 36,
+                                  color: ParishColors.marianBlue,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _watermarkedPhotoBytes != null
+                                        ? 'Security Watermark Embedded'
+                                        : 'Take or Upload Item Photo',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13.5,
+                                      color: textDark,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Multiple units sharing the same specifications share 1 Control Number.',
+                                    'Photos are stamped with permanent control number and timestamp.',
                                     style: TextStyle(
                                       fontSize: 11.5,
                                       color: textMuted,
                                     ),
                                   ),
-                                  const Divider(height: 20),
-                                  Row(
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
                                     children: [
-                                      Expanded(
-                                        flex: 2,
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Quantity *'),
-                                            TextFormField(
-                                              controller: _quantityController,
-                                              keyboardType:
-                                                  TextInputType.number,
-                                              inputFormatters: [
-                                                FilteringTextInputFormatter
-                                                    .digitsOnly,
-                                              ],
-                                              onChanged: (_) =>
-                                                  _updateLiveControlNumberPreview(),
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: textDark,
-                                              ),
-                                              decoration: _inputDecoration(
-                                                hint: 'e.g. 16',
-                                              ),
-                                            ),
-                                          ],
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                          ParishColors.marianBlue,
+                                          foregroundColor: Colors.white,
                                         ),
+                                        onPressed: _isProcessingImage
+                                            ? null
+                                            : _capturePhotoWithCamera,
+                                        icon: const Icon(
+                                          Icons.camera_alt,
+                                          size: 16,
+                                        ),
+                                        label: const Text('Camera'),
                                       ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        flex: 3,
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Price per Unit (₱)'),
-                                            TextFormField(
-                                              controller: _unitPriceController,
-                                              keyboardType:
-                                                  const TextInputType.numberWithOptions(
-                                                    decimal: true,
-                                                  ),
-                                              inputFormatters: [
-                                                ThousandsSeparatorCurrencyFormatter(),
-                                              ],
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: textDark,
-                                              ),
-                                              decoration: _inputDecoration(
-                                                hint: 'e.g. 2,500.00',
-                                                prefixIcon: Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 10,
-                                                        vertical: 12,
-                                                      ),
-                                                  child: Text(
-                                                    '₱',
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: textDark,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                      OutlinedButton.icon(
+                                        onPressed: _isProcessingImage
+                                            ? null
+                                            : _pickImageFromDevice,
+                                        icon: const Icon(
+                                          Icons.upload_file,
+                                          size: 16,
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Total Cost:',
-                                        style: TextStyle(
-                                          color: textMuted,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: ParishColors.oliveGreen,
-                                        ),
+                                        label: const Text('Upload Image'),
                                       ),
                                     ],
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
-
-                            // Category & Storage Location (Responsive)
-                            isMobile
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Category *'),
-                                      _buildClassificationDropdown(),
-                                      const SizedBox(height: 12),
-                                      _buildLabel('Storage Location *'),
-                                      _buildLocationDropdown(),
-                                    ],
-                                  )
-                                : Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Category *'),
-                                            _buildClassificationDropdown(),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Storage Location *'),
-                                            _buildLocationDropdown(),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                            const SizedBox(height: 16),
-
-                            // Acquisition Date & How Acquired (Responsive)
-                            isMobile
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Acquisition Date *'),
-                                      _buildAcquisitionDateTile(borderGrey),
-                                      const SizedBox(height: 12),
-                                      _buildLabel('How Acquired *'),
-                                      _buildAcquisitionModeDropdown(),
-                                    ],
-                                  )
-                                : Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Acquisition Date *'),
-                                            _buildAcquisitionDateTile(
-                                              borderGrey,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('How Acquired *'),
-                                            _buildAcquisitionModeDropdown(),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                            const SizedBox(height: 16),
-
-                            // Condition & Status (Responsive)
-                            isMobile
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Item Condition *'),
-                                      _buildConditionDropdown(),
-                                      const SizedBox(height: 12),
-                                      _buildLabel('Item Status *'),
-                                      _buildOperationalStatusDropdown(),
-                                    ],
-                                  )
-                                : Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Item Condition *'),
-                                            _buildConditionDropdown(),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Item Status *'),
-                                            _buildOperationalStatusDropdown(),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                            const SizedBox(height: 16),
-
-                            // Optional Size, Color, Model (Responsive)
-                            isMobile
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                _buildLabel('Dimensions'),
-                                                TextFormField(
-                                                  controller:
-                                                      _dimensionsController,
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    color: textDark,
-                                                  ),
-                                                  decoration: _inputDecoration(
-                                                    hint: 'e.g. 10 ft x 3 ft',
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                _buildLabel('Color'),
-                                                TextFormField(
-                                                  controller: _colorController,
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    color: textDark,
-                                                  ),
-                                                  decoration: _inputDecoration(
-                                                    hint: 'e.g. Dark Walnut',
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _buildLabel('Brand / Model'),
-                                      TextFormField(
-                                        controller: _modelController,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: textDark,
-                                        ),
-                                        decoration: _inputDecoration(
-                                          hint: 'e.g. Custom Woodcraft',
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel(
-                                              'Size / Dimensions (Optional)',
-                                            ),
-                                            TextFormField(
-                                              controller: _dimensionsController,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: textDark,
-                                              ),
-                                              decoration: _inputDecoration(
-                                                hint: 'e.g. 10 ft x 3 ft',
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Color'),
-                                            TextFormField(
-                                              controller: _colorController,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: textDark,
-                                              ),
-                                              decoration: _inputDecoration(
-                                                hint: 'e.g. Dark Walnut',
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildLabel('Brand / Model'),
-                                            TextFormField(
-                                              controller: _modelController,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: textDark,
-                                              ),
-                                              decoration: _inputDecoration(
-                                                hint: 'e.g. Custom Woodcraft',
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                            const SizedBox(height: 16),
-
-                            _buildLabel('Additional Details / Markings'),
-                            TextFormField(
-                              controller: _othersController,
-                              maxLines: 2,
-                              style: TextStyle(fontSize: 13, color: textDark),
-                              decoration: _inputDecoration(
-                                hint:
-                                    'e.g. Inscribed "Donated by Santos Family"',
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-
-                            _buildLabel('Notes & Maintenance Remarks'),
-                            TextFormField(
-                              controller: _remarksController,
-                              maxLines: 2,
-                              style: TextStyle(fontSize: 13, color: textDark),
-                              decoration: _inputDecoration(
-                                hint:
-                                    'e.g. Inspected and placed in main church nave',
-                              ),
-                            ),
-                            const SizedBox(height: 28),
-
-                            // Form Bottom Actions: Cancel & Save/Register Button
-                            isMobile
-                                ? Column(
-                                    children: [
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                ParishColors.marianBlue,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            elevation: 1,
-                                          ),
-                                          onPressed: _isSaving
-                                              ? null
-                                              : _submitAsset,
-                                          icon: _isSaving
-                                              ? const SizedBox(
-                                                  width: 16,
-                                                  height: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        color: Colors.white,
-                                                        strokeWidth: 2,
-                                                      ),
-                                                )
-                                              : const Icon(
-                                                  Icons.check,
-                                                  size: 18,
-                                                ),
-                                          label: Text(
-                                            _isSaving
-                                                ? 'Registering...'
-                                                : 'Save & Register Item',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 44,
-                                        child: OutlinedButton(
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: textMuted,
-                                            side: BorderSide(color: borderGrey),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                          ),
-                                          onPressed: _isSaving
-                                              ? null
-                                              : () => Navigator.pop(context),
-                                          child: const Text(
-                                            'Cancel',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      OutlinedButton(
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: textMuted,
-                                          side: BorderSide(color: borderGrey),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 22,
-                                            vertical: 14,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                          ),
-                                        ),
-                                        onPressed: _isSaving
-                                            ? null
-                                            : () => Navigator.pop(context),
-                                        child: const Text(
-                                          'Cancel',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              ParishColors.marianBlue,
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 28,
-                                            vertical: 14,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                          ),
-                                          elevation: 1,
-                                        ),
-                                        onPressed: _isSaving
-                                            ? null
-                                            : _submitAsset,
-                                        icon: _isSaving
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      color: Colors.white,
-                                                      strokeWidth: 2,
-                                                    ),
-                                              )
-                                            : const Icon(Icons.check, size: 18),
-                                        label: Text(
-                                          _isSaving
-                                              ? 'Registering...'
-                                              : 'Save & Register Item',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                            const SizedBox(height: 36),
                           ],
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 16),
+
+                      _buildLabel('Item Name *'),
+                      TextFormField(
+                        controller: _itemNameController,
+                        validator: (v) => (v?.trim().isEmpty ?? true)
+                            ? 'Please enter the item name.'
+                            : null,
+                        style: TextStyle(fontSize: 14, color: textDark),
+                        decoration: _inputDecoration(
+                          hint:
+                          'e.g. Wooden Church Pew, Monoblock Chair, Flat Screen TV',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Quantity & Pricing Card
+                      Container(
+                        padding: EdgeInsets.all(isMobile ? 14 : 18),
+                        decoration: BoxDecoration(
+                          color: cardWhite,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: borderGrey),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Quantity & Value',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: ParishColors.marianBlueSurface,
+                                    borderRadius: BorderRadius.circular(
+                                      6,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _determinedInventorySection,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.marianBlue,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Multiple units sharing the same specifications share 1 Control Number.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: textMuted,
+                              ),
+                            ),
+                            const Divider(height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Quantity *'),
+                                      TextFormField(
+                                        controller: _quantityController,
+                                        keyboardType:
+                                        TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
+                                        ],
+                                        onChanged: (_) =>
+                                            _updateLiveControlNumberPreview(),
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: textDark,
+                                        ),
+                                        decoration: _inputDecoration(
+                                          hint: 'e.g. 16',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Price per Unit (₱)'),
+                                      TextFormField(
+                                        controller: _unitPriceController,
+                                        keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                        inputFormatters: [
+                                          ThousandsSeparatorCurrencyFormatter(),
+                                        ],
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: textDark,
+                                        ),
+                                        decoration: _inputDecoration(
+                                          hint: 'e.g. 2,500.00',
+                                          prefixIcon: Padding(
+                                            padding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 12,
+                                            ),
+                                            child: Text(
+                                              '₱',
+                                              style: TextStyle(
+                                                fontWeight:
+                                                FontWeight.bold,
+                                                color: textDark,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Total Cost:',
+                                  style: TextStyle(
+                                    color: textMuted,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.oliveGreen,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Category & Storage Location
+                      isMobile
+                          ? Column(
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                        children: [
+                          _buildLabel('Category *'),
+                          _buildClassificationDropdown(),
+                          const SizedBox(height: 12),
+                          _buildLabel('Storage Location *'),
+                          _buildLocationDropdown(),
+                        ],
+                      )
+                          : Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Category *'),
+                                _buildClassificationDropdown(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Storage Location *'),
+                                _buildLocationDropdown(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Acquisition Date & Mode
+                      isMobile
+                          ? Column(
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                        children: [
+                          _buildLabel('Acquisition Date *'),
+                          _buildAcquisitionDateTile(borderGrey),
+                          const SizedBox(height: 12),
+                          _buildLabel('How Acquired *'),
+                          _buildAcquisitionModeDropdown(),
+                        ],
+                      )
+                          : Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Acquisition Date *'),
+                                _buildAcquisitionDateTile(
+                                  borderGrey,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('How Acquired *'),
+                                _buildAcquisitionModeDropdown(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Condition & Status (Standardized)
+                      isMobile
+                          ? Column(
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                        children: [
+                          _buildLabel('Item Condition *'),
+                          _buildConditionDropdown(),
+                          const SizedBox(height: 12),
+                          _buildLabel('Item Status *'),
+                          _buildOperationalStatusDropdown(),
+                        ],
+                      )
+                          : Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Item Condition *'),
+                                _buildConditionDropdown(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Item Status *'),
+                                _buildOperationalStatusDropdown(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Dimensions, Color, Model
+                      isMobile
+                          ? Column(
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                                  children: [
+                                    _buildLabel('Dimensions'),
+                                    TextFormField(
+                                      controller:
+                                      _dimensionsController,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: textDark,
+                                      ),
+                                      decoration: _inputDecoration(
+                                        hint:
+                                        'e.g. 50 inch, 10 ft x 3 ft',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                                  children: [
+                                    _buildLabel('Color'),
+                                    TextFormField(
+                                      controller:
+                                      _colorController,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: textDark,
+                                      ),
+                                      decoration: _inputDecoration(
+                                        hint:
+                                        'e.g. Black, Dark Walnut',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          _buildLabel('Model'),
+                          TextFormField(
+                            controller: _modelController,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: textDark,
+                            ),
+                            decoration: _inputDecoration(
+                              hint:
+                              'e.g. Samsung, Custom Woodcraft',
+                            ),
+                          ),
+                        ],
+                      )
+                          : Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel(
+                                  'Size / Dimensions',
+                                ),
+                                TextFormField(
+                                  controller: _dimensionsController,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: textDark,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    hint:
+                                    'e.g. 50 inch, 10 ft x 3 ft',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Color'),
+                                TextFormField(
+                                  controller: _colorController,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: textDark,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    hint:
+                                    'e.g. Black, Dark Walnut',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Model'),
+                                TextFormField(
+                                  controller: _modelController,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: textDark,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    hint:
+                                    'e.g. Samsung, Custom Woodcraft',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      _buildLabel('Other Descriptions: '),
+                      TextFormField(
+                        controller: _othersController,
+                        maxLines: 2,
+                        style: TextStyle(fontSize: 13, color: textDark),
+                        decoration: _inputDecoration(
+                          hint:
+                          'Other Description or Markings',
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      _buildLabel('Notes & Maintenance Remarks'),
+                      TextFormField(
+                        controller: _remarksController,
+                        maxLines: 2,
+                        style: TextStyle(fontSize: 13, color: textDark),
+                        decoration: _inputDecoration(
+                          hint:
+                          'e.g. Inspected and placed in main church nave',
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+
+                      // Form Actions
+                      isMobile
+                          ? Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                ParishColors.marianBlue,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                  BorderRadius.circular(10),
+                                ),
+                                elevation: 1,
+                              ),
+                              onPressed: _isSaving
+                                  ? null
+                                  : _submitAsset,
+                              icon: _isSaving
+                                  ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                                  : const Icon(
+                                Icons.check,
+                                size: 18,
+                              ),
+                              label: Text(
+                                _isSaving
+                                    ? 'Registering...'
+                                    : 'Save & Register Item',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 44,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: textMuted,
+                                side: BorderSide(color: borderGrey),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                  BorderRadius.circular(10),
+                                ),
+                              ),
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => Navigator.pop(context),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                          : Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: textMuted,
+                              side: BorderSide(color: borderGrey),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                                vertical: 14,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                BorderRadius.circular(10),
+                              ),
+                            ),
+                            onPressed: _isSaving
+                                ? null
+                                : () => Navigator.pop(context),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                              ParishColors.marianBlue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 28,
+                                vertical: 14,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                BorderRadius.circular(10),
+                              ),
+                              elevation: 1,
+                            ),
+                            onPressed: _isSaving
+                                ? null
+                                : _submitAsset,
+                            icon: _isSaving
+                                ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child:
+                              CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                                : const Icon(Icons.check, size: 18),
+                            label: Text(
+                              _isSaving
+                                  ? 'Registering...'
+                                  : 'Save & Register Item',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 36),
+                    ],
                   ),
                 ),
+              ),
+            ),
+          ),
         );
       },
     );
@@ -1203,17 +1199,15 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       value: _selectedClassification,
       isExpanded: true,
       decoration: _inputDecoration(),
-      items: _classifications
-          .map(
-            (c) => DropdownMenuItem(
-              value: c,
-              child: Text(
-                '${c.classificationName} (${c.acronym})',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-          )
-          .toList(),
+      items: _classifications.map((c) {
+        return DropdownMenuItem(
+          value: c,
+          child: Text(
+            '${c.classificationName} (${c.acronym})',
+            style: const TextStyle(fontSize: 13),
+          ),
+        );
+      }).toList(),
       onChanged: (val) {
         if (val != null) {
           setState(() => _selectedClassification = val);
@@ -1228,17 +1222,15 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       value: _selectedLocation,
       isExpanded: true,
       decoration: _inputDecoration(),
-      items: _locations
-          .map(
-            (l) => DropdownMenuItem(
-              value: l,
-              child: Text(
-                '${l.locationName} (${l.acronym})',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-          )
-          .toList(),
+      items: _locations.map((l) {
+        return DropdownMenuItem(
+          value: l,
+          child: Text(
+            '${l.locationName} (${l.acronym})',
+            style: const TextStyle(fontSize: 13),
+          ),
+        );
+      }).toList(),
       onChanged: (val) {
         if (val != null) {
           setState(() => _selectedLocation = val);
@@ -1295,9 +1287,16 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     return DropdownButtonFormField<String>(
       value: _conditionStatus,
       decoration: _inputDecoration(),
-      items: _conditions
-          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-          .toList(),
+      items: _conditions.map((c) {
+        final desc = AssetModel.conditionDescriptions[c] ?? '';
+        return DropdownMenuItem(
+          value: c,
+          child: Text(
+            desc.isNotEmpty ? '$c ($desc)' : c,
+            style: const TextStyle(fontSize: 13),
+          ),
+        );
+      }).toList(),
       onChanged: (val) => setState(() => _conditionStatus = val!),
     );
   }
@@ -1306,9 +1305,16 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     return DropdownButtonFormField<String>(
       value: _operationalStatus,
       decoration: _inputDecoration(),
-      items: _operationalStatuses
-          .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-          .toList(),
+      items: _operationalStatuses.map((s) {
+        final desc = AssetModel.statusDescriptions[s] ?? '';
+        return DropdownMenuItem(
+          value: s,
+          child: Text(
+            desc.isNotEmpty ? '$s ($desc)' : s,
+            style: const TextStyle(fontSize: 13),
+          ),
+        );
+      }).toList(),
       onChanged: (val) => setState(() => _operationalStatus = val!),
     );
   }
@@ -1346,7 +1352,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.5),
+        borderSide:
+        const BorderSide(color: ParishColors.marianBlue, width: 1.5),
       ),
     );
   }

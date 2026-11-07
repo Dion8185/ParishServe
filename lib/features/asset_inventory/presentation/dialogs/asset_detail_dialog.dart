@@ -16,17 +16,31 @@ import '../../services/asset_label_pdf_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
+import '../pages/asset_detail_page.dart';
 import 'register_asset_dialog.dart';
 
+/// Opens the asset detail view. Automatically transitions to the full-page experience
+/// with Previous/Next navigation when an asset list is provided.
 void showAssetDetailModal(
-  BuildContext context, {
-  required AssetModel asset,
-  VoidCallback? onAssetUpdated,
-}) {
-  showDialog(
-    context: context,
-    builder: (ctx) =>
-        _AssetDetailDialog(initialAsset: asset, onAssetUpdated: onAssetUpdated),
+    BuildContext context, {
+      required AssetModel asset,
+      VoidCallback? onAssetUpdated,
+      List<AssetModel>? assetList,
+      int? initialIndex,
+    }) {
+  final list = (assetList != null && assetList.isNotEmpty) ? assetList : [asset];
+  final idx = initialIndex ?? list.indexWhere((a) => a.assetId == asset.assetId);
+  final safeIdx = idx >= 0 ? idx : 0;
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => AssetDetailPage(
+        assets: list,
+        initialIndex: safeIdx,
+        onAssetUpdated: onAssetUpdated,
+      ),
+    ),
   );
 }
 
@@ -74,49 +88,15 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   late String _operationalStatus;
   late String _modeOfAcquisition;
 
-  // Complete canonical statuses supported across the entire inventory system
-  final List<String> _operationalStatusOptions = [
-    'Active',
+  // Standardized Canonical Options
+  final List<String> _conditionOptions = AssetModel.standardConditions;
+  final List<String> _operationalStatusOptions = AssetModel.standardStatuses;
 
-    'In Storage',
-    'Under Maintenance',
-    'Damaged',
-    'Missing',
-    'Decommissioned',
-  ];
-
-  final List<String> _conditionOptions = [
-    'VERIFIED / GOOD',
-    'REQUIRES REPAIR',
-    'DAMAGED',
-    'MISSING',
-    'UNUSABLE',
-  ];
-
-  String _normalizeOperationalStatus(String raw) {
-    final clean = raw.trim();
-    if (clean.toLowerCase() == 'available') return 'Active';
-    for (final opt in _operationalStatusOptions) {
-      if (opt.toLowerCase() == clean.toLowerCase()) return opt;
-    }
-    return clean.isNotEmpty ? clean : 'Active';
-  }
-
-  String _normalizeConditionStatus(String raw) {
-    final clean = raw.trim();
-    for (final opt in _conditionOptions) {
-      if (opt.toLowerCase() == clean.toLowerCase()) return opt;
-    }
-    return clean.isNotEmpty ? clean : 'VERIFIED / GOOD';
-  }
-
-  bool get _isEffectivelyArchived =>
-      _asset.isArchived ||
-      _asset.operationalStatus.trim().toLowerCase() == 'decommissioned';
+  bool get _isEffectivelyArchived => _asset.isEffectivelyArchived;
 
   bool get _canModify {
     final user = AuthService.currentUser;
-    if (user == null) return true; // Fail-open to allow local/offline editing
+    if (user == null) return true;
     final role = user.userRole
         .toLowerCase()
         .replaceAll('_', '')
@@ -171,8 +151,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   void _initializeAsset(AssetModel asset) {
     _asset = asset;
-    _conditionStatus = _normalizeConditionStatus(_asset.conditionStatus);
-    _operationalStatus = _normalizeOperationalStatus(_asset.operationalStatus);
+    _conditionStatus = AssetModel.normalizeCondition(_asset.conditionStatus);
+    _operationalStatus = AssetModel.normalizeStatus(_asset.operationalStatus);
     _modeOfAcquisition = _asset.modeOfAcquisition;
 
     _nameController = TextEditingController(text: _asset.itemName);
@@ -210,8 +190,8 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     _othersController.text = _asset.others ?? '';
     _remarksController.text = _asset.remarks ?? '';
     _rfidController.text = _asset.rfidTag ?? '';
-    _conditionStatus = _normalizeConditionStatus(_asset.conditionStatus);
-    _operationalStatus = _normalizeOperationalStatus(_asset.operationalStatus);
+    _conditionStatus = AssetModel.normalizeCondition(_asset.conditionStatus);
+    _operationalStatus = AssetModel.normalizeStatus(_asset.operationalStatus);
     _modeOfAcquisition = _asset.modeOfAcquisition;
     _newWatermarkedPhotoBytes = null;
     _newPhotoFileName = null;
@@ -242,13 +222,13 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         _locations = locs;
         _classifications = classifs;
         _selectedLocation = locs.firstWhere(
-          (l) =>
-              l.acronym.toUpperCase() == _asset.locationAcronym.toUpperCase(),
+              (l) =>
+          l.acronym.toUpperCase() == _asset.locationAcronym.toUpperCase(),
           orElse: () => locs.first,
         );
         _selectedClassification = classifs.firstWhere(
-          (c) =>
-              c.acronym.toUpperCase() ==
+              (c) =>
+          c.acronym.toUpperCase() ==
               _asset.classificationAcronym.toUpperCase(),
           orElse: () => classifs.first,
         );
@@ -339,9 +319,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   }
 
   Future<void> _processAndWatermarkNewImage(
-    Uint8List rawBytes,
-    String filename,
-  ) async {
+      Uint8List rawBytes,
+      String filename,
+      ) async {
     setState(() => _isProcessingImage = true);
 
     try {
@@ -431,13 +411,11 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _operationalStatus == 'Decommissioned'
-                ? 'Item marked as Decommissioned and moved to Archive.'
+            _operationalStatus == 'Retired' || _operationalStatus == 'Disposed'
+                ? 'Item marked as $_operationalStatus and moved to Archive.'
                 : 'Item record updated successfully.',
           ),
-          backgroundColor: _operationalStatus == 'Decommissioned'
-              ? ParishColors.goldAccent
-              : ParishColors.oliveGreen,
+          backgroundColor: ParishColors.oliveGreen,
         ),
       );
     } catch (e) {
@@ -508,8 +486,9 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               foregroundColor: Colors.white,
             ),
             onPressed: () {
-              if (reasonController.text.trim().isNotEmpty)
+              if (reasonController.text.trim().isNotEmpty) {
                 Navigator.pop(ctx, true);
+              }
             },
             child: const Text('Archive'),
           ),
@@ -642,31 +621,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                                     ),
                                   ),
                                 ),
-                                if (_asset.quantity > 1) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.marianBlueSurface,
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color: ParishColors.marianBlue
-                                            .withOpacity(0.3),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      '${_asset.quantity} UNITS',
-                                      style: TextStyle(
-                                        fontSize: 8.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: ParishColors.marianBlue,
-                                      ),
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
                             const SizedBox(height: 2),
@@ -702,7 +656,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                   ),
                 ),
 
-                // Responsive Footer Actions (Zero Overflow on Mobile)
+                // Footer Actions
                 Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: isMobile ? 12 : 20,
@@ -715,9 +669,57 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                     ),
                     border: Border(top: BorderSide(color: borderGrey)),
                   ),
-                  child: isMobile
-                      ? _buildMobileFooterActions(isArchived, textMuted)
-                      : _buildDesktopFooterActions(isArchived, textMuted),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: ParishColors.marianBlue,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: _printLabelSticker,
+                        icon: const Icon(Icons.qr_code, size: 15),
+                        label: const Text('Print QR Tag'),
+                      ),
+                      Row(
+                        children: [
+                          if (_canModify) ...[
+                            if (_isEditing) ...[
+                              TextButton(
+                                onPressed: _isUpdating
+                                    ? null
+                                    : () {
+                                  _resetEditControllers();
+                                  setState(() => _isEditing = false);
+                                },
+                                child: const Text('Cancel'),
+                              ),
+                              const SizedBox(width: 6),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: ParishColors.oliveGreen,
+                                  foregroundColor: Colors.white,
+                                ),
+                                onPressed: _isUpdating ? null : _saveAssetUpdates,
+                                child: Text(_isUpdating ? 'Saving...' : 'Save'),
+                              ),
+                            ] else ...[
+                              OutlinedButton.icon(
+                                onPressed: () => setState(() => _isEditing = true),
+                                icon: const Icon(Icons.edit_outlined, size: 15),
+                                label: const Text('Edit'),
+                              ),
+                            ],
+                          ],
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -727,1635 +729,154 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     );
   }
 
-  // ===========================================================================
-  // Desktop Footer Actions
-  // ===========================================================================
-
-  Widget _buildDesktopFooterActions(bool isArchived, Color textMuted) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ParishColors.marianBlue,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onPressed: _printLabelSticker,
-              icon: const Icon(Icons.qr_code, size: 15),
-              label: const Text(
-                'Print QR Tag',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (_canArchive)
-              isArchived
-                  ? OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: ParishColors.oliveGreen,
-                        side: BorderSide(color: ParishColors.oliveGreen),
-                      ),
-                      onPressed: _restoreAsset,
-                      icon: const Icon(Icons.restore, size: 15),
-                      label: const Text(
-                        'Restore',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                  : OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: ParishColors.mercyRed,
-                        side: BorderSide(color: ParishColors.mercyRed),
-                      ),
-                      onPressed: _confirmArchiveAsset,
-                      icon: const Icon(Icons.archive_outlined, size: 15),
-                      label: const Text(
-                        'Archive',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-          ],
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_canModify) ...[
-              if (_isEditing) ...[
-                TextButton(
-                  onPressed: _isUpdating
-                      ? null
-                      : () {
-                          _resetEditControllers();
-                          setState(() => _isEditing = false);
-                        },
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: textMuted, fontSize: 12),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ParishColors.oliveGreen,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: _isUpdating ? null : _saveAssetUpdates,
-                  icon: _isUpdating
-                      ? const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.save, size: 15),
-                  label: Text(
-                    _isUpdating ? 'Saving...' : 'Save Changes',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ] else ...[
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                      color: ParishColors.marianBlue,
-                      width: 1.5,
-                    ),
-                    backgroundColor: ParishColors.marianBlueSurface,
-                  ),
-                  onPressed: () => setState(() => _isEditing = true),
-                  icon: Icon(
-                    Icons.edit_outlined,
-                    size: 15,
-                    color: ParishColors.marianBlue,
-                  ),
-                  label: Text(
-                    'Edit Details',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.marianBlue,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-            ],
-            if (!_isEditing)
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'Close',
-                  style: TextStyle(
-                    color: textMuted,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // ===========================================================================
-  // Responsive Mobile Footer Actions (Zero Overflow)
-  // ===========================================================================
-
-  Widget _buildMobileFooterActions(bool isArchived, Color textMuted) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ParishColors.marianBlue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                onPressed: _printLabelSticker,
-                icon: const Icon(Icons.qr_code, size: 15),
-                label: const Text(
-                  'Print Tag',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-            if (_canArchive) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: isArchived
-                    ? OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: ParishColors.oliveGreen,
-                          side: BorderSide(color: ParishColors.oliveGreen),
-                          padding: const EdgeInsets.symmetric(vertical: 9),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: _restoreAsset,
-                        icon: const Icon(Icons.restore, size: 15),
-                        label: const Text(
-                          'Restore',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      )
-                    : OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: ParishColors.mercyRed,
-                          side: BorderSide(color: ParishColors.mercyRed),
-                          padding: const EdgeInsets.symmetric(vertical: 9),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: _confirmArchiveAsset,
-                        icon: const Icon(Icons.archive_outlined, size: 15),
-                        label: const Text(
-                          'Archive',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (_canModify) ...[
-              if (_isEditing) ...[
-                TextButton(
-                  onPressed: _isUpdating
-                      ? null
-                      : () {
-                          _resetEditControllers();
-                          setState(() => _isEditing = false);
-                        },
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: textMuted, fontSize: 12),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ParishColors.oliveGreen,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: _isUpdating ? null : _saveAssetUpdates,
-                  icon: _isUpdating
-                      ? const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.save, size: 15),
-                  label: Text(
-                    _isUpdating ? 'Saving...' : 'Save Changes',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ] else ...[
-                Expanded(
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                        color: ParishColors.marianBlue,
-                        width: 1.5,
-                      ),
-                      backgroundColor: ParishColors.marianBlueSurface,
-                      padding: const EdgeInsets.symmetric(vertical: 9),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: () => setState(() => _isEditing = true),
-                    icon: Icon(
-                      Icons.edit_outlined,
-                      size: 15,
-                      color: ParishColors.marianBlue,
-                    ),
-                    label: Text(
-                      'Edit Details',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.marianBlue,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-            ],
-            if (!_isEditing)
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'Close',
-                  style: TextStyle(
-                    color: textMuted,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // ===========================================================================
-  // View Details Mode
-  // ===========================================================================
-
   Widget _buildViewDetails(bool isMobile) {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
-    final isArchived = _isEffectivelyArchived;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (isArchived) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: BoxDecoration(
-              color: ParishColors.mercyRedSurface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: ParishColors.mercyRed.withOpacity(0.4)),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.archive_outlined,
-                  color: ParishColors.mercyRed,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'ARCHIVED ITEM',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.mercyRed,
-                        ),
-                      ),
-                      Text(
-                        _asset.archiveReason != null &&
-                                _asset.archiveReason!.isNotEmpty
-                            ? 'Reason: ${_asset.archiveReason}'
-                            : 'This item has been decommissioned from active parish operations.',
-                        style: TextStyle(fontSize: 11, color: textDark),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        if (isMobile) ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _buildPhotoThumbnail(size: 90),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _asset.itemName,
-                      style: TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.bold,
-                        color: textDark,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _asset.unitPrice >= 10000.0
-                            ? ParishColors.goldLight
-                            : ParishColors.marianBlueSurface,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        _asset.inventorySection,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: _asset.unitPrice >= 10000.0
-                              ? ParishColors.goldAccent
-                              : ParishColors.marianBlue,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: ParishColors.backgroundLight,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: borderGrey),
-            ),
-            child: Column(
-              children: [
-                _buildDataRow(
-                  Icons.category_outlined,
-                  'Category',
-                  _asset.displayClassification,
-                ),
-                _buildDataRow(
-                  Icons.location_on_outlined,
-                  'Storage Location',
-                  _asset.displayLocation,
-                ),
-                _buildDataRow(
-                  Icons.calendar_today_outlined,
-                  'Acquisition Date',
-                  '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})',
-                ),
-                if (_asset.rfidTag != null && _asset.rfidTag!.isNotEmpty)
-                  _buildDataRow(Icons.nfc, 'RFID / NFC Tag', _asset.rfidTag!),
-              ],
-            ),
-          ),
-        ] else ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildPhotoThumbnail(size: 130),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _asset.itemName,
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                        color: textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    _buildDataRow(
-                      Icons.category_outlined,
-                      'Category',
-                      _asset.displayClassification,
-                    ),
-                    _buildDataRow(
-                      Icons.location_on_outlined,
-                      'Storage Location',
-                      _asset.displayLocation,
-                    ),
-                    _buildDataRow(
-                      Icons.calendar_today_outlined,
-                      'Acquisition Date',
-                      '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})',
-                    ),
-                    _buildDataRow(
-                      Icons.menu_book,
-                      'Book of Inventory',
-                      _asset.inventorySection,
-                    ),
-                    if (_asset.rfidTag != null && _asset.rfidTag!.isNotEmpty)
-                      _buildDataRow(
-                        Icons.nfc,
-                        'RFID / NFC Tag',
-                        _asset.rfidTag!,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0FDF4),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: ParishColors.oliveGreen.withOpacity(0.35),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              Column(
-                children: [
-                  Text(
-                    'Quantity',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: textMuted,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${_asset.quantity} unit(s)',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.marianBlue,
-                    ),
-                  ),
-                ],
-              ),
-              Container(width: 1, height: 28, color: ParishColors.borderGrey),
-              Column(
-                children: [
-                  Text(
-                    'Price per Unit',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: textMuted,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _asset.formattedUnitPrice,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.marianBlue,
-                    ),
-                  ),
-                ],
-              ),
-              Container(width: 1, height: 28, color: ParishColors.borderGrey),
-              Column(
-                children: [
-                  Text(
-                    'Total Cost',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: textMuted,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _asset.formattedTotalCost,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.oliveGreen,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: ParishColors.backgroundLight,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderGrey),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'PHYSICAL SPECIFICATIONS',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: textMuted,
-                ),
-              ),
-              const Divider(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _buildSpecItem(
-                      'Size / Dimensions',
-                      _asset.dimensions ?? '—',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: _buildSpecItem('Color', _asset.color ?? '—')),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _buildSpecItem('Brand / Model', _asset.model ?? '—'),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildSpecItem(
-                      'Item Status',
-                      _asset.operationalStatus,
-                      highlightRed:
-                          _asset.operationalStatus == 'Decommissioned',
-                    ),
-                  ),
-                ],
-              ),
-              if (_asset.others != null && _asset.others!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Text(
-                  'Markings / Details: ${_asset.others}',
-                  style: TextStyle(fontSize: 12, color: textDark),
-                ),
-              ],
-              if (_asset.remarks != null && _asset.remarks!.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Notes: ${_asset.remarks}',
-                  style: TextStyle(fontSize: 11.5, color: textMuted),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Audit & Adjustment History',
-              style: TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.bold,
-                color: textDark,
+            InkWell(
+              onTap: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
+                  ? () => _openInteractivePreview(NetworkImage(_asset.photoUrl!))
+                  : null,
+              child: Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderGrey),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
+                      ? Image.network(_asset.photoUrl!, fit: BoxFit.cover)
+                      : Icon(_asset.classificationIcon, color: ParishColors.marianBlue, size: 36),
+                ),
               ),
             ),
-            Text(
-              '${_auditHistory.length} record(s)',
-              style: TextStyle(fontSize: 11.5, color: textMuted),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _asset.itemName,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _asset.statusSurfaceColor,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'Status: ${_asset.operationalStatus}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: _asset.statusColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        if (_isLoadingHistory)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
-          )
-        else if (_auditHistory.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: ParishColors.backgroundLight,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: borderGrey),
-            ),
-            child: Center(
-              child: Text(
-                'No audit or quantity change records logged yet.',
-                style: TextStyle(fontSize: 12, color: textMuted),
-              ),
-            ),
-          )
-        else
-          Column(
-            children: _auditHistory
-                .map((log) => _buildAuditLogTile(log))
-                .toList(),
-          ),
+        const SizedBox(height: 14),
+        _buildDataRow(Icons.category_outlined, 'Classification', _asset.displayClassification),
+        _buildDataRow(Icons.location_on_outlined, 'Location', _asset.displayLocation),
+        _buildDataRow(Icons.calendar_today_outlined, 'Acquisition', '${_asset.formattedAcquisitionDate} (${_asset.modeOfAcquisition})'),
+        _buildDataRow(Icons.menu_book, 'Section', _asset.inventorySection),
+        const Divider(height: 16),
+        Row(
+          children: [
+            Expanded(child: _buildSpecItem('Quantity', '${_asset.quantity} units')),
+            Expanded(child: _buildSpecItem('Unit Price', _asset.formattedUnitPrice)),
+            Expanded(child: _buildSpecItem('Total Cost', _asset.formattedTotalCost)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: _buildSpecItem('Size', _asset.dimensions ?? '—')),
+            Expanded(child: _buildSpecItem('Color', _asset.color ?? '—')),
+            Expanded(child: _buildSpecItem('Model', _asset.model ?? '—')),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _buildPhotoThumbnail({required double size}) {
-    final borderGrey = ParishColors.borderGrey;
-
-    return Tooltip(
-      message: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
-          ? 'Tap to inspect photo with security watermark'
-          : 'No photo uploaded',
-      child: InkWell(
-        onTap: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
-            ? () => _openInteractivePreview(NetworkImage(_asset.photoUrl!))
-            : null,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: ParishColors.backgroundLight,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _asset.photoUrl != null
-                  ? ParishColors.goldAccent
-                  : borderGrey,
-              width: _asset.photoUrl != null ? 1.5 : 1.0,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(11),
-            child: _asset.photoUrl != null && _asset.photoUrl!.isNotEmpty
-                ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.network(
-                        _asset.photoUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Center(
-                          child: Icon(
-                            _asset.classificationIcon,
-                            size: 36,
-                            color: ParishColors.marianBlue,
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          color: Colors.black54,
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: const Text(
-                            'WATERMARKED',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 7.0,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Center(
-                    child: Icon(
-                      _asset.classificationIcon,
-                      size: 36,
-                      color: ParishColors.marianBlue,
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAuditLogTile(AssetAuditLogModel log) {
-    final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: log.hasQuantityAdjustment
-            ? ParishColors.goldLight.withOpacity(0.5)
-            : ParishColors.backgroundLight,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: log.hasQuantityAdjustment
-              ? ParishColors.goldAccent.withOpacity(0.6)
-              : ParishColors.borderGrey,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                log.auditMethod == 'RFID_NFC'
-                    ? Icons.nfc
-                    : Icons.qr_code_scanner,
-                size: 16,
-                color: ParishColors.marianBlue,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Condition: ${log.newCondition}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        Text(
-                          log.formattedAuditedAt,
-                          style: TextStyle(fontSize: 10.5, color: textMuted),
-                        ),
-                      ],
-                    ),
-                    if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Status: ${log.newStatus}',
-                        style: TextStyle(fontSize: 11, color: textMuted),
-                      ),
-                    ],
-                    if (log.newLocation != null &&
-                        log.newLocation!.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Location: ${log.newLocation}',
-                        style: TextStyle(fontSize: 11, color: textMuted),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          // Traceable Quantity Change Details
-          if (log.hasQuantityAdjustment) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: ParishColors.goldAccent.withOpacity(0.4),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        (log.quantityChange ?? 0) > 0
-                            ? Icons.add_circle
-                            : Icons.remove_circle,
-                        size: 14,
-                        color: (log.quantityChange ?? 0) > 0
-                            ? ParishColors.oliveGreen
-                            : ParishColors.mercyRed,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Quantity Adjustment: ${log.formattedQuantityChange}',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                          color: (log.quantityChange ?? 0) > 0
-                              ? ParishColors.oliveGreen
-                              : ParishColors.mercyRed,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (log.quantityChangeReason != null &&
-                      log.quantityChangeReason!.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      'Reason: ${log.quantityChangeReason}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: textDark,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-
-          if (log.cleanNotes.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Notes: ${log.cleanNotes}',
-              style: TextStyle(fontSize: 11, color: textDark),
-            ),
-          ],
-
-          if (log.auditorName != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Audited by: ${log.auditorName}',
-              style: TextStyle(
-                fontSize: 10,
-                fontStyle: FontStyle.italic,
-                color: textMuted,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ===========================================================================
-  // Responsive Edit Form Mode with Anti-Overflow Dropdowns
-  // ===========================================================================
-
   Widget _buildEditForm(bool isMobile) {
-    final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
-    final borderGrey = ParishColors.borderGrey;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          margin: const EdgeInsets.only(bottom: 14),
-          decoration: BoxDecoration(
-            color: ParishColors.marianBlueSurface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.lock_outline,
-                size: 16,
-                color: ParishColors.marianBlue,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Control Number (${_asset.controlNumber}) and Category are locked to preserve canonical ledger integrity.',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: ParishColors.marianBlue,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Text(
-          'Item Photo',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: textDark,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: ParishColors.backgroundLight,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderGrey),
-          ),
-          child: Row(
-            children: [
-              InkWell(
-                onTap: () {
-                  if (_newWatermarkedPhotoBytes != null) {
-                    _openInteractivePreview(
-                      MemoryImage(_newWatermarkedPhotoBytes!),
-                    );
-                  } else if (_asset.photoUrl != null &&
-                      _asset.photoUrl!.isNotEmpty) {
-                    _openInteractivePreview(NetworkImage(_asset.photoUrl!));
-                  }
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: borderGrey),
-                  ),
-                  child: _isProcessingImage
-                      ? const Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : _newWatermarkedPhotoBytes != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(7),
-                          child: Image.memory(
-                            _newWatermarkedPhotoBytes!,
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : (_asset.photoUrl != null && _asset.photoUrl!.isNotEmpty)
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(7),
-                          child: Image.network(
-                            _asset.photoUrl!,
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : Icon(
-                          Icons.photo_outlined,
-                          size: 32,
-                          color: ParishColors.marianBlue,
-                        ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _newWatermarkedPhotoBytes != null
-                          ? 'New Watermarked Photo'
-                          : (_asset.photoUrl != null
-                                ? 'Current Photo'
-                                : 'No photo uploaded'),
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: _newWatermarkedPhotoBytes != null
-                            ? ParishColors.oliveGreen
-                            : textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: ParishColors.marianBlue,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          onPressed: _isProcessingImage
-                              ? null
-                              : _capturePhotoWithCamera,
-                          icon: const Icon(Icons.camera_alt, size: 13),
-                          label: const Text(
-                            'Camera',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: ParishColors.marianBlue,
-                            side: BorderSide(color: ParishColors.marianBlue),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          onPressed: _isProcessingImage
-                              ? null
-                              : _pickImageFromDevice,
-                          icon: const Icon(Icons.upload_file, size: 13),
-                          label: const Text(
-                            'Upload',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Text(
-          'Item Name *',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: textDark,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: _nameController,
-          style: TextStyle(fontSize: 14, color: textDark),
-          decoration: _inputDecoration(
-            hint: 'e.g. Wooden Church Pew, Monoblock Chair',
-          ),
-        ),
+        _buildLabel('Item Name *'),
+        TextFormField(controller: _nameController, decoration: _inputDecoration()),
         const SizedBox(height: 12),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              flex: 2,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Quantity *',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _quantityController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    style: TextStyle(fontSize: 14, color: textDark),
-                    decoration: _inputDecoration(hint: 'e.g. 16'),
-                  ),
+                  _buildLabel('Quantity *'),
+                  TextFormField(controller: _quantityController, decoration: _inputDecoration()),
                 ],
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              flex: 3,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Price per Unit (₱)',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _unitPriceController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
-                    style: TextStyle(fontSize: 14, color: textDark),
-                    decoration: _inputDecoration(
-                      hint: 'e.g. 2,500.00',
-                      prefixIcon: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 12,
-                        ),
-                        child: Text(
-                          '₱',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  _buildLabel('Price / Unit (₱)'),
+                  TextFormField(controller: _unitPriceController, decoration: _inputDecoration()),
                 ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: ParishColors.backgroundLight,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total: ₱ ${AssetModel.formatCurrency(_editCalculatedTotalCost)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: ParishColors.oliveGreen,
-                ),
-              ),
-              Text(
-                _editDeterminedSection,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: ParishColors.marianBlue,
-                ),
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 12),
-        isMobile
-            ? Column(
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Category (Locked)',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          color: textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        initialValue: _asset.displayClassification,
-                        enabled: false,
-                        style: TextStyle(fontSize: 13, color: textMuted),
-                        decoration: _inputDecoration(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Storage Location (Locked)',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          color: textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        initialValue: _asset.displayLocation,
-                        enabled: false,
-                        style: TextStyle(fontSize: 13, color: textMuted),
-                        decoration: _inputDecoration(),
-                      ),
-                    ],
-                  ),
-                ],
-              )
-            : Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Category (Locked)',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: textMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          initialValue: _asset.displayClassification,
-                          enabled: false,
-                          style: TextStyle(fontSize: 13, color: textMuted),
-                          decoration: _inputDecoration(),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Storage Location (Locked)',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: textMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          initialValue: _asset.displayLocation,
-                          enabled: false,
-                          style: TextStyle(fontSize: 13, color: textMuted),
-                          decoration: _inputDecoration(),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildLabel('Condition *'),
+                  _buildConditionDropdown(),
                 ],
               ),
-        const SizedBox(height: 12),
-        isMobile
-            ? Column(
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Item Condition *',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: textDark,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _buildConditionDropdown(),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Item Status *',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: textDark,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _buildOperationalStatusDropdown(),
-                    ],
-                  ),
-                ],
-              )
-            : Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Item Condition *',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _buildConditionDropdown(),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Item Status *',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _buildOperationalStatusDropdown(),
-                      ],
-                    ),
-                  ),
+                  _buildLabel('Status *'),
+                  _buildOperationalStatusDropdown(),
                 ],
               ),
-        const SizedBox(height: 12),
-        _buildLabel('Wireless RFID / NFC Tag (Optional)'),
-        TextFormField(
-          controller: _rfidController,
-          style: TextStyle(fontSize: 13.5, color: textDark),
-          decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C'),
-        ),
-        const SizedBox(height: 12),
-        isMobile
-            ? Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Size / Dimensions',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.bold,
-                                color: textDark,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _dimensionsController,
-                              style: TextStyle(fontSize: 13, color: textDark),
-                              decoration: _inputDecoration(
-                                hint: 'e.g. 10 ft x 3 ft',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Color',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.bold,
-                                color: textDark,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _colorController,
-                              style: TextStyle(fontSize: 13, color: textDark),
-                              decoration: _inputDecoration(
-                                hint: 'e.g. Dark Walnut',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Brand / Model',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          color: textDark,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _modelController,
-                        style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(
-                          hint: 'e.g. Custom Woodcraft',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              )
-            : Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Size / Dimensions',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _dimensionsController,
-                          style: TextStyle(fontSize: 13, color: textDark),
-                          decoration: _inputDecoration(
-                            hint: 'e.g. 10 ft x 3 ft',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Color',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _colorController,
-                          style: TextStyle(fontSize: 13, color: textDark),
-                          decoration: _inputDecoration(
-                            hint: 'e.g. Dark Walnut',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Brand / Model',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _modelController,
-                          style: TextStyle(fontSize: 13, color: textDark),
-                          decoration: _inputDecoration(
-                            hint: 'e.g. Custom Woodcraft',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-        const SizedBox(height: 12),
-        Text(
-          'Additional Details / Markings',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: textDark,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: _othersController,
-          maxLines: 2,
-          style: TextStyle(fontSize: 13, color: textDark),
-          decoration: _inputDecoration(
-            hint: 'e.g. Inscribed "Donated by Santos Family"',
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Notes & Maintenance Remarks',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: textDark,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: _remarksController,
-          maxLines: 2,
-          style: TextStyle(fontSize: 13, color: textDark),
-          decoration: _inputDecoration(
-            hint: 'e.g. Inspected and placed in main church nave',
-          ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  // ===========================================================================
-  // Dropdown Builders with Assertion Guards
-  // ===========================================================================
-
   Widget _buildConditionDropdown() {
-    final effectiveCondition = _normalizeConditionStatus(_conditionStatus);
+    final effectiveCondition = AssetModel.normalizeCondition(_conditionStatus);
     final items = List<String>.from(_conditionOptions);
-    if (!items.contains(effectiveCondition)) {
-      items.add(effectiveCondition);
-    }
+    if (!items.contains(effectiveCondition)) items.add(effectiveCondition);
 
     return DropdownButtonFormField<String>(
       value: effectiveCondition,
@@ -2363,45 +884,31 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       items: items.map((c) {
         return DropdownMenuItem(
           value: c,
-          child: Text(
-            c,
-            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
-          ),
+          child: Text(c, style: TextStyle(fontSize: 13, color: ParishColors.textDark)),
         );
       }).toList(),
       onChanged: (val) {
-        if (val != null) {
-          setState(() => _conditionStatus = val);
-        }
+        if (val != null) setState(() => _conditionStatus = val);
       },
     );
   }
 
   Widget _buildOperationalStatusDropdown() {
-    final effectiveStatus = _normalizeOperationalStatus(_operationalStatus);
+    final effectiveStatus = AssetModel.normalizeStatus(_operationalStatus);
     final items = List<String>.from(_operationalStatusOptions);
-    if (!items.contains(effectiveStatus)) {
-      items.add(effectiveStatus);
-    }
+    if (!items.contains(effectiveStatus)) items.add(effectiveStatus);
 
     return DropdownButtonFormField<String>(
       value: effectiveStatus,
       decoration: _inputDecoration(),
       items: items.map((s) {
-        String label = s;
-        if (s == 'Active') label = 'Active / Available';
         return DropdownMenuItem(
           value: s,
-          child: Text(
-            label,
-            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
-          ),
+          child: Text(s, style: TextStyle(fontSize: 13, color: ParishColors.textDark)),
         );
       }).toList(),
       onChanged: (val) {
-        if (val != null) {
-          setState(() => _operationalStatus = val);
-        }
+        if (val != null) setState(() => _operationalStatus = val);
       },
     );
   }
@@ -2451,11 +958,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     );
   }
 
-  Widget _buildSpecItem(
-    String label,
-    String value, {
-    bool highlightRed = false,
-  }) {
+  Widget _buildSpecItem(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2473,7 +976,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: highlightRed ? ParishColors.mercyRed : ParishColors.textDark,
+            color: ParishColors.textDark,
           ),
         ),
       ],

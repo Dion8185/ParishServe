@@ -10,9 +10,10 @@ import '../models/asset_model.dart';
 import '../models/asset_reference_models.dart';
 import '../services/asset_reference_service.dart';
 import '../services/asset_service.dart';
-import 'dialogs/asset_detail_dialog.dart';
+import 'dialogs/asset_report_filter_dialog.dart';
 import 'pages/asset_audit_scanner_page.dart';
 import 'pages/asset_batch_print_page.dart';
+import 'pages/asset_detail_page.dart';
 import 'pages/asset_references_page.dart';
 import 'pages/register_asset_page.dart';
 import 'widgets/asset_item_card.dart';
@@ -60,20 +61,16 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     'Registration Date',
   ];
 
+  // Standardized Canonical Condition Options
   final List<String> _conditionOptions = [
     'All',
-    'VERIFIED / GOOD',
-    'REQUIRES REPAIR',
-    'DAMAGED',
-    'MISSING',
-    'UNUSABLE',
+    ...AssetModel.standardConditions,
   ];
 
+  // Standardized Canonical Status Options
   final List<String> _operationalStatusOptions = [
     'All',
-    'Active',
-    'In Storage',
-    'Under Maintenance',
+    ...AssetModel.standardStatuses,
   ];
 
   AssetViewMode _viewMode = AssetViewMode.cards;
@@ -85,7 +82,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   @override
   void initState() {
     super.initState();
-    // 4 Tabs: All Active, Section 1 Assets (>=10k), Section 2 Assets (<10k), Archived
+    // 4 Tabs: All Active, Section I Assets (>=10k), Section II Assets (<10k), Archived
     _sectionTabController = TabController(length: 4, vsync: this);
     _sectionTabController.addListener(() {
       if (!_sectionTabController.indexIsChanging) {
@@ -127,9 +124,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     try {
       final assetsFuture = AssetService.getAssets(includeArchived: true);
       final locsFuture = AssetReferenceService.getLocations(activeOnly: false);
-      final classifsFuture = AssetReferenceService.getClassifications(activeOnly: false);
+      final classifsFuture =
+      AssetReferenceService.getClassifications(activeOnly: false);
 
-      final results = await Future.wait([assetsFuture, locsFuture, classifsFuture]);
+      final results =
+      await Future.wait([assetsFuture, locsFuture, classifsFuture]);
 
       if (!mounted) return;
       setState(() {
@@ -148,8 +147,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   }
 
   bool _isAssetArchived(AssetModel a) {
-    return a.isArchived ||
-        a.operationalStatus.trim().toLowerCase() == 'decommissioned';
+    return a.isEffectivelyArchived;
   }
 
   int _compareControlNumbers(String a, String b) {
@@ -205,8 +203,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (_selectedCategory != 'All') {
       list = list
           .where((a) =>
-              a.classificationAcronym.toUpperCase() ==
-              _selectedCategory.toUpperCase())
+      a.classificationAcronym.toUpperCase() ==
+          _selectedCategory.toUpperCase())
           .toList();
     }
 
@@ -214,8 +212,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (_selectedLocation != 'All') {
       list = list
           .where((a) =>
-              a.locationAcronym.toUpperCase() ==
-              _selectedLocation.toUpperCase())
+      a.locationAcronym.toUpperCase() ==
+          _selectedLocation.toUpperCase())
           .toList();
     }
 
@@ -223,17 +221,19 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (_selectedCondition != 'All') {
       list = list
           .where((a) =>
-              a.conditionStatus.toUpperCase() ==
-              _selectedCondition.toUpperCase())
+      AssetModel.normalizeCondition(a.conditionStatus)
+          .toLowerCase() ==
+          _selectedCondition.toLowerCase())
           .toList();
     }
 
     // 5. Operational Status Filter (Active Tab only)
-    if (_sectionTabController.index != 3 && _selectedOperationalStatus != 'All') {
+    if (_sectionTabController.index != 3 &&
+        _selectedOperationalStatus != 'All') {
       list = list
           .where((a) =>
-              a.operationalStatus.toLowerCase() ==
-              _selectedOperationalStatus.toLowerCase())
+      AssetModel.normalizeStatus(a.operationalStatus).toLowerCase() ==
+          _selectedOperationalStatus.toLowerCase())
           .toList();
     }
 
@@ -256,7 +256,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       int comparison = 0;
       switch (_sortBy) {
         case 'Control Number':
-          comparison = _compareControlNumbers(a.controlNumber, b.controlNumber);
+          comparison =
+              _compareControlNumbers(a.controlNumber, b.controlNumber);
           break;
         case 'Item Name':
           comparison =
@@ -296,10 +297,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       _assets.where((a) => !_isAssetArchived(a) && a.unitPrice < 10000.0).length;
 
   int get _needsAttentionCount => _assets.where((a) {
-        if (_isAssetArchived(a)) return false;
-        final c = a.conditionStatus.toUpperCase();
-        return c.contains('REPAIR') || c.contains('DAMAGED') || c.contains('MISSING') || c.contains('UNUSABLE');
-      }).length;
+    if (_isAssetArchived(a)) return false;
+    final c = AssetModel.normalizeCondition(a.conditionStatus);
+    return c == 'Poor' || c == 'Damaged' || c == 'Unserviceable';
+  }).length;
 
   int get _totalPages {
     final total = _filteredAssets.length;
@@ -312,7 +313,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (_selectedCategory != 'All') count++;
     if (_selectedLocation != 'All') count++;
     if (_selectedCondition != 'All') count++;
-    if (_selectedOperationalStatus != 'All' && _sectionTabController.index != 3) count++;
+    if (_selectedOperationalStatus != 'All' &&
+        _sectionTabController.index != 3) {
+      count++;
+    }
     if (_sortBy != 'Control Number' || !_sortAscending) count++;
     return count;
   }
@@ -358,7 +362,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (list.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No items match the current filter to print.'),
+          content: Text('No items match the current filter to print tags.'),
           backgroundColor: ParishColors.goldAccent,
         ),
       );
@@ -373,11 +377,28 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     );
   }
 
+  void _openReportGeneratorDialog() {
+    showAssetReportFilterModal(context, allAssets: _assets);
+  }
+
   void _openManageReferencesPage() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AssetReferencesPage(onReferencesUpdated: _loadAllData),
+      ),
+    );
+  }
+
+  void _openAssetDetailPage(AssetModel asset, int indexInFiltered) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AssetDetailPage(
+          assets: _filteredAssets,
+          initialIndex: indexInFiltered,
+          onAssetUpdated: _loadAllData,
+        ),
       ),
     );
   }
@@ -474,9 +495,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                           ),
                           items: _sortOptions
                               .map((opt) => DropdownMenuItem(
-                                  value: opt,
-                                  child: Text(opt,
-                                      style: const TextStyle(fontSize: 13))))
+                              value: opt,
+                              child: Text(opt,
+                                  style: const TextStyle(fontSize: 13))))
                               .toList(),
                           onChanged: (val) {
                             if (val != null) {
@@ -585,7 +606,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const SizedBox(height: 14),
 
-                  // 4. Item Condition Filter
+                  // 4. Item Condition Filter (Standardized)
                   Text(
                     'Item Physical Condition',
                     style: TextStyle(
@@ -608,7 +629,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                             selectedColor: ParishColors.marianBlue,
                             backgroundColor: ParishColors.backgroundLight,
                             labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : ParishColors.textDark,
+                              color: isSelected
+                                  ? Colors.white
+                                  : ParishColors.textDark,
                               fontWeight: FontWeight.bold,
                               fontSize: 11.5,
                             ),
@@ -626,7 +649,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const SizedBox(height: 14),
 
-                  // 5. Item Operational Status Filter
+                  // 5. Item Operational Status Filter (Standardized)
                   if (_sectionTabController.index != 3) ...[
                     Text(
                       'Operational Status',
@@ -650,7 +673,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                               selectedColor: ParishColors.marianBlue,
                               backgroundColor: ParishColors.backgroundLight,
                               labelStyle: TextStyle(
-                                color: isSelected ? Colors.white : ParishColors.textDark,
+                                color: isSelected
+                                    ? Colors.white
+                                    : ParishColors.textDark,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 11.5,
                               ),
@@ -814,7 +839,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         color: ParishColors.cardWhite,
         onSelected: (val) {
-          if (val == 'references') {
+          if (val == 'reports') {
+            _openReportGeneratorDialog();
+          } else if (val == 'references') {
             _openManageReferencesPage();
           } else if (val == 'scanner') {
             _openAuditScannerPage();
@@ -827,12 +854,25 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         },
         itemBuilder: (ctx) => [
           const PopupMenuItem(
+            value: 'reports',
+            child: Row(
+              children: [
+                Icon(Icons.picture_as_pdf_outlined,
+                    size: 18, color: ParishColors.marianBlue),
+                SizedBox(width: 10),
+                Text('Generate PDF Reports',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
             value: 'references',
             child: Row(
               children: [
                 Icon(Icons.tune, size: 18, color: ParishColors.marianBlue),
                 SizedBox(width: 10),
-                Text('Locations & Classifications', style: TextStyle(fontSize: 13)),
+                Text('Locations & Classifications',
+                    style: TextStyle(fontSize: 13)),
               ],
             ),
           ),
@@ -840,7 +880,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             value: 'scanner',
             child: Row(
               children: [
-                Icon(Icons.qr_code_scanner, size: 18, color: ParishColors.oliveGreen),
+                Icon(Icons.qr_code_scanner,
+                    size: 18, color: ParishColors.oliveGreen),
                 SizedBox(width: 10),
                 Text('Open Audit Scanner', style: TextStyle(fontSize: 13)),
               ],
@@ -850,7 +891,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             value: 'batch_print',
             child: Row(
               children: [
-                Icon(Icons.print_outlined, size: 18, color: ParishColors.goldAccent),
+                Icon(Icons.print_outlined,
+                    size: 18, color: ParishColors.goldAccent),
                 SizedBox(width: 10),
                 Text('Batch Print Tags', style: TextStyle(fontSize: 13)),
               ],
@@ -900,18 +942,22 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               textColor = Colors.orange.shade900;
               statusIcon = Icons.upload_file;
               statusLabel =
-                  'Online • $pendingCount asset change(s) queued (Tap to Sync Now)';
+              'Online • $pendingCount asset change(s) queued (Tap to Sync Now)';
             } else {
               pillColor = const Color(0xFFE8F5E9);
               textColor = const Color(0xFF2E7D32);
               statusIcon = Icons.check_circle;
-              statusLabel = 'Online • Property ledger & QR codes synchronized';
+              statusLabel =
+              'Online • Property ledger & QR codes synchronized';
             }
 
-            final canSync = pendingCount > 0 && status != RecordsSyncStatus.syncing;
+            final canSync =
+                pendingCount > 0 && status != RecordsSyncStatus.syncing;
 
             return InkWell(
-              onTap: canSync ? () => RecordsSyncService.instance.syncPendingChanges() : null,
+              onTap: canSync
+                  ? () => RecordsSyncService.instance.syncPendingChanges()
+                  : null,
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 width: double.infinity,
@@ -945,7 +991,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     ),
                     if (!isMobile)
                       ValueListenableBuilder<DateTime?>(
-                        valueListenable: RecordsSyncService.lastSyncedAtNotifier,
+                        valueListenable:
+                        RecordsSyncService.lastSyncedAtNotifier,
                         builder: (context, lastSync, _) {
                           final text = lastSync != null
                               ? lastSync.toLocal().toString().substring(0, 16)
@@ -980,7 +1027,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   Widget _buildActionCardsRow(bool isDesktop, bool isMobile) {
     final registerCard = _buildDashboardActionCard(
       title: 'Register Item',
-      subtitle: isMobile ? 'Add property or fixtures' : 'Add property, vestments & fixtures',
+      subtitle: isMobile
+          ? 'Add property or fixtures'
+          : 'Add property, vestments & fixtures',
       icon: Icons.post_add,
       isSolidBlue: true,
       isMobile: isMobile,
@@ -989,7 +1038,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
     final scannerCard = _buildDashboardActionCard(
       title: 'Audit Scanner',
-      subtitle: isMobile ? 'Scan QR / RFID tags' : 'Scan QR/RFID tags to verify items',
+      subtitle: isMobile
+          ? 'Scan QR / RFID tags'
+          : 'Scan QR/RFID tags to verify items',
       icon: Icons.qr_code_scanner,
       isSolidBlue: false,
       borderColor: ParishColors.borderGrey,
@@ -998,9 +1049,24 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       onTap: _openAuditScannerPage,
     );
 
+    final reportsCard = _buildDashboardActionCard(
+      title: 'Print Reports',
+      subtitle: isMobile
+          ? 'PDF cards & ledgers'
+          : 'A4 photographic cards & ledger tables',
+      icon: Icons.picture_as_pdf_outlined,
+      isSolidBlue: false,
+      borderColor: ParishColors.oliveGreen,
+      iconColor: ParishColors.oliveGreen,
+      titleColor: ParishColors.oliveGreen,
+      isMobile: isMobile,
+      onTap: _openReportGeneratorDialog,
+    );
+
     final printCard = _buildDashboardActionCard(
       title: 'Batch Print Tags',
-      subtitle: isMobile ? 'Print sticker sheets' : 'Generate printable QR sticker sheets',
+      subtitle:
+      isMobile ? 'Print sticker sheets' : 'Generate printable QR sticker sheets',
       icon: Icons.print_outlined,
       isSolidBlue: false,
       borderColor: ParishColors.goldAccent,
@@ -1014,9 +1080,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       return Row(
         children: [
           Expanded(child: registerCard),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(child: scannerCard),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
+          Expanded(child: reportsCard),
+          const SizedBox(width: 12),
           Expanded(child: printCard),
         ],
       );
@@ -1024,7 +1092,13 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
     return Column(
       children: [
-        registerCard,
+        Row(
+          children: [
+            Expanded(child: registerCard),
+            const SizedBox(width: 10),
+            Expanded(child: reportsCard),
+          ],
+        ),
         const SizedBox(height: 10),
         Row(
           children: [
@@ -1048,22 +1122,29 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     Color? titleColor,
     required VoidCallback onTap,
   }) {
-    final bgColor = isSolidBlue ? ParishColors.marianBlue : ParishColors.cardWhite;
-    final primaryTextColor = isSolidBlue ? Colors.white : (titleColor ?? ParishColors.textDark);
-    final secondaryTextColor = isSolidBlue ? Colors.white70 : ParishColors.textMuted;
-    final resolvedIconColor = isSolidBlue ? Colors.white : (iconColor ?? ParishColors.marianBlue);
+    final bgColor =
+    isSolidBlue ? ParishColors.marianBlue : ParishColors.cardWhite;
+    final primaryTextColor =
+    isSolidBlue ? Colors.white : (titleColor ?? ParishColors.textDark);
+    final secondaryTextColor =
+    isSolidBlue ? Colors.white70 : ParishColors.textMuted;
+    final resolvedIconColor =
+    isSolidBlue ? Colors.white : (iconColor ?? ParishColors.marianBlue);
 
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         height: isMobile ? 66 : 72,
-        padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 10),
+        padding:
+        EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 10),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSolidBlue ? Colors.transparent : (borderColor ?? ParishColors.borderGrey),
+            color: isSolidBlue
+                ? Colors.transparent
+                : (borderColor ?? ParishColors.borderGrey),
             width: 1.4,
           ),
           boxShadow: [
@@ -1082,10 +1163,12 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               decoration: BoxDecoration(
                 color: isSolidBlue
                     ? Colors.white.withOpacity(0.18)
-                    : (iconColor?.withOpacity(0.12) ?? ParishColors.marianBlueSurface),
+                    : (iconColor?.withOpacity(0.12) ??
+                    ParishColors.marianBlueSurface),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: resolvedIconColor, size: isMobile ? 19 : 22),
+              child: Icon(icon,
+                  color: resolvedIconColor, size: isMobile ? 19 : 22),
             ),
             SizedBox(width: isMobile ? 10 : 14),
             Expanded(
@@ -1123,7 +1206,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   }
 
   // ===========================================================================
-  // Asset Inventory KPI Overview Deck (Tablet / Desktop Only)
+  // Asset Inventory KPI Overview Deck
   // ===========================================================================
 
   Widget _buildAssetOverviewDeck(bool isMobile) {
@@ -1131,7 +1214,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       builder: (context, constraints) {
         final double width = constraints.maxWidth;
         final int crossAxisCount = width > 1050 ? 5 : (width > 600 ? 3 : 2);
-        final double itemWidth = (width - ((crossAxisCount - 1) * 10)) / crossAxisCount;
+        final double itemWidth =
+            (width - ((crossAxisCount - 1) * 10)) / crossAxisCount;
 
         final items = [
           _buildKpiCard(
@@ -1141,7 +1225,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             icon: Icons.inventory_2_outlined,
             color: ParishColors.marianBlue,
             surfaceColor: ParishColors.marianBlueSurface,
-            isSelected: _sectionTabController.index == 0 && _selectedCondition == 'All',
+            isSelected: _sectionTabController.index == 0 &&
+                _selectedCondition == 'All',
             onTap: () => setState(() {
               _sectionTabController.index = 0;
               _selectedCondition = 'All';
@@ -1177,17 +1262,19 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           _buildKpiCard(
             label: 'Needs Attention',
             value: '$_needsAttentionCount',
-            subtitle: 'Repair or missing',
+            subtitle: 'Poor / Damaged state',
             icon: Icons.build_circle_outlined,
             color: const Color(0xFFD97706),
             surfaceColor: const Color(0xFFFFFBEB),
-            isSelected: _selectedCondition == 'REQUIRES REPAIR' || _selectedCondition == 'DAMAGED',
+            isSelected: _selectedCondition == 'Poor' ||
+                _selectedCondition == 'Damaged' ||
+                _selectedCondition == 'Unserviceable',
             onTap: () => setState(() {
-              if (_selectedCondition == 'REQUIRES REPAIR') {
+              if (_selectedCondition == 'Damaged') {
                 _selectedCondition = 'All';
               } else {
                 _sectionTabController.index = 0;
-                _selectedCondition = 'REQUIRES REPAIR';
+                _selectedCondition = 'Damaged';
               }
               _currentPage = 1;
             }),
@@ -1195,7 +1282,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           _buildKpiCard(
             label: 'Archived',
             value: '$_archivedCount',
-            subtitle: 'Decommissioned',
+            subtitle: 'Retired or Disposed',
             icon: Icons.archive_outlined,
             color: ParishColors.mercyRed,
             surfaceColor: ParishColors.mercyRedSurface,
@@ -1210,7 +1297,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         return Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: items.map((w) => SizedBox(width: itemWidth, child: w)).toList(),
+          children:
+          items.map((w) => SizedBox(width: itemWidth, child: w)).toList(),
         );
       },
     );
@@ -1274,8 +1362,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     label,
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      color: isSelected ? ParishColors.textDark : ParishColors.textMuted,
+                      fontWeight:
+                      isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected
+                          ? ParishColors.textDark
+                          : ParishColors.textMuted,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1323,7 +1414,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             ),
             child: Row(
               children: [
-                const Icon(Icons.search, size: 21, color: ParishColors.marianBlue),
+                const Icon(Icons.search,
+                    size: 21, color: ParishColors.marianBlue),
                 const SizedBox(width: 10),
                 Expanded(
                   child: TextField(
@@ -1333,13 +1425,14 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       _searchQuery = val;
                       _currentPage = 1;
                     }),
-                    style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                    style:
+                    TextStyle(fontSize: 14, color: ParishColors.textDark),
                     decoration: InputDecoration(
                       hintText: isMobile
                           ? 'Search items, control #, room...'
                           : 'Search by item name, control number, location, or room...',
                       hintStyle:
-                          TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                      TextStyle(fontSize: 13, color: ParishColors.textMuted),
                       border: InputBorder.none,
                       isDense: true,
                     ),
@@ -1422,7 +1515,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   }
 
   // ===========================================================================
-  // Section Header with Tabs and View Toggle (Defensive Layout, No Overflow)
+  // Section Header with Tabs and View Toggle
   // ===========================================================================
 
   Widget _buildSectionHeader(bool isMobile) {
@@ -1459,7 +1552,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Browse assets, verify physical condition, and print QR tags.',
+                    'Browse assets, inspect photographic details, and print reports.',
                     style: TextStyle(
                       fontSize: isMobile ? 11.5 : 13,
                       color: ParishColors.textMuted,
@@ -1482,7 +1575,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inventory_2_outlined, size: 14, color: ParishColors.textDark),
+                  Icon(Icons.inventory_2_outlined,
+                      size: 14, color: ParishColors.textDark),
                   const SizedBox(width: 5),
                   Text(
                     '${_filteredAssets.length} items',
@@ -1498,7 +1592,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
         ),
         const SizedBox(height: 12),
 
-        // Tabs + View Toggle Row (Wrapped in Expanded to eliminate Horizontal Overflow)
+        // Tabs + View Toggle Row
         Row(
           children: [
             Expanded(
@@ -1529,8 +1623,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          isMobile ? 'All ($_activeCount)' : 'All Active ($_activeCount)',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                          isMobile
+                              ? 'All ($_activeCount)'
+                              : 'All Active ($_activeCount)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 11.5),
                         ),
                       ),
                     ),
@@ -1538,8 +1635,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          isMobile ? 'Section 1 ($_section1Count)' : 'Section 1 ($_section1Count)',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                          isMobile
+                              ? 'Sec 1 ($_section1Count)'
+                              : 'Section I ($_section1Count)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 11.5),
                         ),
                       ),
                     ),
@@ -1547,8 +1647,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          isMobile ? 'Section 2 ($_section2Count)' : 'Section 2 ($_section2Count)',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                          isMobile
+                              ? 'Sec 2 ($_section2Count)'
+                              : 'Section II ($_section2Count)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 11.5),
                         ),
                       ),
                     ),
@@ -1556,8 +1659,11 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          isMobile ? 'Archived ($_archivedCount)' : 'Archived ($_archivedCount)',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                          isMobile
+                              ? 'Archived ($_archivedCount)'
+                              : 'Archived ($_archivedCount)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 11.5),
                         ),
                       ),
                     ),
@@ -1580,7 +1686,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   _viewMode == AssetViewMode.table,
                 ],
                 onPressed: (idx) => setState(() {
-                  _viewMode = idx == 0 ? AssetViewMode.cards : AssetViewMode.table;
+                  _viewMode =
+                  idx == 0 ? AssetViewMode.cards : AssetViewMode.table;
                 }),
                 borderRadius: BorderRadius.circular(7),
                 selectedColor: Colors.white,
@@ -1624,7 +1731,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     _currentPage = 1;
                   });
                 }),
-              if (_selectedOperationalStatus != 'All' && _sectionTabController.index != 3)
+              if (_selectedOperationalStatus != 'All' &&
+                  _sectionTabController.index != 3)
                 _buildActiveFilterChip('Status: $_selectedOperationalStatus', () {
                   setState(() {
                     _selectedOperationalStatus = 'All';
@@ -1656,7 +1764,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
   Widget _buildActiveFilterChip(String label, VoidCallback onDeleted) {
     return Chip(
-      label: Text(label, style: TextStyle(fontSize: 11, color: ParishColors.textDark)),
+      label: Text(label,
+          style: TextStyle(fontSize: 11, color: ParishColors.textDark)),
       backgroundColor: ParishColors.marianBlueSurface,
       deleteIcon: const Icon(Icons.close, size: 13),
       onDeleted: onDeleted,
@@ -1682,7 +1791,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 decoration: BoxDecoration(
                   color: ParishColors.cardWhite,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
+                  border: Border.all(
+                      color: ParishColors.borderGrey.withOpacity(0.4)),
                 ),
                 padding: const EdgeInsets.all(14),
                 child: Row(
@@ -1750,7 +1860,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     final totalCount = filtered.length;
     final start = (_currentPage - 1) * _itemsPerPage;
     final end = min(start + _itemsPerPage, totalCount);
-    final paged = (start >= totalCount) ? <AssetModel>[] : filtered.sublist(start, end);
+    final paged = (start >= totalCount)
+        ? <AssetModel>[]
+        : filtered.sublist(start, end);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1782,8 +1894,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     const SizedBox(height: 16),
 
                     // 3. User-Friendly Asset Inventory KPI Overview Deck
-                    // Removed in mobile view only as requested; visible on tablet/desktop when not searching
-                    if (!isMobile && _searchQuery.isEmpty && !_hasActiveFilters) ...[
+                    if (!isMobile &&
+                        _searchQuery.isEmpty &&
+                        !_hasActiveFilters) ...[
                       _buildAssetOverviewDeck(isMobile),
                       const SizedBox(height: 18),
                     ],
@@ -1806,23 +1919,34 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                         decoration: BoxDecoration(
                             color: ParishColors.mercyRedSurface,
                             borderRadius: BorderRadius.circular(12)),
-                        child: Text('Error loading inventory: $_errorMessage',
-                            style: const TextStyle(color: ParishColors.mercyRed)),
+                        child: Text(
+                            'Error loading inventory: $_errorMessage',
+                            style: const TextStyle(
+                                color: ParishColors.mercyRed)),
                       )
                     else if (totalCount == 0)
-                      _buildEmptyState()
-                    else ...[
-                      if (_viewMode == AssetViewMode.cards)
-                        ...paged.map((a) =>
-                            AssetItemCard(asset: a, onRefresh: _loadAllData))
-                      else
-                        _buildFullWidthResponsiveTable(
-                            paged, constraints.maxWidth),
-                      const SizedBox(height: 14),
-                      _buildPaginationToolbar(totalCount, isMobile),
-                    ],
+                        _buildEmptyState()
+                      else ...[
+                          if (_viewMode == AssetViewMode.cards)
+                            ...paged.map((a) {
+                              final originalIndex =
+                              filtered.indexWhere((item) => item.assetId == a.assetId);
+                              return InkWell(
+                                onTap: () => _openAssetDetailPage(
+                                    a, originalIndex >= 0 ? originalIndex : 0),
+                                child: AssetItemCard(
+                                  asset: a,
+                                  onRefresh: _loadAllData,
+                                ),
+                              );
+                            })
+                          else
+                            _buildFullWidthResponsiveTable(
+                                paged, filtered, constraints.maxWidth),
+                          const SizedBox(height: 14),
+                          _buildPaginationToolbar(totalCount, isMobile),
+                        ],
 
-                    // Generous bottom clearance ensuring the pagination toolbar is never blocked by the floating navigation bar
                     SizedBox(
                       height: isMobile
                           ? (96.0 + MediaQuery.paddingOf(context).bottom)
@@ -1843,7 +1967,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   // ===========================================================================
 
   Widget _buildFullWidthResponsiveTable(
-      List<AssetModel> assets, double availableWidth) {
+      List<AssetModel> pageAssets,
+      List<AssetModel> fullFilteredAssets,
+      double availableWidth,
+      ) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1859,7 +1986,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             constraints: BoxConstraints(minWidth: max(availableWidth, 980)),
             child: DataTable(
               headingRowColor:
-                  WidgetStateProperty.all(ParishColors.marianBlueSurface),
+              WidgetStateProperty.all(ParishColors.marianBlueSurface),
               headingTextStyle: const TextStyle(
                 fontWeight: FontWeight.bold,
                 color: ParishColors.marianBlue,
@@ -1893,9 +2020,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 const DataColumn(label: Text('Status')),
                 const DataColumn(label: Text('Action')),
               ],
-              rows: assets.map((a) {
-                final bool isDecom =
-                    a.operationalStatus == 'Decommissioned' || a.isArchived;
+              rows: pageAssets.map((a) {
+                final bool isDecom = a.isEffectivelyArchived;
+                final originalIndex = fullFilteredAssets
+                    .indexWhere((item) => item.assetId == a.assetId);
 
                 return DataRow(cells: [
                   DataCell(
@@ -1948,19 +2076,15 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: isDecom
-                            ? ParishColors.mercyRedSurface
-                            : ParishColors.backgroundLight,
+                        color: a.statusSurfaceColor,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        isDecom ? 'DECOMMISSIONED' : a.operationalStatus,
+                        a.operationalStatus,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 10.5,
-                          color: isDecom
-                              ? ParishColors.mercyRed
-                              : ParishColors.textDark,
+                          color: a.statusColor,
                         ),
                       ),
                     ),
@@ -1969,8 +2093,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                     TextButton.icon(
                       style: TextButton.styleFrom(
                           visualDensity: VisualDensity.compact),
-                      onPressed: () => showAssetDetailModal(context,
-                          asset: a, onAssetUpdated: _loadAllData),
+                      onPressed: () => _openAssetDetailPage(
+                        a,
+                        originalIndex >= 0 ? originalIndex : 0,
+                      ),
                       icon: const Icon(Icons.visibility, size: 14),
                       label: const Text('View',
                           style: TextStyle(
@@ -2008,7 +2134,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
   }
 
   // ===========================================================================
-  // Standardized Pagination Toolbar with Elevated Visibility
+  // Standardized Pagination Toolbar
   // ===========================================================================
 
   Widget _buildPaginationToolbar(int totalItems, bool isMobile) {
@@ -2068,8 +2194,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 color: _currentPage > 1
                     ? ParishColors.marianBlueAdaptive
                     : ParishColors.borderGrey,
-                onPressed:
-                    _currentPage > 1 ? () => setState(() => _currentPage--) : null,
+                onPressed: _currentPage > 1
+                    ? () => setState(() => _currentPage--)
+                    : null,
               ),
               const SizedBox(width: 8),
               Container(
@@ -2121,7 +2248,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
       ),
       child: Column(
         children: [
-          Icon(Icons.inventory_2_outlined, size: 44, color: ParishColors.textMuted),
+          Icon(Icons.inventory_2_outlined,
+              size: 44, color: ParishColors.textMuted),
           const SizedBox(height: 10),
           Text(
             _searchQuery.isNotEmpty

@@ -14,6 +14,11 @@ class $AssetsImagesGen {
   const $AssetsImagesGen();
 
   final AssetGenImage jp2Bg = const AssetGenImage('images/jp2-bg.png');
+  final AssetGenImage jp2Bg1 = const AssetGenImage('images/jp2-bg1.png');
+  final AssetGenImage jp2Bg2Jpg = const AssetGenImage('images/jp2-bg2.jpg');
+  final AssetGenImage jp2Bg2Png = const AssetGenImage('images/jp2-bg2.png');
+  final AssetGenImage jp2Bg3 = const AssetGenImage('images/jp2-bg3.png');
+  final AssetGenImage jp2Bg4 = const AssetGenImage('images/jp2-bg4.png');
   final AssetGenImage logoJp2 = const AssetGenImage('images/logo-jp2.png');
 }
 
@@ -40,22 +45,28 @@ class $AssetsPresentationGen {
 
   final $AssetsDialogsGen dialogs = const $AssetsDialogsGen();
   final $AssetsWidgetsGen widgets = const $AssetsWidgetsGen();
-  final String receiptsView = 'lib/features/receipts/presentation/receipts_view.dart';
+  final String receiptsView =
+      'lib/features/receipts/presentation/receipts_view.dart';
 }
 
 class $AssetsDialogsGen {
   const $AssetsDialogsGen();
 
-  final String manageParticularsDialog = 'lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart';
-  final String newTransactionDialog = 'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
-  final String receiptDetailDialog = 'lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart';
-  final String remittanceReportDialog = 'lib/features/receipts/presentation/dialogs/remittance_report_dialog.dart';
+  final String manageParticularsDialog =
+      'lib/features/receipts/presentation/dialogs/manage_particulars_dialog.dart';
+  final String newTransactionDialog =
+      'lib/features/receipts/presentation/dialogs/new_transaction_dialog.dart';
+  final String receiptDetailDialog =
+      'lib/features/receipts/presentation/dialogs/receipt_detail_dialog.dart';
+  final String remittanceReportDialog =
+      'lib/features/receipts/presentation/dialogs/remittance_report_dialog.dart';
 }
 
 class $AssetsWidgetsGen {
   const $AssetsWidgetsGen();
 
-  final String receiptCard = 'lib/features/receipts/presentation/widgets/receipt_card.dart';
+  final String receiptCard =
+      'lib/features/receipts/presentation/widgets/receipt_card.dart';
 }
 
 class $AssetsAssetsGen {
@@ -85,7 +96,6 @@ class AssetGenImage {
   const AssetGenImage(this._assetName, {this.size, this.flavors = const {}});
 
   final String _assetName;
-
 
   final Size? size;
   final Set<String> flavors;
@@ -143,15 +153,8 @@ class AssetGenImage {
     );
   }
 
-  ImageProvider provider({
-    AssetBundle? bundle,
-    String? package,
-  }) {
-    return AssetImage(
-      _assetName,
-      bundle: bundle,
-      package: package,
-    );
+  ImageProvider provider({AssetBundle? bundle, String? package}) {
+    return AssetImage(_assetName, bundle: bundle, package: package);
   }
 
   Widget custom({
@@ -168,4 +171,3 @@ class AssetGenImage {
 
   String get keyName => _assetName;
 }
-
