@@ -36,19 +36,19 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   final _othersController = TextEditingController();
   final _remarksController = TextEditingController();
   final _rfidTagController = TextEditingController();
+  final _sequenceNumberController = TextEditingController(text: '001');
 
   List<AssetLocationModel> _locations = [];
   List<AssetClassificationModel> _classifications = [];
   AssetLocationModel? _selectedLocation;
   AssetClassificationModel? _selectedClassification;
   bool _isLoadingReferences = true;
+  bool _isLoadingSequence = false;
 
   DateTime _dateOfAcquisition = DateTime.now();
   String _modeOfAcquisition = 'Purchase';
   String _conditionStatus = 'Good';
   String _operationalStatus = 'Available';
-
-  String _previewControlNumber = 'C-FF 2026-001';
 
   Uint8List? _watermarkedPhotoBytes;
   String? _photoFileName;
@@ -77,6 +77,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     _loadReferences();
     _quantityController.addListener(() => setState(() {}));
     _unitPriceController.addListener(() => setState(() {}));
+    _sequenceNumberController.addListener(() => setState(() {}));
   }
 
   @override
@@ -90,6 +91,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     _othersController.dispose();
     _remarksController.dispose();
     _rfidTagController.dispose();
+    _sequenceNumberController.dispose();
     super.dispose();
   }
 
@@ -112,13 +114,24 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         : 'Section 2 — Below ₱10,000.00';
   }
 
+  String get _controlNumberPrefix {
+    final locAcronym = _selectedLocation?.acronym ?? 'C';
+    final clsAcronym = _selectedClassification?.acronym ?? 'FF';
+    final year = _dateOfAcquisition.year;
+    return '$locAcronym-$clsAcronym $year-';
+  }
+
+  String get _fullControlNumber {
+    final seq = _sequenceNumberController.text.trim();
+    return '$_controlNumberPrefix$seq';
+  }
+
   Future<void> _loadReferences() async {
     setState(() => _isLoadingReferences = true);
     try {
       final locs = await AssetReferenceService.getLocations(activeOnly: true);
-      final classifs = await AssetReferenceService.getClassifications(
-        activeOnly: true,
-      );
+      final classifs =
+      await AssetReferenceService.getClassifications(activeOnly: true);
       if (!mounted) return;
       setState(() {
         _locations = locs;
@@ -127,20 +140,31 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         if (classifs.isNotEmpty) _selectedClassification = classifs.first;
         _isLoadingReferences = false;
       });
-      _updateLiveControlNumberPreview();
+      await _fetchAutoSequenceNumber();
     } catch (_) {
       if (mounted) setState(() => _isLoadingReferences = false);
     }
   }
 
-  void _updateLiveControlNumberPreview() {
-    final locAcronym = _selectedLocation?.acronym ?? 'C';
-    final clsAcronym = _selectedClassification?.acronym ?? 'FF';
-    final year = _dateOfAcquisition.year;
+  Future<void> _fetchAutoSequenceNumber() async {
+    if (_selectedLocation == null || _selectedClassification == null) return;
 
-    setState(() {
-      _previewControlNumber = '$locAcronym-$clsAcronym $year-001';
-    });
+    setState(() => _isLoadingSequence = true);
+    try {
+      final nextSeq = await AssetService.getNextControlNumberSequence(
+        locationAcronym: _selectedLocation!.acronym,
+        classificationAcronym: _selectedClassification!.acronym,
+        acquisitionYear: _dateOfAcquisition.year,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _sequenceNumberController.text = nextSeq.toString().padLeft(3, '0');
+        _isLoadingSequence = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingSequence = false);
+    }
   }
 
   Future<void> _pickDateOfAcquisition() async {
@@ -151,8 +175,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
+      final yearChanged = picked.year != _dateOfAcquisition.year;
       setState(() => _dateOfAcquisition = picked);
-      _updateLiveControlNumberPreview();
+      if (yearChanged) {
+        await _fetchAutoSequenceNumber();
+      }
     }
   }
 
@@ -229,8 +256,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     setState(() => _isProcessingImage = true);
     try {
       final label = _itemNameController.text.trim().isNotEmpty
-          ? '$_previewControlNumber • ${_itemNameController.text.trim()}'
-          : _previewControlNumber;
+          ? '$_fullControlNumber • ${_itemNameController.text.trim()}'
+          : _fullControlNumber;
 
       final watermarked = await AssetImageWatermarkUtil.applySecurityWatermark(
         rawImageBytes: rawBytes,
@@ -262,7 +289,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       title: _itemNameController.text.trim().isNotEmpty
           ? _itemNameController.text.trim()
           : 'Item Photo',
-      controlNumber: _previewControlNumber,
+      controlNumber: _fullControlNumber,
     );
   }
 
@@ -276,6 +303,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     }
     if (_selectedClassification == null) {
       setState(() => _errorMessage = 'Please select an item category.');
+      return;
+    }
+
+    final seq = _sequenceNumberController.text.trim();
+    if (seq.isEmpty) {
+      setState(
+              () => _errorMessage = 'Please specify the sequence number suffix.');
       return;
     }
 
@@ -298,6 +332,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         );
       }
 
+      final fullControlNo = _fullControlNumber;
+
       final createdAsset = await AssetService.registerAsset(
         itemName: _itemNameController.text.trim(),
         quantity: qty,
@@ -319,6 +355,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         rfidTag: _rfidTagController.text.trim(),
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
+        customControlNumber: fullControlNo,
       );
 
       if (!mounted) return;
@@ -392,15 +429,20 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
           body: _isLoadingReferences
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-            padding: EdgeInsets.all(isMobile ? 16 : 24),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 14 : 24,
+              vertical: isMobile ? 14 : 24,
+            ),
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 800),
+                constraints: const BoxConstraints(maxWidth: 900),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // 1. Error Banner (if any)
                       if (_errorMessage != null) ...[
                         Container(
                           width: double.infinity,
@@ -413,250 +455,159 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               color: ParishColors.mercyRed,
                             ),
                           ),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: ParishColors.mercyRed,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: ParishColors.mercyRed,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: ParishColors.mercyRed,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
 
-                      // Control Number Preview Banner
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: ParishColors.goldLight,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: ParishColors.goldAccent.withOpacity(
-                              0.6,
-                            ),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.qr_code_2,
-                              color: ParishColors.goldAccent,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Generated Control Number:',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.goldAccent,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _previewControlNumber,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                      color: textDark,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                      // 2. FORM SECTION AT TOP: Photographic Evidence
+                      _buildFormSectionCard(
+                        title: 'Photographic Evidence',
+                        subtitle:
+                        'Capture or upload asset photo with automated security watermark',
+                        icon: Icons.camera_alt_outlined,
+                        iconColor: ParishColors.marianBlue,
+                        child: _buildPhotoUploadBox(
+                          isMobile,
+                          borderGrey,
+                          cardWhite,
+                          textDark,
+                          textMuted,
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 18),
 
-                      // Photo Section
-                      _buildLabel('Item Photo'),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: _watermarkedPhotoBytes != null
-                              ? ParishColors.oliveGreenSurface
-                              : cardWhite,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _watermarkedPhotoBytes != null
-                                ? ParishColors.oliveGreen
-                                : borderGrey,
-                          ),
-                        ),
-                        child: Row(
+                      // 3. Form Section: Item Identification & Control Number
+                      _buildFormSectionCard(
+                        title: 'Item Identification & Control Number',
+                        subtitle:
+                        'Canonical control coding, naming, and diocesan classifications',
+                        icon: Icons.qr_code_2,
+                        iconColor: ParishColors.goldAccent,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            InkWell(
-                              onTap: _watermarkedPhotoBytes != null
-                                  ? _openInteractiveImagePreview
+                            _buildControlNumberCard(isMobile),
+                            const SizedBox(height: 16),
+                            _buildLabel('Item Name *'),
+                            TextFormField(
+                              controller: _itemNameController,
+                              validator: (v) =>
+                              (v?.trim().isEmpty ?? true)
+                                  ? 'Please enter the item name.'
                                   : null,
-                              child: Container(
-                                width: 80,
-                                height: 80,
-                                decoration: BoxDecoration(
-                                  color: ParishColors.backgroundLight,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: borderGrey),
-                                ),
-                                child: _isProcessingImage
-                                    ? const Center(
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                                    : _watermarkedPhotoBytes != null
-                                    ? ClipRRect(
-                                  borderRadius:
-                                  BorderRadius.circular(9),
-                                  child: Image.memory(
-                                    _watermarkedPhotoBytes!,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                                    : const Icon(
-                                  Icons.image,
-                                  size: 36,
-                                  color: ParishColors.marianBlue,
-                                ),
+                              style: TextStyle(
+                                  fontSize: 14, color: textDark),
+                              decoration: _inputDecoration(
+                                hint:
+                                'e.g. Wooden Church Pew, Monoblock Chair, Flat Screen TV',
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _watermarkedPhotoBytes != null
-                                        ? 'Security Watermark Embedded'
-                                        : 'Take or Upload Item Photo',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13.5,
-                                      color: textDark,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Photos are stamped with permanent control number and timestamp.',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: textMuted,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
+                            const SizedBox(height: 16),
+                            isMobile
+                                ? Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Category *'),
+                                _buildClassificationDropdown(),
+                                const SizedBox(height: 12),
+                                _buildLabel('Storage Location *'),
+                                _buildLocationDropdown(),
+                              ],
+                            )
+                                : Row(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                     children: [
-                                      ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                          ParishColors.marianBlue,
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        onPressed: _isProcessingImage
-                                            ? null
-                                            : _capturePhotoWithCamera,
-                                        icon: const Icon(
-                                          Icons.camera_alt,
-                                          size: 16,
-                                        ),
-                                        label: const Text('Camera'),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: _isProcessingImage
-                                            ? null
-                                            : _pickImageFromDevice,
-                                        icon: const Icon(
-                                          Icons.upload_file,
-                                          size: 16,
-                                        ),
-                                        label: const Text('Upload Image'),
-                                      ),
+                                      _buildLabel('Category *'),
+                                      _buildClassificationDropdown(),
                                     ],
                                   ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel(
+                                          'Storage Location *'),
+                                      _buildLocationDropdown(),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 18),
 
-                      _buildLabel('Item Name *'),
-                      TextFormField(
-                        controller: _itemNameController,
-                        validator: (v) => (v?.trim().isEmpty ?? true)
-                            ? 'Please enter the item name.'
-                            : null,
-                        style: TextStyle(fontSize: 14, color: textDark),
-                        decoration: _inputDecoration(
-                          hint:
-                          'e.g. Wooden Church Pew, Monoblock Chair, Flat Screen TV',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Quantity & Pricing Card
-                      Container(
-                        padding: EdgeInsets.all(isMobile ? 14 : 18),
-                        decoration: BoxDecoration(
-                          color: cardWhite,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: borderGrey),
+                      // 4. Form Section: Quantity, Valuation & Acquisition Mode
+                      _buildFormSectionCard(
+                        title: 'Quantity, Valuation & Acquisition',
+                        subtitle:
+                        'Inventory book section tiering, count, pricing, and mode of reception',
+                        icon: Icons.payments_outlined,
+                        iconColor: ParishColors.oliveGreen,
+                        headerTrailing: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _parsedUnitPrice >= 10000.0
+                                ? ParishColors.goldLight
+                                : ParishColors.marianBlueSurface,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: _parsedUnitPrice >= 10000.0
+                                  ? ParishColors.goldAccent
+                                  : ParishColors.marianBlue,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Text(
+                            _determinedInventorySection.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: _parsedUnitPrice >= 10000.0
+                                  ? ParishColors.goldAccent
+                                  : ParishColors.marianBlue,
+                            ),
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Quantity & Value',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.marianBlueSurface,
-                                    borderRadius: BorderRadius.circular(
-                                      6,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _determinedInventorySection,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.marianBlue,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Multiple units sharing the same specifications share 1 Control Number.',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: textMuted,
-                              ),
-                            ),
-                            const Divider(height: 20),
-                            Row(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   flex: 2,
@@ -673,10 +624,17 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                           FilteringTextInputFormatter
                                               .digitsOnly,
                                         ],
-                                        onChanged: (_) =>
-                                            _updateLiveControlNumberPreview(),
+                                        validator: (v) {
+                                          final num = int.tryParse(
+                                              v?.trim() ?? '');
+                                          if (num == null || num <= 0) {
+                                            return 'Min 1';
+                                          }
+                                          return null;
+                                        },
                                         style: TextStyle(
                                           fontSize: 14,
+                                          fontWeight: FontWeight.bold,
                                           color: textDark,
                                         ),
                                         decoration: _inputDecoration(
@@ -695,9 +653,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                     children: [
                                       _buildLabel('Price per Unit (₱)'),
                                       TextFormField(
-                                        controller: _unitPriceController,
-                                        keyboardType:
-                                        const TextInputType.numberWithOptions(
+                                        controller:
+                                        _unitPriceController,
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(
                                           decimal: true,
                                         ),
                                         inputFormatters: [
@@ -705,13 +664,15 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                         ],
                                         style: TextStyle(
                                           fontSize: 14,
+                                          fontWeight: FontWeight.bold,
                                           color: textDark,
                                         ),
                                         decoration: _inputDecoration(
                                           hint: 'e.g. 2,500.00',
                                           prefixIcon: Padding(
                                             padding:
-                                            const EdgeInsets.symmetric(
+                                            const EdgeInsets
+                                                .symmetric(
                                               horizontal: 10,
                                               vertical: 12,
                                             ),
@@ -720,6 +681,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                               style: TextStyle(
                                                 fontWeight:
                                                 FontWeight.bold,
+                                                fontSize: 15,
                                                 color: textDark,
                                               ),
                                             ),
@@ -732,23 +694,81 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ParishColors.backgroundLight,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: ParishColors.oliveGreen
+                                      .withOpacity(0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Calculated Total Cost:',
+                                    style: TextStyle(
+                                      color: textMuted,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.oliveGreen,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            isMobile
+                                ? Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'Total Cost:',
-                                  style: TextStyle(
-                                    color: textMuted,
-                                    fontWeight: FontWeight.bold,
+                                _buildLabel('Acquisition Date *'),
+                                _buildAcquisitionDateTile(
+                                    borderGrey),
+                                const SizedBox(height: 12),
+                                _buildLabel('How Acquired *'),
+                                _buildAcquisitionModeDropdown(),
+                              ],
+                            )
+                                : Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel(
+                                          'Acquisition Date *'),
+                                      _buildAcquisitionDateTile(
+                                        borderGrey,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                Text(
-                                  '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: ParishColors.oliveGreen,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('How Acquired *'),
+                                      _buildAcquisitionModeDropdown(),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -756,249 +776,131 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 18),
 
-                      // Category & Storage Location
-                      isMobile
-                          ? Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                        children: [
-                          _buildLabel('Category *'),
-                          _buildClassificationDropdown(),
-                          const SizedBox(height: 12),
-                          _buildLabel('Storage Location *'),
-                          _buildLocationDropdown(),
-                        ],
-                      )
-                          : Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('Category *'),
-                                _buildClassificationDropdown(),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('Storage Location *'),
-                                _buildLocationDropdown(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Acquisition Date & Mode
-                      isMobile
-                          ? Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                        children: [
-                          _buildLabel('Acquisition Date *'),
-                          _buildAcquisitionDateTile(borderGrey),
-                          const SizedBox(height: 12),
-                          _buildLabel('How Acquired *'),
-                          _buildAcquisitionModeDropdown(),
-                        ],
-                      )
-                          : Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('Acquisition Date *'),
-                                _buildAcquisitionDateTile(
-                                  borderGrey,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('How Acquired *'),
-                                _buildAcquisitionModeDropdown(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Condition & Status (Standardized)
-                      isMobile
-                          ? Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                        children: [
-                          _buildLabel('Item Condition *'),
-                          _buildConditionDropdown(),
-                          const SizedBox(height: 12),
-                          _buildLabel('Item Status *'),
-                          _buildOperationalStatusDropdown(),
-                        ],
-                      )
-                          : Row(
-                        children: [
-                          Expanded(
-                            child: Column(
+                      // 5. Form Section: Physical Specifications, Details & Remarks
+                      _buildFormSectionCard(
+                        title: 'Physical Specifications & Remarks',
+                        subtitle:
+                        'Dimensions, color, model, tags, condition, notes, and remarks',
+                        icon: Icons.tune,
+                        iconColor: ParishColors.goldAccent,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            isMobile
+                                ? Column(
                               crossAxisAlignment:
                               CrossAxisAlignment.start,
                               children: [
                                 _buildLabel('Item Condition *'),
                                 _buildConditionDropdown(),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
+                                const SizedBox(height: 12),
                                 _buildLabel('Item Status *'),
                                 _buildOperationalStatusDropdown(),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Dimensions, Color, Model
-                      isMobile
-                          ? Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                                  children: [
-                                    _buildLabel('Dimensions'),
-                                    TextFormField(
-                                      controller:
-                                      _dimensionsController,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: textDark,
-                                      ),
-                                      decoration: _inputDecoration(
-                                        hint:
-                                        'e.g. 50 inch, 10 ft x 3 ft',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                                  children: [
-                                    _buildLabel('Color'),
-                                    TextFormField(
-                                      controller:
-                                      _colorController,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: textDark,
-                                      ),
-                                      decoration: _inputDecoration(
-                                        hint:
-                                        'e.g. Black, Dark Walnut',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          _buildLabel('Model'),
-                          TextFormField(
-                            controller: _modelController,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: textDark,
-                            ),
-                            decoration: _inputDecoration(
-                              hint:
-                              'e.g. Samsung, Custom Woodcraft',
-                            ),
-                          ),
-                        ],
-                      )
-                          : Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                            )
+                                : Row(
                               children: [
-                                _buildLabel(
-                                  'Size / Dimensions',
-                                ),
-                                TextFormField(
-                                  controller: _dimensionsController,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: textDark,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Item Condition *'),
+                                      _buildConditionDropdown(),
+                                    ],
                                   ),
-                                  decoration: _inputDecoration(
-                                    hint:
-                                    'e.g. 50 inch, 10 ft x 3 ft',
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Item Status *'),
+                                      _buildOperationalStatusDropdown(),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('Color'),
-                                TextFormField(
-                                  controller: _colorController,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: textDark,
-                                  ),
-                                  decoration: _inputDecoration(
-                                    hint:
-                                    'e.g. Black, Dark Walnut',
-                                  ),
+                            const SizedBox(height: 16),
+                            _buildLabel(
+                                'Wireless RFID / NFC Tag (Optional)'),
+                            TextFormField(
+                              controller: _rfidTagController,
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                color: textDark,
+                              ),
+                              decoration: _inputDecoration(
+                                hint: 'e.g. 04:A2:4B:9C',
+                                prefixIcon: const Icon(
+                                  Icons.nfc,
+                                  size: 16,
+                                  color: ParishColors.marianBlue,
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
+                            const SizedBox(height: 16),
+                            isMobile
+                                ? Column(
                               crossAxisAlignment:
                               CrossAxisAlignment.start,
                               children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                        CrossAxisAlignment
+                                            .start,
+                                        children: [
+                                          _buildLabel('Dimensions'),
+                                          TextFormField(
+                                            controller:
+                                            _dimensionsController,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: textDark,
+                                            ),
+                                            decoration:
+                                            _inputDecoration(
+                                              hint:
+                                              'e.g. 50 inch, 10 ft x 3 ft',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                        CrossAxisAlignment
+                                            .start,
+                                        children: [
+                                          _buildLabel('Color'),
+                                          TextFormField(
+                                            controller:
+                                            _colorController,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: textDark,
+                                            ),
+                                            decoration:
+                                            _inputDecoration(
+                                              hint:
+                                              'e.g. Black, Dark Walnut',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
                                 _buildLabel('Model'),
                                 TextFormField(
                                   controller: _modelController,
@@ -1012,177 +914,117 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      _buildLabel('Other Descriptions: '),
-                      TextFormField(
-                        controller: _othersController,
-                        maxLines: 2,
-                        style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(
-                          hint:
-                          'Other Description or Markings',
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      _buildLabel('Notes & Maintenance Remarks'),
-                      TextFormField(
-                        controller: _remarksController,
-                        maxLines: 2,
-                        style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(
-                          hint:
-                          'e.g. Inspected and placed in main church nave',
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-
-                      // Form Actions
-                      isMobile
-                          ? Column(
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                ParishColors.marianBlue,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                  BorderRadius.circular(10),
-                                ),
-                                elevation: 1,
-                              ),
-                              onPressed: _isSaving
-                                  ? null
-                                  : _submitAsset,
-                              icon: _isSaving
-                                  ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                                  : const Icon(
-                                Icons.check,
-                                size: 18,
-                              ),
-                              label: Text(
-                                _isSaving
-                                    ? 'Registering...'
-                                    : 'Save & Register Item',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 44,
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: textMuted,
-                                side: BorderSide(color: borderGrey),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                  BorderRadius.circular(10),
-                                ),
-                              ),
-                              onPressed: _isSaving
-                                  ? null
-                                  : () => Navigator.pop(context),
-                              child: const Text(
-                                'Cancel',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                          : Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: textMuted,
-                              side: BorderSide(color: borderGrey),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 14,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                BorderRadius.circular(10),
-                              ),
-                            ),
-                            onPressed: _isSaving
-                                ? null
-                                : () => Navigator.pop(context),
-                            child: const Text(
-                              'Cancel',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                              ParishColors.marianBlue,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 28,
-                                vertical: 14,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                BorderRadius.circular(10),
-                              ),
-                              elevation: 1,
-                            ),
-                            onPressed: _isSaving
-                                ? null
-                                : _submitAsset,
-                            icon: _isSaving
-                                ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child:
-                              CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
                             )
-                                : const Icon(Icons.check, size: 18),
-                            label: Text(
-                              _isSaving
-                                  ? 'Registering...'
-                                  : 'Save & Register Item',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                                : Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel(
+                                          'Size / Dimensions'),
+                                      TextFormField(
+                                        controller:
+                                        _dimensionsController,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: textDark,
+                                        ),
+                                        decoration:
+                                        _inputDecoration(
+                                          hint:
+                                          'e.g. 50 inch, 10 ft x 3 ft',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Color'),
+                                      TextFormField(
+                                        controller:
+                                        _colorController,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: textDark,
+                                        ),
+                                        decoration:
+                                        _inputDecoration(
+                                          hint:
+                                          'e.g. Black, Dark Walnut',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      _buildLabel('Model'),
+                                      TextFormField(
+                                        controller:
+                                        _modelController,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: textDark,
+                                        ),
+                                        decoration:
+                                        _inputDecoration(
+                                          hint:
+                                          'e.g. Samsung, Custom Woodcraft',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildLabel('Other Descriptions / Markings'),
+                            TextFormField(
+                              controller: _othersController,
+                              maxLines: 2,
+                              style: TextStyle(
+                                  fontSize: 13, color: textDark),
+                              decoration: _inputDecoration(
+                                hint:
+                                'e.g. Inscribed "Donated by Santos Family", engraved serial numbers',
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            _buildLabel('Notes & Maintenance Remarks'),
+                            TextFormField(
+                              controller: _remarksController,
+                              maxLines: 2,
+                              style: TextStyle(
+                                  fontSize: 13, color: textDark),
+                              decoration: _inputDecoration(
+                                hint:
+                                'e.g. Inspected and placed in main church nave, clean condition',
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 36),
+                      const SizedBox(height: 24),
+
+                      // 6. Form Actions Section Card
+                      _buildFormActionSection(
+                        isMobile,
+                        cardWhite,
+                        borderGrey,
+                        textMuted,
+                      ),
+                      const SizedBox(height: 48),
                     ],
                   ),
                 ),
@@ -1193,6 +1035,583 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       },
     );
   }
+
+  // ===========================================================================
+  // Section Card Container Helper
+  // ===========================================================================
+
+  Widget _buildFormSectionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+    required Widget child,
+    Widget? headerTrailing,
+  }) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ParishColors.borderGrey),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 20, color: iconColor),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: ParishColors.textMuted,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (headerTrailing != null) headerTrailing,
+            ],
+          ),
+          const Divider(height: 22),
+          child,
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Control Number Configuration Card
+  // ===========================================================================
+
+  Widget _buildControlNumberCard(bool isMobile) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ParishColors.goldLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ParishColors.goldAccent.withOpacity(0.6),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.qr_code_2,
+                color: ParishColors.goldAccent,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Assigned Diocesan Control Number',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.goldAccent,
+                  ),
+                ),
+              ),
+              if (_isLoadingSequence)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: ParishColors.goldAccent,
+                  ),
+                )
+              else
+                Tooltip(
+                  message: 'Re-sync sequence from latest database entry',
+                  child: InkWell(
+                    onTap: _fetchAutoSequenceNumber,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.refresh,
+                            size: 14,
+                            color: ParishColors.goldAccent.withOpacity(0.9),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Auto-fill',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: ParishColors.goldAccent.withOpacity(0.9),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Canonical Prefix (Locked)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: ParishColors.borderGrey,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.lock_outline,
+                      size: 13,
+                      color: ParishColors.textMuted,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _controlNumberPrefix,
+                      style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: isMobile ? 12.5 : 14,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.textDark,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Sequence Number Suffix (Editable during registration)
+              Expanded(
+                child: TextFormField(
+                  controller: _sequenceNumberController,
+                  keyboardType: TextInputType.text,
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [
+                    LengthLimitingTextInputFormatter(6),
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                  ],
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Required';
+                    }
+                    return null;
+                  },
+                  style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: isMobile ? 13 : 14.5,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 9,
+                    ),
+                    hintText: '001',
+                    hintStyle: TextStyle(
+                      color: ParishColors.textMuted,
+                      fontSize: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: ParishColors.goldAccent,
+                        width: 1.2,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: ParishColors.goldAccent.withOpacity(0.8),
+                        width: 1.2,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: ParishColors.marianBlue,
+                        width: 1.6,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 13,
+                color: ParishColors.textMuted,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'Full Control Number: $_fullControlNumber (Last part can be modified during registration; locked afterwards).',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: ParishColors.textDark.withOpacity(0.75),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Photo Upload & Watermark Box Helper (Prominently Placed at the Top)
+  // ===========================================================================
+
+  Widget _buildPhotoUploadBox(
+      bool isMobile,
+      Color borderGrey,
+      Color cardWhite,
+      Color textDark,
+      Color textMuted,
+      ) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _watermarkedPhotoBytes != null
+            ? ParishColors.oliveGreenSurface
+            : ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _watermarkedPhotoBytes != null
+              ? ParishColors.oliveGreen
+              : borderGrey,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: _watermarkedPhotoBytes != null
+                ? _openInteractiveImagePreview
+                : null,
+            child: Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _watermarkedPhotoBytes != null
+                      ? ParishColors.goldAccent
+                      : borderGrey,
+                ),
+              ),
+              child: _isProcessingImage
+                  ? const Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              )
+                  : _watermarkedPhotoBytes != null
+                  ? ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Image.memory(
+                  _watermarkedPhotoBytes!,
+                  fit: BoxFit.cover,
+                ),
+              )
+                  : const Icon(
+                Icons.image,
+                size: 38,
+                color: ParishColors.marianBlue,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _watermarkedPhotoBytes != null
+                      ? 'Security Watermark Embedded'
+                      : 'Take or Upload Item Photo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13.5,
+                    color: textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Photos are stamped with permanent control number and timestamp.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: textMuted,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.marianBlue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      onPressed: _isProcessingImage
+                          ? null
+                          : _capturePhotoWithCamera,
+                      icon: const Icon(
+                        Icons.camera_alt,
+                        size: 16,
+                      ),
+                      label: const Text('Camera'),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.marianBlue,
+                        side: const BorderSide(color: ParishColors.marianBlue),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      onPressed: _isProcessingImage
+                          ? null
+                          : _pickImageFromDevice,
+                      icon: const Icon(
+                        Icons.upload_file,
+                        size: 16,
+                      ),
+                      label: const Text('Upload Image'),
+                    ),
+                    if (_watermarkedPhotoBytes != null)
+                      TextButton.icon(
+                        onPressed: _openInteractiveImagePreview,
+                        icon: const Icon(Icons.zoom_in, size: 16),
+                        label: const Text('Inspect'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Form Action Section Card
+  // ===========================================================================
+
+  Widget _buildFormActionSection(
+      bool isMobile,
+      Color cardWhite,
+      Color borderGrey,
+      Color textMuted,
+      ) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderGrey),
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 14 : 20,
+        vertical: 14,
+      ),
+      child: isMobile
+          ? Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 1,
+              ),
+              onPressed: _isSaving ? null : _submitAsset,
+              icon: _isSaving
+                  ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+                  : const Icon(
+                Icons.check,
+                size: 18,
+              ),
+              label: Text(
+                _isSaving ? 'Registering...' : 'Save & Register Item',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: textMuted,
+                side: BorderSide(color: borderGrey),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: _isSaving ? null : () => Navigator.pop(context),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      )
+          : Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: textMuted,
+              side: BorderSide(color: borderGrey),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 22,
+                vertical: 14,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: _isSaving ? null : () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 28,
+                vertical: 14,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 1,
+            ),
+            onPressed: _isSaving ? null : _submitAsset,
+            icon: _isSaving
+                ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
+            )
+                : const Icon(Icons.check, size: 18),
+            label: Text(
+              _isSaving ? 'Registering...' : 'Save & Register Item',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Dropdowns & Date Tile Helpers
+  // ===========================================================================
 
   Widget _buildClassificationDropdown() {
     return DropdownButtonFormField<AssetClassificationModel>(
@@ -1211,7 +1630,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       onChanged: (val) {
         if (val != null) {
           setState(() => _selectedClassification = val);
-          _updateLiveControlNumberPreview();
+          _fetchAutoSequenceNumber();
         }
       },
     );
@@ -1234,7 +1653,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       onChanged: (val) {
         if (val != null) {
           setState(() => _selectedLocation = val);
-          _updateLiveControlNumberPreview();
+          _fetchAutoSequenceNumber();
         }
       },
     );

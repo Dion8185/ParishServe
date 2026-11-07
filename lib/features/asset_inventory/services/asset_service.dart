@@ -37,11 +37,14 @@ class AssetService {
       ''');
 
       if (!includeArchived) {
-        query = query.eq('is_archived', false).neq('operational_status', 'Decommissioned');
+        query = query
+            .eq('is_archived', false)
+            .neq('operational_status', 'Decommissioned');
       }
 
       if (categoryFilter != null && categoryFilter != 'All') {
-        query = query.eq('classification_acronym', categoryFilter.toUpperCase());
+        query =
+            query.eq('classification_acronym', categoryFilter.toUpperCase());
       }
 
       if (locationFilter != null && locationFilter != 'All') {
@@ -53,9 +56,11 @@ class AssetService {
       }
 
       if (sectionFilter != null && sectionFilter != 'All') {
-        if (sectionFilter.contains('Section 1') || sectionFilter.contains('10,000.00 and Above')) {
+        if (sectionFilter.contains('Section 1') ||
+            sectionFilter.contains('10,000.00 and Above')) {
           query = query.gte('unit_price', 10000.0);
-        } else if (sectionFilter.contains('Section 2') || sectionFilter.contains('Below 10,000.00')) {
+        } else if (sectionFilter.contains('Section 2') ||
+            sectionFilter.contains('Below 10,000.00')) {
           query = query.lt('unit_price', 10000.0);
         }
       }
@@ -65,7 +70,9 @@ class AssetService {
           .order('created_at', ascending: false);
 
       final List<dynamic> rows = response as List;
-      return rows.map((r) => AssetModel.fromMap(r as Map<String, dynamic>)).toList();
+      return rows
+          .map((r) => AssetModel.fromMap(r as Map<String, dynamic>))
+          .toList();
     } catch (e) {
       debugPrint('Error fetching parish assets: $e');
       rethrow;
@@ -106,7 +113,10 @@ class AssetService {
   }
 
   /// Real-time autocomplete suggestions for search-as-you-type lookup
-  static Future<List<AssetModel>> searchAssetSuggestions(String query, {int limit = 6}) async {
+  static Future<List<AssetModel>> searchAssetSuggestions(
+      String query, {
+        int limit = 6,
+      }) async {
     final clean = query.trim();
     if (clean.isEmpty) return [];
 
@@ -145,8 +155,11 @@ class AssetService {
     required String fileName,
   }) async {
     try {
-      final cleanExt = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'jpg';
-      final storagePath = 'asset_photos/$assetId/photo_${DateTime.now().millisecondsSinceEpoch}.$cleanExt';
+      final cleanExt = fileName.contains('.')
+          ? fileName.split('.').last.toLowerCase()
+          : 'jpg';
+      final storagePath =
+          'asset_photos/$assetId/photo_${DateTime.now().millisecondsSinceEpoch}.$cleanExt';
 
       await _client.storage.from('certificate-assets').uploadBinary(
         storagePath,
@@ -157,10 +170,89 @@ class AssetService {
         ),
       );
 
-      return _client.storage.from('certificate-assets').getPublicUrl(storagePath);
+      return _client.storage
+          .from('certificate-assets')
+          .getPublicUrl(storagePath);
     } catch (e) {
       debugPrint('Error uploading asset photo: $e');
       return null;
+    }
+  }
+
+  /// Calculates the next sequential number based on the last registered entry for
+  /// the given location, classification, and acquisition year.
+  static Future<int> getNextControlNumberSequence({
+    required String locationAcronym,
+    required String classificationAcronym,
+    required int acquisitionYear,
+  }) async {
+    final locClean = locationAcronym.trim().toUpperCase();
+    final clsClean = classificationAcronym.trim().toUpperCase();
+    final prefix = '$locClean-$clsClean $acquisitionYear-';
+
+    try {
+      final List<dynamic> result = await _client.rpc(
+        'generate_diocesan_asset_control_number_batch',
+        params: {
+          'p_location_acronym': locClean,
+          'p_classification_acronym': clsClean,
+          'p_acquisition_year': acquisitionYear,
+          'p_count': 1,
+        },
+      );
+
+      if (result.isNotEmpty) {
+        final cNo =
+            result.first['control_number']?.toString().trim() ?? '';
+        final dashIdx = cNo.lastIndexOf('-');
+        if (dashIdx != -1 && dashIdx < cNo.length - 1) {
+          final parsed = int.tryParse(cNo.substring(dashIdx + 1));
+          if (parsed != null && parsed > 0) return parsed;
+        }
+      }
+    } catch (e) {
+      debugPrint('RPC sequence lookup notice: $e. Falling back to table scan.');
+    }
+
+    try {
+      final records = await _client
+          .from('parish_assets')
+          .select('control_number')
+          .ilike('control_number', '$prefix%');
+
+      int highestSeq = 0;
+      for (final r in records) {
+        final cNo = r['control_number']?.toString().trim() ?? '';
+        final dashIndex = cNo.lastIndexOf('-');
+        if (dashIndex != -1 && dashIndex < cNo.length - 1) {
+          final parsed = int.tryParse(cNo.substring(dashIndex + 1));
+          if (parsed != null && parsed > highestSeq) {
+            highestSeq = parsed;
+          }
+        }
+      }
+      return highestSeq + 1;
+    } catch (e) {
+      debugPrint('Error getting next control sequence: $e');
+      return 1;
+    }
+  }
+
+  /// Verifies if a specific control number is already present in the ledger.
+  static Future<bool> checkControlNumberExists(String controlNumber) async {
+    final clean = controlNumber.trim();
+    if (clean.isEmpty) return false;
+
+    try {
+      final response = await _client
+          .from('parish_assets')
+          .select('control_number')
+          .ilike('control_number', clean)
+          .maybeSingle();
+
+      return response != null;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -186,7 +278,9 @@ class AssetService {
       );
 
       if (result.isNotEmpty) {
-        return result.map((r) => r['control_number'].toString().trim()).toList();
+        return result
+            .map((r) => r['control_number'].toString().trim())
+            .toList();
       }
     } catch (e) {
       debugPrint('Batch RPC notice: $e. Falling back to sequence scanner.');
@@ -219,7 +313,10 @@ class AssetService {
   static String generatePermanentIdentifier(String prefix) {
     final rand = Random.secure();
     final values = List<int>.generate(8, (_) => rand.nextInt(256));
-    final token = values.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+    final token = values
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join()
+        .toUpperCase();
     return '$prefix-$token';
   }
 
@@ -242,7 +339,8 @@ class AssetService {
     }
   }
 
-  /// Registers a parish asset with a single Control Number and specified quantity
+  /// Registers a parish asset with an assigned Control Number (custom modified or auto-generated)
+  /// and specified quantity count.
   static Future<AssetModel> registerAsset({
     required String itemName,
     required int quantity,
@@ -264,6 +362,7 @@ class AssetService {
     String? rfidTag,
     String conditionStatus = 'VERIFIED / GOOD',
     String operationalStatus = 'Active',
+    String? customControlNumber,
   }) async {
     final cleanItemName = itemName.trim();
     if (cleanItemName.isEmpty) throw 'Item name is required.';
@@ -272,16 +371,27 @@ class AssetService {
     final validUserId = await _resolveValidUserId();
     final int acquisitionYear = dateOfAcquisition.year;
     final now = DateTime.now();
-    final bool isDecommissioned = operationalStatus.trim().toLowerCase() == 'decommissioned';
+    final bool isDecommissioned =
+        operationalStatus.trim().toLowerCase() == 'decommissioned';
 
-    final controlNumbers = await generateControlNumberBatch(
-      locationAcronym: locationAcronym,
-      classificationAcronym: classificationAcronym,
-      acquisitionYear: acquisitionYear,
-      count: 1,
-    );
+    String assignedControlNumber;
+    if (customControlNumber != null && customControlNumber.trim().isNotEmpty) {
+      final cleanCustom = customControlNumber.trim().toUpperCase();
+      final exists = await checkControlNumberExists(cleanCustom);
+      if (exists) {
+        throw 'Control Number "$cleanCustom" is already registered to another item. Please choose a different sequence number.';
+      }
+      assignedControlNumber = cleanCustom;
+    } else {
+      final controlNumbers = await generateControlNumberBatch(
+        locationAcronym: locationAcronym,
+        classificationAcronym: classificationAcronym,
+        acquisitionYear: acquisitionYear,
+        count: 1,
+      );
+      assignedControlNumber = controlNumbers.first;
+    }
 
-    final String assignedControlNumber = controlNumbers.first;
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
     final double calculatedTotalCost = quantity * safeUnitPrice;
     final String dateString =
@@ -298,7 +408,8 @@ class AssetService {
       'classification_acronym': classificationAcronym.trim().toUpperCase(),
       'location_id': locationId,
       'location_acronym': locationAcronym.trim().toUpperCase(),
-      'dimensions': dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
+      'dimensions':
+      dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
       'color': color?.trim().isEmpty ?? true ? null : color!.trim(),
       'model': model?.trim().isEmpty ?? true ? null : model!.trim(),
       'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
@@ -311,14 +422,18 @@ class AssetService {
       'unit_price': safeUnitPrice,
       'total_cost': calculatedTotalCost,
       'cost': calculatedTotalCost,
-      'rfid_tag': (rfidTag != null && rfidTag.trim().isNotEmpty) ? rfidTag.trim() : null,
+      'rfid_tag': (rfidTag != null && rfidTag.trim().isNotEmpty)
+          ? rfidTag.trim()
+          : null,
       'qr_code_token': qrCodeToken,
       'condition_status': conditionStatus,
       'operational_status': operationalStatus,
       'is_archived': isDecommissioned,
       'archived_at': isDecommissioned ? now.toIso8601String() : null,
       'archived_by': isDecommissioned ? validUserId : null,
-      'archive_reason': isDecommissioned ? 'Registered with Decommissioned status.' : null,
+      'archive_reason': isDecommissioned
+          ? 'Registered with Decommissioned status.'
+          : null,
       'bulk_batch_id': null,
       'item_sequence_in_batch': null,
       'registration_date': now.toIso8601String(),
@@ -351,7 +466,8 @@ class AssetService {
         'previous_location': null,
         'new_location': locationName ?? locationAcronym,
         'audit_method': 'MANUAL',
-        'audit_notes': 'Initial registration in parish inventory ($quantity unit(s)).',
+        'audit_notes':
+        'Initial registration in parish inventory ($quantity unit(s)).',
         'audited_at': now.toIso8601String(),
       });
     } catch (e) {
@@ -383,6 +499,7 @@ class AssetService {
     String? rfidTag,
     String conditionStatus = 'VERIFIED / GOOD',
     String operationalStatus = 'Active',
+    String? customControlNumber,
   }) async {
     final asset = await registerAsset(
       itemName: itemName,
@@ -405,11 +522,12 @@ class AssetService {
       rfidTag: rfidTag,
       conditionStatus: conditionStatus,
       operationalStatus: operationalStatus,
+      customControlNumber: customControlNumber,
     );
     return [asset];
   }
 
-  /// Updates an asset record
+  /// Updates an asset record. Control Number remains strictly locked and preserved.
   static Future<AssetModel> updateAsset({
     required String assetId,
     required String itemName,
@@ -437,7 +555,8 @@ class AssetService {
 
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
-    final bool isDecommissioned = operationalStatus.trim().toLowerCase() == 'decommissioned';
+    final bool isDecommissioned =
+        operationalStatus.trim().toLowerCase() == 'decommissioned';
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
     final double safeTotalCost = quantity * safeUnitPrice;
 
@@ -447,20 +566,23 @@ class AssetService {
       'classification_acronym': classificationAcronym.trim().toUpperCase(),
       'location_id': locationId,
       'location_acronym': locationAcronym.trim().toUpperCase(),
-      'dimensions': dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
+      'dimensions':
+      dimensions?.trim().isEmpty ?? true ? null : dimensions!.trim(),
       'color': color?.trim().isEmpty ?? true ? null : color!.trim(),
       'model': model?.trim().isEmpty ?? true ? null : model!.trim(),
       'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
       'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
       if (photoUrl != null) 'photo_url': photoUrl.trim(),
-      'date_of_acquisition': '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}',
+      'date_of_acquisition':
+      '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}',
       'acquisition_year': dateOfAcquisition.year,
       'mode_of_acquisition': modeOfAcquisition,
       'quantity': quantity > 0 ? quantity : 1,
       'unit_price': safeUnitPrice,
       'total_cost': safeTotalCost,
       'cost': safeTotalCost,
-      'rfid_tag': rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
+      'rfid_tag':
+      rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
       'condition_status': conditionStatus,
       'operational_status': operationalStatus,
       'is_archived': isDecommissioned,
@@ -498,7 +620,6 @@ class AssetService {
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
 
-    // Check if quantity has changed
     final bool hasQtyChange = previousQuantity != null &&
         newQuantity != null &&
         previousQuantity != newQuantity;
@@ -508,20 +629,22 @@ class AssetService {
     if (hasQtyChange) {
       final change = newQuantity - previousQuantity;
       final sign = change > 0 ? '+$change' : '$change';
-      final reason = (quantityChangeReason != null && quantityChangeReason.trim().isNotEmpty)
+      final reason = (quantityChangeReason != null &&
+          quantityChangeReason.trim().isNotEmpty)
           ? quantityChangeReason.trim()
           : 'Quantity updated during inspection';
 
-      combinedNotes += '[QTY_ADJUST: from $previousQuantity to $newQuantity ($sign) | REASON: $reason]\n';
+      combinedNotes +=
+      '[QTY_ADJUST: from $previousQuantity to $newQuantity ($sign) | REASON: $reason]\n';
     }
 
     if (auditNotes != null && auditNotes.trim().isNotEmpty) {
       combinedNotes += auditNotes.trim();
     }
 
-    final finalNotes = combinedNotes.trim().isEmpty ? null : combinedNotes.trim();
+    final finalNotes =
+    combinedNotes.trim().isEmpty ? null : combinedNotes.trim();
 
-    // Insert log entry
     await _client.from('asset_audit_logs').insert({
       'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
       'asset_id': assetId,
@@ -538,7 +661,6 @@ class AssetService {
       'audited_at': now.toIso8601String(),
     });
 
-    // Update asset record: condition, status, audit timestamp, and updated quantity if changed
     final Map<String, dynamic> assetUpdates = {
       'condition_status': newCondition,
       'operational_status': newStatus,
@@ -550,7 +672,6 @@ class AssetService {
     if (hasQtyChange && newQuantity > 0) {
       assetUpdates['quantity'] = newQuantity;
 
-      // Recalculate total cost based on unit price
       try {
         final current = await _client
             .from('parish_assets')
@@ -559,17 +680,22 @@ class AssetService {
             .maybeSingle();
 
         if (current != null && current['unit_price'] != null) {
-          final double uPrice = double.tryParse(current['unit_price'].toString()) ?? 0.0;
+          final double uPrice =
+              double.tryParse(current['unit_price'].toString()) ?? 0.0;
           assetUpdates['total_cost'] = newQuantity * uPrice;
           assetUpdates['cost'] = newQuantity * uPrice;
         }
       } catch (_) {}
     }
 
-    await _client.from('parish_assets').update(assetUpdates).eq('asset_id', assetId);
+    await _client
+        .from('parish_assets')
+        .update(assetUpdates)
+        .eq('asset_id', assetId);
   }
 
-  static Future<List<AssetAuditLogModel>> getAssetAuditHistory(String assetId) async {
+  static Future<List<AssetAuditLogModel>> getAssetAuditHistory(
+      String assetId) async {
     try {
       final response = await _client
           .from('asset_audit_logs')

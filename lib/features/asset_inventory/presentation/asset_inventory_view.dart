@@ -221,8 +221,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     if (_selectedCondition != 'All') {
       list = list
           .where((a) =>
-      AssetModel.normalizeCondition(a.conditionStatus)
-          .toLowerCase() ==
+      AssetModel.normalizeCondition(a.conditionStatus).toLowerCase() ==
           _selectedCondition.toLowerCase())
           .toList();
     }
@@ -1065,8 +1064,9 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
 
     final printCard = _buildDashboardActionCard(
       title: 'Batch Print Tags',
-      subtitle:
-      isMobile ? 'Print sticker sheets' : 'Generate printable QR sticker sheets',
+      subtitle: isMobile
+          ? 'Print sticker sheets'
+          : 'Generate printable QR sticker sheets',
       icon: Icons.print_outlined,
       isSolidBlue: false,
       borderColor: ParishColors.goldAccent,
@@ -1695,8 +1695,12 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                 color: ParishColors.textMuted,
                 constraints: const BoxConstraints(minHeight: 32, minWidth: 34),
                 children: const [
-                  Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 16)),
-                  Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 16)),
+                  Tooltip(
+                      message: 'Card View',
+                      child: Icon(Icons.grid_view, size: 16)),
+                  Tooltip(
+                      message: 'Table View',
+                      child: Icon(Icons.table_chart, size: 16)),
                 ],
               ),
             ),
@@ -1929,14 +1933,14 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                       else ...[
                           if (_viewMode == AssetViewMode.cards)
                             ...paged.map((a) {
-                              final originalIndex =
-                              filtered.indexWhere((item) => item.assetId == a.assetId);
-                              return InkWell(
+                              final originalIndex = filtered
+                                  .indexWhere((item) => item.assetId == a.assetId);
+                              return AssetItemCard(
+                                asset: a,
+                                onRefresh: _loadAllData,
                                 onTap: () => _openAssetDetailPage(
-                                    a, originalIndex >= 0 ? originalIndex : 0),
-                                child: AssetItemCard(
-                                  asset: a,
-                                  onRefresh: _loadAllData,
+                                  a,
+                                  originalIndex >= 0 ? originalIndex : 0,
                                 ),
                               );
                             })
@@ -2141,7 +2145,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     final totalPages = _totalPages;
 
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 14, vertical: 8),
+      padding:
+      EdgeInsets.symmetric(horizontal: isMobile ? 12 : 14, vertical: 8),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(12),
@@ -2160,7 +2165,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
           Row(
             children: [
               Text('Show: ',
-                  style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                  style:
+                  TextStyle(fontSize: 12, color: ParishColors.textMuted)),
               DropdownButton<int>(
                 value: _itemsPerPage,
                 isDense: true,
@@ -2200,7 +2206,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: ParishColors.marianBlueSurface,
                   borderRadius: BorderRadius.circular(6),
