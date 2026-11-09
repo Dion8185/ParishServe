@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/asset_inventory/utils/asset_image_watermark_util.dart
+// =============================================================================
+
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
@@ -7,12 +11,18 @@ import 'package:flutter/material.dart';
 class AssetImageWatermarkUtil {
   AssetImageWatermarkUtil._();
 
-  /// Automatically embeds a canonical diocesan security watermark into raw image bytes
-  /// using Flutter's native `dart:ui.Canvas` engine with proportional auto-scaling
-  /// to ensure text never clips or overflows the image boundaries.
+  /// Standard export resolution boundaries (long edge)
+  static const double minLongEdge = 1200.0;
+  static const double maxLongEdge = 1600.0;
+
+  /// Applies a full-frame diagonal tiled security watermark:
+  /// - Text: `SJP2-DSP | <Diocesan Control Number>` (e.g. SJP2-DSP | C-FF 2026-0001)
+  /// - Layout: Diagonal (-30°) tiled across the entire image area in staggered brick pattern
+  /// - Opacity: 25% to 35% (calibrated ~28% white with subtle dark shadow for light scenes)
+  /// - Export Resolution: Normalized to 1200–1600 pixels on the long edge
   static Future<Uint8List> applySecurityWatermark({
     required Uint8List rawImageBytes,
-    String? assetIdentifier, // Control # (e.g. C-SI-2008-001) or Asset ID
+    String? assetIdentifier, // e.g. "C-FF 2026-0001" or "C-FF 2026-0001 • Wooden Pew"
     DateTime? captureTime,
   }) async {
     final Completer<ui.Image> completer = Completer();
@@ -21,171 +31,136 @@ class AssetImageWatermarkUtil {
     });
 
     final ui.Image originalImage = await completer.future;
-    final int imgWidth = originalImage.width;
-    final int imgHeight = originalImage.height;
+    final int origWidth = originalImage.width;
+    final int origHeight = originalImage.height;
+
+    // 1. Calculate Target Export Resolution (1200–1600 px on the long edge)
+    final double longEdge = max(origWidth, origHeight).toDouble();
+    double targetWidth = origWidth.toDouble();
+    double targetHeight = origHeight.toDouble();
+
+    if (longEdge > maxLongEdge) {
+      final double scale = maxLongEdge / longEdge;
+      targetWidth = (origWidth * scale).roundToDouble();
+      targetHeight = (origHeight * scale).roundToDouble();
+    } else if (longEdge < minLongEdge && longEdge > 0) {
+      final double scale = minLongEdge / longEdge;
+      targetWidth = (origWidth * scale).roundToDouble();
+      targetHeight = (origHeight * scale).roundToDouble();
+    }
 
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(
       recorder,
-      Rect.fromLTWH(0, 0, imgWidth.toDouble(), imgHeight.toDouble()),
+      Rect.fromLTWH(0, 0, targetWidth, targetHeight),
     );
 
-    // 1. Draw the original asset photograph
-    canvas.drawImage(originalImage, Offset.zero, Paint());
+    // 2. Draw scaled background image
+    final Rect srcRect = Rect.fromLTWH(
+      0,
+      0,
+      origWidth.toDouble(),
+      origHeight.toDouble(),
+    );
+    final Rect dstRect = Rect.fromLTWH(0, 0, targetWidth, targetHeight);
 
-    // 2. Prepare text contents
-    final timeStamp = captureTime ?? DateTime.now();
-    final formattedTime =
-        '${timeStamp.year}-${timeStamp.month.toString().padLeft(2, '0')}-${timeStamp.day.toString().padLeft(2, '0')} '
-        '${timeStamp.hour.toString().padLeft(2, '0')}:${timeStamp.minute.toString().padLeft(2, '0')}:${timeStamp.second.toString().padLeft(2, '0')} PST';
+    canvas.drawImageRect(
+      originalImage,
+      srcRect,
+      dstRect,
+      Paint()..filterQuality = FilterQuality.high,
+    );
 
-    final idText = (assetIdentifier != null && assetIdentifier.trim().isNotEmpty)
-        ? assetIdentifier.trim().toUpperCase()
-        : 'PENDING REGISTRATION';
+    // 3. Extract and sanitize Diocesan Control Number
+    String controlNo = 'PENDING-REG';
+    if (assetIdentifier != null && assetIdentifier.trim().isNotEmpty) {
+      final trimmed = assetIdentifier.trim();
+      // If combined as "CONTROL-NO • Item Name", extract control number only
+      if (trimmed.contains('•')) {
+        controlNo = trimmed.split('•').first.trim().toUpperCase();
+      } else {
+        controlNo = trimmed.toUpperCase();
+      }
+    }
 
-    const String line1Text = 'SAINT JOHN PAUL II PARISH • DIOCESE OF SAN PABLO';
-    final String line2Text = 'DIOCESAN CONTROL NO: $idText';
-    final String line3Text = 'SECURED ON: $formattedTime • CANON 1283';
+    // Format text: "SJP2-DSP | <CONTROL_NUMBER>"
+    final String watermarkText = controlNo.startsWith('SJP2-DSP')
+        ? controlNo
+        : 'SJP2-DSP | $controlNo';
 
-    // 3. Calculate proportional margins and maximum allowed text width
-    final double horizontalPadding = (imgWidth * 0.04).clamp(12.0, 48.0);
-    final double maxTextWidth = imgWidth - (horizontalPadding * 2);
+    // 4. Compute responsive font size based on scaled dimensions
+    final double shortEdge = min(targetWidth, targetHeight);
+    final double fontSize = (shortEdge * 0.032).clamp(18.0, 36.0);
 
-    // 4. Compute optimal font sizes that fit horizontally within maxTextWidth
-    // Scale baseline based on image width rather than height to prevent overflow
-    double primaryFontSize = (imgWidth * 0.030).clamp(10.0, 38.0);
-    double secondaryFontSize = (primaryFontSize * 0.78).clamp(8.5, 30.0);
-    double tertiaryFontSize = (primaryFontSize * 0.65).clamp(7.5, 24.0);
-
-    // Auto-fit Line 1 (Parish & Diocese) so it NEVER wraps or overflows
-    TextPainter testPainter = TextPainter(
+    // 5. Build text painter with ~28% opacity white + subtle shadow for light images
+    final TextPainter textPainter = TextPainter(
       text: TextSpan(
-        text: line1Text,
+        text: watermarkText,
         style: TextStyle(
-          fontSize: primaryFontSize,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.8,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.5,
+          fontFamily: 'Courier',
+          // ~28% opacity semi-transparent white (Color 0x48FFFFFF)
+          color: const Color(0x48FFFFFF),
+          shadows: const [
+            // Dark shadow ensures readability on very light or pure white backgrounds
+            Shadow(
+              color: Color(0x28000000), // ~16% opacity dark shadow
+              offset: Offset(1.0, 1.0),
+              blurRadius: 2.0,
+            ),
+          ],
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
 
-    if (testPainter.width > maxTextWidth && testPainter.width > 0) {
-      final double ratio = maxTextWidth / testPainter.width;
-      primaryFontSize = max(8.0, primaryFontSize * ratio * 0.96);
-      secondaryFontSize = max(7.0, secondaryFontSize * ratio * 0.96);
-      tertiaryFontSize = max(6.5, tertiaryFontSize * ratio * 0.96);
-    }
+    // 6. Draw Full-Frame Diagonal Tiling (-30 degrees)
+    canvas.save();
 
-    // Auto-fit Line 2 (Control Number) if it is long
-    TextPainter testLine2Painter = TextPainter(
-      text: TextSpan(
-        text: line2Text,
-        style: TextStyle(
-          fontSize: secondaryFontSize,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    // Rotate canvas around image center
+    canvas.translate(targetWidth / 2, targetHeight / 2);
+    const double rotationAngle = -pi / 6; // -30 degrees
+    canvas.rotate(rotationAngle);
 
-    if (testLine2Painter.width > maxTextWidth && testLine2Painter.width > 0) {
-      final double ratio = maxTextWidth / testLine2Painter.width;
-      secondaryFontSize = max(6.5, secondaryFontSize * ratio * 0.96);
-    }
-
-    // 5. Build final layout text painters
-    final TextPainter parishPainter = TextPainter(
-      text: TextSpan(
-        text: line1Text,
-        style: TextStyle(
-          color: const Color(0xFFF8FAFC), // Parchment White
-          fontSize: primaryFontSize,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.6,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: maxTextWidth);
-
-    final TextPainter idPainter = TextPainter(
-      text: TextSpan(
-        text: line2Text,
-        style: TextStyle(
-          color: const Color(0xFFD49B18), // Eucharistic Gold
-          fontSize: secondaryFontSize,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.4,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: maxTextWidth);
-
-    final TextPainter timestampPainter = TextPainter(
-      text: TextSpan(
-        text: line3Text,
-        style: TextStyle(
-          color: const Color(0xFFCBD5E1), // Crisp Silver Slate
-          fontSize: tertiaryFontSize,
-          fontWeight: FontWeight.w500,
-          letterSpacing: 0.3,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: maxTextWidth);
-
-    // 6. Dynamically compute required banner height from laid out text heights
-    final double lineSpacing = (primaryFontSize * 0.28).clamp(3.0, 10.0);
-    final double verticalPadding = (primaryFontSize * 0.60).clamp(8.0, 24.0);
-
-    final double totalTextHeight = parishPainter.height +
-        lineSpacing +
-        idPainter.height +
-        lineSpacing +
-        timestampPainter.height;
-
-    final double bannerHeight = totalTextHeight + (verticalPadding * 2);
-    final double bannerTop = imgHeight - bannerHeight;
-
-    // 7. Draw semi-transparent dark navy banner
-    final Paint barPaint = Paint()
-      ..color = const Color(0xDD0F172A) // 87% opacity deep Marian slate
-      ..style = PaintingStyle.fill;
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, bannerTop, imgWidth.toDouble(), bannerHeight),
-      barPaint,
+    // Bounding extent covering all corners after diagonal rotation
+    final double diagonal = sqrt(
+      (targetWidth * targetWidth) + (targetHeight * targetHeight),
     );
 
-    // 8. Draw Diocesan Gold decorative top separator line
-    final double goldLineThickness = (bannerHeight * 0.025).clamp(2.0, 5.0);
-    final Paint goldLinePaint = Paint()
-      ..color = const Color(0xFFD49B18)
-      ..strokeWidth = goldLineThickness
-      ..style = PaintingStyle.stroke;
+    final double textW = textPainter.width;
+    final double textH = textPainter.height;
 
-    canvas.drawLine(
-      Offset(0, bannerTop),
-      Offset(imgWidth.toDouble(), bannerTop),
-      goldLinePaint,
-    );
+    // Spacing between repeated watermarks
+    final double spacingX = textW * 0.55;
+    final double spacingY = textH * 3.4;
 
-    // 9. Paint lines of text onto canvas
-    double currentY = bannerTop + verticalPadding;
+    final double stepX = textW + spacingX;
+    final double stepY = textH + spacingY;
 
-    parishPainter.paint(canvas, Offset(horizontalPadding, currentY));
-    currentY += parishPainter.height + lineSpacing;
+    int row = 0;
+    for (double y = -diagonal; y <= diagonal; y += stepY) {
+      // Stagger alternating rows by half-width for cohesive security pattern
+      final double rowOffset = (row % 2 == 0) ? 0.0 : (stepX / 2);
 
-    idPainter.paint(canvas, Offset(horizontalPadding, currentY));
-    currentY += idPainter.height + lineSpacing;
+      for (double x = -diagonal - stepX; x <= diagonal + stepX; x += stepX) {
+        textPainter.paint(canvas, Offset(x + rowOffset, y));
+      }
+      row++;
+    }
 
-    timestampPainter.paint(canvas, Offset(horizontalPadding, currentY));
+    canvas.restore();
 
-    // 10. Render picture to byte buffer
+    // 7. Render final watermarked image
     final ui.Picture picture = recorder.endRecording();
-    final ui.Image watermarkedImage = await picture.toImage(imgWidth, imgHeight);
-    final ByteData? byteData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.png);
+    final ui.Image watermarkedImage = await picture.toImage(
+      targetWidth.toInt(),
+      targetHeight.toInt(),
+    );
+    final ByteData? byteData = await watermarkedImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
 
     if (byteData == null) {
       return rawImageBytes;
@@ -194,7 +169,7 @@ class AssetImageWatermarkUtil {
     return byteData.buffer.asUint8List();
   }
 
-  /// Opens an interactive full-resolution image preview dialog showing the watermark
+  /// Opens an interactive full-resolution image preview dialog showing the tiled watermark
   static void showImagePreviewModal(
       BuildContext context, {
         required ImageProvider imageProvider,
@@ -208,28 +183,37 @@ class AssetImageWatermarkUtil {
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         child: Container(
           width: double.maxFinite,
-          constraints: const BoxConstraints(maxWidth: 820, maxHeight: 720),
+          constraints: const BoxConstraints(maxWidth: 860, maxHeight: 760),
           decoration: BoxDecoration(
             color: const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: const Color(0xFF334155)),
             boxShadow: const [
-              BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, 10)),
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 24,
+                offset: Offset(0, 10),
+              ),
             ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header
+              // Header Banner
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 decoration: const BoxDecoration(
                   color: Color(0xFF1E293B),
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.verified_outlined, color: Color(0xFFD49B18), size: 22),
+                    const Icon(
+                      Icons.verified_outlined,
+                      color: Color(0xFFD49B18),
+                      size: 22,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -245,10 +229,14 @@ class AssetImageWatermarkUtil {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          if (controlNumber != null && controlNumber.isNotEmpty)
+                          if (controlNumber != null &&
+                              controlNumber.isNotEmpty)
                             Text(
-                              'Control #: $controlNumber • Security Watermark Applied',
-                              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5),
+                              'Control #: $controlNumber • Tiled Anti-Tamper Watermark',
+                              style: const TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 11.5,
+                              ),
                             ),
                         ],
                       ),
@@ -276,7 +264,11 @@ class AssetImageWatermarkUtil {
                           fit: BoxFit.contain,
                           loadingBuilder: (context, child, progress) {
                             if (progress == null) return child;
-                            return const Center(child: CircularProgressIndicator(color: Colors.white));
+                            return const Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                            );
                           },
                           errorBuilder: (context, error, stackTrace) {
                             return const Center(
@@ -293,21 +285,24 @@ class AssetImageWatermarkUtil {
                 ),
               ),
 
-              // Footer Note
+              // Informational Footer
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 decoration: const BoxDecoration(
                   color: Color(0xFF1E293B),
-                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+                  borderRadius:
+                  BorderRadius.vertical(bottom: Radius.circular(20)),
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.lock_outline, size: 14, color: Color(0xFFD49B18)),
+                    Icon(Icons.security, size: 14, color: Color(0xFFD49B18)),
                     SizedBox(width: 6),
                     Text(
-                      'Automated security watermark embedded for asset protection & inventory audits.',
-                      style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                      'Tiled security watermark embedded across the image for diocesan property protection.',
+                      style:
+                      TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
                     ),
                   ],
                 ),

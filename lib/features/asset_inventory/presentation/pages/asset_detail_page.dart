@@ -4,6 +4,7 @@
 
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -128,7 +129,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   void initState() {
     super.initState();
     _assetList = List.from(widget.assets);
-    _currentIndex = widget.initialIndex.clamp(0, _assetList.isEmpty ? 0 : _assetList.length - 1);
+    _currentIndex = widget.initialIndex
+        .clamp(0, _assetList.isEmpty ? 0 : _assetList.length - 1);
     _initializeCurrentAsset();
     _loadReferenceOptions();
   }
@@ -142,7 +144,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     _nameController = TextEditingController(text: asset.itemName);
     _quantityController = TextEditingController(text: '${asset.quantity}');
     _unitPriceController = TextEditingController(
-      text: asset.unitPrice > 0 ? AssetModel.formatCurrency(asset.unitPrice) : '',
+      text:
+      asset.unitPrice > 0 ? AssetModel.formatCurrency(asset.unitPrice) : '',
     );
     _dimensionsController = TextEditingController(text: asset.dimensions ?? '');
     _colorController = TextEditingController(text: asset.color ?? '');
@@ -200,17 +203,22 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   Future<void> _loadReferenceOptions() async {
     try {
       final locs = await AssetReferenceService.getLocations(activeOnly: false);
-      final classifs = await AssetReferenceService.getClassifications(activeOnly: false);
+      final classifs =
+      await AssetReferenceService.getClassifications(activeOnly: false);
       if (!mounted) return;
       setState(() {
         _locations = locs;
         _classifications = classifs;
         _selectedLocation = locs.firstWhere(
-              (l) => l.acronym.toUpperCase() == _currentAsset.locationAcronym.toUpperCase(),
+              (l) =>
+          l.acronym.toUpperCase() ==
+              _currentAsset.locationAcronym.toUpperCase(),
           orElse: () => locs.first,
         );
         _selectedClassification = classifs.firstWhere(
-              (c) => c.acronym.toUpperCase() == _currentAsset.classificationAcronym.toUpperCase(),
+              (c) =>
+          c.acronym.toUpperCase() ==
+              _currentAsset.classificationAcronym.toUpperCase(),
           orElse: () => classifs.first,
         );
       });
@@ -220,7 +228,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   Future<void> _loadAuditHistory() async {
     setState(() => _isLoadingHistory = true);
     try {
-      final history = await AssetService.getAssetAuditHistory(_currentAsset.assetId);
+      final history =
+      await AssetService.getAssetAuditHistory(_currentAsset.assetId);
       if (!mounted) return;
       setState(() {
         _auditHistory = history;
@@ -280,6 +289,13 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   Future<void> _capturePhotoWithCamera() async {
+    if (kIsWeb) {
+      // In Flutter Web, routing safely through file selection avoids tab eviction
+      // and unhandled capture events on desktop browsers.
+      await _pickImageFromDevice();
+      return;
+    }
+
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? photo = await picker.pickImage(
@@ -299,11 +315,13 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     }
   }
 
-  Future<void> _processAndWatermarkNewImage(Uint8List rawBytes, String filename) async {
+  Future<void> _processAndWatermarkNewImage(
+      Uint8List rawBytes, String filename) async {
     setState(() => _isProcessingImage = true);
 
     try {
-      final idLabel = '${_currentAsset.controlNumber} • ${_nameController.text.trim()}';
+      final idLabel =
+          '${_currentAsset.controlNumber} • ${_nameController.text.trim()}';
 
       final watermarked = await AssetImageWatermarkUtil.applySecurityWatermark(
         rawImageBytes: rawBytes,
@@ -536,7 +554,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: asset.conditionSurfaceColor,
                         borderRadius: BorderRadius.circular(4),
@@ -584,8 +603,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     IconButton(
                       icon: const Icon(Icons.chevron_left, size: 22),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                      color: _hasPrevious ? ParishColors.marianBlue : ParishColors.borderGrey,
+                      constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                      color: _hasPrevious
+                          ? ParishColors.marianBlue
+                          : ParishColors.borderGrey,
                       tooltip: 'Previous Item',
                       onPressed: _hasPrevious ? _navigateToPrevious : null,
                     ),
@@ -603,8 +625,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     IconButton(
                       icon: const Icon(Icons.chevron_right, size: 22),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                      color: _hasNext ? ParishColors.marianBlue : ParishColors.borderGrey,
+                      constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                      color: _hasNext
+                          ? ParishColors.marianBlue
+                          : ParishColors.borderGrey,
                       tooltip: 'Next Item',
                       onPressed: _hasNext ? _navigateToNext : null,
                     ),
@@ -633,12 +658,15 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                           children: [
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
                                 side: BorderSide(color: ParishColors.borderGrey),
                               ),
-                              onPressed: _hasPrevious ? _navigateToPrevious : null,
+                              onPressed:
+                              _hasPrevious ? _navigateToPrevious : null,
                               icon: const Icon(Icons.arrow_back, size: 14),
-                              label: const Text('Previous', style: TextStyle(fontSize: 11)),
+                              label: const Text('Previous',
+                                  style: TextStyle(fontSize: 11)),
                             ),
                             Text(
                               'Item $currentPos of $totalCount',
@@ -650,12 +678,14 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                             ),
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
                                 side: BorderSide(color: ParishColors.borderGrey),
                               ),
                               onPressed: _hasNext ? _navigateToNext : null,
                               icon: const Icon(Icons.arrow_forward, size: 14),
-                              label: const Text('Next', style: TextStyle(fontSize: 11)),
+                              label: const Text('Next',
+                                  style: TextStyle(fontSize: 11)),
                             ),
                           ],
                         ),
@@ -745,7 +775,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         ),
                       ),
                       Text(
-                        asset.archiveReason != null && asset.archiveReason!.isNotEmpty
+                        asset.archiveReason != null &&
+                            asset.archiveReason!.isNotEmpty
                             ? 'Reason: ${asset.archiveReason}'
                             : 'This item has been officially retired or disposed.',
                         style: TextStyle(fontSize: 11.5, color: textDark),
@@ -758,7 +789,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ),
         ],
 
-        // Photo + Key Identity Header
+        // Photo + Key Identity Header with Prominently Highlighted Control Number
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -768,6 +799,62 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // HIGHLIGHTED DIOCESAN CONTROL NUMBER AT TOP
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isArchived
+                          ? ParishColors.mercyRedSurface
+                          : ParishColors.goldLight,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isArchived
+                            ? ParishColors.mercyRed.withOpacity(0.6)
+                            : ParishColors.goldAccent.withOpacity(0.8),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 2,
+                      children: [
+                        Icon(
+                          Icons.qr_code_2,
+                          size: 16,
+                          color: isArchived
+                              ? ParishColors.mercyRed
+                              : ParishColors.goldAccent,
+                        ),
+                        Text(
+                          'DIOCESAN CONTROL NO:',
+                          style: TextStyle(
+                            fontSize: isMobile ? 10 : 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                            color: isArchived
+                                ? ParishColors.mercyRed
+                                : ParishColors.goldAccent,
+                          ),
+                        ),
+                        Text(
+                          asset.controlNumber,
+                          style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: isMobile ? 13 : 14.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: isArchived
+                                ? ParishColors.mercyRed
+                                : ParishColors.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
                   Text(
                     asset.itemName,
                     style: TextStyle(
@@ -782,7 +869,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     runSpacing: 4,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: asset.unitPrice >= 10000.0
                               ? ParishColors.goldLight
@@ -807,11 +895,13 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: asset.statusSurfaceColor,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: asset.statusColor.withOpacity(0.4)),
+                          border: Border.all(
+                              color: asset.statusColor.withOpacity(0.4)),
                         ),
                         child: Text(
                           'Status: ${asset.operationalStatus}',
@@ -825,8 +915,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ],
                   ),
                   const SizedBox(height: 8),
+
+                  // Registration Date (Visually Removed Control ID as requested)
                   Text(
-                    'Registered: ${asset.formattedRegistrationDate} • Control ID: ${asset.assetId}',
+                    'Registered: ${asset.formattedRegistrationDate}',
                     style: TextStyle(fontSize: 11, color: textMuted),
                   ),
                 ],
@@ -940,8 +1032,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 ),
               ),
               const Divider(height: 16),
-              _buildDataRow(Icons.category_outlined, 'Classification', asset.displayClassification),
-              _buildDataRow(Icons.location_on_outlined, 'Storage Location', asset.displayLocation),
+              _buildDataRow(Icons.category_outlined, 'Classification',
+                  asset.displayClassification),
+              _buildDataRow(Icons.location_on_outlined, 'Storage Location',
+                  asset.displayLocation),
               _buildDataRow(
                 Icons.calendar_today_outlined,
                 'Acquisition Date',
@@ -953,7 +1047,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _buildSpecItem('Size / Dimensions', asset.dimensions ?? '—')),
+                  Expanded(
+                      child: _buildSpecItem(
+                          'Size / Dimensions', asset.dimensions ?? '—')),
                   const SizedBox(width: 8),
                   Expanded(child: _buildSpecItem('Color', asset.color ?? '—')),
                 ],
@@ -976,7 +1072,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               if (asset.others != null && asset.others!.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Text(
-                  'Markings / Details: ${asset.others}',
+                  'Other Details ${asset.others}',
                   style: TextStyle(fontSize: 12.5, color: textDark),
                 ),
               ],
@@ -1036,7 +1132,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           )
         else
           Column(
-            children: _auditHistory.map((log) => _buildAuditLogTile(log)).toList(),
+            children:
+            _auditHistory.map((log) => _buildAuditLogTile(log)).toList(),
           ),
       ],
     );
@@ -1065,7 +1162,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlue),
+              const Icon(Icons.lock_outline,
+                  size: 18, color: ParishColors.marianBlue),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1095,8 +1193,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               InkWell(
                 onTap: () {
                   if (_newWatermarkedPhotoBytes != null) {
-                    _openInteractivePreview(MemoryImage(_newWatermarkedPhotoBytes!));
-                  } else if (asset.photoUrl != null && asset.photoUrl!.isNotEmpty) {
+                    _openInteractivePreview(
+                        MemoryImage(_newWatermarkedPhotoBytes!));
+                  } else if (asset.photoUrl != null &&
+                      asset.photoUrl!.isNotEmpty) {
                     _openInteractivePreview(NetworkImage(asset.photoUrl!));
                   }
                 },
@@ -1110,7 +1210,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     border: Border.all(color: borderGrey),
                   ),
                   child: _isProcessingImage
-                      ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2))
                       : _newWatermarkedPhotoBytes != null
                       ? ClipRRect(
                     borderRadius: BorderRadius.circular(7),
@@ -1119,7 +1220,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       fit: BoxFit.cover,
                     ),
                   )
-                      : (asset.photoUrl != null && asset.photoUrl!.isNotEmpty)
+                      : (asset.photoUrl != null &&
+                      asset.photoUrl!.isNotEmpty)
                       ? ClipRRect(
                     borderRadius: BorderRadius.circular(7),
                     child: Image.network(
@@ -1127,7 +1229,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       fit: BoxFit.cover,
                     ),
                   )
-                      : const Icon(Icons.photo_outlined, size: 36, color: ParishColors.marianBlue),
+                      : const Icon(Icons.photo_outlined,
+                      size: 36, color: ParishColors.marianBlue),
                 ),
               ),
               const SizedBox(width: 14),
@@ -1138,7 +1241,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     Text(
                       _newWatermarkedPhotoBytes != null
                           ? 'New Watermarked Photo'
-                          : (asset.photoUrl != null ? 'Current Photo' : 'No photo uploaded'),
+                          : (asset.photoUrl != null
+                          ? 'Current Photo'
+                          : 'No photo uploaded'),
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -1156,21 +1261,34 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: ParishColors.marianBlue,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
                           ),
-                          onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
+                          onPressed: _isProcessingImage
+                              ? null
+                              : _capturePhotoWithCamera,
                           icon: const Icon(Icons.camera_alt, size: 14),
-                          label: const Text('Camera', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                          label: Text(
+                            kIsWeb ? 'Camera / Photo' : 'Camera',
+                            style: const TextStyle(
+                                fontSize: 11.5, fontWeight: FontWeight.bold),
+                          ),
                         ),
                         OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: ParishColors.marianBlue,
-                            side: const BorderSide(color: ParishColors.marianBlue),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            side:
+                            const BorderSide(color: ParishColors.marianBlue),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
                           ),
-                          onPressed: _isProcessingImage ? null : _pickImageFromDevice,
+                          onPressed: _isProcessingImage
+                              ? null
+                              : _pickImageFromDevice,
                           icon: const Icon(Icons.upload_file, size: 14),
-                          label: const Text('Upload', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                          label: const Text('Upload',
+                              style: TextStyle(
+                                  fontSize: 11.5, fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -1186,7 +1304,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         TextFormField(
           controller: _nameController,
           style: TextStyle(fontSize: 14, color: textDark),
-          decoration: _inputDecoration(hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
+          decoration: _inputDecoration(
+              hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
         ),
         const SizedBox(height: 12),
 
@@ -1219,14 +1338,18 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   _buildLabel('Price per Unit (₱)'),
                   TextFormField(
                     controller: _unitPriceController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
                     style: TextStyle(fontSize: 14, color: textDark),
                     decoration: _inputDecoration(
                       hint: 'e.g. 2,500.00',
                       prefixIcon: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                        child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold, color: textDark)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 12),
+                        child: Text('₱',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, color: textDark)),
                       ),
                     ),
                   ),
@@ -1325,7 +1448,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   TextFormField(
                     controller: _dimensionsController,
                     style: TextStyle(fontSize: 13, color: textDark),
-                    decoration: _inputDecoration(hint: 'e.g. 50 inch, 10 ft x 3 ft'),
+                    decoration:
+                    _inputDecoration(hint: 'e.g. 50 inch, 10 ft x 3 ft'),
                   ),
                 ],
               ),
@@ -1339,7 +1463,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   TextFormField(
                     controller: _colorController,
                     style: TextStyle(fontSize: 13, color: textDark),
-                    decoration: _inputDecoration(hint: 'e.g. Black, Dark Walnut'),
+                    decoration:
+                    _inputDecoration(hint: 'e.g. Black, Dark Walnut'),
                   ),
                 ],
               ),
@@ -1352,7 +1477,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         TextFormField(
           controller: _modelController,
           style: TextStyle(fontSize: 13, color: textDark),
-          decoration: _inputDecoration(hint: 'e.g. Samsung, Custom Woodcraft'),
+          decoration:
+          _inputDecoration(hint: 'e.g. Samsung, Custom Woodcraft'),
         ),
         const SizedBox(height: 14),
 
@@ -1361,16 +1487,18 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           controller: _othersController,
           maxLines: 2,
           style: TextStyle(fontSize: 13, color: textDark),
-          decoration: _inputDecoration(hint: 'e.g. Inscribed "Donated by Santos Family"'),
+          decoration: _inputDecoration(
+              hint: 'e.g. Inscribed "Donated by Santos Family"'),
         ),
         const SizedBox(height: 12),
 
-        _buildLabel('Notes & Maintenance Remarks'),
+        _buildLabel('Remarks'),
         TextFormField(
           controller: _remarksController,
           maxLines: 2,
           style: TextStyle(fontSize: 13, color: textDark),
-          decoration: _inputDecoration(hint: 'e.g. Inspected and placed in main church nave'),
+          decoration: _inputDecoration(
+              hint: 'e.g. Inspected and placed in main church nave'),
         ),
       ],
     );
@@ -1405,7 +1533,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   ),
                   onPressed: _printLabelSticker,
                   icon: const Icon(Icons.qr_code, size: 16),
-                  label: const Text('Print QR Tag', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  label: const Text('Print QR Tag',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ),
               if (_canArchive) ...[
@@ -1415,22 +1545,33 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ? OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ParishColors.oliveGreen,
-                      side: const BorderSide(color: ParishColors.oliveGreen),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      side: const BorderSide(
+                          color: ParishColors.oliveGreen),
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 10),
                     ),
                     onPressed: _restoreAsset,
                     icon: const Icon(Icons.restore, size: 16),
-                    label: const Text('Restore', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    label: const Text('Restore',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold)),
                   )
                       : OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ParishColors.mercyRed,
-                      side: const BorderSide(color: ParishColors.mercyRed),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      side: const BorderSide(
+                          color: ParishColors.mercyRed),
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 10),
                     ),
                     onPressed: _confirmArchiveAsset,
-                    icon: const Icon(Icons.archive_outlined, size: 16),
-                    label: const Text('Archive', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    icon:
+                    const Icon(Icons.archive_outlined, size: 16),
+                    label: const Text('Archive',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -1443,7 +1584,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               if (_canModify) ...[
                 if (_isEditing) ...[
                   TextButton(
-                    onPressed: _isUpdating ? null : () => setState(() => _isEditing = false),
+                    onPressed: _isUpdating
+                        ? null
+                        : () => setState(() => _isEditing = false),
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 6),
@@ -1457,7 +1600,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         ? const SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2),
                     )
                         : const Icon(Icons.save, size: 16),
                     label: Text(_isUpdating ? 'Saving...' : 'Save Changes'),
@@ -1486,7 +1630,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 ),
                 onPressed: _printLabelSticker,
                 icon: const Icon(Icons.qr_code, size: 16),
-                label: const Text('Print QR Tag', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: const Text('Print QR Tag',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 10),
               if (_canArchive)
@@ -1494,7 +1639,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ? OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: ParishColors.oliveGreen,
-                    side: const BorderSide(color: ParishColors.oliveGreen),
+                    side: const BorderSide(
+                        color: ParishColors.oliveGreen),
                   ),
                   onPressed: _restoreAsset,
                   icon: const Icon(Icons.restore, size: 16),
@@ -1503,10 +1649,12 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     : OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: ParishColors.mercyRed,
-                    side: const BorderSide(color: ParishColors.mercyRed),
+                    side: const BorderSide(
+                        color: ParishColors.mercyRed),
                   ),
                   onPressed: _confirmArchiveAsset,
-                  icon: const Icon(Icons.archive_outlined, size: 16),
+                  icon:
+                  const Icon(Icons.archive_outlined, size: 16),
                   label: const Text('Archive Item'),
                 ),
             ],
@@ -1516,7 +1664,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               if (_canModify) ...[
                 if (_isEditing) ...[
                   TextButton(
-                    onPressed: _isUpdating ? null : () => setState(() => _isEditing = false),
+                    onPressed: _isUpdating
+                        ? null
+                        : () => setState(() => _isEditing = false),
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 8),
@@ -1530,7 +1680,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         ? const SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2),
                     )
                         : const Icon(Icons.save, size: 16),
                     label: Text(_isUpdating ? 'Saving...' : 'Save Changes'),
@@ -1538,12 +1689,17 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 ] else ...[
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: ParishColors.marianBlue, width: 1.4),
+                      side: const BorderSide(
+                          color: ParishColors.marianBlue, width: 1.4),
                       backgroundColor: ParishColors.marianBlueSurface,
                     ),
                     onPressed: () => setState(() => _isEditing = true),
-                    icon: const Icon(Icons.edit_outlined, size: 16, color: ParishColors.marianBlue),
-                    label: const Text('Edit Details', style: TextStyle(color: ParishColors.marianBlue, fontWeight: FontWeight.bold)),
+                    icon: const Icon(Icons.edit_outlined,
+                        size: 16, color: ParishColors.marianBlue),
+                    label: const Text('Edit Details',
+                        style: TextStyle(
+                            color: ParishColors.marianBlue,
+                            fontWeight: FontWeight.bold)),
                   ),
                 ],
               ],
@@ -1578,7 +1734,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             color: ParishColors.backgroundLight,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: asset.photoUrl != null ? ParishColors.goldAccent : borderGrey,
+              color:
+              asset.photoUrl != null ? ParishColors.goldAccent : borderGrey,
               width: asset.photoUrl != null ? 1.5 : 1.0,
             ),
           ),
@@ -1592,7 +1749,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   asset.photoUrl!,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Center(
-                    child: Icon(asset.classificationIcon, size: 36, color: ParishColors.marianBlue),
+                    child: Icon(asset.classificationIcon,
+                        size: 36, color: ParishColors.marianBlue),
                   ),
                 ),
                 Positioned(
@@ -1616,7 +1774,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ],
             )
                 : Center(
-              child: Icon(asset.classificationIcon, size: 36, color: ParishColors.marianBlue),
+              child: Icon(asset.classificationIcon,
+                  size: 36, color: ParishColors.marianBlue),
             ),
           ),
         ),
@@ -1649,7 +1808,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                log.auditMethod == 'RFID_NFC' ? Icons.nfc : Icons.qr_code_scanner,
+                log.auditMethod == 'RFID_NFC'
+                    ? Icons.nfc
+                    : Icons.qr_code_scanner,
                 size: 16,
                 color: ParishColors.marianBlue,
               ),
@@ -1663,7 +1824,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       children: [
                         Text(
                           'Condition: ${log.newCondition}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark),
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: textDark),
                         ),
                         Text(
                           log.formattedAuditedAt,
@@ -1673,11 +1837,14 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ),
                     if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text('Status: ${log.newStatus}', style: TextStyle(fontSize: 11, color: textMuted)),
+                      Text('Status: ${log.newStatus}',
+                          style: TextStyle(fontSize: 11, color: textMuted)),
                     ],
-                    if (log.newLocation != null && log.newLocation!.isNotEmpty) ...[
+                    if (log.newLocation != null &&
+                        log.newLocation!.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text('Location: ${log.newLocation}', style: TextStyle(fontSize: 11, color: textMuted)),
+                      Text('Location: ${log.newLocation}',
+                          style: TextStyle(fontSize: 11, color: textMuted)),
                     ],
                   ],
                 ),
@@ -1691,7 +1858,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ParishColors.goldAccent.withOpacity(0.4)),
+                border:
+                Border.all(color: ParishColors.goldAccent.withOpacity(0.4)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1699,9 +1867,13 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   Row(
                     children: [
                       Icon(
-                        (log.quantityChange ?? 0) > 0 ? Icons.add_circle : Icons.remove_circle,
+                        (log.quantityChange ?? 0) > 0
+                            ? Icons.add_circle
+                            : Icons.remove_circle,
                         size: 14,
-                        color: (log.quantityChange ?? 0) > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                        color: (log.quantityChange ?? 0) > 0
+                            ? ParishColors.oliveGreen
+                            : ParishColors.mercyRed,
                       ),
                       const SizedBox(width: 6),
                       Text(
@@ -1709,16 +1881,22 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.bold,
-                          color: (log.quantityChange ?? 0) > 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                          color: (log.quantityChange ?? 0) > 0
+                              ? ParishColors.oliveGreen
+                              : ParishColors.mercyRed,
                         ),
                       ),
                     ],
                   ),
-                  if (log.quantityChangeReason != null && log.quantityChangeReason!.isNotEmpty) ...[
+                  if (log.quantityChangeReason != null &&
+                      log.quantityChangeReason!.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
                       'Reason: ${log.quantityChangeReason}',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textDark),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: textDark),
                     ),
                   ],
                 ],
@@ -1727,13 +1905,17 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ],
           if (log.cleanNotes.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('Notes: ${log.cleanNotes}', style: TextStyle(fontSize: 11, color: textDark)),
+            Text('Notes: ${log.cleanNotes}',
+                style: TextStyle(fontSize: 11, color: textDark)),
           ],
           if (log.auditorName != null) ...[
             const SizedBox(height: 4),
             Text(
               'Audited by: ${log.auditorName}',
-              style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: textMuted),
+              style: TextStyle(
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                  color: textMuted),
             ),
           ],
         ],
@@ -1815,12 +1997,18 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           const SizedBox(width: 6),
           Text(
             '$label: ',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: ParishColors.textMuted),
           ),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: ParishColors.textDark),
             ),
           ),
         ],
@@ -1828,7 +2016,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     );
   }
 
-  Widget _buildSpecItem(String label, String value, {bool highlightRed = false}) {
+  Widget _buildSpecItem(String label, String value,
+      {bool highlightRed = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

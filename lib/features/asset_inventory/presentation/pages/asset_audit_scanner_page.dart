@@ -1309,7 +1309,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                 if (asset.others != null && asset.others!.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(
-                    'Markings / Details: ${asset.others}',
+                    'Other Details ${asset.others}',
                     style: TextStyle(fontSize: 11.5, color: textDark),
                   ),
                 ],

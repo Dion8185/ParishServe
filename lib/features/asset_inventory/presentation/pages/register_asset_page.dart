@@ -1001,7 +1001,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               ),
                             ),
                             const SizedBox(height: 16),
-                            _buildLabel('Notes & Maintenance Remarks'),
+                            _buildLabel('Remarks'),
                             TextFormField(
                               controller: _remarksController,
                               maxLines: 2,

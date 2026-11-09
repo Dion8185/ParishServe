@@ -1326,7 +1326,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                           ),
                           const SizedBox(height: 14),
 
-                          _buildLabel('Notes & Maintenance Remarks'),
+                          _buildLabel('Remarks'),
                           TextFormField(
                             controller: _remarksController,
                             maxLines: 2,

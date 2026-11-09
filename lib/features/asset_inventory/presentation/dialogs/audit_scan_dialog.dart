@@ -1726,7 +1726,7 @@ class _AuditScanDialogState extends State<_AuditScanDialog> {
                 if (asset.others != null && asset.others!.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(
-                    'Markings / Details: ${asset.others}',
+                    'Other Details ${asset.others}',
                     style: TextStyle(fontSize: 11, color: textDark),
                   ),
                 ],
