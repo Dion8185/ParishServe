@@ -51,8 +51,8 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
           ),
         ),
         content: Text(
-          'Are you sure you want to discard the draft for "${draft.itemName.isNotEmpty ? draft.itemName : draft.fullControlNumber}"? '
-              'This action cannot be undone.',
+          'Are you sure you want to discard the cloud draft for "${draft.itemName.isNotEmpty ? draft.itemName : draft.fullControlNumber}"? '
+              'This will remove it from all devices.',
           style: TextStyle(fontSize: 13, color: ParishColors.textDark),
         ),
         actions: [
@@ -78,7 +78,7 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
          SnackBar(
-          content: Text('Draft discarded.'),
+          content: Text('Cloud draft deleted.'),
           backgroundColor: ParishColors.textMuted,
         ),
       );
@@ -101,7 +101,7 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
           ),
         ),
         content: Text(
-          'Are you sure you want to discard all ${_drafts.length} registration drafts? This cannot be undone.',
+          'Are you sure you want to discard all ${_drafts.length} cloud registration drafts? This cannot be undone.',
           style: TextStyle(fontSize: 13, color: ParishColors.textDark),
         ),
         actions: [
@@ -161,7 +161,7 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Asset Registration Drafts',
+                  'Cloud Asset Drafts',
                   style: TextStyle(
                     fontSize: isMobile ? 16 : 18,
                     fontWeight: FontWeight.bold,
@@ -169,7 +169,7 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
                   ),
                 ),
                 Text(
-                  'Resume saved or incomplete property registrations',
+                  'Synchronized across all parish phones, tablets, and laptops',
                   style: TextStyle(
                     fontSize: isMobile ? 10.5 : 12,
                     color: ParishColors.textMuted,
@@ -183,7 +183,8 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
               if (_drafts.isNotEmpty)
                 TextButton.icon(
                   onPressed: _clearAllDrafts,
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 16, color: ParishColors.mercyRed),
+                  icon: const Icon(Icons.delete_sweep_outlined,
+                      size: 16, color: ParishColors.mercyRed),
                   label: Text(
                     'Clear All',
                     style: TextStyle(
@@ -216,7 +217,8 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
                     children: [
                       _buildDraftsHeader(isMobile),
                       const SizedBox(height: 14),
-                      ..._drafts.map((d) => _buildDraftCard(d, isMobile)),
+                      ..._drafts
+                          .map((d) => _buildDraftCard(d, isMobile)),
                     ],
                   ),
                 ),
@@ -242,10 +244,11 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.bookmark_border, size: 18, color: ParishColors.marianBlue),
+              const Icon(Icons.cloud_outlined,
+                  size: 18, color: ParishColors.marianBlue),
               const SizedBox(width: 8),
               Text(
-                '${_drafts.length} Saved Registration Draft(s)',
+                '${_drafts.length} Cloud Registration Draft(s)',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -255,7 +258,7 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
             ],
           ),
           Text(
-            'Stored locally on device',
+            'Synced via Supabase',
             style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
           ),
         ],
@@ -264,7 +267,11 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
   }
 
   Widget _buildDraftCard(AssetDraftModel draft, bool isMobile) {
-    final bool hasPhoto = draft.photoBytes != null && draft.photoBytes!.isNotEmpty;
+    final bool hasCloudPhoto =
+        draft.photoUrl != null && draft.photoUrl!.isNotEmpty;
+    final bool hasLocalPhoto =
+        draft.localPhotoBytes != null && draft.localPhotoBytes!.isNotEmpty;
+    final bool hasAnyPhoto = hasCloudPhoto || hasLocalPhoto;
     final List<String> missing = draft.missingChecklist;
 
     return Container(
@@ -288,7 +295,7 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Photo Thumbnail / Placeholder
+              // Photo Thumbnail (Cloud Network Image or Local In-Memory Fallback)
               Container(
                 width: isMobile ? 54 : 64,
                 height: isMobile ? 54 : 64,
@@ -296,14 +303,27 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
                   color: ParishColors.backgroundLight,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: hasPhoto ? ParishColors.goldAccent : ParishColors.borderGrey,
-                    width: hasPhoto ? 1.4 : 1.0,
+                    color: hasAnyPhoto
+                        ? ParishColors.goldAccent
+                        : ParishColors.borderGrey,
+                    width: hasAnyPhoto ? 1.4 : 1.0,
                   ),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(9),
-                  child: hasPhoto
-                      ? Image.memory(draft.photoBytes!, fit: BoxFit.cover)
+                  child: hasCloudPhoto
+                      ? Image.network(
+                    draft.photoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.broken_image_outlined,
+                      size: 24,
+                      color: ParishColors.textMuted.withOpacity(0.6),
+                    ),
+                  )
+                      : hasLocalPhoto
+                      ? Image.memory(draft.localPhotoBytes!,
+                      fit: BoxFit.cover)
                       : Icon(
                     Icons.image_not_supported_outlined,
                     size: 24,
@@ -321,7 +341,8 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: ParishColors.goldLight,
                             borderRadius: BorderRadius.circular(4),
@@ -368,7 +389,8 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
                     const SizedBox(height: 2),
                     Text(
                       'Category: ${draft.classificationAcronym} • Location: ${draft.locationAcronym} • Mode: ${draft.modeOfAcquisition}',
-                      style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 11, color: ParishColors.textMuted),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -387,16 +409,19 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
             children: [
               if (missing.isEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
                     color: ParishColors.oliveGreenSurface,
                     borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
+                    border: Border.all(
+                        color: ParishColors.oliveGreen.withOpacity(0.4)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_circle, size: 12, color: ParishColors.oliveGreen),
+                      Icon(Icons.check_circle,
+                          size: 12, color: ParishColors.oliveGreen),
                       SizedBox(width: 4),
                       Text(
                         'Ready to Register',
@@ -412,11 +437,13 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
               else
                 ...missing.map(
                       (m) => Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFFBEB),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+                      border: Border.all(
+                          color: const Color(0xFFF59E0B).withOpacity(0.4)),
                     ),
                     child: Text(
                       '⚠️ Needs $m',
@@ -437,14 +464,15 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Saved: ${draft.formattedUpdatedAt}',
+                'Updated: ${draft.formattedUpdatedAt}',
                 style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted),
               ),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 18, color: ParishColors.mercyRed),
+                    icon: const Icon(Icons.delete_outline,
+                        size: 18, color: ParishColors.mercyRed),
                     tooltip: 'Discard Draft',
                     onPressed: () => _deleteDraft(draft),
                   ),
@@ -453,14 +481,17 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ParishColors.marianBlue,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: () => _resumeRegistration(draft),
                     icon: const Icon(Icons.edit_note, size: 16),
                     label: const Text(
                       'Resume',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -485,10 +516,11 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.bookmark_outline, size: 48, color: ParishColors.textMuted.withOpacity(0.6)),
+            Icon(Icons.cloud_done_outlined,
+                size: 48, color: ParishColors.textMuted.withOpacity(0.6)),
             const SizedBox(height: 12),
             Text(
-              'No Saved Drafts',
+              'No Saved Cloud Drafts',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -497,7 +529,7 @@ class _AssetDraftsPageState extends State<AssetDraftsPage> {
             ),
             const SizedBox(height: 6),
             Text(
-              'When registering new parish items, use the "Save as Draft" button to store incomplete entries here.',
+              'Use the "Save as Cloud Draft" button during item registration to store incomplete work across devices.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
             ),

@@ -2,96 +2,129 @@
 // FILE: lib/features/asset_inventory/services/asset_draft_service.dart
 // =============================================================================
 
-import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../auth/services/auth_service.dart';
 import '../models/asset_draft_model.dart';
 
 class AssetDraftService {
   AssetDraftService._();
 
-  static const String _storageKey = 'parish_asset_registration_drafts_v1';
+  static final SupabaseClient _client = Supabase.instance.client;
 
-  /// ValueNotifier to allow UI components (like badges) to reactively track draft counts
+  /// Reactive notifier to track pending drafts count across dashboard navigation
   static final ValueNotifier<int> draftCountNotifier = ValueNotifier<int>(0);
 
-  /// Initializes draft count on app launch
+  /// Initializes draft count from Supabase on launch
   static Future<void> initialize() async {
-    final drafts = await getAllDrafts();
-    draftCountNotifier.value = drafts.length;
+    try {
+      final response = await _client
+          .from('asset_drafts')
+          .select('draft_id');
+      draftCountNotifier.value = (response as List).length;
+    } catch (e) {
+      debugPrint('Notice initializing cloud asset drafts: $e');
+    }
   }
 
-  /// Retrieves all saved registration drafts, sorted latest updated first
+  /// Uploads a draft's photograph to Supabase Storage and returns its public URL
+  static Future<String?> uploadDraftPhoto({
+    required String draftId,
+    required Uint8List fileBytes,
+    required String fileName,
+  }) async {
+    try {
+      final cleanExt = fileName.contains('.')
+          ? fileName.split('.').last.toLowerCase()
+          : 'jpg';
+      final storagePath =
+          'asset_photos/drafts/$draftId/photo_${DateTime.now().millisecondsSinceEpoch}.$cleanExt';
+
+      await _client.storage.from('certificate-assets').uploadBinary(
+        storagePath,
+        fileBytes,
+        fileOptions: FileOptions(
+          contentType: 'image/$cleanExt',
+          upsert: true,
+        ),
+      );
+
+      return _client.storage
+          .from('certificate-assets')
+          .getPublicUrl(storagePath);
+    } catch (e) {
+      debugPrint('Error uploading draft photo to Supabase storage: $e');
+      return null;
+    }
+  }
+
+  /// Fetches all asset registration drafts from Supabase, sorted latest first
   static Future<List<AssetDraftModel>> getAllDrafts() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? rawJson = prefs.getString(_storageKey);
-      if (rawJson == null || rawJson.trim().isEmpty) {
-        draftCountNotifier.value = 0;
-        return [];
-      }
+      final response = await _client
+          .from('asset_drafts')
+          .select()
+          .order('updated_at', ascending: false);
 
-      final List<dynamic> list = jsonDecode(rawJson) as List<dynamic>;
-      final drafts = list
-          .map((item) => AssetDraftModel.fromMap(item as Map<String, dynamic>))
+      final List<dynamic> rows = response as List;
+      final drafts = rows
+          .map((r) => AssetDraftModel.fromMap(r as Map<String, dynamic>))
           .toList();
 
-      drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       draftCountNotifier.value = drafts.length;
       return drafts;
     } catch (e) {
-      debugPrint('Error retrieving asset drafts: $e');
+      debugPrint('Error querying cloud asset drafts: $e');
       return [];
     }
   }
 
-  /// Saves or updates a draft
+  /// Saves or updates a draft in the Supabase `asset_drafts` table
   static Future<void> saveDraft(AssetDraftModel draft) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final drafts = await getAllDrafts();
+      final currentUserId = AuthService.currentUser?.userId;
+      final now = DateTime.now();
 
-      final existingIndex = drafts.indexWhere((d) => d.draftId == draft.draftId);
-      if (existingIndex >= 0) {
-        drafts[existingIndex] = draft;
-      } else {
-        drafts.insert(0, draft);
-      }
+      final payload = draft.toMap();
+      payload['created_by'] = currentUserId ?? draft.createdBy;
+      payload['updated_at'] = now.toIso8601String();
 
-      final encoded = jsonEncode(drafts.map((d) => d.toMap()).toList());
-      await prefs.setString(_storageKey, encoded);
-      draftCountNotifier.value = drafts.length;
+      await _client.from('asset_drafts').upsert(payload);
+      await initialize();
     } catch (e) {
-      debugPrint('Error saving asset draft: $e');
+      debugPrint('Error saving draft to Supabase cloud: $e');
       rethrow;
     }
   }
 
-  /// Deletes a specific draft
+  /// Deletes a specific draft from Supabase
   static Future<void> deleteDraft(String draftId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final drafts = await getAllDrafts();
+      await _client
+          .from('asset_drafts')
+          .delete()
+          .eq('draft_id', draftId);
 
-      drafts.removeWhere((d) => d.draftId == draftId);
-
-      final encoded = jsonEncode(drafts.map((d) => d.toMap()).toList());
-      await prefs.setString(_storageKey, encoded);
-      draftCountNotifier.value = drafts.length;
+      await initialize();
     } catch (e) {
-      debugPrint('Error deleting asset draft: $e');
+      debugPrint('Error deleting draft from Supabase: $e');
       rethrow;
     }
   }
 
-  /// Clears all stored drafts
+  /// Discards all drafts from Supabase
   static Future<void> clearAllDrafts() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_storageKey);
+      await _client
+          .from('asset_drafts')
+          .delete()
+          .neq('draft_id', '');
+
       draftCountNotifier.value = 0;
     } catch (e) {
-      debugPrint('Error clearing asset drafts: $e');
+      debugPrint('Error clearing cloud drafts: $e');
+      rethrow;
     }
   }
 }
