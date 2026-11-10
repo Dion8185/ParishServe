@@ -4,12 +4,15 @@
 
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
+import '../../models/asset_draft_model.dart';
 import '../../models/asset_model.dart';
 import '../../models/asset_reference_models.dart';
+import '../../services/asset_draft_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
@@ -17,8 +20,13 @@ import '../dialogs/register_asset_dialog.dart';
 
 class RegisterAssetPage extends StatefulWidget {
   final VoidCallback? onAssetSaved;
+  final AssetDraftModel? initialDraft;
 
-  const RegisterAssetPage({super.key, this.onAssetSaved});
+  const RegisterAssetPage({
+    super.key,
+    this.onAssetSaved,
+    this.initialDraft,
+  });
 
   @override
   State<RegisterAssetPage> createState() => _RegisterAssetPageState();
@@ -27,16 +35,16 @@ class RegisterAssetPage extends StatefulWidget {
 class _RegisterAssetPageState extends State<RegisterAssetPage> {
   final _formKey = GlobalKey<FormState>();
 
-  final _itemNameController = TextEditingController();
-  final _quantityController = TextEditingController(text: '1');
-  final _unitPriceController = TextEditingController();
-  final _dimensionsController = TextEditingController();
-  final _colorController = TextEditingController();
-  final _modelController = TextEditingController();
-  final _othersController = TextEditingController();
-  final _remarksController = TextEditingController();
-  final _rfidTagController = TextEditingController();
-  final _sequenceNumberController = TextEditingController(text: '001');
+  late final TextEditingController _itemNameController;
+  late final TextEditingController _quantityController;
+  late final TextEditingController _unitPriceController;
+  late final TextEditingController _dimensionsController;
+  late final TextEditingController _colorController;
+  late final TextEditingController _modelController;
+  late final TextEditingController _othersController;
+  late final TextEditingController _remarksController;
+  late final TextEditingController _rfidTagController;
+  late final TextEditingController _sequenceNumberController;
 
   List<AssetLocationModel> _locations = [];
   List<AssetClassificationModel> _classifications = [];
@@ -45,15 +53,16 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   bool _isLoadingReferences = true;
   bool _isLoadingSequence = false;
 
-  DateTime _dateOfAcquisition = DateTime.now();
-  String _modeOfAcquisition = 'Purchase';
-  String _conditionStatus = 'Good';
-  String _operationalStatus = 'Available';
+  late DateTime _dateOfAcquisition;
+  late String _modeOfAcquisition;
+  late String _conditionStatus;
+  late String _operationalStatus;
 
   Uint8List? _watermarkedPhotoBytes;
   String? _photoFileName;
   bool _isProcessingImage = false;
   bool _isSaving = false;
+  bool _isSavingDraft = false;
   String? _errorMessage;
 
   final List<String> _acquisitionModes = [
@@ -74,6 +83,28 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   @override
   void initState() {
     super.initState();
+    final d = widget.initialDraft;
+
+    _itemNameController = TextEditingController(text: d?.itemName ?? '');
+    _quantityController = TextEditingController(text: '${d?.quantity ?? 1}');
+    _unitPriceController = TextEditingController(
+      text: (d != null && d.unitPrice > 0) ? AssetModel.formatCurrency(d.unitPrice) : '',
+    );
+    _dimensionsController = TextEditingController(text: d?.dimensions ?? '');
+    _colorController = TextEditingController(text: d?.color ?? '');
+    _modelController = TextEditingController(text: d?.model ?? '');
+    _othersController = TextEditingController(text: d?.others ?? '');
+    _remarksController = TextEditingController(text: d?.remarks ?? '');
+    _rfidTagController = TextEditingController(text: d?.rfidTag ?? '');
+    _sequenceNumberController = TextEditingController(text: d?.sequenceNumber ?? '001');
+
+    _dateOfAcquisition = d?.dateOfAcquisition ?? DateTime.now();
+    _modeOfAcquisition = d?.modeOfAcquisition ?? 'Purchase';
+    _conditionStatus = d?.conditionStatus ?? 'Good';
+    _operationalStatus = d?.operationalStatus ?? 'Available';
+    _watermarkedPhotoBytes = d?.photoBytes;
+    _photoFileName = d?.photoFileName;
+
     _loadReferences();
     _quantityController.addListener(() => setState(() {}));
     _unitPriceController.addListener(() => setState(() {}));
@@ -130,17 +161,33 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     setState(() => _isLoadingReferences = true);
     try {
       final locs = await AssetReferenceService.getLocations(activeOnly: true);
-      final classifs =
-      await AssetReferenceService.getClassifications(activeOnly: true);
+      final classifs = await AssetReferenceService.getClassifications(activeOnly: true);
       if (!mounted) return;
       setState(() {
         _locations = locs;
         _classifications = classifs;
-        if (locs.isNotEmpty) _selectedLocation = locs.first;
-        if (classifs.isNotEmpty) _selectedClassification = classifs.first;
+
+        if (widget.initialDraft != null) {
+          _selectedLocation = locs.firstWhere(
+                (l) => l.acronym.toUpperCase() == widget.initialDraft!.locationAcronym.toUpperCase(),
+            orElse: () => locs.isNotEmpty ? locs.first : null as dynamic,
+          );
+          _selectedClassification = classifs.firstWhere(
+                (c) => c.acronym.toUpperCase() == widget.initialDraft!.classificationAcronym.toUpperCase(),
+            orElse: () => classifs.isNotEmpty ? classifs.first : null as dynamic,
+          );
+        } else {
+          if (locs.isNotEmpty) _selectedLocation = locs.first;
+          if (classifs.isNotEmpty) _selectedClassification = classifs.first;
+        }
+
         _isLoadingReferences = false;
       });
-      await _fetchAutoSequenceNumber();
+
+      // Only auto-fetch sequence if this is not a resumed draft with its own sequence
+      if (widget.initialDraft == null) {
+        await _fetchAutoSequenceNumber();
+      }
     } catch (_) {
       if (mounted) setState(() => _isLoadingReferences = false);
     }
@@ -231,6 +278,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   }
 
   Future<void> _capturePhotoWithCamera() async {
+    if (kIsWeb) {
+      await _pickImageFromDevice();
+      return;
+    }
+
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? photo = await picker.pickImage(
@@ -293,6 +345,72 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     );
   }
 
+  // ===========================================================================
+  // Save as Draft Handler (Bypasses strict validation)
+  // ===========================================================================
+
+  Future<void> _saveAsDraft() async {
+    setState(() {
+      _isSavingDraft = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final draft = AssetDraftModel(
+        draftId: widget.initialDraft?.draftId ?? 'DRAFT-${DateTime.now().millisecondsSinceEpoch}',
+        itemName: _itemNameController.text.trim(),
+        locationId: _selectedLocation?.locationId,
+        locationAcronym: _selectedLocation?.acronym ?? 'C',
+        locationName: _selectedLocation?.locationName,
+        classificationId: _selectedClassification?.classificationId,
+        classificationAcronym: _selectedClassification?.acronym ?? 'FF',
+        classificationName: _selectedClassification?.classificationName,
+        sequenceNumber: _sequenceNumberController.text.trim().isNotEmpty
+            ? _sequenceNumberController.text.trim()
+            : '001',
+        quantity: _parsedQuantity,
+        unitPrice: _parsedUnitPrice,
+        totalCost: _calculatedTotalCost,
+        dateOfAcquisition: _dateOfAcquisition,
+        modeOfAcquisition: _modeOfAcquisition,
+        conditionStatus: _conditionStatus,
+        operationalStatus: _operationalStatus,
+        dimensions: _dimensionsController.text.trim().isNotEmpty ? _dimensionsController.text.trim() : null,
+        color: _colorController.text.trim().isNotEmpty ? _colorController.text.trim() : null,
+        model: _modelController.text.trim().isNotEmpty ? _modelController.text.trim() : null,
+        others: _othersController.text.trim().isNotEmpty ? _othersController.text.trim() : null,
+        remarks: _remarksController.text.trim().isNotEmpty ? _remarksController.text.trim() : null,
+        rfidTag: _rfidTagController.text.trim().isNotEmpty ? _rfidTagController.text.trim() : null,
+        photoBytes: _watermarkedPhotoBytes,
+        photoFileName: _photoFileName,
+        updatedAt: DateTime.now(),
+      );
+
+      await AssetDraftService.saveDraft(draft);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registration draft saved. You can resume anytime from the Drafts page.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to save draft: $e';
+        _isSavingDraft = false;
+      });
+    }
+  }
+
+  // ===========================================================================
+  // Ledger Commit Handler (Full Validation & Draft Auto-Cleanup)
+  // ===========================================================================
+
   Future<void> _submitAsset() async {
     setState(() => _errorMessage = null);
 
@@ -308,8 +426,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
     final seq = _sequenceNumberController.text.trim();
     if (seq.isEmpty) {
-      setState(
-              () => _errorMessage = 'Please specify the sequence number suffix.');
+      setState(() => _errorMessage = 'Please specify the sequence number suffix.');
       return;
     }
 
@@ -357,6 +474,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         operationalStatus: _operationalStatus,
         customControlNumber: fullControlNo,
       );
+
+      // Clean up resumed draft if this was loaded from a saved draft
+      if (widget.initialDraft != null) {
+        await AssetDraftService.deleteDraft(widget.initialDraft!.draftId);
+      }
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -406,16 +528,39 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Register New Item',
-                  style: TextStyle(
-                    fontSize: isMobile ? 16 : 18,
-                    fontWeight: FontWeight.bold,
-                    color: textDark,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      widget.initialDraft != null ? 'Resume Registration' : 'Register New Item',
+                      style: TextStyle(
+                        fontSize: isMobile ? 16 : 18,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
+                    ),
+                    if (widget.initialDraft != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: ParishColors.goldLight,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: ParishColors.goldAccent.withOpacity(0.5)),
+                        ),
+                        child: const Text(
+                          'DRAFT',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.goldAccent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
-                  'Record parish property with an automated control number and quantity count',
+                  'Record parish property with automated control number and quantity count',
                   style: TextStyle(
                     fontSize: isMobile ? 10.5 : 12,
                     color: textMuted,
@@ -451,17 +596,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                           decoration: BoxDecoration(
                             color: ParishColors.mercyRedSurface,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: ParishColors.mercyRed,
-                            ),
+                            border: Border.all(color: ParishColors.mercyRed),
                           ),
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.error_outline,
-                                color: ParishColors.mercyRed,
-                                size: 20,
-                              ),
+                              const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 20),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -481,25 +620,17 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       // 2. FORM SECTION AT TOP: Photographic Evidence
                       _buildFormSectionCard(
                         title: 'Photographic Evidence',
-                        subtitle:
-                        'Capture or upload asset photo with automated security watermark',
+                        subtitle: 'Capture or upload asset photo with automated security watermark',
                         icon: Icons.camera_alt_outlined,
                         iconColor: ParishColors.marianBlue,
-                        child: _buildPhotoUploadBox(
-                          isMobile,
-                          borderGrey,
-                          cardWhite,
-                          textDark,
-                          textMuted,
-                        ),
+                        child: _buildPhotoUploadBox(isMobile, borderGrey, cardWhite, textDark, textMuted),
                       ),
                       const SizedBox(height: 18),
 
                       // 3. Form Section: Item Identification & Control Number
                       _buildFormSectionCard(
                         title: 'Item Identification & Control Number',
-                        subtitle:
-                        'Canonical control coding, naming, and diocesan classifications',
+                        subtitle: 'Canonical control coding, naming, and diocesan classifications',
                         icon: Icons.qr_code_2,
                         iconColor: ParishColors.goldAccent,
                         child: Column(
@@ -510,22 +641,18 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                             _buildLabel('Item Name *'),
                             TextFormField(
                               controller: _itemNameController,
-                              validator: (v) =>
-                              (v?.trim().isEmpty ?? true)
+                              validator: (v) => (v?.trim().isEmpty ?? true)
                                   ? 'Please enter the item name.'
                                   : null,
-                              style: TextStyle(
-                                  fontSize: 14, color: textDark),
+                              style: TextStyle(fontSize: 14, color: textDark),
                               decoration: _inputDecoration(
-                                hint:
-                                'e.g. Wooden Church Pew, Monoblock Chair, Flat Screen TV',
+                                hint: 'e.g. Wooden Church Pew, Monoblock Chair, Flat Screen TV',
                               ),
                             ),
                             const SizedBox(height: 16),
                             isMobile
                                 ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildLabel('Category *'),
                                 _buildClassificationDropdown(),
@@ -535,13 +662,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               ],
                             )
                                 : Row(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('Category *'),
                                       _buildClassificationDropdown(),
@@ -551,11 +676,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel(
-                                          'Storage Location *'),
+                                      _buildLabel('Storage Location *'),
                                       _buildLocationDropdown(),
                                     ],
                                   ),
@@ -570,15 +693,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       // 4. Form Section: Quantity, Valuation & Acquisition Mode
                       _buildFormSectionCard(
                         title: 'Quantity, Valuation & Acquisition',
-                        subtitle:
-                        'Inventory book section tiering, count, pricing, and mode of reception',
+                        subtitle: 'Inventory book section tiering, count, pricing, and mode of reception',
                         icon: Icons.payments_outlined,
                         iconColor: ParishColors.oliveGreen,
                         headerTrailing: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: _parsedUnitPrice >= 10000.0
                                 ? ParishColors.goldLight
@@ -606,27 +725,22 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   flex: 2,
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('Quantity *'),
                                       TextFormField(
                                         controller: _quantityController,
-                                        keyboardType:
-                                        TextInputType.number,
+                                        keyboardType: TextInputType.number,
                                         inputFormatters: [
-                                          FilteringTextInputFormatter
-                                              .digitsOnly,
+                                          FilteringTextInputFormatter.digitsOnly,
                                         ],
                                         validator: (v) {
-                                          final num = int.tryParse(
-                                              v?.trim() ?? '');
+                                          final num = int.tryParse(v?.trim() ?? '');
                                           if (num == null || num <= 0) {
                                             return 'Min 1';
                                           }
@@ -637,9 +751,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                           fontWeight: FontWeight.bold,
                                           color: textDark,
                                         ),
-                                        decoration: _inputDecoration(
-                                          hint: 'e.g. 16',
-                                        ),
+                                        decoration: _inputDecoration(hint: 'e.g. 16'),
                                       ),
                                     ],
                                   ),
@@ -648,17 +760,12 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 Expanded(
                                   flex: 3,
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('Price per Unit (₱)'),
                                       TextFormField(
-                                        controller:
-                                        _unitPriceController,
-                                        keyboardType: const TextInputType
-                                            .numberWithOptions(
-                                          decimal: true,
-                                        ),
+                                        controller: _unitPriceController,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                         inputFormatters: [
                                           ThousandsSeparatorCurrencyFormatter(),
                                         ],
@@ -670,17 +777,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                         decoration: _inputDecoration(
                                           hint: 'e.g. 2,500.00',
                                           prefixIcon: Padding(
-                                            padding:
-                                            const EdgeInsets
-                                                .symmetric(
-                                              horizontal: 10,
-                                              vertical: 12,
-                                            ),
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                             child: Text(
                                               '₱',
                                               style: TextStyle(
-                                                fontWeight:
-                                                FontWeight.bold,
+                                                fontWeight: FontWeight.bold,
                                                 fontSize: 15,
                                                 color: textDark,
                                               ),
@@ -696,21 +797,14 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                             const SizedBox(height: 12),
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                               decoration: BoxDecoration(
                                 color: ParishColors.backgroundLight,
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: ParishColors.oliveGreen
-                                      .withOpacity(0.4),
-                                ),
+                                border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
                               ),
                               child: Row(
-                                mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     'Calculated Total Cost:',
@@ -734,12 +828,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                             const SizedBox(height: 16),
                             isMobile
                                 ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildLabel('Acquisition Date *'),
-                                _buildAcquisitionDateTile(
-                                    borderGrey),
+                                _buildAcquisitionDateTile(borderGrey),
                                 const SizedBox(height: 12),
                                 _buildLabel('How Acquired *'),
                                 _buildAcquisitionModeDropdown(),
@@ -749,22 +841,17 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel(
-                                          'Acquisition Date *'),
-                                      _buildAcquisitionDateTile(
-                                        borderGrey,
-                                      ),
+                                      _buildLabel('Acquisition Date *'),
+                                      _buildAcquisitionDateTile(borderGrey),
                                     ],
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('How Acquired *'),
                                       _buildAcquisitionModeDropdown(),
@@ -781,8 +868,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       // 5. Form Section: Physical Specifications, Details & Remarks
                       _buildFormSectionCard(
                         title: 'Physical Specifications & Remarks',
-                        subtitle:
-                        'Dimensions, color, model, tags, condition, notes, and remarks',
+                        subtitle: 'Dimensions, color, model, tags, condition, notes, and remarks',
                         icon: Icons.tune,
                         iconColor: ParishColors.goldAccent,
                         child: Column(
@@ -790,8 +876,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                           children: [
                             isMobile
                                 ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildLabel('Item Condition *'),
                                 _buildConditionDropdown(),
@@ -804,8 +889,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('Item Condition *'),
                                       _buildConditionDropdown(),
@@ -815,8 +899,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('Item Status *'),
                                       _buildOperationalStatusDropdown(),
@@ -826,50 +909,31 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               ],
                             ),
                             const SizedBox(height: 16),
-                            _buildLabel(
-                                'Wireless RFID / NFC Tag (Optional)'),
+                            _buildLabel('Wireless RFID / NFC Tag (Optional)'),
                             TextFormField(
                               controller: _rfidTagController,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                color: textDark,
-                              ),
+                              style: TextStyle(fontSize: 13.5, color: textDark),
                               decoration: _inputDecoration(
                                 hint: 'e.g. 04:A2:4B:9C',
-                                prefixIcon: const Icon(
-                                  Icons.nfc,
-                                  size: 16,
-                                  color: ParishColors.marianBlue,
-                                ),
+                                prefixIcon: const Icon(Icons.nfc, size: 16, color: ParishColors.marianBlue),
                               ),
                             ),
                             const SizedBox(height: 16),
                             isMobile
                                 ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                        CrossAxisAlignment
-                                            .start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           _buildLabel('Dimensions'),
                                           TextFormField(
-                                            controller:
-                                            _dimensionsController,
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: textDark,
-                                            ),
-                                            decoration:
-                                            _inputDecoration(
-                                              hint:
-                                              'e.g. 50 inch, 10 ft x 3 ft',
-                                            ),
+                                            controller: _dimensionsController,
+                                            style: TextStyle(fontSize: 13, color: textDark),
+                                            decoration: _inputDecoration(hint: 'e.g. 50 inch, 10 ft x 3 ft'),
                                           ),
                                         ],
                                       ),
@@ -877,23 +941,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                        CrossAxisAlignment
-                                            .start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           _buildLabel('Color'),
                                           TextFormField(
-                                            controller:
-                                            _colorController,
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: textDark,
-                                            ),
-                                            decoration:
-                                            _inputDecoration(
-                                              hint:
-                                              'e.g. Black, Dark Walnut',
-                                            ),
+                                            controller: _colorController,
+                                            style: TextStyle(fontSize: 13, color: textDark),
+                                            decoration: _inputDecoration(hint: 'e.g. Black, Dark Walnut'),
                                           ),
                                         ],
                                       ),
@@ -904,14 +958,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 _buildLabel('Model'),
                                 TextFormField(
                                   controller: _modelController,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: textDark,
-                                  ),
-                                  decoration: _inputDecoration(
-                                    hint:
-                                    'e.g. Samsung, Custom Woodcraft',
-                                  ),
+                                  style: TextStyle(fontSize: 13, color: textDark),
+                                  decoration: _inputDecoration(hint: 'e.g. Samsung, Custom Woodcraft'),
                                 ),
                               ],
                             )
@@ -919,23 +967,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel(
-                                          'Size / Dimensions'),
+                                      _buildLabel('Size / Dimensions'),
                                       TextFormField(
-                                        controller:
-                                        _dimensionsController,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: textDark,
-                                        ),
-                                        decoration:
-                                        _inputDecoration(
-                                          hint:
-                                          'e.g. 50 inch, 10 ft x 3 ft',
-                                        ),
+                                        controller: _dimensionsController,
+                                        style: TextStyle(fontSize: 13, color: textDark),
+                                        decoration: _inputDecoration(hint: 'e.g. 50 inch, 10 ft x 3 ft'),
                                       ),
                                     ],
                                   ),
@@ -943,22 +981,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('Color'),
                                       TextFormField(
-                                        controller:
-                                        _colorController,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: textDark,
-                                        ),
-                                        decoration:
-                                        _inputDecoration(
-                                          hint:
-                                          'e.g. Black, Dark Walnut',
-                                        ),
+                                        controller: _colorController,
+                                        style: TextStyle(fontSize: 13, color: textDark),
+                                        decoration: _inputDecoration(hint: 'e.g. Black, Dark Walnut'),
                                       ),
                                     ],
                                   ),
@@ -966,22 +995,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildLabel('Model'),
                                       TextFormField(
-                                        controller:
-                                        _modelController,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: textDark,
-                                        ),
-                                        decoration:
-                                        _inputDecoration(
-                                          hint:
-                                          'e.g. Samsung, Custom Woodcraft',
-                                        ),
+                                        controller: _modelController,
+                                        style: TextStyle(fontSize: 13, color: textDark),
+                                        decoration: _inputDecoration(hint: 'e.g. Samsung, Custom Woodcraft'),
                                       ),
                                     ],
                                   ),
@@ -993,23 +1013,19 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                             TextFormField(
                               controller: _othersController,
                               maxLines: 2,
-                              style: TextStyle(
-                                  fontSize: 13, color: textDark),
+                              style: TextStyle(fontSize: 13, color: textDark),
                               decoration: _inputDecoration(
-                                hint:
-                                'e.g. Inscribed "Donated by Santos Family", engraved serial numbers',
+                                hint: 'e.g. Inscribed "Donated by Santos Family", engraved serial numbers',
                               ),
                             ),
                             const SizedBox(height: 16),
-                            _buildLabel('Remarks'),
+                            _buildLabel('Notes & Maintenance Remarks'),
                             TextFormField(
                               controller: _remarksController,
                               maxLines: 2,
-                              style: TextStyle(
-                                  fontSize: 13, color: textDark),
+                              style: TextStyle(fontSize: 13, color: textDark),
                               decoration: _inputDecoration(
-                                hint:
-                                'e.g. Inspected and placed in main church nave, clean condition',
+                                hint: 'e.g. Inspected and placed in main church nave, clean condition',
                               ),
                             ),
                           ],
@@ -1017,13 +1033,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       ),
                       const SizedBox(height: 24),
 
-                      // 6. Form Actions Section Card
-                      _buildFormActionSection(
-                        isMobile,
-                        cardWhite,
-                        borderGrey,
-                        textMuted,
-                      ),
+                      // 6. Form Actions Section Card (Including "Save as Draft")
+                      _buildFormActionSection(isMobile, cardWhite, borderGrey, textMuted),
                       const SizedBox(height: 48),
                     ],
                   ),
@@ -1133,11 +1144,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.qr_code_2,
-                color: ParishColors.goldAccent,
-                size: 22,
-              ),
+              const Icon(Icons.qr_code_2, color: ParishColors.goldAccent, size: 22),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
@@ -1153,10 +1160,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 const SizedBox(
                   width: 14,
                   height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: ParishColors.goldAccent,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: ParishColors.goldAccent),
                 )
               else
                 Tooltip(
@@ -1165,18 +1169,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                     onTap: _fetchAutoSequenceNumber,
                     borderRadius: BorderRadius.circular(6),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.refresh,
-                            size: 14,
-                            color: ParishColors.goldAccent.withOpacity(0.9),
-                          ),
+                          Icon(Icons.refresh, size: 14, color: ParishColors.goldAccent.withOpacity(0.9)),
                           const SizedBox(width: 4),
                           Text(
                             'Auto-fill',
@@ -1199,25 +1196,16 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             children: [
               // Canonical Prefix (Locked)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 9,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: ParishColors.borderGrey,
-                  ),
+                  border: Border.all(color: ParishColors.borderGrey),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.lock_outline,
-                      size: 13,
-                      color: ParishColors.textMuted,
-                    ),
+                     Icon(Icons.lock_outline, size: 13, color: ParishColors.textMuted),
                     const SizedBox(width: 5),
                     Text(
                       _controlNumberPrefix,
@@ -1260,35 +1248,20 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 9,
-                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                     hintText: '001',
-                    hintStyle: TextStyle(
-                      color: ParishColors.textMuted,
-                      fontSize: 12,
-                    ),
+                    hintStyle: TextStyle(color: ParishColors.textMuted, fontSize: 12),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                        color: ParishColors.goldAccent,
-                        width: 1.2,
-                      ),
+                      borderSide: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: ParishColors.goldAccent.withOpacity(0.8),
-                        width: 1.2,
-                      ),
+                      borderSide: BorderSide(color: ParishColors.goldAccent.withOpacity(0.8), width: 1.2),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                        color: ParishColors.marianBlue,
-                        width: 1.6,
-                      ),
+                      borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.6),
                     ),
                   ),
                 ),
@@ -1298,19 +1271,12 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(
-                Icons.info_outline,
-                size: 13,
-                color: ParishColors.textMuted,
-              ),
+              Icon(Icons.info_outline, size: 13, color: ParishColors.textMuted),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   'Full Control Number: $_fullControlNumber (Last part can be modified during registration; locked afterwards).',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: ParishColors.textDark.withOpacity(0.75),
-                  ),
+                  style: TextStyle(fontSize: 11, color: ParishColors.textDark.withOpacity(0.75)),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1323,7 +1289,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   }
 
   // ===========================================================================
-  // Photo Upload & Watermark Box Helper (Prominently Placed at the Top)
+  // Photo Upload & Watermark Box Helper
   // ===========================================================================
 
   Widget _buildPhotoUploadBox(
@@ -1336,23 +1302,17 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _watermarkedPhotoBytes != null
-            ? ParishColors.oliveGreenSurface
-            : ParishColors.backgroundLight,
+        color: _watermarkedPhotoBytes != null ? ParishColors.oliveGreenSurface : ParishColors.backgroundLight,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _watermarkedPhotoBytes != null
-              ? ParishColors.oliveGreen
-              : borderGrey,
+          color: _watermarkedPhotoBytes != null ? ParishColors.oliveGreen : borderGrey,
         ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: _watermarkedPhotoBytes != null
-                ? _openInteractiveImagePreview
-                : null,
+            onTap: _watermarkedPhotoBytes != null ? _openInteractiveImagePreview : null,
             child: Container(
               width: 84,
               height: 84,
@@ -1360,30 +1320,17 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: _watermarkedPhotoBytes != null
-                      ? ParishColors.goldAccent
-                      : borderGrey,
+                  color: _watermarkedPhotoBytes != null ? ParishColors.goldAccent : borderGrey,
                 ),
               ),
               child: _isProcessingImage
-                  ? const Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
-              )
+                  ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
                   : _watermarkedPhotoBytes != null
                   ? ClipRRect(
                 borderRadius: BorderRadius.circular(9),
-                child: Image.memory(
-                  _watermarkedPhotoBytes!,
-                  fit: BoxFit.cover,
-                ),
+                child: Image.memory(_watermarkedPhotoBytes!, fit: BoxFit.cover),
               )
-                  : const Icon(
-                Icons.image,
-                size: 38,
-                color: ParishColors.marianBlue,
-              ),
+                  : const Icon(Icons.image, size: 38, color: ParishColors.marianBlue),
             ),
           ),
           const SizedBox(width: 16),
@@ -1395,19 +1342,12 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                   _watermarkedPhotoBytes != null
                       ? 'Security Watermark Embedded'
                       : 'Take or Upload Item Photo',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13.5,
-                    color: textDark,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: textDark),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Photos are stamped with permanent control number and timestamp.',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: textMuted,
-                  ),
+                  style: TextStyle(fontSize: 11.5, color: textMuted),
                 ),
                 const SizedBox(height: 10),
                 Wrap(
@@ -1418,36 +1358,20 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ParishColors.marianBlue,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
-                      onPressed: _isProcessingImage
-                          ? null
-                          : _capturePhotoWithCamera,
-                      icon: const Icon(
-                        Icons.camera_alt,
-                        size: 16,
-                      ),
-                      label: const Text('Camera'),
+                      onPressed: _isProcessingImage ? null : _capturePhotoWithCamera,
+                      icon: const Icon(Icons.camera_alt, size: 16),
+                      label: Text(kIsWeb ? 'Camera / Photo' : 'Camera'),
                     ),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: ParishColors.marianBlue,
                         side: const BorderSide(color: ParishColors.marianBlue),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
-                      onPressed: _isProcessingImage
-                          ? null
-                          : _pickImageFromDevice,
-                      icon: const Icon(
-                        Icons.upload_file,
-                        size: 16,
-                      ),
+                      onPressed: _isProcessingImage ? null : _pickImageFromDevice,
+                      icon: const Icon(Icons.upload_file, size: 16),
                       label: const Text('Upload Image'),
                     ),
                     if (_watermarkedPhotoBytes != null)
@@ -1467,7 +1391,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   }
 
   // ===========================================================================
-  // Form Action Section Card
+  // Form Action Section Card (Commit to Ledger or Save as Draft)
   // ===========================================================================
 
   Widget _buildFormActionSection(
@@ -1476,6 +1400,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       Color borderGrey,
       Color textMuted,
       ) {
+    final bool isBusy = _isSaving || _isSavingDraft;
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1497,31 +1423,20 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: ParishColors.marianBlue,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 elevation: 1,
               ),
-              onPressed: _isSaving ? null : _submitAsset,
+              onPressed: isBusy ? null : _submitAsset,
               icon: _isSaving
                   ? const SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
               )
-                  : const Icon(
-                Icons.check,
-                size: 18,
-              ),
+                  : const Icon(Icons.check, size: 18),
               label: Text(
                 _isSaving ? 'Registering...' : 'Save & Register Item',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ),
           ),
@@ -1529,80 +1444,96 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
           SizedBox(
             width: double.infinity,
             height: 44,
-            child: OutlinedButton(
+            child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                foregroundColor: textMuted,
-                side: BorderSide(color: borderGrey),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                foregroundColor: ParishColors.goldAccent,
+                side: const BorderSide(color: ParishColors.goldAccent),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: _isSaving ? null : () => Navigator.pop(context),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+              onPressed: isBusy ? null : _saveAsDraft,
+              icon: _isSavingDraft
+                  ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: ParishColors.goldAccent),
+              )
+                  : const Icon(Icons.bookmark_border, size: 16),
+              label: Text(
+                _isSavingDraft ? 'Saving Draft...' : 'Save as Draft',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 40,
+            child: TextButton(
+              onPressed: isBusy ? null : () => Navigator.pop(context),
+              child: Text('Cancel', style: TextStyle(color: textMuted)),
             ),
           ),
         ],
       )
           : Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           OutlinedButton(
             style: OutlinedButton.styleFrom(
               foregroundColor: textMuted,
               side: BorderSide(color: borderGrey),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 22,
-                vertical: 14,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            onPressed: _isSaving ? null : () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            onPressed: isBusy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.marianBlue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 28,
-                vertical: 14,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ParishColors.goldAccent,
+                  side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: isBusy ? null : _saveAsDraft,
+                icon: _isSavingDraft
+                    ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: ParishColors.goldAccent),
+                )
+                    : const Icon(Icons.bookmark_border, size: 16),
+                label: Text(
+                  _isSavingDraft ? 'Saving Draft...' : 'Save as Draft',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                ),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.marianBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 1,
+                ),
+                onPressed: isBusy ? null : _submitAsset,
+                icon: _isSaving
+                    ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+                    : const Icon(Icons.check, size: 18),
+                label: Text(
+                  _isSaving ? 'Registering...' : 'Save & Register Item',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
               ),
-              elevation: 1,
-            ),
-            onPressed: _isSaving ? null : _submitAsset,
-            icon: _isSaving
-                ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 2,
-              ),
-            )
-                : const Icon(Icons.check, size: 18),
-            label: Text(
-              _isSaving ? 'Registering...' : 'Save & Register Item',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
+            ],
           ),
         ],
       ),
@@ -1621,10 +1552,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       items: _classifications.map((c) {
         return DropdownMenuItem(
           value: c,
-          child: Text(
-            '${c.classificationName} (${c.acronym})',
-            style: const TextStyle(fontSize: 13),
-          ),
+          child: Text('${c.classificationName} (${c.acronym})', style: const TextStyle(fontSize: 13)),
         );
       }).toList(),
       onChanged: (val) {
@@ -1644,10 +1572,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       items: _locations.map((l) {
         return DropdownMenuItem(
           value: l,
-          child: Text(
-            '${l.locationName} (${l.acronym})',
-            style: const TextStyle(fontSize: 13),
-          ),
+          child: Text('${l.locationName} (${l.acronym})', style: const TextStyle(fontSize: 13)),
         );
       }).toList(),
       onChanged: (val) {
@@ -1675,16 +1600,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
           children: [
             Text(
               '${_dateOfAcquisition.year}-${_dateOfAcquisition.month.toString().padLeft(2, '0')}-${_dateOfAcquisition.day.toString().padLeft(2, '0')}',
-              style: TextStyle(
-                color: ParishColors.textDark,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: ParishColors.textDark, fontWeight: FontWeight.bold),
             ),
-            const Icon(
-              Icons.calendar_today,
-              size: 18,
-              color: ParishColors.marianBlue,
-            ),
+            const Icon(Icons.calendar_today, size: 18, color: ParishColors.marianBlue),
           ],
         ),
       ),
@@ -1695,9 +1613,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     return DropdownButtonFormField<String>(
       value: _modeOfAcquisition,
       decoration: _inputDecoration(),
-      items: _acquisitionModes
-          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-          .toList(),
+      items: _acquisitionModes.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
       onChanged: (val) => setState(() => _modeOfAcquisition = val!),
     );
   }
@@ -1771,8 +1687,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide:
-        const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+        borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
       ),
     );
   }

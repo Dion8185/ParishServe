@@ -79,12 +79,35 @@ class AssetService {
     }
   }
 
-  /// Looks up a single asset by Control Number, Asset ID, QR Token, or RFID tag
+  /// Looks up a single asset by Control Number, Asset ID, QR Token, or RFID tag.
+  /// Automatically strips serialized sub-unit suffixes (e.g. `C-FF 2026-0001/05` -> `C-FF 2026-0001`)
+  /// so scanning physical quantified items instantly resolves the parent record.
   static Future<AssetModel?> findAssetByIdentifier(String identifier) async {
     final clean = identifier.trim();
     if (clean.isEmpty) return null;
 
+    // Extract base control number if scanner detected a sub-unit suffix (e.g. /01 or /14)
+    String baseIdentifier = clean;
+    if (clean.contains('/')) {
+      final parts = clean.split('/');
+      if (parts.isNotEmpty && parts.first.trim().isNotEmpty) {
+        baseIdentifier = parts.first.trim();
+      }
+    }
+
     try {
+      final orFilter = [
+        'control_number.eq.$clean',
+        'asset_id.eq.$clean',
+        'qr_code_token.eq.$clean',
+        'rfid_tag.eq.$clean',
+        if (baseIdentifier != clean) ...[
+          'control_number.eq.$baseIdentifier',
+          'asset_id.eq.$baseIdentifier',
+          'qr_code_token.eq.$baseIdentifier',
+        ]
+      ].join(',');
+
       final response = await _client
           .from('parish_assets')
           .select('''
@@ -100,7 +123,7 @@ class AssetService {
               location_name
             )
           ''')
-          .or('control_number.eq.$clean,asset_id.eq.$clean,qr_code_token.eq.$clean,rfid_tag.eq.$clean')
+          .or(orFilter)
           .maybeSingle();
 
       if (response != null) {
@@ -120,6 +143,8 @@ class AssetService {
     final clean = query.trim();
     if (clean.isEmpty) return [];
 
+    final searchBase = clean.contains('/') ? clean.split('/').first.trim() : clean;
+
     try {
       final response = await _client
           .from('parish_assets')
@@ -136,7 +161,7 @@ class AssetService {
               location_name
             )
           ''')
-          .or('control_number.ilike.%$clean%,item_name.ilike.%$clean%,rfid_tag.ilike.%$clean%,model.ilike.%$clean%')
+          .or('control_number.ilike.%$searchBase%,item_name.ilike.%$searchBase%,rfid_tag.ilike.%$searchBase%,model.ilike.%$searchBase%')
           .order('control_number', ascending: true)
           .limit(limit);
 

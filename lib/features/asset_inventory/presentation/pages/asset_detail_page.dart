@@ -290,8 +290,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
   Future<void> _capturePhotoWithCamera() async {
     if (kIsWeb) {
-      // In Flutter Web, routing safely through file selection avoids tab eviction
-      // and unhandled capture events on desktop browsers.
       await _pickImageFromDevice();
       return;
     }
@@ -510,7 +508,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   Future<void> _printLabelSticker() async {
-    await AssetLabelPdfService.printSingleAssetLabel(_currentAsset);
+    await AssetLabelPdfService.printSingleAssetLabel(
+      _currentAsset,
+      expandQuantified: true,
+    );
   }
 
   @override
@@ -586,7 +587,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ],
             ),
             actions: [
-              // Next & Previous Pager Controls in AppBar
               Container(
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -642,7 +642,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           body: SafeArea(
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 14 : 28,
+                horizontal: isMobile ? 14 : 24,
                 vertical: isMobile ? 14 : 22,
               ),
               child: Center(
@@ -651,7 +651,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Next/Previous Pager Ribbon for Quick Navigation on Mobile
                       if (isMobile) ...[
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -692,32 +691,13 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         const SizedBox(height: 12),
                       ],
 
-                      // Main Card
-                      Container(
-                        decoration: BoxDecoration(
-                          color: ParishColors.cardWhite,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isArchived
-                                ? ParishColors.mercyRed.withOpacity(0.5)
-                                : ParishColors.borderGrey,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.03),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        padding: EdgeInsets.all(isMobile ? 16 : 24),
-                        child: _isEditing
-                            ? _buildEditForm(isMobile)
-                            : _buildViewDetails(isMobile),
-                      ),
-                      const SizedBox(height: 16),
+                      if (_isEditing)
+                        _buildEditFormCard(isMobile)
+                      else
+                        _buildViewDetails(isMobile),
 
-                      // Footer Action Bar
+                      const SizedBox(height: 18),
+
                       _buildBottomActionBar(isMobile, isArchived),
                       const SizedBox(height: 36),
                     ],
@@ -732,15 +712,26 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   // ===========================================================================
-  // View Details Mode
+  // View Details Mode: Clean Executive Card UI for Diocesan Inventory Records
   // ===========================================================================
 
   Widget _buildViewDetails(bool isMobile) {
     final asset = _currentAsset;
     final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
-    final borderGrey = ParishColors.borderGrey;
     final isArchived = asset.isEffectivelyArchived;
+
+    final inventoryDateStr = asset.lastAuditedAt != null
+        ? asset.formattedLastAuditedDate
+        : asset.formattedRegistrationDate;
+
+    final String costFormatted = asset.quantity > 1
+        ? '${asset.formattedTotalCost} (${asset.formattedUnitPrice}/unit)'
+        : asset.formattedTotalCost;
+
+    final bool hasOtherDescriptions =
+        asset.others != null && asset.others!.trim().isNotEmpty;
+    final bool hasRfid =
+        asset.rfidTag != null && asset.rfidTag!.trim().isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -779,7 +770,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                             asset.archiveReason!.isNotEmpty
                             ? 'Reason: ${asset.archiveReason}'
                             : 'This item has been officially retired or disposed.',
-                        style: TextStyle(fontSize: 11.5, color: textDark),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: textDark,
+                        ),
                       ),
                     ],
                   ),
@@ -789,506 +784,145 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ),
         ],
 
-        // Photo + Key Identity Header with Prominently Highlighted Control Number
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildPhotoThumbnail(size: isMobile ? 96 : 130),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // HIGHLIGHTED DIOCESAN CONTROL NUMBER AT TOP
-                  Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isArchived
-                          ? ParishColors.mercyRedSurface
-                          : ParishColors.goldLight,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isArchived
-                            ? ParishColors.mercyRed.withOpacity(0.6)
-                            : ParishColors.goldAccent.withOpacity(0.8),
-                        width: 1.2,
-                      ),
-                    ),
-                    child: Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 2,
-                      children: [
-                        Icon(
-                          Icons.qr_code_2,
-                          size: 16,
-                          color: isArchived
-                              ? ParishColors.mercyRed
-                              : ParishColors.goldAccent,
-                        ),
-                        Text(
-                          'DIOCESAN CONTROL NO:',
-                          style: TextStyle(
-                            fontSize: isMobile ? 10 : 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                            color: isArchived
-                                ? ParishColors.mercyRed
-                                : ParishColors.goldAccent,
-                          ),
-                        ),
-                        Text(
-                          asset.controlNumber,
-                          style: TextStyle(
-                            fontFamily: 'Courier',
-                            fontSize: isMobile ? 13 : 14.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.6,
-                            color: isArchived
-                                ? ParishColors.mercyRed
-                                : ParishColors.textDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  Text(
-                    asset.itemName,
-                    style: TextStyle(
-                      fontSize: isMobile ? 18 : 22,
-                      fontWeight: FontWeight.bold,
-                      color: textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: asset.unitPrice >= 10000.0
-                              ? ParishColors.goldLight
-                              : ParishColors.marianBlueSurface,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: asset.unitPrice >= 10000.0
-                                ? ParishColors.goldAccent
-                                : ParishColors.marianBlue,
-                            width: 1.0,
-                          ),
-                        ),
-                        child: Text(
-                          asset.inventorySection,
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.bold,
-                            color: asset.unitPrice >= 10000.0
-                                ? ParishColors.goldAccent
-                                : ParishColors.marianBlue,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: asset.statusSurfaceColor,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                              color: asset.statusColor.withOpacity(0.4)),
-                        ),
-                        child: Text(
-                          'Status: ${asset.operationalStatus}',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.bold,
-                            color: asset.statusColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Registration Date (Visually Removed Control ID as requested)
-                  Text(
-                    'Registered: ${asset.formattedRegistrationDate}',
-                    style: TextStyle(fontSize: 11, color: textMuted),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-
-        // Valuation & Quantity Summary Strip
+        // 1. HERO HEADER: Watermarked Photo + Canonical Identity & Badges
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFFF0FDF4),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.35)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              Column(
-                children: [
-                  Text(
-                    'Quantity',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: textMuted,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${asset.quantity} unit(s)',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.marianBlue,
-                    ),
-                  ),
-                ],
-              ),
-              Container(width: 1, height: 30, color: ParishColors.borderGrey),
-              Column(
-                children: [
-                  Text(
-                    'Price per Unit',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: textMuted,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    asset.formattedUnitPrice,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.marianBlue,
-                    ),
-                  ),
-                ],
-              ),
-              Container(width: 1, height: 30, color: ParishColors.borderGrey),
-              Column(
-                children: [
-                  Text(
-                    'Total Valuation',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: textMuted,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    asset.formattedTotalCost,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.oliveGreen,
-                    ),
-                  ),
-                ],
+            color: ParishColors.cardWhite,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: ParishColors.borderGrey),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 18),
-
-        // Physical Specifications & Coordinates Card
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: ParishColors.backgroundLight,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderGrey),
-          ),
-          child: Column(
+          padding: EdgeInsets.all(isMobile ? 14 : 18),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'CANONICAL SPECIFICATIONS & LOGISTICS',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: textMuted,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const Divider(height: 16),
-              _buildDataRow(Icons.category_outlined, 'Classification',
-                  asset.displayClassification),
-              _buildDataRow(Icons.location_on_outlined, 'Storage Location',
-                  asset.displayLocation),
-              _buildDataRow(
-                Icons.calendar_today_outlined,
-                'Acquisition Date',
-                '${asset.formattedAcquisitionDate} (${asset.modeOfAcquisition})',
-              ),
-              if (asset.rfidTag != null && asset.rfidTag!.isNotEmpty)
-                _buildDataRow(Icons.nfc, 'RFID / NFC Tag', asset.rfidTag!),
-              const SizedBox(height: 10),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                      child: _buildSpecItem(
-                          'Size / Dimensions', asset.dimensions ?? '—')),
-                  const SizedBox(width: 8),
-                  Expanded(child: _buildSpecItem('Color', asset.color ?? '—')),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _buildSpecItem('Model', asset.model ?? '—')),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildSpecItem(
-                      'Operational Status',
-                      asset.operationalStatus,
-                      highlightRed: asset.isEffectivelyArchived,
-                    ),
-                  ),
-                ],
-              ),
-              if (asset.others != null && asset.others!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Text(
-                  'Other Details ${asset.others}',
-                  style: TextStyle(fontSize: 12.5, color: textDark),
-                ),
-              ],
-              if (asset.remarks != null && asset.remarks!.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Notes: ${asset.remarks}',
-                  style: TextStyle(fontSize: 12, color: textMuted),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Audit History Section
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Audit & Adjustment History',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: textDark,
-              ),
-            ),
-            Text(
-              '${_auditHistory.length} record(s)',
-              style: TextStyle(fontSize: 12, color: textMuted),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (_isLoadingHistory)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(),
-            ),
-          )
-        else if (_auditHistory.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: ParishColors.backgroundLight,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: borderGrey),
-            ),
-            child: Center(
-              child: Text(
-                'No audit or quantity adjustment history recorded yet.',
-                style: TextStyle(fontSize: 12.5, color: textMuted),
-              ),
-            ),
-          )
-        else
-          Column(
-            children:
-            _auditHistory.map((log) => _buildAuditLogTile(log)).toList(),
-          ),
-      ],
-    );
-  }
-
-  // ===========================================================================
-  // Responsive Edit Form Mode
-  // ===========================================================================
-
-  Widget _buildEditForm(bool isMobile) {
-    final asset = _currentAsset;
-    final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
-    final borderGrey = ParishColors.borderGrey;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: ParishColors.marianBlueSurface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.lock_outline,
-                  size: 18, color: ParishColors.marianBlue),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Control Number (${asset.controlNumber}) and Category are locked to preserve ledger integrity.',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: ParishColors.marianBlue,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Photo Upload / Watermark strip
-        _buildLabel('Item Photo'),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: ParishColors.backgroundLight,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderGrey),
-          ),
-          child: Row(
-            children: [
-              InkWell(
-                onTap: () {
-                  if (_newWatermarkedPhotoBytes != null) {
-                    _openInteractivePreview(
-                        MemoryImage(_newWatermarkedPhotoBytes!));
-                  } else if (asset.photoUrl != null &&
-                      asset.photoUrl!.isNotEmpty) {
-                    _openInteractivePreview(NetworkImage(asset.photoUrl!));
-                  }
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: borderGrey),
-                  ),
-                  child: _isProcessingImage
-                      ? const Center(
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                      : _newWatermarkedPhotoBytes != null
-                      ? ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: Image.memory(
-                      _newWatermarkedPhotoBytes!,
-                      fit: BoxFit.cover,
-                    ),
-                  )
-                      : (asset.photoUrl != null &&
-                      asset.photoUrl!.isNotEmpty)
-                      ? ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: Image.network(
-                      asset.photoUrl!,
-                      fit: BoxFit.cover,
-                    ),
-                  )
-                      : const Icon(Icons.photo_outlined,
-                      size: 36, color: ParishColors.marianBlue),
-                ),
-              ),
-              const SizedBox(width: 14),
+              _buildPhotoThumbnail(size: isMobile ? 96 : 130),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _newWatermarkedPhotoBytes != null
-                          ? 'New Watermarked Photo'
-                          : (asset.photoUrl != null
-                          ? 'Current Photo'
-                          : 'No photo uploaded'),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: _newWatermarkedPhotoBytes != null
-                            ? ParishColors.oliveGreen
-                            : textDark,
+                    // Highlighted Diocesan Control Number Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4.5),
+                      decoration: BoxDecoration(
+                        color: isArchived
+                            ? ParishColors.mercyRedSurface
+                            : ParishColors.goldLight,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isArchived
+                              ? ParishColors.mercyRed.withOpacity(0.6)
+                              : ParishColors.goldAccent.withOpacity(0.8),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: 2,
+                        children: [
+                          Icon(
+                            Icons.qr_code_2,
+                            size: 16,
+                            color: isArchived
+                                ? ParishColors.mercyRed
+                                : ParishColors.goldAccent,
+                          ),
+                          Text(
+                            'DIOCESAN CONTROL NO:',
+                            style: TextStyle(
+                              fontSize: isMobile ? 9.5 : 10.5,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                              color: isArchived
+                                  ? ParishColors.mercyRed
+                                  : ParishColors.goldAccent,
+                            ),
+                          ),
+                          Text(
+                            asset.controlNumber,
+                            style: TextStyle(
+                              fontFamily: 'Courier',
+                              fontSize: isMobile ? 12.5 : 14,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.6,
+                              color: isArchived
+                                  ? ParishColors.mercyRed
+                                  : ParishColors.textDark,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
+
+                    Text(
+                      asset.itemName,
+                      style: TextStyle(
+                        fontSize: isMobile ? 17 : 22,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
+                      spacing: 6,
+                      runSpacing: 4,
                       children: [
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: ParishColors.marianBlue,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: asset.unitPrice >= 10000.0
+                                ? ParishColors.goldLight
+                                : ParishColors.marianBlueSurface,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: asset.unitPrice >= 10000.0
+                                  ? ParishColors.goldAccent
+                                  : ParishColors.marianBlue,
+                              width: 1.0,
+                            ),
                           ),
-                          onPressed: _isProcessingImage
-                              ? null
-                              : _capturePhotoWithCamera,
-                          icon: const Icon(Icons.camera_alt, size: 14),
-                          label: Text(
-                            kIsWeb ? 'Camera / Photo' : 'Camera',
-                            style: const TextStyle(
-                                fontSize: 11.5, fontWeight: FontWeight.bold),
+                          child: Text(
+                            asset.inventorySection,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: asset.unitPrice >= 10000.0
+                                  ? ParishColors.goldAccent
+                                  : ParishColors.marianBlue,
+                            ),
                           ),
                         ),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: ParishColors.marianBlue,
-                            side:
-                            const BorderSide(color: ParishColors.marianBlue),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: asset.statusSurfaceColor,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: asset.statusColor.withOpacity(0.3)),
                           ),
-                          onPressed: _isProcessingImage
-                              ? null
-                              : _pickImageFromDevice,
-                          icon: const Icon(Icons.upload_file, size: 14),
-                          label: const Text('Upload',
-                              style: TextStyle(
-                                  fontSize: 11.5, fontWeight: FontWeight.bold)),
+                          child: Text(
+                            asset.operationalStatus,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: asset.statusColor,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -1298,209 +932,1052 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
 
-        _buildLabel('Item Name *'),
-        TextFormField(
-          controller: _nameController,
-          style: TextStyle(fontSize: 14, color: textDark),
-          decoration: _inputDecoration(
-              hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
 
-        // Quantity & Unit Price
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildLabel('Quantity *'),
-                  TextFormField(
-                    controller: _quantityController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    style: TextStyle(fontSize: 14, color: textDark),
-                    decoration: _inputDecoration(hint: 'e.g. 16'),
-                  ),
-                ],
+        // 2. PARISH BOOK OF INVENTORY RECORD CARD
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: ParishColors.cardWhite,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: ParishColors.borderGrey),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ],
+          ),
+          padding: EdgeInsets.all(isMobile ? 14 : 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  _buildLabel('Price per Unit (₱)'),
-                  TextFormField(
-                    controller: _unitPriceController,
-                    keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
-                    style: TextStyle(fontSize: 14, color: textDark),
-                    decoration: _inputDecoration(
-                      hint: 'e.g. 2,500.00',
-                      prefixIcon: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 12),
-                        child: Text('₱',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, color: textDark)),
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ParishColors.marianBlueSurface,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.menu_book_rounded,
+                      size: 18,
+                      color: ParishColors.marianBlue,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Parish Book of Inventory Record',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.textDark,
+                          ),
+                        ),
+                        Text(
+                          'Canonical particulars formatted for official diocesan ledger verification',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: ParishColors.textMuted,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
+              const Divider(height: 22),
 
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: ParishColors.backgroundLight,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total: ₱ ${AssetModel.formatCurrency(_editCalculatedTotalCost)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: ParishColors.oliveGreen,
+              // Header coordinates: Control No & Inventory Date
+              isMobile
+                  ? Column(
+                children: [
+                  _buildInfoTile('Control Number', asset.controlNumber,
+                      Icons.qr_code, isMono: true),
+                  const SizedBox(height: 8),
+                  _buildInfoTile('Date of Inventory', inventoryDateStr,
+                      Icons.event_note_outlined),
+                ],
+              )
+                  : Row(
+                children: [
+                  Expanded(
+                    child: _buildInfoTile(
+                        'Control Number',
+                        asset.controlNumber,
+                        Icons.qr_code,
+                        isMono: true),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildInfoTile('Date of Inventory',
+                        inventoryDateStr, Icons.event_note_outlined),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // Core particulars grid with bold answers
+              isMobile
+                  ? Column(
+                children: [
+                  _buildInfoTile('Item Name', asset.itemName,
+                      Icons.inventory_2_outlined),
+                  const SizedBox(height: 8),
+                  _buildInfoTile('Storage Location', asset.displayLocation,
+                      Icons.location_on_outlined),
+                  const SizedBox(height: 8),
+                  _buildInfoTile('Date Acquired',
+                      asset.formattedAcquisitionDate,
+                      Icons.calendar_today_outlined),
+                  const SizedBox(height: 8),
+                  _buildInfoTile('Mode of Acquisition',
+                      asset.modeOfAcquisition, Icons.shopping_bag_outlined),
+                  const SizedBox(height: 8),
+                  _buildInfoTile('Cost of Acquisition', costFormatted,
+                      Icons.payments_outlined,
+                      isPrice: true),
+                ],
+              )
+                  : Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoTile('Item Name', asset.itemName,
+                            Icons.inventory_2_outlined),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoTile(
+                            'Storage Location',
+                            asset.displayLocation,
+                            Icons.location_on_outlined),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoTile(
+                            'Date Acquired',
+                            asset.formattedAcquisitionDate,
+                            Icons.calendar_today_outlined),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoTile(
+                            'Mode of Acquisition',
+                            asset.modeOfAcquisition,
+                            Icons.shopping_bag_outlined),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoTile('Cost of Acquisition', costFormatted,
+                      Icons.payments_outlined,
+                      isPrice: true),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // 2.1 PHYSICAL SPECIFICATIONS & DESCRIPTIONS (Clean Modular Tiles)
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                      color: ParishColors.borderGrey.withOpacity(0.7)),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.straighten_outlined,
+                            size: 16, color: ParishColors.marianBlue),
+                        const SizedBox(width: 8),
+                        Text(
+                          'DETAILS OF PHYSICAL SPECIFICATIONS',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                            color: ParishColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 16),
+
+                    // Dimension, Color, Model Modular Cards with bold values
+                    isMobile
+                        ? Column(
+                      children: [
+                        _buildSpecCard(
+                          label: 'Dimension',
+                          value: asset.dimensions ?? '—',
+                          icon: Icons.aspect_ratio_outlined,
+                        ),
+                        const SizedBox(height: 8),
+                        _buildSpecCard(
+                          label: 'Color',
+                          value: asset.color ?? '—',
+                          icon: Icons.palette_outlined,
+                        ),
+                        const SizedBox(height: 8),
+                        _buildSpecCard(
+                          label: 'Model',
+                          value: asset.model ?? '—',
+                          icon: Icons.devices_other_outlined,
+                        ),
+                      ],
+                    )
+                        : Row(
+                      children: [
+                        Expanded(
+                          child: _buildSpecCard(
+                            label: 'Dimension',
+                            value: asset.dimensions ?? '—',
+                            icon: Icons.aspect_ratio_outlined,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildSpecCard(
+                            label: 'Color',
+                            value: asset.color ?? '—',
+                            icon: Icons.palette_outlined,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildSpecCard(
+                            label: 'Model',
+                            value: asset.model ?? '—',
+                            icon: Icons.devices_other_outlined,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Other Descriptions (Clean, bold and renamed away from "markings/inscriptions")
+                    if (hasOtherDescriptions) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: ParishColors.borderGrey.withOpacity(0.8)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(top: 2),
+                              child: Icon(Icons.description_outlined,
+                                  size: 16, color: ParishColors.marianBlue),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'OTHER DESCRIPTIONS',
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
+                                      color: ParishColors.textMuted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    asset.others!.trim(),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.textDark,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // RFID / NFC Tag Tile
+                    if (hasRfid) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: ParishColors.borderGrey.withOpacity(0.8)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.nfc,
+                                size: 16, color: ParishColors.marianBlue),
+                            const SizedBox(width: 8),
+                            Text(
+                              'WIRELESS RFID / NFC: ',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.4,
+                                color: ParishColors.textMuted,
+                              ),
+                            ),
+                            Text(
+                              asset.rfidTag!.trim(),
+                              style: const TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.marianBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              Text(
-                _editDeterminedSection,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: ParishColors.marianBlue,
+
+              const SizedBox(height: 14),
+
+              // 2.2 REMARKS & OBSERVATIONS CARD with bold text
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: ParishColors.borderGrey.withOpacity(0.7)),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.notes_rounded,
+                            size: 15, color: ParishColors.marianBlue),
+                        const SizedBox(width: 6),
+                        Text(
+                          'REMARKS & MAINTENANCE OBSERVATIONS',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                            color: ParishColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      (asset.remarks != null && asset.remarks!.trim().isNotEmpty)
+                          ? asset.remarks!.trim()
+                          : (asset.quantity > 1
+                          ? 'Quantity: ${asset.quantity} units. Condition: ${asset.conditionStatus.toUpperCase()} • Status: ${asset.operationalStatus}'
+                          : 'Condition: ${asset.conditionStatus.toUpperCase()} • Status: ${asset.operationalStatus}'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        height: 1.45,
+                        color: ParishColors.textDark,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
 
-        // Condition & Status (Standardized)
-        isMobile
-            ? Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildLabel('Item Condition *'),
-            _buildConditionDropdown(),
-            const SizedBox(height: 10),
-            _buildLabel('Item Status *'),
-            _buildOperationalStatusDropdown(),
-          ],
-        )
-            : Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildLabel('Item Condition *'),
-                  _buildConditionDropdown(),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildLabel('Item Status *'),
-                  _buildOperationalStatusDropdown(),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
 
-        _buildLabel('Wireless RFID / NFC Tag (Optional)'),
-        TextFormField(
-          controller: _rfidController,
-          style: TextStyle(fontSize: 13.5, color: textDark),
-          decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C'),
-        ),
-        const SizedBox(height: 14),
-
-        // Dimensions, Color, Model
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        // 3. OPERATIONAL STATUS & LIVE VALUATION METRICS DECK
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: ParishColors.cardWhite,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: ParishColors.borderGrey),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildLabel('Dimensions'),
-                  TextFormField(
-                    controller: _dimensionsController,
-                    style: TextStyle(fontSize: 13, color: textDark),
-                    decoration:
-                    _inputDecoration(hint: 'e.g. 50 inch, 10 ft x 3 ft'),
+                  Text(
+                    'OPERATIONAL STATUS & VALUATION METRICS',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.6,
+                      color: ParishColors.textMuted,
+                    ),
+                  ),
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: asset.conditionSurfaceColor,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Condition: ${asset.conditionStatus}',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: asset.conditionColor,
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const Divider(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildLabel('Color'),
-                  TextFormField(
-                    controller: _colorController,
-                    style: TextStyle(fontSize: 13, color: textDark),
-                    decoration:
-                    _inputDecoration(hint: 'e.g. Black, Dark Walnut'),
+                  _buildMetricCell('Quantity', '${asset.quantity} unit(s)',
+                      ParishColors.marianBlue),
+                  Container(
+                      width: 1, height: 32, color: ParishColors.borderGrey),
+                  _buildMetricCell('Price / Unit', asset.formattedUnitPrice,
+                      ParishColors.marianBlue),
+                  Container(
+                      width: 1, height: 32, color: ParishColors.borderGrey),
+                  _buildMetricCell('Total Valuation', asset.formattedTotalCost,
+                      ParishColors.oliveGreen),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 4. AUDIT & ADJUSTMENT HISTORY (Intact historical log)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: ParishColors.cardWhite,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: ParishColors.borderGrey),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Audit & Adjustment History',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                  ),
+                  Text(
+                    '${_auditHistory.length} record(s)',
+                    style:
+                    TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        _buildLabel('Model'),
-        TextFormField(
-          controller: _modelController,
-          style: TextStyle(fontSize: 13, color: textDark),
-          decoration:
-          _inputDecoration(hint: 'e.g. Samsung, Custom Woodcraft'),
-        ),
-        const SizedBox(height: 14),
-
-        _buildLabel('Additional Details / Markings'),
-        TextFormField(
-          controller: _othersController,
-          maxLines: 2,
-          style: TextStyle(fontSize: 13, color: textDark),
-          decoration: _inputDecoration(
-              hint: 'e.g. Inscribed "Donated by Santos Family"'),
-        ),
-        const SizedBox(height: 12),
-
-        _buildLabel('Remarks'),
-        TextFormField(
-          controller: _remarksController,
-          maxLines: 2,
-          style: TextStyle(fontSize: 13, color: textDark),
-          decoration: _inputDecoration(
-              hint: 'e.g. Inspected and placed in main church nave'),
+              const Divider(height: 18),
+              if (_isLoadingHistory)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(18),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (_auditHistory.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      'No physical audits or quantity adjustments recorded yet.',
+                      style: TextStyle(
+                          fontSize: 12, color: ParishColors.textMuted),
+                    ),
+                  ),
+                )
+              else
+                ..._auditHistory.map((log) => _buildAuditLogTile(log)),
+            ],
+          ),
         ),
       ],
+    );
+  }
+
+  // ===========================================================================
+  // Modular Tile & Spec Card Helpers (Bold Answer Rendering)
+  // ===========================================================================
+
+  Widget _buildSpecCard({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    final bool isEmpty = value.trim().isEmpty || value.trim() == '—';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: ParishColors.marianBlue),
+              const SizedBox(width: 6),
+              Text(
+                label.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.4,
+                  color: ParishColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold, // Bold Answer
+              color: isEmpty
+                  ? ParishColors.textMuted.withOpacity(0.6)
+                  : ParishColors.textDark,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoTile(String label, String value, IconData icon,
+      {bool isMono = false, bool isPrice = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.6)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: ParishColors.marianBlue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.3,
+                    color: ParishColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontFamily: isMono ? 'Courier' : null,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold, // Bold Answer
+                    color: isPrice ? ParishColors.oliveGreen : ParishColors.textDark,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricCell(String title, String value, Color color) {
+    return Column(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+              fontSize: 11,
+              color: ParishColors.textMuted,
+              fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.bold, // Bold Answer
+              color: color),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Responsive Edit Form Card Mode
+  // ===========================================================================
+
+  Widget _buildEditFormCard(bool isMobile) {
+    final asset = _currentAsset;
+    final textDark = ParishColors.textDark;
+    final borderGrey = ParishColors.borderGrey;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderGrey),
+      ),
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: ParishColors.marianBlueSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_outline,
+                    size: 18, color: ParishColors.marianBlue),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Control Number (${asset.controlNumber}) and Category are locked to preserve canonical ledger integrity.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: ParishColors.marianBlue,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Photo Upload Strip
+          _buildLabel('Item Photo'),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderGrey),
+            ),
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: () {
+                    if (_newWatermarkedPhotoBytes != null) {
+                      _openInteractivePreview(
+                          MemoryImage(_newWatermarkedPhotoBytes!));
+                    } else if (asset.photoUrl != null &&
+                        asset.photoUrl!.isNotEmpty) {
+                      _openInteractivePreview(NetworkImage(asset.photoUrl!));
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: borderGrey),
+                    ),
+                    child: _isProcessingImage
+                        ? const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                        : _newWatermarkedPhotoBytes != null
+                        ? ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: Image.memory(
+                        _newWatermarkedPhotoBytes!,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                        : (asset.photoUrl != null &&
+                        asset.photoUrl!.isNotEmpty)
+                        ? ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: Image.network(
+                        asset.photoUrl!,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                        : const Icon(Icons.photo_outlined,
+                        size: 36, color: ParishColors.marianBlue),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _newWatermarkedPhotoBytes != null
+                            ? 'New Watermarked Photo'
+                            : (asset.photoUrl != null
+                            ? 'Current Photo'
+                            : 'No photo uploaded'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: _newWatermarkedPhotoBytes != null
+                              ? ParishColors.oliveGreen
+                              : textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ParishColors.marianBlue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                            ),
+                            onPressed: _isProcessingImage
+                                ? null
+                                : _capturePhotoWithCamera,
+                            icon: const Icon(Icons.camera_alt, size: 14),
+                            label: Text(
+                              kIsWeb ? 'Camera / Photo' : 'Camera',
+                              style: const TextStyle(
+                                  fontSize: 11.5, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: ParishColors.marianBlue,
+                              side:
+                              const BorderSide(color: ParishColors.marianBlue),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                            ),
+                            onPressed: _isProcessingImage
+                                ? null
+                                : _pickImageFromDevice,
+                            icon: const Icon(Icons.upload_file, size: 14),
+                            label: const Text('Upload',
+                                style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          _buildLabel('Item Name *'),
+          TextFormField(
+            controller: _nameController,
+            style: TextStyle(
+              fontSize: 14,
+              color: textDark,
+              fontWeight: FontWeight.bold, // Bold Edit Input
+            ),
+            decoration: _inputDecoration(
+                hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
+          ),
+          const SizedBox(height: 12),
+
+          // Quantity & Unit Price
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('Quantity *'),
+                    TextFormField(
+                      controller: _quantityController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: textDark,
+                        fontWeight: FontWeight.bold, // Bold Edit Input
+                      ),
+                      decoration: _inputDecoration(hint: 'e.g. 16'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('Price per Unit (₱)'),
+                    TextFormField(
+                      controller: _unitPriceController,
+                      keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: textDark,
+                        fontWeight: FontWeight.bold, // Bold Edit Input
+                      ),
+                      decoration: _inputDecoration(
+                        hint: 'e.g. 2,500.00',
+                        prefixIcon: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 12),
+                          child: Text('₱',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, color: textDark)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight,
+              borderRadius: BorderRadius.circular(8),
+              border:
+              Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total: ₱ ${AssetModel.formatCurrency(_editCalculatedTotalCost)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.oliveGreen,
+                  ),
+                ),
+                Text(
+                  _editDeterminedSection,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Condition & Status
+          isMobile
+              ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildLabel('Item Condition *'),
+              _buildConditionDropdown(),
+              const SizedBox(height: 10),
+              _buildLabel('Item Status *'),
+              _buildOperationalStatusDropdown(),
+            ],
+          )
+              : Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('Item Condition *'),
+                    _buildConditionDropdown(),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('Item Status *'),
+                    _buildOperationalStatusDropdown(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          _buildLabel('Wireless RFID / NFC Tag (Optional)'),
+          TextFormField(
+            controller: _rfidController,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: textDark,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C'),
+          ),
+          const SizedBox(height: 14),
+
+          // Dimensions, Color, Model
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('Dimensions'),
+                    TextFormField(
+                      controller: _dimensionsController,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: textDark,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration:
+                      _inputDecoration(hint: 'e.g. 50 inch, 10 ft x 3 ft'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('Color'),
+                    TextFormField(
+                      controller: _colorController,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: textDark,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration:
+                      _inputDecoration(hint: 'e.g. Black, Dark Walnut'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          _buildLabel('Model'),
+          TextFormField(
+            controller: _modelController,
+            style: TextStyle(
+              fontSize: 13,
+              color: textDark,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration:
+            _inputDecoration(hint: 'e.g. Samsung, Custom Woodcraft'),
+          ),
+          const SizedBox(height: 14),
+
+          _buildLabel('Other Descriptions'),
+          TextFormField(
+            controller: _othersController,
+            maxLines: 2,
+            style: TextStyle(
+              fontSize: 13,
+              color: textDark,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration: _inputDecoration(
+                hint: 'e.g. Donated by Santos Family, special donor tags'),
+          ),
+          const SizedBox(height: 12),
+
+          _buildLabel('Remarks'),
+          TextFormField(
+            controller: _remarksController,
+            maxLines: 2,
+            style: TextStyle(
+              fontSize: 13,
+              color: textDark,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration: _inputDecoration(
+                hint: 'e.g. Inspected and placed in main church nave'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1838,13 +2315,19 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text('Status: ${log.newStatus}',
-                          style: TextStyle(fontSize: 11, color: textMuted)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: textDark)),
                     ],
                     if (log.newLocation != null &&
                         log.newLocation!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text('Location: ${log.newLocation}',
-                          style: TextStyle(fontSize: 11, color: textMuted)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: textDark)),
                     ],
                   ],
                 ),
@@ -1895,7 +2378,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       'Reason: ${log.quantityChangeReason}',
                       style: TextStyle(
                           fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.bold,
                           color: textDark),
                     ),
                   ],
@@ -1906,7 +2389,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           if (log.cleanNotes.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Notes: ${log.cleanNotes}',
-                style: TextStyle(fontSize: 11, color: textDark)),
+                style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: textDark)),
           ],
           if (log.auditorName != null) ...[
             const SizedBox(height: 4),
@@ -1915,6 +2401,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               style: TextStyle(
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.bold,
                   color: textMuted),
             ),
           ],
@@ -1937,7 +2424,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           value: c,
           child: Text(
             desc.isNotEmpty ? '$c ($desc)' : c,
-            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: ParishColors.textDark),
             overflow: TextOverflow.ellipsis,
           ),
         );
@@ -1962,7 +2452,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           value: s,
           child: Text(
             desc.isNotEmpty ? '$s ($desc)' : s,
-            style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: ParishColors.textDark),
             overflow: TextOverflow.ellipsis,
           ),
         );
@@ -1984,61 +2477,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           color: ParishColors.textDark,
         ),
       ),
-    );
-  }
-
-  Widget _buildDataRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 15, color: ParishColors.marianBlue),
-          const SizedBox(width: 6),
-          Text(
-            '$label: ',
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: ParishColors.textMuted),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: ParishColors.textDark),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSpecItem(String label, String value,
-      {bool highlightRed = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10.5,
-            color: ParishColors.textMuted,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.bold,
-            color: highlightRed ? ParishColors.mercyRed : ParishColors.textDark,
-          ),
-        ),
-      ],
     );
   }
 

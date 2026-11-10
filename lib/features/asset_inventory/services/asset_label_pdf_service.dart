@@ -17,12 +17,18 @@ class AssetLabelPdfService {
   static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
-  // Exact fixed card dimensions matching Image 1 (fits 3 columns on standard A4)
+  // Exact fixed card dimensions matching Diocesan physical label specification (fits 3 columns on standard A4)
   static const double stickerWidth = 63.0 * PdfPageFormat.mm; // ~178.6 pt
   static const double stickerHeight = 35.0 * PdfPageFormat.mm; // ~99.2 pt
 
-  /// Generates a single printable sticker label centered on label roll paper
-  static Future<Uint8List> generateSingleAssetLabelPdf(AssetModel asset) async {
+  /// Generates a single printable sticker label (or expanded sub-unit roll if quantified).
+  /// If [expandQuantified] is true and asset has quantity > 1, generates individual
+  /// serialized stickers: `C-FF 2026-0001/01` to `C-FF 2026-0001/NN`.
+  static Future<Uint8List> generateSingleAssetLabelPdf(
+      AssetModel asset, {
+        bool expandQuantified = true,
+        int? specificUnitIndex,
+      }) async {
     const pageFormat = PdfPageFormat(
       70 * PdfPageFormat.mm,
       38 * PdfPageFormat.mm,
@@ -36,24 +42,72 @@ class AssetLabelPdfService {
       theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
     );
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: pageFormat,
-        build: (context) {
-          return pw.Center(
-            child: _buildSingleAssetSticker(asset, fontRegular, fontBold),
-          );
-        },
-      ),
-    );
+    if (specificUnitIndex != null && specificUnitIndex > 0) {
+      // Print specific single sub-unit (e.g. reprint #4)
+      pdf.addPage(
+        pw.Page(
+          pageFormat: pageFormat,
+          build: (context) {
+            return pw.Center(
+              child: _buildSingleAssetSticker(
+                asset,
+                fontRegular,
+                fontBold,
+                subUnitIndex: specificUnitIndex,
+                totalUnits: asset.quantity,
+              ),
+            );
+          },
+        ),
+      );
+    } else if (expandQuantified && asset.quantity > 1) {
+      // Print roll of individual serialized labels: /01, /02, ... /NN
+      for (int unit = 1; unit <= asset.quantity; unit++) {
+        pdf.addPage(
+          pw.Page(
+            pageFormat: pageFormat,
+            build: (context) {
+              return pw.Center(
+                child: _buildSingleAssetSticker(
+                  asset,
+                  fontRegular,
+                  fontBold,
+                  subUnitIndex: unit,
+                  totalUnits: asset.quantity,
+                ),
+              );
+            },
+          ),
+        );
+      }
+    } else {
+      // Master summary label
+      pdf.addPage(
+        pw.Page(
+          pageFormat: pageFormat,
+          build: (context) {
+            return pw.Center(
+              child: _buildSingleAssetSticker(
+                asset,
+                fontRegular,
+                fontBold,
+              ),
+            );
+          },
+        ),
+      );
+    }
 
     return pdf.save();
   }
 
-  /// Generates batch asset labels on standard A4 sheet in fixed-size cards (3 columns, up to 21 labels per page)
+  /// Generates batch asset labels on standard A4 sheet in fixed-size cards (3 columns x 7 rows, 21 labels per page).
+  /// When [expandQuantified] is true, items with quantity > 1 generate individual serialized stickers:
+  /// e.g. `C-FF 2026-0001/01` through `C-FF 2026-0001/20`.
   static Future<Uint8List> generateBatchAssetLabelsPdf(
-    List<AssetModel> assets,
-  ) async {
+      List<AssetModel> assets, {
+        bool expandQuantified = true,
+      }) async {
     const pageFormat = PdfPageFormat.a4;
     final fontRegular = await PdfGoogleFonts.arimoRegular();
     final fontBold = await PdfGoogleFonts.arimoBold();
@@ -62,11 +116,37 @@ class AssetLabelPdfService {
       theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
     );
 
+    // Flatten assets into individual sticker descriptors
+    final List<_StickerDescriptor> stickerList = [];
+    for (final asset in assets) {
+      if (expandQuantified && asset.quantity > 1) {
+        for (int unit = 1; unit <= asset.quantity; unit++) {
+          stickerList.add(
+            _StickerDescriptor(
+              asset: asset,
+              subUnitIndex: unit,
+              totalUnits: asset.quantity,
+            ),
+          );
+        }
+      } else {
+        stickerList.add(
+          _StickerDescriptor(
+            asset: asset,
+            subUnitIndex: null,
+            totalUnits: asset.quantity,
+          ),
+        );
+      }
+    }
+
     const int labelsPerPage = 21; // 3 columns x 7 rows
-    for (int i = 0; i < assets.length; i += labelsPerPage) {
-      final pageAssets = assets.sublist(
+    for (int i = 0; i < stickerList.length; i += labelsPerPage) {
+      final pageStickers = stickerList.sublist(
         i,
-        (i + labelsPerPage > assets.length) ? assets.length : i + labelsPerPage,
+        (i + labelsPerPage > stickerList.length)
+            ? stickerList.length
+            : i + labelsPerPage,
       );
 
       pdf.addPage(
@@ -80,8 +160,14 @@ class AssetLabelPdfService {
             return pw.Wrap(
               spacing: 3.5 * PdfPageFormat.mm,
               runSpacing: 4.5 * PdfPageFormat.mm,
-              children: pageAssets.map((asset) {
-                return _buildSingleAssetSticker(asset, fontRegular, fontBold);
+              children: pageStickers.map((desc) {
+                return _buildSingleAssetSticker(
+                  desc.asset,
+                  fontRegular,
+                  fontBold,
+                  subUnitIndex: desc.subUnitIndex,
+                  totalUnits: desc.totalUnits,
+                );
               }).toList(),
             );
           },
@@ -92,16 +178,30 @@ class AssetLabelPdfService {
     return pdf.save();
   }
 
-  static Future<void> printSingleAssetLabel(AssetModel asset) async {
-    final pdfBytes = await generateSingleAssetLabelPdf(asset);
+  static Future<void> printSingleAssetLabel(
+      AssetModel asset, {
+        bool expandQuantified = true,
+        int? specificUnitIndex,
+      }) async {
+    final pdfBytes = await generateSingleAssetLabelPdf(
+      asset,
+      expandQuantified: expandQuantified,
+      specificUnitIndex: specificUnitIndex,
+    );
     await Printing.layoutPdf(
       onLayout: (format) async => pdfBytes,
       name: 'AssetLabel_${asset.controlNumber}',
     );
   }
 
-  static Future<void> printBatchAssetLabels(List<AssetModel> assets) async {
-    final pdfBytes = await generateBatchAssetLabelsPdf(assets);
+  static Future<void> printBatchAssetLabels(
+      List<AssetModel> assets, {
+        bool expandQuantified = true,
+      }) async {
+    final pdfBytes = await generateBatchAssetLabelsPdf(
+      assets,
+      expandQuantified: expandQuantified,
+    );
     await Printing.layoutPdf(
       onLayout: (format) async => pdfBytes,
       name: 'ParishAssets_Labels_${DateTime.now().millisecondsSinceEpoch}',
@@ -109,26 +209,38 @@ class AssetLabelPdfService {
   }
 
   // ===========================================================================
-  // Reference Sticker Layout (Fixed Size matching Image 1 exactly)
+  // Reference Sticker Layout (Fixed Size with Serialized Quantified Sub-Numbering)
   // ===========================================================================
 
   static pw.Widget _buildSingleAssetSticker(
-    AssetModel asset,
-    pw.Font fontRegular,
-    pw.Font fontBold,
-  ) {
-    final qrData = asset.qrCodeToken.isNotEmpty
+      AssetModel asset,
+      pw.Font fontRegular,
+      pw.Font fontBold, {
+        int? subUnitIndex,
+        int? totalUnits,
+      }) {
+    final bool isSerializedUnit = subUnitIndex != null &&
+        totalUnits != null &&
+        totalUnits > 1;
+
+    final String subSuffix =
+    isSerializedUnit ? '/${subUnitIndex.toString().padLeft(2, '0')}' : '';
+
+    final String displayControlNo = '${asset.controlNumber}$subSuffix';
+
+    // QR payload embeds exact serialized sub-unit so scanner verifies specific unit directly
+    final String baseQr = asset.qrCodeToken.isNotEmpty
         ? asset.qrCodeToken
         : asset.controlNumber;
-    final displayControlNo = asset.controlNumber;
+    final String qrData = '$baseQr$subSuffix';
 
     final locationText =
-        asset.locationName != null && asset.locationName!.isNotEmpty
+    asset.locationName != null && asset.locationName!.isNotEmpty
         ? asset.locationName!
         : asset.locationAcronym;
 
     final classificationText =
-        asset.classificationName != null && asset.classificationName!.isNotEmpty
+    asset.classificationName != null && asset.classificationName!.isNotEmpty
         ? asset.classificationName!
         : asset.classificationAcronym;
 
@@ -183,7 +295,7 @@ class AssetLabelPdfService {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                // Top Header Row: Parish Title, Section Badge & Qty
+                // Top Header Row: Parish Title, Section Badge & Unit Suffix Tag
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -240,10 +352,30 @@ class AssetLabelPdfService {
                             ),
                           ),
                         ),
-                        if (asset.quantity > 1) ...[
+                        if (isSerializedUnit) ...[
+                          pw.SizedBox(height: 1),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(
+                              horizontal: 2.5,
+                              vertical: 0.5,
+                            ),
+                            decoration: pw.BoxDecoration(
+                              color: PdfColors.blue100,
+                              borderRadius: pw.BorderRadius.circular(2),
+                            ),
+                            child: pw.Text(
+                              'Unit $subUnitIndex of $totalUnits',
+                              style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 4.5,
+                                color: marianBlue,
+                              ),
+                            ),
+                          ),
+                        ] else if (asset.quantity > 1) ...[
                           pw.SizedBox(height: 1),
                           pw.Text(
-                            'Qty: ${asset.quantity}',
+                            'Total Qty: ${asset.quantity}',
                             style: pw.TextStyle(
                               font: fontBold,
                               fontSize: 5.0,
@@ -263,12 +395,12 @@ class AssetLabelPdfService {
                   color: goldAccent,
                 ),
 
-                // Control Number
+                // Serialized Control Number
                 pw.Text(
                   displayControlNo,
                   style: pw.TextStyle(
                     font: fontBold,
-                    fontSize: 8.8,
+                    fontSize: isSerializedUnit ? 8.2 : 8.8,
                     fontWeight: pw.FontWeight.bold,
                     color: textDark,
                   ),
@@ -334,4 +466,16 @@ class AssetLabelPdfService {
       ),
     );
   }
+}
+
+class _StickerDescriptor {
+  final AssetModel asset;
+  final int? subUnitIndex;
+  final int? totalUnits;
+
+  const _StickerDescriptor({
+    required this.asset,
+    this.subUnitIndex,
+    this.totalUnits,
+  });
 }
