@@ -2,6 +2,7 @@
 // FILE: lib/features/asset_inventory/services/asset_service.dart
 // =============================================================================
 
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -86,7 +87,6 @@ class AssetService {
     final clean = identifier.trim();
     if (clean.isEmpty) return null;
 
-    // Extract base control number if scanner detected a sub-unit suffix (e.g. /01 or /14)
     String baseIdentifier = clean;
     if (clean.contains('/')) {
       final parts = clean.split('/');
@@ -143,7 +143,8 @@ class AssetService {
     final clean = query.trim();
     if (clean.isEmpty) return [];
 
-    final searchBase = clean.contains('/') ? clean.split('/').first.trim() : clean;
+    final searchBase =
+    clean.contains('/') ? clean.split('/').first.trim() : clean;
 
     try {
       final response = await _client
@@ -364,8 +365,7 @@ class AssetService {
     }
   }
 
-  /// Registers a parish asset with an assigned Control Number (custom modified or auto-generated)
-  /// and specified quantity count.
+  /// Registers a parish asset with an assigned Control Number and specified quantity count.
   static Future<AssetModel> registerAsset({
     required String itemName,
     required int quantity,
@@ -502,56 +502,6 @@ class AssetService {
     return AssetModel.fromMap(response);
   }
 
-  /// Backward-compatible alias for single-record registration
-  static Future<List<AssetModel>> registerBulkAssets({
-    required String itemName,
-    required int quantity,
-    required double unitPrice,
-    required String classificationId,
-    required String classificationAcronym,
-    String? classificationName,
-    required String locationId,
-    required String locationAcronym,
-    String? locationName,
-    String? dimensions,
-    String? color,
-    String? model,
-    String? others,
-    String? remarks,
-    String? photoUrl,
-    required DateTime dateOfAcquisition,
-    String modeOfAcquisition = 'Purchase',
-    String? rfidTag,
-    String conditionStatus = 'VERIFIED / GOOD',
-    String operationalStatus = 'Active',
-    String? customControlNumber,
-  }) async {
-    final asset = await registerAsset(
-      itemName: itemName,
-      quantity: quantity,
-      unitPrice: unitPrice,
-      classificationId: classificationId,
-      classificationAcronym: classificationAcronym,
-      classificationName: classificationName,
-      locationId: locationId,
-      locationAcronym: locationAcronym,
-      locationName: locationName,
-      dimensions: dimensions,
-      color: color,
-      model: model,
-      others: others,
-      remarks: remarks,
-      photoUrl: photoUrl,
-      dateOfAcquisition: dateOfAcquisition,
-      modeOfAcquisition: modeOfAcquisition,
-      rfidTag: rfidTag,
-      conditionStatus: conditionStatus,
-      operationalStatus: operationalStatus,
-      customControlNumber: customControlNumber,
-    );
-    return [asset];
-  }
-
   /// Updates an asset record. Control Number remains strictly locked and preserved.
   static Future<AssetModel> updateAsset({
     required String assetId,
@@ -624,7 +574,9 @@ class AssetService {
     return AssetModel.fromMap(response);
   }
 
-  /// Records an audit inspection with quantity adjustment tracking and accountability reasons
+  /// Records an asset verification or audit inspection.
+  /// Fully supports [quantityDistribution] across multiple conditions & utilization statuses.
+  /// Does NOT modify the registered quantity during routine verification.
   static Future<void> recordAuditScan({
     required String assetId,
     required String controlNumber,
@@ -641,6 +593,7 @@ class AssetService {
     String? quantityChangeReason,
     bool auditEntireGroup = false,
     List<String> groupAssetIds = const [],
+    List<AssetQuantityDistribution>? quantityDistribution,
   }) async {
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
@@ -651,6 +604,7 @@ class AssetService {
 
     String combinedNotes = '';
 
+    // Record official quantity adjustments if triggered separately
     if (hasQtyChange) {
       final change = newQuantity - previousQuantity;
       final sign = change > 0 ? '+$change' : '$change';
@@ -661,6 +615,13 @@ class AssetService {
 
       combinedNotes +=
       '[QTY_ADJUST: from $previousQuantity to $newQuantity ($sign) | REASON: $reason]\n';
+    }
+
+    // Embed structured quantity distribution metadata into audit record
+    if (quantityDistribution != null && quantityDistribution.isNotEmpty) {
+      final jsonPayload =
+      jsonEncode(quantityDistribution.map((d) => d.toMap()).toList());
+      combinedNotes += '[QTY_DISTRIBUTION: $jsonPayload]\n';
     }
 
     if (auditNotes != null && auditNotes.trim().isNotEmpty) {
@@ -686,6 +647,7 @@ class AssetService {
       'audited_at': now.toIso8601String(),
     });
 
+    // Update parish_assets condition, status, and audit timestamps
     final Map<String, dynamic> assetUpdates = {
       'condition_status': newCondition,
       'operational_status': newStatus,
@@ -694,6 +656,7 @@ class AssetService {
       'updated_at': now.toIso8601String(),
     };
 
+    // If an official separate quantity adjustment was explicitly requested
     if (hasQtyChange && newQuantity > 0) {
       assetUpdates['quantity'] = newQuantity;
 

@@ -1109,7 +1109,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                             size: 16, color: ParishColors.marianBlue),
                         const SizedBox(width: 8),
                         Text(
-                          'DETAILS OF PHYSICAL SPECIFICATIONS',
+                          'PHYSICAL SPECIFICATIONS & DIMENSIONS',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -1387,7 +1387,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
         const SizedBox(height: 16),
 
-        // 4. AUDIT & ADJUSTMENT HISTORY (Intact historical log)
+        // 4. AUDIT & ADJUSTMENT HISTORY (With Quantity Distribution Breakdown Logs)
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1488,7 +1488,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             value,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: FontWeight.bold, // Bold Answer
+              fontWeight: FontWeight.bold,
               color: isEmpty
                   ? ParishColors.textMuted.withOpacity(0.6)
                   : ParishColors.textDark,
@@ -1535,7 +1535,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   style: TextStyle(
                     fontFamily: isMono ? 'Courier' : null,
                     fontSize: 13,
-                    fontWeight: FontWeight.bold, // Bold Answer
+                    fontWeight: FontWeight.bold,
                     color: isPrice ? ParishColors.oliveGreen : ParishColors.textDark,
                   ),
                   maxLines: 2,
@@ -1564,7 +1564,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           value,
           style: TextStyle(
               fontSize: 14.5,
-              fontWeight: FontWeight.bold, // Bold Answer
+              fontWeight: FontWeight.bold,
               color: color),
         ),
       ],
@@ -1745,7 +1745,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             style: TextStyle(
               fontSize: 14,
               color: textDark,
-              fontWeight: FontWeight.bold, // Bold Edit Input
+              fontWeight: FontWeight.bold,
             ),
             decoration: _inputDecoration(
                 hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
@@ -1769,7 +1769,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       style: TextStyle(
                         fontSize: 14,
                         color: textDark,
-                        fontWeight: FontWeight.bold, // Bold Edit Input
+                        fontWeight: FontWeight.bold,
                       ),
                       decoration: _inputDecoration(hint: 'e.g. 16'),
                     ),
@@ -1791,7 +1791,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       style: TextStyle(
                         fontSize: 14,
                         color: textDark,
-                        fontWeight: FontWeight.bold, // Bold Edit Input
+                        fontWeight: FontWeight.bold,
                       ),
                       decoration: _inputDecoration(
                         hint: 'e.g. 2,500.00',
@@ -2188,7 +2188,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   // ===========================================================================
-  // Helper Widgets
+  // Helper Widgets (With Visual Quantity Distribution Log Support)
   // ===========================================================================
 
   Widget _buildPhotoThumbnail({required double size}) {
@@ -2269,13 +2269,17 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: log.hasQuantityAdjustment
-            ? ParishColors.goldLight.withOpacity(0.5)
-            : ParishColors.backgroundLight,
+            ? ParishColors.goldLight.withOpacity(0.4)
+            : (log.hasQuantityDistribution
+            ? ParishColors.marianBlueSurface.withOpacity(0.3)
+            : ParishColors.backgroundLight),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: log.hasQuantityAdjustment
               ? ParishColors.goldAccent.withOpacity(0.6)
-              : ParishColors.borderGrey,
+              : (log.hasQuantityDistribution
+              ? ParishColors.marianBlue.withOpacity(0.35)
+              : ParishColors.borderGrey),
         ),
       ),
       child: Column(
@@ -2315,25 +2319,148 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text('Status: ${log.newStatus}',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: textDark)),
+                          style: TextStyle(fontSize: 11, color: textMuted)),
                     ],
                     if (log.newLocation != null &&
                         log.newLocation!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text('Location: ${log.newLocation}',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: textDark)),
+                          style: TextStyle(fontSize: 11, color: textMuted)),
                     ],
                   ],
                 ),
               ),
             ],
           ),
+
+          // QUANTIFIED DISTRIBUTION BREAKDOWN LOG CARD
+          if (log.hasQuantityDistribution) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: ParishColors.marianBlue.withOpacity(0.3),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.pie_chart_outline_rounded,
+                        size: 14,
+                        color: ParishColors.marianBlue,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'VERIFIED QUANTITY DISTRIBUTION',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                          color: ParishColors.marianBlue,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${log.quantityDistribution!.fold<int>(0, (sum, d) => sum + d.quantity)} units reconciled',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 12),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: log.quantityDistribution!.map((dist) {
+                      final bool isDamaged =
+                          dist.physicalCondition.toLowerCase() == 'damaged';
+                      final bool isInUse =
+                          dist.utilizationStatus.toLowerCase() == 'in use';
+
+                      Color badgeBg;
+                      Color badgeBorder;
+                      Color badgeText;
+
+                      if (isDamaged) {
+                        badgeBg = ParishColors.mercyRedSurface;
+                        badgeBorder = ParishColors.mercyRed.withOpacity(0.5);
+                        badgeText = ParishColors.mercyRed;
+                      } else if (isInUse) {
+                        badgeBg = ParishColors.marianBlueSurface;
+                        badgeBorder = ParishColors.marianBlue.withOpacity(0.3);
+                        badgeText = ParishColors.marianBlue;
+                      } else {
+                        badgeBg = ParishColors.oliveGreenSurface;
+                        badgeBorder = ParishColors.oliveGreen.withOpacity(0.3);
+                        badgeText = ParishColors.oliveGreen;
+                      }
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: badgeBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: badgeBorder),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${dist.quantity}x ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                color: badgeText,
+                              ),
+                            ),
+                            Text(
+                              '${dist.utilizationStatus} ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.textDark,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(3),
+                                border: Border.all(
+                                    color: badgeBorder.withOpacity(0.6)),
+                              ),
+                              child: Text(
+                                dist.physicalCondition,
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: badgeText,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // OFFICIAL QUANTITY ADJUSTMENT LOG CARD (If triggered separately)
           if (log.hasQuantityAdjustment) ...[
             const SizedBox(height: 8),
             Container(
@@ -2360,7 +2487,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Quantity Adjustment: ${log.formattedQuantityChange}',
+                        'Official Quantity Adjustment: ${log.formattedQuantityChange}',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.bold,
@@ -2386,6 +2513,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ),
             ),
           ],
+
           if (log.cleanNotes.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Notes: ${log.cleanNotes}',
