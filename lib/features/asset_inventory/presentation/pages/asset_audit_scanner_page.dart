@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../../core/constants/colors.dart';
+import '../../models/asset_audit_log_model.dart';
 import '../../models/asset_model.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
@@ -33,10 +34,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _nfcInputController = TextEditingController();
   final TextEditingController _auditNotesController = TextEditingController();
-  final TextEditingController _quantityChangeReasonController =
-  TextEditingController();
-  final TextEditingController _quantityInputController =
-  TextEditingController();
 
   MobileScannerController? _scannerController;
 
@@ -51,15 +48,14 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   bool _isLoadingSuggestions = false;
   Timer? _debounceTimer;
 
+  // Located asset state
   AssetModel? _scannedAsset;
-  String _selectedCondition = 'Good';
-  String _selectedStatus = 'Available';
-  int _auditQuantity = 1;
   bool _isRecordingAudit = false;
 
-  // Standardized Canonical Options
-  final List<String> _conditionOptions = AssetModel.standardConditions;
-  final List<String> _operationalStatusOptions = AssetModel.standardStatuses;
+  // Quantity-based distribution state
+  final List<_DistributionRowState> _distributionEntries = [];
+  List<AssetQuantityDistribution>? _previousDistribution;
+  String? _previousAuditDate;
 
   bool get _isLiveCameraSupported {
     if (kIsWeb) return true;
@@ -70,9 +66,41 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     }
   }
 
-  int get _quantityDifference {
+  // ===========================================================================
+  // Live Quantity Reconciliation Calculations
+  // ===========================================================================
+
+  int get _totalVerifiedQuantity {
+    return _distributionEntries.fold(0, (sum, entry) => sum + entry.quantity);
+  }
+
+  int get _inUseQuantity {
+    return _distributionEntries
+        .where((e) => e.status == 'In Use')
+        .fold(0, (sum, entry) => sum + entry.quantity);
+  }
+
+  int get _availableQuantity {
+    return _distributionEntries
+        .where((e) => e.status == 'Available')
+        .fold(0, (sum, entry) => sum + entry.quantity);
+  }
+
+  int get _damagedQuantity {
+    return _distributionEntries
+        .where((e) => e.condition == 'Damaged')
+        .fold(0, (sum, entry) => sum + entry.quantity);
+  }
+
+  int get _unaccountedQuantity {
     if (_scannedAsset == null) return 0;
-    return _auditQuantity - _scannedAsset!.quantity;
+    return _scannedAsset!.quantity - _totalVerifiedQuantity;
+  }
+
+  bool get _isReconciled {
+    if (_scannedAsset == null) return false;
+    return _totalVerifiedQuantity == _scannedAsset!.quantity &&
+        _totalVerifiedQuantity > 0;
   }
 
   @override
@@ -110,8 +138,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     _manualInputController.dispose();
     _nfcInputController.dispose();
     _auditNotesController.dispose();
-    _quantityChangeReasonController.dispose();
-    _quantityInputController.dispose();
+    _clearDistributionEntries();
 
     _safeStopCamera();
 
@@ -123,6 +150,13 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     super.dispose();
   }
 
+  void _clearDistributionEntries() {
+    for (final e in _distributionEntries) {
+      e.dispose();
+    }
+    _distributionEntries.clear();
+  }
+
   Future<void> _safeStopCamera() async {
     try {
       if (_scannerController != null) {
@@ -130,7 +164,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       }
     } catch (_) {}
 
-    // Explicitly release browser media stream tracks on Flutter Web
     WebCameraHelper.releaseCamera();
 
     if (mounted) {
@@ -181,14 +214,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
         _isLoadingSuggestions = false;
       });
     });
-  }
-
-  String _normalizeStatus(String raw) {
-    return AssetModel.normalizeStatus(raw);
-  }
-
-  String _normalizeCondition(String raw) {
-    return AssetModel.normalizeCondition(raw);
   }
 
   Future<void> _startCameraScanner() async {
@@ -242,9 +267,11 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       _cameraPermissionDenied = false;
       _liveSuggestions = [];
       _auditNotesController.clear();
-      _quantityChangeReasonController.clear();
       _manualInputController.clear();
       _nfcInputController.clear();
+      _previousDistribution = null;
+      _previousAuditDate = null;
+      _clearDistributionEntries();
     });
 
     await _safeStopCamera();
@@ -264,6 +291,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     }
   }
 
+  // ===========================================================================
+  // Search & Load Asset: Retrieves & Pre-populates Previous Audit Distribution
+  // ===========================================================================
+
   Future<void> _searchAndLoadAsset(String query) async {
     final clean = query.trim();
     if (clean.isEmpty) return;
@@ -274,6 +305,9 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       _successBannerMessage = null;
       _scannedAsset = null;
       _liveSuggestions = [];
+      _clearDistributionEntries();
+      _previousDistribution = null;
+      _previousAuditDate = null;
     });
 
     await _safeStopCamera();
@@ -283,19 +317,69 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       if (!mounted) return;
 
       if (asset != null) {
+        // Fetch latest audit history to extract previous distribution baseline
+        List<AssetQuantityDistribution>? lastDist;
+        String? lastAuditDate;
+
+        try {
+          final history = await AssetService.getAssetAuditHistory(asset.assetId);
+          if (history.isNotEmpty) {
+            for (final log in history) {
+              if (log.hasQuantityDistribution) {
+                lastDist = log.quantityDistribution;
+                lastAuditDate = log.formattedAuditedAt;
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Notice loading previous audit distribution: $e');
+        }
+
+        // Initialize distribution entries from previous audit baseline if available
+        if (lastDist != null && lastDist.isNotEmpty) {
+          for (final d in lastDist) {
+            _distributionEntries.add(
+              _DistributionRowState(
+                status: d.utilizationStatus,
+                condition: d.physicalCondition,
+                quantity: d.quantity,
+                onChanged: () => setState(() {}),
+              ),
+            );
+          }
+        } else {
+          // Fallback to default single combination matching asset registered totals
+          final defaultStatus =
+          asset.operationalStatus.trim().toLowerCase() == 'in use'
+              ? 'In Use'
+              : 'Available';
+          final defaultCondition =
+          AssetQuantityDistribution.standardPhysicalConditions.contains(
+              asset.conditionStatus)
+              ? asset.conditionStatus
+              : 'Good';
+
+          _distributionEntries.add(
+            _DistributionRowState(
+              status: defaultStatus,
+              condition: defaultCondition,
+              quantity: asset.quantity,
+              onChanged: () => setState(() {}),
+            ),
+          );
+        }
+
         setState(() {
           _scannedAsset = asset;
-          _selectedCondition = _normalizeCondition(asset.conditionStatus);
-          _selectedStatus = _normalizeStatus(asset.operationalStatus);
-          _auditQuantity = asset.quantity;
-          _quantityInputController.text = '${asset.quantity}';
-          _quantityChangeReasonController.clear();
+          _previousDistribution = lastDist;
+          _previousAuditDate = lastAuditDate;
           _isSearching = false;
         });
       } else {
         setState(() {
           _searchError =
-          'No item record found for "$clean". Please check the Control Number, RFID tag, or QR Code.';
+          'No item record found for "$clean". Please verify the Control Number or QR Code.';
           _isSearching = false;
           _hasProcessedScan = false;
         });
@@ -339,8 +423,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           if (filePath != null && filePath.isNotEmpty) {
             _initScannerController();
             if (_scannerController != null) {
-              final BarcodeCapture? capture = await _scannerController!
-                  .analyzeImage(filePath);
+              final BarcodeCapture? capture =
+              await _scannerController!.analyzeImage(filePath);
               if (capture != null && capture.barcodes.isNotEmpty) {
                 final raw = capture.barcodes.first.rawValue;
                 if (raw != null) {
@@ -368,17 +452,85 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     }
   }
 
+  // ===========================================================================
+  // Distribution Management Actions
+  // ===========================================================================
+
+  void _addDistributionEntry() {
+    if (_scannedAsset == null) return;
+
+    final int defaultQty =
+    _unaccountedQuantity > 0 ? _unaccountedQuantity : 1;
+
+    setState(() {
+      _distributionEntries.add(
+        _DistributionRowState(
+          status: 'In Use',
+          condition: 'Good',
+          quantity: defaultQty,
+          onChanged: () => setState(() {}),
+        ),
+      );
+    });
+  }
+
+  void _removeDistributionEntry(int index) {
+    if (_distributionEntries.length <= 1) return;
+    setState(() {
+      _distributionEntries[index].dispose();
+      _distributionEntries.removeAt(index);
+    });
+  }
+
+  void _restorePreviousDistribution() {
+    if (_previousDistribution == null || _previousDistribution!.isEmpty) return;
+    _clearDistributionEntries();
+    setState(() {
+      for (final d in _previousDistribution!) {
+        _distributionEntries.add(
+          _DistributionRowState(
+            status: d.utilizationStatus,
+            condition: d.physicalCondition,
+            quantity: d.quantity,
+            onChanged: () => setState(() {}),
+          ),
+        );
+      }
+    });
+  }
+
+  List<AssetQuantityDistribution> _consolidateDistributions() {
+    final Map<String, int> map = {};
+
+    for (final entry in _distributionEntries) {
+      if (entry.quantity > 0) {
+        final key = '${entry.status}|||${entry.condition}';
+        map[key] = (map[key] ?? 0) + entry.quantity;
+      }
+    }
+
+    return map.entries.map((e) {
+      final parts = e.key.split('|||');
+      return AssetQuantityDistribution(
+        utilizationStatus: parts[0],
+        physicalCondition: parts[1],
+        quantity: e.value,
+      );
+    }).toList();
+  }
+
+  // ===========================================================================
+  // Save Audit Verification
+  // ===========================================================================
+
   Future<void> _commitAuditInspection(String method) async {
     if (_scannedAsset == null) return;
 
-    final int previousQty = _scannedAsset!.quantity;
-    final int newQty = _auditQuantity;
-    final int qtyChange = newQty - previousQty;
-
-    if (qtyChange != 0 && _quantityChangeReasonController.text.trim().isEmpty) {
+    if (!_isReconciled) {
       setState(() {
-        _searchError =
-        'Please provide a reason for the quantity change (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"} units).';
+        _searchError = _unaccountedQuantity > 0
+            ? 'Cannot save: $_unaccountedQuantity unit(s) remain unaccounted for ($_totalVerifiedQuantity of ${_scannedAsset!.quantity}).'
+            : 'Cannot save: Total verified exceeds registered total by ${-_unaccountedQuantity} unit(s).';
       });
       return;
     }
@@ -387,37 +539,49 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
     final asset = _scannedAsset!;
     final completedControlNo = asset.controlNumber;
-    final verifiedCondition = _selectedCondition;
-    final verifiedStatus = _selectedStatus;
-    final isDecom = verifiedStatus == 'Retired' ||
-        verifiedStatus == 'Disposed' ||
-        verifiedStatus.toLowerCase() == 'decommissioned';
+    final consolidated = _consolidateDistributions();
+
+    final inUseTotal = _inUseQuantity;
+    final availableTotal = _availableQuantity;
+    final dominantStatus =
+    inUseTotal >= availableTotal ? 'In Use' : 'Available';
+
+    final Map<String, int> condCounts = {};
+    for (final d in consolidated) {
+      condCounts[d.physicalCondition] =
+          (condCounts[d.physicalCondition] ?? 0) + d.quantity;
+    }
+    String dominantCondition = 'Good';
+    int maxConditionCount = -1;
+    condCounts.forEach((cond, count) {
+      if (count > maxConditionCount) {
+        maxConditionCount = count;
+        dominantCondition = cond;
+      }
+    });
 
     try {
       await AssetService.recordAuditScan(
         assetId: asset.assetId,
         controlNumber: completedControlNo,
-        newCondition: verifiedCondition,
+        newCondition: dominantCondition,
         previousCondition: asset.conditionStatus,
-        newStatus: verifiedStatus,
+        newStatus: dominantStatus,
         previousStatus: asset.operationalStatus,
         previousLocation: asset.displayLocation,
         newLocation: asset.displayLocation,
         auditMethod: method,
         auditNotes: _auditNotesController.text.trim(),
-        previousQuantity: previousQty,
-        newQuantity: newQty,
-        quantityChangeReason: _quantityChangeReasonController.text.trim(),
+        quantityDistribution: consolidated,
       );
 
       if (!mounted) return;
       widget.onScanCompleted?.call();
 
-      String qtySummary = '$newQty units';
-      if (qtyChange != 0) {
-        qtySummary =
-        '$newQty units (${qtyChange > 0 ? "+$qtyChange" : "$qtyChange"})';
-      }
+      final summaryBreakdown = consolidated
+          .map((d) =>
+      '${d.quantity}x ${d.utilizationStatus} [${d.physicalCondition}]')
+          .join(', ');
 
       setState(() {
         _isRecordingAudit = false;
@@ -426,12 +590,13 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
         _searchError = null;
         _liveSuggestions = [];
         _auditNotesController.clear();
-        _quantityChangeReasonController.clear();
         _manualInputController.clear();
         _nfcInputController.clear();
-        _successBannerMessage = isDecom
-            ? 'Audit saved: $completedControlNo verified as $verifiedCondition and marked as $verifiedStatus.'
-            : 'Audit saved for $completedControlNo: $qtySummary • Condition: $verifiedCondition • Status: $verifiedStatus.';
+        _previousDistribution = null;
+        _previousAuditDate = null;
+        _clearDistributionEntries();
+        _successBannerMessage =
+        'Verification saved for $completedControlNo (${asset.quantity} units reconciled): $summaryBreakdown.';
       });
 
       if (_lastActiveMode == AuditScanMode.liveCamera) {
@@ -469,7 +634,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isMobile = constraints.maxWidth < 620;
+        final bool isMobile = constraints.maxWidth < 650;
 
         return PopScope(
           canPop: false,
@@ -501,7 +666,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                     ),
                   ),
                   Text(
-                    'Scan QR stickers, read wireless tags, or search item numbers',
+                    'Physical condition, utilization classification & quantity reconciliation',
                     style: TextStyle(
                       fontSize: isMobile ? 10.5 : 12,
                       color: textMuted,
@@ -525,10 +690,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
             ),
             body: SafeArea(
               child: SingleChildScrollView(
-                padding: EdgeInsets.all(isMobile ? 14 : 20),
+                padding: EdgeInsets.all(isMobile ? 12 : 20),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 800),
+                    constraints: const BoxConstraints(maxWidth: 860),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -541,7 +706,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                               color: ParishColors.oliveGreenSurface,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: ParishColors.oliveGreen.withOpacity(0.4),
+                                color:
+                                ParishColors.oliveGreen.withOpacity(0.4),
                               ),
                             ),
                             child: Row(
@@ -609,7 +775,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                         ],
 
                         if (_scannedAsset == null) ...[
-                          // Mode Switcher Tabs
                           Container(
                             margin: const EdgeInsets.only(bottom: 16),
                             decoration: BoxDecoration(
@@ -661,7 +826,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                             ),
                           )
                         else if (_scannedAsset != null) ...[
-                          const SizedBox(height: 10),
                           _buildAssetAuditVerificationForm(isMobile),
                         ],
                       ],
@@ -675,6 +839,10 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       },
     );
   }
+
+  // ===========================================================================
+  // Top View Mode Selector Helpers
+  // ===========================================================================
 
   Widget _buildModeTab(
       AuditScanMode mode,
@@ -1093,7 +1261,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   }
 
   // ===========================================================================
-  // 5. Complete Inline Specifications & Verification Form (Standardized)
+  // REDESIGNED VERIFICATION INTERFACE: Quantity-Based Distribution
   // ===========================================================================
 
   Widget _buildAssetAuditVerificationForm(bool isMobile) {
@@ -1101,145 +1269,124 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
-    final int qtyDiff = _quantityDifference;
 
     return Container(
-      padding: EdgeInsets.all(isMobile ? 14 : 20),
       decoration: BoxDecoration(
         color: ParishColors.cardWhite,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.oliveGreen, width: 2),
+        border: Border.all(
+            color: ParishColors.marianBlue.withOpacity(0.5), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(
-                    Icons.check_circle,
-                    color: ParishColors.oliveGreen,
-                    size: 22,
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Item Found in Registry',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: ParishColors.oliveGreen,
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: ParishColors.marianBlueSurface,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '${asset.quantity} unit(s) registered',
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: ParishColors.marianBlue,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 18),
-
-          // Specifications Summary
+          // 1. ITEM FOUND IN REGISTRY HEADER
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (asset.photoUrl != null && asset.photoUrl!.isNotEmpty) ...[
-                InkWell(
-                  onTap: () {
-                    AssetImageWatermarkUtil.showImagePreviewModal(
-                      context,
-                      imageProvider: NetworkImage(asset.photoUrl!),
-                      title: asset.itemName,
-                      controlNumber: asset.controlNumber,
-                    );
-                  },
-                  child: Container(
-                    width: 84,
-                    height: 84,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: borderGrey),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(9),
-                      child: Image.network(asset.photoUrl!, fit: BoxFit.cover),
-                    ),
+              Container(
+                width: isMobile ? 64 : 76,
+                height: isMobile ? 64 : 76,
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderGrey),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: asset.photoUrl != null && asset.photoUrl!.isNotEmpty
+                      ? InkWell(
+                    onTap: () {
+                      AssetImageWatermarkUtil.showImagePreviewModal(
+                        context,
+                        imageProvider: NetworkImage(asset.photoUrl!),
+                        title: asset.itemName,
+                        controlNumber: asset.controlNumber,
+                      );
+                    },
+                    child: Image.network(asset.photoUrl!,
+                        fit: BoxFit.cover),
+                  )
+                      : Center(
+                    child: Icon(asset.classificationIcon,
+                        size: 32, color: ParishColors.marianBlue),
                   ),
                 ),
-                const SizedBox(width: 14),
-              ],
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      asset.itemName,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                        color: textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Control No: ${asset.controlNumber}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: ParishColors.marianBlue,
+                        Flexible(
+                          child: Text(
+                            asset.controlNumber,
+                            style: TextStyle(
+                              fontFamily: 'Courier',
+                              fontSize: isMobile ? 13 : 15,
+                              fontWeight: FontWeight.w800,
+                              color: ParishColors.marianBlue,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1.5,
-                          ),
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: asset.conditionSurfaceColor,
-                            borderRadius: BorderRadius.circular(4),
+                            color: ParishColors.marianBlueSurface,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color:
+                                ParishColors.marianBlue.withOpacity(0.4)),
                           ),
                           child: Text(
-                            asset.conditionStatus.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 9,
+                            '${asset.quantity} registered unit(s)',
+                            style: const TextStyle(
+                              fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: asset.conditionColor,
+                              color: ParishColors.marianBlue,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
-                      'Category: ${asset.displayClassification} • Location: ${asset.displayLocation}',
-                      style: TextStyle(fontSize: 12, color: textMuted),
+                      asset.itemName,
+                      style: TextStyle(
+                        fontSize: isMobile ? 15.5 : 18,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${asset.displayClassification} • ${asset.displayLocation}',
+                      style: TextStyle(fontSize: 11.5, color: textMuted),
                     ),
                   ],
                 ),
               ),
             ],
           ),
+
           const SizedBox(height: 14),
 
-          // Detailed Specs Grid
+          // 2. ASSET INFORMATION SPECIFICATION CARD
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight,
@@ -1253,326 +1400,75 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                   children: [
                     Expanded(
                       child: _buildSpecItem(
-                        'Current Status',
-                        asset.operationalStatus,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildSpecItem(
                         'Acquisition Date',
                         '${asset.formattedAcquisitionDate} (${asset.modeOfAcquisition})',
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildSpecItem(
-                        'Size / Dimensions',
-                        asset.dimensions ?? '—',
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildSpecItem('Color', asset.color ?? '—'),
-                    ),
-                    Expanded(
-                      child: _buildSpecItem(
-                        'Model',
-                        asset.model ?? '—',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
                     Expanded(
                       child: _buildSpecItem(
                         'Unit Price',
                         asset.formattedUnitPrice,
+                        color: ParishColors.oliveGreen,
                       ),
                     ),
                     Expanded(
                       child: _buildSpecItem(
                         'Total Value',
                         asset.formattedTotalCost,
+                        color: ParishColors.oliveGreen,
                       ),
                     ),
-                    if (asset.rfidTag != null && asset.rfidTag!.isNotEmpty)
-                      Expanded(
-                        child: _buildSpecItem('RFID Tag', asset.rfidTag!),
-                      ),
-                  ],
-                ),
-                if (asset.others != null && asset.others!.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Other Details ${asset.others}',
-                    style: TextStyle(fontSize: 11.5, color: textDark),
-                  ),
-                ],
-                if (asset.remarks != null && asset.remarks!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Notes: ${asset.remarks}',
-                    style: TextStyle(fontSize: 11.5, color: textMuted),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Quantity Adjustments Card
-          Container(
-            padding: EdgeInsets.all(isMobile ? 12 : 14),
-            decoration: BoxDecoration(
-              color: ParishColors.cardWhite,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: qtyDiff != 0 ? ParishColors.goldAccent : borderGrey,
-                width: qtyDiff != 0 ? 1.5 : 1.0,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Quantity Count & Adjustments',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: ParishColors.marianBlue,
-                      ),
-                    ),
-                    if (qtyDiff != 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: qtyDiff > 0
-                              ? ParishColors.oliveGreenSurface
-                              : ParishColors.mercyRedSurface,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          qtyDiff > 0
-                              ? '+$qtyDiff units added'
-                              : '$qtyDiff units deducted',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.bold,
-                            color: qtyDiff > 0
-                                ? ParishColors.oliveGreen
-                                : ParishColors.mercyRed,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Previous: ${asset.quantity} units',
-                            style: TextStyle(fontSize: 11.5, color: textMuted),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Updated Total: $_auditQuantity units',
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.bold,
-                              color: qtyDiff != 0
-                                  ? ParishColors.marianBlue
-                                  : textDark,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: _buildSpecItem('Color', asset.color ?? '—'),
                     ),
-                    Row(
-                      children: [
-                        IconButton(
-                          style: IconButton.styleFrom(
-                            backgroundColor: ParishColors.backgroundLight,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          icon: const Icon(Icons.remove, size: 18),
-                          onPressed: _auditQuantity > 0
-                              ? () => setState(() {
-                            _auditQuantity--;
-                            _quantityInputController.text =
-                            '$_auditQuantity';
-                          })
-                              : null,
-                        ),
-                        SizedBox(
-                          width: 56,
-                          child: TextField(
-                            controller: _quantityInputController,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                              color: textDark,
-                            ),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 8),
-                              border: OutlineInputBorder(),
-                            ),
-                            onChanged: (val) {
-                              final parsed = int.tryParse(val.trim());
-                              if (parsed != null && parsed >= 0) {
-                                setState(() => _auditQuantity = parsed);
-                              }
-                            },
-                          ),
-                        ),
-                        IconButton(
-                          style: IconButton.styleFrom(
-                            backgroundColor: ParishColors.backgroundLight,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          icon: const Icon(Icons.add, size: 18),
-                          onPressed: () => setState(() {
-                            _auditQuantity++;
-                            _quantityInputController.text = '$_auditQuantity';
-                          }),
-                        ),
-                      ],
+                    Expanded(
+                      child: _buildSpecItem(
+                          'Dimension', asset.dimensions ?? '—'),
+                    ),
+                    Expanded(
+                      child: _buildSpecItem('Model', asset.model ?? '—'),
                     ),
                   ],
                 ),
-
-                if (qtyDiff != 0) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Reason for Quantity Change *',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: _quantityChangeReasonController,
-                    style: TextStyle(fontSize: 12.5, color: textDark),
-                    decoration: InputDecoration(
-                      hintText:
-                      'e.g. 2 units damaged during parish event, or new donation received',
-                      hintStyle: TextStyle(
-                        fontSize: 12,
-                        color: ParishColors.textMuted,
-                      ),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      border: const OutlineInputBorder(),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: borderGrey),
-                      ),
-                    ),
-                  ),
+                if (asset.others != null &&
+                    asset.others!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _buildSpecItem('Other Descriptions', asset.others!.trim()),
+                ],
+                if (asset.rfidTag != null &&
+                    asset.rfidTag!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _buildSpecItem('Wireless RFID / NFC', asset.rfidTag!.trim()),
                 ],
               ],
             ),
           ),
-          const SizedBox(height: 14),
 
-          // Condition & Status (Standardized)
-          isMobile
-              ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Verified Condition *',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              _buildConditionDropdown(),
-              const SizedBox(height: 10),
-              const Text(
-                'Current Item Status *',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              _buildStatusDropdown(),
-            ],
-          )
-              : Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Verified Condition *',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildConditionDropdown(),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Current Item Status *',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildStatusDropdown(),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          // Inspection Notes
-          const Text(
+          // 3. LIVE QUANTITY SUMMARY DECK
+          _buildLiveQuantitySummaryDeck(isMobile),
+
+          const SizedBox(height: 16),
+
+          // 4. QUANTITY DISTRIBUTION TABLE / CARDS
+          _buildQuantityDistributionSection(isMobile),
+
+          const SizedBox(height: 16),
+
+          // 5. INSPECTION NOTES
+          Text(
             'Inspection Notes (Optional)',
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: textDark,
+            ),
           ),
           const SizedBox(height: 4),
           TextField(
@@ -1581,18 +1477,25 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
             style: TextStyle(fontSize: 12.5, color: textDark),
             decoration: InputDecoration(
               hintText:
-              'e.g. In good condition, verified on-site in main church nave',
-              hintStyle: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-              border: const OutlineInputBorder(),
-              enabledBorder: OutlineInputBorder(
+              'e.g. Verified across main sanctuary and sacristy. 5 damaged units awaiting carpenter.',
+              hintStyle: TextStyle(fontSize: 12, color: textMuted),
+              filled: true,
+              fillColor: ParishColors.backgroundLight,
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: borderGrey),
               ),
-              isDense: true,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: borderGrey),
+              ),
             ),
           ),
+
           const SizedBox(height: 18),
 
-          // Action Buttons
+          // 6. ACTION BUTTONS (Save locked until 100% reconciled)
           isMobile
               ? Column(
             children: [
@@ -1600,17 +1503,22 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: ParishColors.oliveGreen,
+                    backgroundColor: _isReconciled
+                        ? ParishColors.oliveGreen
+                        : ParishColors.borderGrey,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
-                  onPressed: _isRecordingAudit
-                      ? null
-                      : () => _commitAuditInspection(
-                    _currentScanMode == AuditScanMode.nfcListening
+                  onPressed: (_isReconciled && !_isRecordingAudit)
+                      ? () => _commitAuditInspection(
+                    _currentScanMode ==
+                        AuditScanMode.nfcListening
                         ? 'RFID_NFC'
                         : 'QR_SCAN',
-                  ),
+                  )
+                      : null,
                   icon: _isRecordingAudit
                       ? const SizedBox(
                     width: 16,
@@ -1620,9 +1528,13 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                       strokeWidth: 2,
                     ),
                   )
-                      : const Icon(Icons.check),
+                      : const Icon(Icons.check_circle_outline),
                   label: Text(
-                    _isRecordingAudit ? 'Saving...' : 'Save Audit',
+                    _isRecordingAudit
+                        ? 'Saving...'
+                        : (_isReconciled
+                        ? 'Save Verification'
+                        : 'Reconcile Quantities to Save'),
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -1647,23 +1559,28 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                 onPressed: _startCameraScanner,
                 child: const Text('Cancel / Next Item'),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: ParishColors.oliveGreen,
+                  backgroundColor: _isReconciled
+                      ? ParishColors.oliveGreen
+                      : ParishColors.borderGrey,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
+                    horizontal: 24,
                     vertical: 12,
                   ),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
-                onPressed: _isRecordingAudit
-                    ? null
-                    : () => _commitAuditInspection(
-                  _currentScanMode == AuditScanMode.nfcListening
+                onPressed: (_isReconciled && !_isRecordingAudit)
+                    ? () => _commitAuditInspection(
+                  _currentScanMode ==
+                      AuditScanMode.nfcListening
                       ? 'RFID_NFC'
                       : 'QR_SCAN',
-                ),
+                )
+                    : null,
                 icon: _isRecordingAudit
                     ? const SizedBox(
                   width: 16,
@@ -1673,9 +1590,13 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                     strokeWidth: 2,
                   ),
                 )
-                    : const Icon(Icons.check),
+                    : const Icon(Icons.check_circle_outline),
                 label: Text(
-                  _isRecordingAudit ? 'Saving...' : 'Save Audit',
+                  _isRecordingAudit
+                      ? 'Saving...'
+                      : (_isReconciled
+                      ? 'Save Verification'
+                      : 'Reconcile Quantities to Save'),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -1686,61 +1607,558 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     );
   }
 
-  Widget _buildConditionDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _selectedCondition,
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: ParishColors.borderGrey),
+  // ===========================================================================
+  // Live Quantity Summary Deck Helper
+  // ===========================================================================
+
+  Widget _buildLiveQuantitySummaryDeck(bool isMobile) {
+    final asset = _scannedAsset!;
+    final verified = _totalVerifiedQuantity;
+    final diff = _unaccountedQuantity;
+
+    Color reconciliationPillColor;
+    Color reconciliationTextColor;
+    IconData reconciliationIcon;
+    String reconciliationLabel;
+
+    if (_isReconciled) {
+      reconciliationPillColor = ParishColors.oliveGreenSurface;
+      reconciliationTextColor = ParishColors.oliveGreen;
+      reconciliationIcon = Icons.check_circle;
+      reconciliationLabel =
+      'All ${asset.quantity} unit(s) fully verified and reconciled.';
+    } else if (diff > 0) {
+      reconciliationPillColor = const Color(0xFFFFFBEB);
+      reconciliationTextColor = const Color(0xFFD97706);
+      reconciliationIcon = Icons.warning_amber_rounded;
+      reconciliationLabel =
+      '$diff unit(s) unaccounted for ($verified of ${asset.quantity} verified).';
+    } else {
+      reconciliationPillColor = ParishColors.mercyRedSurface;
+      reconciliationTextColor = ParishColors.mercyRed;
+      reconciliationIcon = Icons.error_outline;
+      reconciliationLabel =
+      'Total verified exceeds registered count by ${-diff} unit(s) ($verified of ${asset.quantity}).';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isReconciled
+              ? ParishColors.oliveGreen.withOpacity(0.4)
+              : const Color(0xFFF59E0B).withOpacity(0.5),
         ),
-        isDense: true,
       ),
-      items: _conditionOptions.map((c) {
-        final desc = AssetModel.conditionDescriptions[c] ?? '';
-        return DropdownMenuItem(
-          value: c,
-          child: Text(
-            desc.isNotEmpty ? '$c ($desc)' : c,
-            style: const TextStyle(fontSize: 12.5),
-            overflow: TextOverflow.ellipsis,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'LIVE QUANTITY RECONCILIATION',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                  color: ParishColors.textMuted,
+                ),
+              ),
+              Text(
+                '$verified / ${asset.quantity} Verified',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: _isReconciled
+                      ? ParishColors.oliveGreen
+                      : const Color(0xFFD97706),
+                ),
+              ),
+            ],
           ),
+          const Divider(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.spaceAround,
+            children: [
+              _buildMiniMetricBadge(
+                  'Registered', '${asset.quantity}', ParishColors.textDark),
+              _buildMiniMetricBadge(
+                  'Total Verified',
+                  '$verified',
+                  _isReconciled
+                      ? ParishColors.oliveGreen
+                      : const Color(0xFFD97706)),
+              _buildMiniMetricBadge(
+                  'In Use', '$_inUseQuantity', ParishColors.marianBlue),
+              _buildMiniMetricBadge(
+                  'Available', '$_availableQuantity', const Color(0xFF0D9488)),
+              _buildMiniMetricBadge(
+                  'Damaged', '$_damagedQuantity', ParishColors.mercyRed),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: reconciliationPillColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: reconciliationTextColor.withOpacity(0.35),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(reconciliationIcon,
+                    size: 16, color: reconciliationTextColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    reconciliationLabel,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: reconciliationTextColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniMetricBadge(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.6)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.textMuted,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Quantity Distribution Table / Entry Rows (With Previous Baseline Bar)
+  // ===========================================================================
+
+  Widget _buildQuantityDistributionSection(bool isMobile) {
+    final bool hasPrevDist =
+        _previousDistribution != null && _previousDistribution!.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Quantity Distribution',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+                Text(
+                  'Categorize units by physical condition and utilization status',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: ParishColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+                padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: _addDistributionEntry,
+              icon: const Icon(Icons.add, size: 15),
+              label: const Text('Add Combination',
+                  style: TextStyle(
+                      fontSize: 11.5, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // PREVIOUS AUDIT DISTRIBUTION BASELINE BANNER
+        if (hasPrevDist) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: ParishColors.marianBlueSurface.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: ParishColors.marianBlue.withOpacity(0.35),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.history,
+                          size: 15,
+                          color: ParishColors.marianBlue,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'PREVIOUS VERIFICATION BASELINE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.4,
+                            color: ParishColors.marianBlue,
+                          ),
+                        ),
+                        if (_previousAuditDate != null) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '($_previousAuditDate)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: ParishColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    InkWell(
+                      onTap: _restorePreviousDistribution,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.restore,
+                                size: 13, color: ParishColors.marianBlue),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Restore Last Audit',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.marianBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: _previousDistribution!.map((d) {
+                    final bool isDamaged =
+                        d.physicalCondition.toLowerCase() == 'damaged';
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: isDamaged
+                            ? ParishColors.mercyRedSurface
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: isDamaged
+                              ? ParishColors.mercyRed.withOpacity(0.4)
+                              : ParishColors.borderGrey,
+                        ),
+                      ),
+                      child: Text(
+                        '${d.quantity}x ${d.utilizationStatus} (${d.physicalCondition})',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: isDamaged
+                              ? ParishColors.mercyRed
+                              : ParishColors.textDark,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        ..._distributionEntries.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: ParishColors.cardWhite,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: ParishColors.borderGrey),
+            ),
+            child: isMobile
+                ? Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Combination #${index + 1}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.textMuted,
+                      ),
+                    ),
+                    if (_distributionEntries.length > 1)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline,
+                            size: 18, color: ParishColors.mercyRed),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () =>
+                            _removeDistributionEntry(index),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatusDropdown(item),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildConditionDropdown(item),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Allocated Units:',
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold),
+                    ),
+                    _buildQuantityStepper(item),
+                  ],
+                ),
+              ],
+            )
+                : Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildStatusDropdown(item),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 3,
+                  child: _buildConditionDropdown(item),
+                ),
+                const SizedBox(width: 10),
+                _buildQuantityStepper(item),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: _distributionEntries.length > 1
+                        ? ParishColors.mercyRed
+                        : ParishColors.borderGrey,
+                  ),
+                  onPressed: _distributionEntries.length > 1
+                      ? () => _removeDistributionEntry(index)
+                      : null,
+                  tooltip: 'Remove Row',
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildStatusDropdown(_DistributionRowState item) {
+    return DropdownButtonFormField<String>(
+      value: item.status,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: 'Utilization Status',
+        labelStyle: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+        filled: true,
+        fillColor: ParishColors.backgroundLight,
+        isDense: true,
+        contentPadding:
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      items:
+      AssetQuantityDistribution.standardUtilizationStatuses.map((st) {
+        return DropdownMenuItem(
+          value: st,
+          child: Text(st, style: const TextStyle(fontSize: 12.5)),
         );
       }).toList(),
       onChanged: (val) {
-        if (val != null) setState(() => _selectedCondition = val);
+        if (val != null) {
+          setState(() => item.status = val);
+        }
       },
     );
   }
 
-  Widget _buildStatusDropdown() {
+  Widget _buildConditionDropdown(_DistributionRowState item) {
     return DropdownButtonFormField<String>(
-      value: _selectedStatus,
+      value: item.condition,
+      isExpanded: true,
       decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: ParishColors.borderGrey),
-        ),
+        labelText: 'Physical Condition',
+        labelStyle: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+        filled: true,
+        fillColor: ParishColors.backgroundLight,
         isDense: true,
+        contentPadding:
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       ),
-      items: _operationalStatusOptions.map((s) {
-        final desc = AssetModel.statusDescriptions[s] ?? '';
+      items: AssetQuantityDistribution.standardPhysicalConditions
+          .map((cond) {
         return DropdownMenuItem(
-          value: s,
+          value: cond,
           child: Text(
-            desc.isNotEmpty ? '$s ($desc)' : s,
-            style: const TextStyle(fontSize: 12.5),
-            overflow: TextOverflow.ellipsis,
+            cond,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight:
+              cond == 'Damaged' ? FontWeight.bold : FontWeight.normal,
+              color: cond == 'Damaged'
+                  ? ParishColors.mercyRed
+                  : ParishColors.textDark,
+            ),
           ),
         );
       }).toList(),
       onChanged: (val) {
-        if (val != null) setState(() => _selectedStatus = val);
+        if (val != null) {
+          setState(() => item.condition = val);
+        }
       },
     );
   }
 
-  Widget _buildSpecItem(String label, String value) {
+  Widget _buildQuantityStepper(_DistributionRowState item) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          padding: EdgeInsets.zero,
+          style: IconButton.styleFrom(
+            backgroundColor: ParishColors.backgroundLight,
+          ),
+          icon: const Icon(Icons.remove, size: 14),
+          onPressed: item.quantity > 1
+              ? () {
+            item.setQuantity(item.quantity - 1);
+            setState(() {});
+          }
+              : null,
+        ),
+        const SizedBox(width: 4),
+        SizedBox(
+          width: 52,
+          child: TextField(
+            controller: item.quantityController,
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+            style:
+            const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding:
+              EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (val) {
+              setState(() {});
+            },
+          ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          padding: EdgeInsets.zero,
+          style: IconButton.styleFrom(
+            backgroundColor: ParishColors.backgroundLight,
+          ),
+          icon: const Icon(Icons.add, size: 14),
+          onPressed: () {
+            item.setQuantity(item.quantity + 1);
+            setState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpecItem(String label, String value, {Color? color}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1757,12 +2175,44 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           style: TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.bold,
-            color: ParishColors.textDark,
+            color: color ?? ParishColors.textDark,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
       ],
     );
+  }
+}
+
+// =============================================================================
+// Helper State Representation for Distribution Row Inputs
+// =============================================================================
+
+class _DistributionRowState {
+  String status;
+  String condition;
+  final TextEditingController quantityController;
+  final VoidCallback onChanged;
+
+  _DistributionRowState({
+    required this.status,
+    required this.condition,
+    required int quantity,
+    required this.onChanged,
+  }) : quantityController = TextEditingController(text: '$quantity') {
+    quantityController.addListener(onChanged);
+  }
+
+  int get quantity => int.tryParse(quantityController.text.trim()) ?? 0;
+
+  void setQuantity(int val) {
+    final safeVal = val > 0 ? val : 1;
+    quantityController.text = '$safeVal';
+  }
+
+  void dispose() {
+    quantityController.removeListener(onChanged);
+    quantityController.dispose();
   }
 }

@@ -2,6 +2,53 @@
 // FILE: lib/features/asset_inventory/models/asset_audit_log_model.dart
 // =============================================================================
 
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+
+/// Represents a classified batch of units under a single quantified asset
+class AssetQuantityDistribution {
+  final String utilizationStatus; // 'In Use', 'Available'
+  final String physicalCondition; // 'Excellent', 'Good', 'Fair', 'Poor', 'Damaged'
+  final int quantity;
+
+  const AssetQuantityDistribution({
+    required this.utilizationStatus,
+    required this.physicalCondition,
+    required this.quantity,
+  });
+
+  static const List<String> standardUtilizationStatuses = [
+    'In Use',
+    'Available',
+  ];
+
+  static const List<String> standardPhysicalConditions = [
+    'Excellent',
+    'Good',
+    'Fair',
+    'Poor',
+    'Damaged',
+  ];
+
+  Map<String, dynamic> toMap() {
+    return {
+      'status': utilizationStatus,
+      'condition': physicalCondition,
+      'quantity': quantity,
+    };
+  }
+
+  factory AssetQuantityDistribution.fromMap(Map<String, dynamic> map) {
+    return AssetQuantityDistribution(
+      utilizationStatus: map['status']?.toString() ?? 'In Use',
+      physicalCondition: map['condition']?.toString() ?? 'Good',
+      quantity: int.tryParse(map['quantity']?.toString() ?? '') ?? 1,
+    );
+  }
+
+  String get summary => '$quantity $utilizationStatus ($physicalCondition)';
+}
+
 class AssetAuditLogModel {
   final String auditId;
   final String assetId;
@@ -24,6 +71,9 @@ class AssetAuditLogModel {
   final int? quantityChange;
   final String? quantityChangeReason;
 
+  // Quantified Asset Condition & Utilization Distribution
+  final List<AssetQuantityDistribution>? quantityDistribution;
+
   const AssetAuditLogModel({
     required this.auditId,
     required this.assetId,
@@ -43,23 +93,71 @@ class AssetAuditLogModel {
     this.newQuantity,
     this.quantityChange,
     this.quantityChangeReason,
+    this.quantityDistribution,
   });
 
   bool get hasQuantityAdjustment =>
       quantityChange != null && quantityChange != 0;
 
+  bool get hasQuantityDistribution =>
+      quantityDistribution != null && quantityDistribution!.isNotEmpty;
+
   String get formattedQuantityChange {
     if (!hasQuantityAdjustment) return 'No quantity change';
-    final sign = quantityChange! > 0 ? '+${quantityChange!}' : '${quantityChange!}';
+    final sign =
+    quantityChange! > 0 ? '+${quantityChange!}' : '${quantityChange!}';
     return '$sign units (from $previousQuantity to $newQuantity)';
   }
 
-  /// Clean user notes without the automated quantity adjustment tracking header
+  /// Formatted breakdown summary for audit log tiles
+  String get formattedDistributionSummary {
+    if (!hasQuantityDistribution) return '';
+    return quantityDistribution!
+        .map((d) => '${d.quantity}x ${d.utilizationStatus} (${d.physicalCondition})')
+        .join(', ');
+  }
+
+  /// Clean user notes without the automated metadata headers
   String get cleanNotes {
     if (auditNotes == null) return '';
-    return auditNotes!
-        .replaceAll(RegExp(r'\[QTY_ADJUST:.*?\]\n?'), '')
-        .trim();
+    String notes = auditNotes!;
+
+    // 1. Clean QTY_ADJUST header
+    notes = notes.replaceAll(RegExp(r'\[QTY_ADJUST:.*?\]\n?'), '');
+
+    // 2. Clean QTY_DISTRIBUTION header handling nested JSON array brackets
+    const prefix = '[QTY_DISTRIBUTION:';
+    while (notes.contains(prefix)) {
+      final startIndex = notes.indexOf(prefix);
+      final jsonStart = notes.indexOf('[', startIndex + prefix.length);
+
+      if (jsonStart != -1) {
+        int depth = 0;
+        int jsonEnd = -1;
+        for (int i = jsonStart; i < notes.length; i++) {
+          if (notes[i] == '[') depth++;
+          if (notes[i] == ']') {
+            depth--;
+            if (depth == 0) {
+              jsonEnd = i;
+              break;
+            }
+          }
+        }
+
+        if (jsonEnd != -1) {
+          final outerEnd = notes.indexOf(']', jsonEnd + 1);
+          final endOfTag = outerEnd != -1 ? outerEnd + 1 : jsonEnd + 1;
+          notes = notes.substring(0, startIndex) + notes.substring(endOfTag);
+        } else {
+          notes = notes.replaceFirst(RegExp(r'\[QTY_DISTRIBUTION:.*?\]\n?'), '');
+        }
+      } else {
+        notes = notes.replaceFirst(RegExp(r'\[QTY_DISTRIBUTION:.*?\]\n?'), '');
+      }
+    }
+
+    return notes.trim();
   }
 
   String get formattedAuditedAt {
@@ -76,7 +174,7 @@ class AssetAuditLogModel {
 
     final rawNotes = map['audit_notes']?.toString();
 
-    // Parse automated quantity adjustment metadata from audit notes if present
+    // 1. Parse automated quantity adjustment metadata from audit notes
     int? prevQty;
     int? nextQty;
     int? changeQty;
@@ -95,6 +193,42 @@ class AssetAuditLogModel {
       }
     }
 
+    // 2. Parse quantity-based distribution breakdown using bracket depth matching
+    List<AssetQuantityDistribution>? parsedDistribution;
+    if (rawNotes != null && rawNotes.contains('[QTY_DISTRIBUTION:')) {
+      try {
+        const prefix = '[QTY_DISTRIBUTION:';
+        final startIndex = rawNotes.indexOf(prefix);
+        final jsonStart = rawNotes.indexOf('[', startIndex + prefix.length);
+
+        if (jsonStart != -1) {
+          int depth = 0;
+          int jsonEnd = -1;
+          for (int i = jsonStart; i < rawNotes.length; i++) {
+            if (rawNotes[i] == '[') depth++;
+            if (rawNotes[i] == ']') {
+              depth--;
+              if (depth == 0) {
+                jsonEnd = i;
+                break;
+              }
+            }
+          }
+
+          if (jsonEnd != -1) {
+            final jsonStr = rawNotes.substring(jsonStart, jsonEnd + 1);
+            final List<dynamic> list = jsonDecode(jsonStr);
+            parsedDistribution = list
+                .map((item) => AssetQuantityDistribution.fromMap(
+                item as Map<String, dynamic>))
+                .toList();
+          }
+        }
+      } catch (e) {
+        debugPrint('Notice parsing quantity distribution: $e');
+      }
+    }
+
     return AssetAuditLogModel(
       auditId: map['audit_id']?.toString() ?? '',
       assetId: map['asset_id']?.toString() ?? '',
@@ -109,11 +243,13 @@ class AssetAuditLogModel {
       newLocation: map['new_location']?.toString(),
       auditMethod: map['audit_method']?.toString() ?? 'QR_SCAN',
       auditNotes: rawNotes,
-      auditedAt: DateTime.tryParse(map['audited_at']?.toString() ?? '') ?? DateTime.now(),
+      auditedAt: DateTime.tryParse(map['audited_at']?.toString() ?? '') ??
+          DateTime.now(),
       previousQuantity: prevQty,
       newQuantity: nextQty,
       quantityChange: changeQty,
       quantityChangeReason: reasonQty,
+      quantityDistribution: parsedDistribution,
     );
   }
 
