@@ -4,10 +4,8 @@
 
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_draft_model.dart';
 import '../../models/asset_model.dart';
@@ -16,6 +14,7 @@ import '../../services/asset_draft_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
+import 'asset_camera_page.dart';
 
 class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
   @override
@@ -219,7 +218,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 (c) =>
             c.acronym.toUpperCase() ==
                 widget.initialDraft!.classificationAcronym.toUpperCase(),
-            orElse: () => classifs.isNotEmpty ? classifs.first : null as dynamic,
+            orElse: () =>
+            classifs.isNotEmpty ? classifs.first : null as dynamic,
           );
         } else {
           if (locs.isNotEmpty) _selectedLocation = locs.first;
@@ -274,6 +274,46 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     }
   }
 
+  // ===========================================================================
+  // Dedicated 3R Camera Page Launch (Zero Page Reloads & In-Memory Watermark)
+  // ===========================================================================
+
+  Future<void> _openDedicated3RCameraPage() async {
+    final idLabel = _itemNameController.text.trim().isNotEmpty
+        ? '$_fullControlNumber • ${_itemNameController.text.trim()}'
+        : _fullControlNumber;
+
+    final Uint8List? capturedWatermarkedBytes =
+    await Navigator.push<Uint8List>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AssetCameraPage(assetIdentifier: idLabel),
+      ),
+    );
+
+    if (capturedWatermarkedBytes != null &&
+        capturedWatermarkedBytes.isNotEmpty) {
+      setState(() {
+        _watermarkedPhotoBytes = capturedWatermarkedBytes;
+        _photoFileName =
+        'photo_3R_${DateTime.now().millisecondsSinceEpoch}.png';
+        _existingPhotoUrl = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '3R photographic evidence captured and security watermark applied successfully.',
+            ),
+            backgroundColor: ParishColors.oliveGreen,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _pickImageFromDevice() async {
     try {
       final dynamic result = await FilePicker.pickFiles(
@@ -321,30 +361,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     }
   }
 
-  Future<void> _capturePhotoWithCamera() async {
-    if (kIsWeb) {
-      await _pickImageFromDevice();
-      return;
-    }
-
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? photo = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 92,
-      );
-      if (photo != null) {
-        final Uint8List rawBytes = await photo.readAsBytes();
-        await _processAndWatermarkImage(
-          rawBytes,
-          photo.name.isNotEmpty ? photo.name : 'camera_photo.jpg',
-        );
-      }
-    } catch (e) {
-      debugPrint('Camera error: $e');
-    }
-  }
-
   Future<void> _processAndWatermarkImage(
       Uint8List rawBytes,
       String filename,
@@ -368,6 +384,16 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         _existingPhotoUrl = null;
         _isProcessingImage = false;
       });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Security watermark embedded. Tap thumbnail to inspect full preview.',
+          ),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -616,14 +642,17 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
               children: [
                 Row(
                   children: [
-                    Text(
-                      widget.initialDraft != null
-                          ? 'Resume Registration'
-                          : 'Register New Item',
-                      style: TextStyle(
-                        fontSize: isMobile ? 16 : 18,
-                        fontWeight: FontWeight.bold,
-                        color: textDark,
+                    Flexible(
+                      child: Text(
+                        widget.initialDraft != null
+                            ? 'Resume Registration'
+                            : 'Register New Item',
+                        style: TextStyle(
+                          fontSize: isMobile ? 16 : 18,
+                          fontWeight: FontWeight.bold,
+                          color: textDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (widget.initialDraft != null) ...[
@@ -635,7 +664,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                           color: ParishColors.goldLight,
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                              color: ParishColors.goldAccent.withOpacity(0.5)),
+                              color:
+                              ParishColors.goldAccent.withOpacity(0.5)),
                         ),
                         child: const Text(
                           'CLOUD DRAFT',
@@ -685,13 +715,14 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                           decoration: BoxDecoration(
                             color: ParishColors.mercyRedSurface,
                             borderRadius: BorderRadius.circular(10),
-                            border:
-                            Border.all(color: ParishColors.mercyRed),
+                            border: Border.all(
+                                color: ParishColors.mercyRed),
                           ),
                           child: Row(
                             children: [
                               const Icon(Icons.error_outline,
-                                  color: ParishColors.mercyRed, size: 20),
+                                  color: ParishColors.mercyRed,
+                                  size: 20),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -708,11 +739,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                         ),
                       ],
 
-                      // 1. Photographic Evidence Section at Top
+                      // 1. Photographic Evidence Section with Dedicated 3R Camera Launch
                       _buildFormSectionCard(
                         title: 'Photographic Evidence',
                         subtitle:
-                        'Capture or upload asset photo with automated security watermark',
+                        'Capture 3R photo (10:7 Landscape or 7:10 Portrait) or upload file with security watermark',
                         icon: Icons.camera_alt_outlined,
                         iconColor: ParishColors.marianBlue,
                         child: _buildPhotoUploadBox(isMobile, borderGrey,
@@ -757,7 +788,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 _buildLabel('Category *'),
                                 _buildClassificationDropdown(),
                                 const SizedBox(height: 12),
-                                _buildLabel('Storage Location *'),
+                                _buildLabel(
+                                    'Storage Location *'),
                                 _buildLocationDropdown(),
                               ],
                             )
@@ -875,7 +907,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                     crossAxisAlignment:
                                     CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel('Price per Unit (₱)'),
+                                      _buildLabel(
+                                          'Price per Unit (₱)'),
                                       TextFormField(
                                         controller:
                                         _unitPriceController,
@@ -987,7 +1020,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                     crossAxisAlignment:
                                     CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel('How Acquired *'),
+                                      _buildLabel(
+                                          'How Acquired *'),
                                       _buildAcquisitionModeDropdown(),
                                     ],
                                   ),
@@ -1077,7 +1111,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                         CrossAxisAlignment
                                             .start,
                                         children: [
-                                          _buildLabel('Dimensions'),
+                                          _buildLabel(
+                                              'Dimensions'),
                                           TextFormField(
                                             controller:
                                             _dimensionsController,
@@ -1504,6 +1539,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     );
   }
 
+  // ===========================================================================
+  // Photographic Evidence Box with 3R Camera Launch Button & Preview
+  // ===========================================================================
+
   Widget _buildPhotoUploadBox(
       bool isMobile,
       Color borderGrey,
@@ -1530,11 +1569,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Photo Thumbnail Box
           InkWell(
             onTap: hasAnyPhoto ? _openInteractiveImagePreview : null,
+            borderRadius: BorderRadius.circular(10),
             child: Container(
-              width: 84,
-              height: 84,
+              width: 88,
+              height: 88,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
@@ -1548,20 +1589,29 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                   : hasNewPhoto
                   ? ClipRRect(
                 borderRadius: BorderRadius.circular(9),
-                child: Image.memory(_watermarkedPhotoBytes!,
-                    fit: BoxFit.cover),
+                child: Image.memory(
+                  _watermarkedPhotoBytes!,
+                  fit: BoxFit.cover,
+                ),
               )
                   : hasExistingPhoto
                   ? ClipRRect(
                 borderRadius: BorderRadius.circular(9),
-                child: Image.network(_existingPhotoUrl!,
-                    fit: BoxFit.cover),
+                child: Image.network(
+                  _existingPhotoUrl!,
+                  fit: BoxFit.cover,
+                ),
               )
-                  : const Icon(Icons.image,
-                  size: 38, color: ParishColors.marianBlue),
+                  : const Icon(
+                Icons.photo_camera_outlined,
+                size: 38,
+                color: ParishColors.marianBlue,
+              ),
             ),
           ),
           const SizedBox(width: 16),
+
+          // Labels and Buttons Strip
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1569,9 +1619,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 Text(
                   hasAnyPhoto
                       ? (hasNewPhoto
-                      ? 'Security Watermark Embedded'
+                      ? '3R Watermarked Photo Embedded'
                       : 'Cloud Photo Attached')
-                      : 'Take or Upload Item Photo',
+                      : 'Capture 3R Photo or Upload File',
                   style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13.5,
@@ -1579,7 +1629,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Photos are stamped with permanent control number and timestamp.',
+                  '3R standard framing (5×3.5 Landscape or 3.5×5 Portrait) calibrated for official inventory cards.',
                   style: TextStyle(fontSize: 11.5, color: textMuted),
                 ),
                 const SizedBox(height: 10),
@@ -1587,6 +1637,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    // Dedicated 3R Camera Launch Button
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ParishColors.marianBlue,
@@ -1594,29 +1645,52 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                       ),
-                      onPressed:
-                      _isProcessingImage ? null : _capturePhotoWithCamera,
+                      onPressed: _isProcessingImage
+                          ? null
+                          : _openDedicated3RCameraPage,
                       icon: const Icon(Icons.camera_alt, size: 16),
-                      label: Text(kIsWeb ? 'Camera / Photo' : 'Camera'),
+                      label: const Text('3R Camera'),
                     ),
+
+                    // Upload Image from Files
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: ParishColors.marianBlue,
-                        side: const BorderSide(color: ParishColors.marianBlue),
+                        side:
+                        const BorderSide(color: ParishColors.marianBlue),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                       ),
-                      onPressed:
-                      _isProcessingImage ? null : _pickImageFromDevice,
+                      onPressed: _isProcessingImage
+                          ? null
+                          : _pickImageFromDevice,
                       icon: const Icon(Icons.upload_file, size: 16),
                       label: const Text('Upload Image'),
                     ),
-                    if (hasAnyPhoto)
+
+                    // Inspect Full Watermarked Preview
+                    if (hasAnyPhoto) ...[
                       TextButton.icon(
                         onPressed: _openInteractiveImagePreview,
                         icon: const Icon(Icons.zoom_in, size: 16),
                         label: const Text('Inspect'),
                       ),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _watermarkedPhotoBytes = null;
+                            _existingPhotoUrl = null;
+                            _photoFileName = null;
+                          });
+                        },
+                        icon: const Icon(Icons.delete_outline,
+                            size: 16, color: ParishColors.mercyRed),
+                        label: const Text(
+                          'Remove',
+                          style: TextStyle(color: ParishColors.mercyRed),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -1723,8 +1797,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             style: OutlinedButton.styleFrom(
               foregroundColor: textMuted,
               side: BorderSide(color: borderGrey),
-              padding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 20, vertical: 14),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
             ),

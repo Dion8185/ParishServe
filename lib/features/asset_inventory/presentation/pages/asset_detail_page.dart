@@ -4,10 +4,8 @@
 
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../models/asset_audit_log_model.dart';
@@ -17,6 +15,7 @@ import '../../services/asset_label_pdf_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
+import 'asset_camera_page.dart';
 
 class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
   @override
@@ -278,6 +277,44 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     }
   }
 
+  // ===========================================================================
+  // Dedicated 3R Camera Launch (Landscape & Portrait Framing)
+  // ===========================================================================
+
+  Future<void> _openDedicated3RCameraPage() async {
+    final idLabel =
+        '${_currentAsset.controlNumber} • ${_nameController.text.trim()}';
+
+    final Uint8List? capturedWatermarkedBytes =
+    await Navigator.push<Uint8List>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AssetCameraPage(assetIdentifier: idLabel),
+      ),
+    );
+
+    if (capturedWatermarkedBytes != null &&
+        capturedWatermarkedBytes.isNotEmpty) {
+      setState(() {
+        _newWatermarkedPhotoBytes = capturedWatermarkedBytes;
+        _newPhotoFileName =
+        'photo_3R_${DateTime.now().millisecondsSinceEpoch}.png';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '3R photographic evidence captured and security watermark applied successfully.',
+            ),
+            backgroundColor: ParishColors.oliveGreen,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _pickImageFromDevice() async {
     try {
       final dynamic result = await FilePicker.pickFiles(
@@ -326,33 +363,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     }
   }
 
-  Future<void> _capturePhotoWithCamera() async {
-    if (kIsWeb) {
-      await _pickImageFromDevice();
-      return;
-    }
-
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? photo = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 92,
-      );
-
-      if (photo != null) {
-        final Uint8List rawBytes = await photo.readAsBytes();
-        await _processAndWatermarkNewImage(
-          rawBytes,
-          photo.name.isNotEmpty ? photo.name : 'camera_photo.jpg',
-        );
-      }
-    } catch (e) {
-      debugPrint('Camera error: $e');
-    }
-  }
-
   Future<void> _processAndWatermarkNewImage(
-      Uint8List rawBytes, String filename) async {
+      Uint8List rawBytes,
+      String filename,
+      ) async {
     setState(() => _isProcessingImage = true);
 
     try {
@@ -747,7 +761,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   // ===========================================================================
-  // View Details Mode: Clean Executive Card UI for Diocesan Inventory Records
+  // View Details Mode: Executive Card UI for Diocesan Inventory Records
   // ===========================================================================
 
   Widget _buildViewDetails(bool isMobile) {
@@ -1033,7 +1047,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   ? Column(
                 children: [
                   _buildInfoTile('Control Number', asset.controlNumber,
-                      Icons.qr_code, isMono: true),
+                      Icons.qr_code,
+                      isMono: true),
                   const SizedBox(height: 8),
                   _buildInfoTile('Date of Inventory', inventoryDateStr,
                       Icons.event_note_outlined),
@@ -1066,7 +1081,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   _buildInfoTile('Storage Location', asset.displayLocation,
                       Icons.location_on_outlined),
                   const SizedBox(height: 8),
-                  _buildInfoTile('Date Acquired',
+                  _buildInfoTile(
+                      'Date Acquired',
                       asset.formattedAcquisitionDate,
                       Icons.calendar_today_outlined),
                   const SizedBox(height: 8),
@@ -1416,7 +1432,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
         const SizedBox(height: 16),
 
-        // 4. AUDIT & ADJUSTMENT HISTORY (Quantity Distribution Breakdown Logs)
+        // 4. AUDIT & ADJUSTMENT HISTORY
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1475,7 +1491,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   // ===========================================================================
-  // Modular Tile & Spec Card Helpers (Bold Answer Rendering)
+  // Modular Tile & Spec Card Helpers
   // ===========================================================================
 
   Widget _buildSpecCard({
@@ -1601,7 +1617,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   // ===========================================================================
-  // Responsive Edit Form Card Mode
+  // Responsive Edit Form Card Mode (With 3R Camera Launch Button)
   // ===========================================================================
 
   Widget _buildEditFormCard(bool isMobile) {
@@ -1646,8 +1662,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ),
           ),
 
-          // Photo Upload Strip
-          _buildLabel('Item Photo'),
+          // Photo Upload / Camera Strip
+          _buildLabel('Item Photo (3R Framing Supported)'),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -1669,8 +1685,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   },
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    width: 80,
-                    height: 80,
+                    width: 88,
+                    height: 88,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
@@ -1707,9 +1723,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     children: [
                       Text(
                         _newWatermarkedPhotoBytes != null
-                            ? 'New Watermarked Photo'
+                            ? 'New 3R Photo Attached'
                             : (asset.photoUrl != null
-                            ? 'Current Photo'
+                            ? 'Current Photo Registered'
                             : 'No photo uploaded'),
                         style: TextStyle(
                           fontSize: 13,
@@ -1724,6 +1740,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         spacing: 8,
                         runSpacing: 6,
                         children: [
+                          // Dedicated 3R Camera Launch Button
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: ParishColors.marianBlue,
@@ -1733,14 +1750,16 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                             ),
                             onPressed: _isProcessingImage
                                 ? null
-                                : _capturePhotoWithCamera,
+                                : _openDedicated3RCameraPage,
                             icon: const Icon(Icons.camera_alt, size: 14),
-                            label: Text(
-                              kIsWeb ? 'Camera / Photo' : 'Camera',
-                              style: const TextStyle(
+                            label: const Text(
+                              '3R Camera',
+                              style: TextStyle(
                                   fontSize: 11.5, fontWeight: FontWeight.bold),
                             ),
                           ),
+
+                          // File Picker Upload Button
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
                               foregroundColor: ParishColors.marianBlue,
@@ -1758,6 +1777,25 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.bold)),
                           ),
+
+                          if (_newWatermarkedPhotoBytes != null ||
+                              (asset.photoUrl != null &&
+                                  asset.photoUrl!.isNotEmpty)) ...[
+                            TextButton.icon(
+                              onPressed: () {
+                                if (_newWatermarkedPhotoBytes != null) {
+                                  _openInteractivePreview(
+                                      MemoryImage(_newWatermarkedPhotoBytes!));
+                                } else if (asset.photoUrl != null) {
+                                  _openInteractivePreview(
+                                      NetworkImage(asset.photoUrl!));
+                                }
+                              },
+                              icon: const Icon(Icons.zoom_in, size: 14),
+                              label: const Text('Inspect',
+                                  style: TextStyle(fontSize: 11.5)),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -2293,7 +2331,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
 
-    // Only render quantity distribution card if total verified quantity is greater than 1
     final int totalDistQty = log.quantityDistribution != null
         ? log.quantityDistribution!.fold<int>(0, (sum, d) => sum + d.quantity)
         : 0;
@@ -2368,7 +2405,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
 
-          // QUANTIFIED DISTRIBUTION BREAKDOWN LOG CARD (Only if total qty > 1)
           if (showDistributionCard) ...[
             const SizedBox(height: 8),
             Container(
