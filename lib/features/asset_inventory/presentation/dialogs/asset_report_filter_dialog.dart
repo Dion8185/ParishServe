@@ -65,7 +65,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       list = list.where((a) => a.unitPrice < 10000.0).toList();
     }
 
-    // 3. Date range filter
+    // 3. Date range filter with null-safe handling for acquisition dates
     if (_dateScope == 'Custom Range' && _selectedDateRange != null) {
       final start = DateTime(
         _selectedDateRange!.start.year,
@@ -82,11 +82,20 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       );
 
       list = list.where((a) {
-        final targetDate = _dateFieldToFilter == 'Acquisition Date'
-            ? a.dateOfAcquisition
-            : a.registrationDate;
-        return targetDate.isAfter(start.subtract(const Duration(seconds: 1))) &&
-            targetDate.isBefore(end.add(const Duration(seconds: 1)));
+        if (_dateFieldToFilter == 'Acquisition Date') {
+          if (a.dateOfAcquisition != null) {
+            final targetDate = a.dateOfAcquisition!;
+            return targetDate.isAfter(start.subtract(const Duration(seconds: 1))) &&
+                targetDate.isBefore(end.add(const Duration(seconds: 1)));
+          } else {
+            // When only acquisition year is known, check if it falls within the year span
+            return a.acquisitionYear >= start.year && a.acquisitionYear <= end.year;
+          }
+        } else {
+          final targetDate = a.registrationDate;
+          return targetDate.isAfter(start.subtract(const Duration(seconds: 1))) &&
+              targetDate.isBefore(end.add(const Duration(seconds: 1)));
+        }
       }).toList();
     }
 
@@ -280,7 +289,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                     ),
                     title: Text(
                       previewTitle,
-                      style:  TextStyle(
+                      style: TextStyle(
                         color: ParishColors.textDark,
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -296,11 +305,11 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   ),
                   body: PdfPreview(
                     build: (format) async => pdfBytes,
-                    useActions: false, // Disables the top blue action bar
+                    useActions: false,
                     canChangeOrientation: false,
                     canChangePageFormat: false,
                     canDebug: false,
-                    dynamicLayout: false, // Accelerates rendering speed
+                    dynamicLayout: false,
                     enableScrollToPage: true,
                     pdfFileName: fileName,
                     loadingWidget: const Center(
@@ -618,8 +627,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                             children: [
                               Text(
                                 'Filter by: ',
-                                style: TextStyle(
-                                    fontSize: 12, color: textMuted),
+                                style:
+                                TextStyle(fontSize: 12, color: textMuted),
                               ),
                               const SizedBox(width: 6),
                               DropdownButton<String>(
@@ -748,8 +757,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   ),
                   decoration: BoxDecoration(
                     color: ParishColors.cardWhite,
-                    borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(20)),
+                    borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(20)),
                     border: Border(top: BorderSide(color: borderGrey)),
                   ),
                   child: isMobile
@@ -855,8 +864,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 _isGenerating && _activeOperation == 'printing'
                     ? 'Preparing...'
                     : 'Print ($itemCount)',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 13),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
           ],
@@ -891,7 +900,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 )
                     : const Icon(Icons.visibility_outlined, size: 15),
                 label: const Text('Preview',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    style:
+                    TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ),
             const SizedBox(width: 8),
@@ -916,7 +926,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 )
                     : const Icon(Icons.download_outlined, size: 15),
                 label: const Text('Download',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    style:
+                    TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ),
           ],

@@ -3,14 +3,15 @@
 // =============================================================================
 
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_model.dart';
 import '../../services/asset_label_pdf_service.dart';
 
 void showBatchPrintTagsModal(
-  BuildContext context, {
-  required List<AssetModel> availableAssets,
-}) {
+    BuildContext context, {
+      required List<AssetModel> availableAssets,
+    }) {
   showDialog(
     context: context,
     builder: (ctx) => _BatchPrintTagsDialog(availableAssets: availableAssets),
@@ -32,6 +33,9 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
 
   String _searchQuery = '';
   bool _isGeneratingPdf = false;
+  bool _isPreviewing = false;
+
+  bool get _isBusy => _isGeneratingPdf || _isPreviewing;
 
   @override
   void initState() {
@@ -58,7 +62,7 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
 
   bool get _isAllSelected =>
       _displayedAssets.isNotEmpty &&
-      _displayedAssets.every((a) => _selectedAssetIds.contains(a.assetId));
+          _displayedAssets.every((a) => _selectedAssetIds.contains(a.assetId));
 
   void _toggleSelectAll(bool? selectAll) {
     setState(() {
@@ -72,6 +76,10 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
     });
   }
 
+  // ===========================================================================
+  // 1. Direct Print Action
+  // ===========================================================================
+
   Future<void> _printSelectedLabels() async {
     final selectedList = widget.availableAssets
         .where((a) => _selectedAssetIds.contains(a.assetId))
@@ -79,8 +87,8 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
 
     if (selectedList.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Please select at least one asset tag to print.'),
+        const SnackBar(
+          content: Text('Please select at least one asset tag to print.'),
           backgroundColor: ParishColors.goldAccent,
         ),
       );
@@ -99,6 +107,109 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Print error: $e'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
+      );
+    }
+  }
+
+  // ===========================================================================
+  // 2. Interactive In-App Print Preview Action
+  // ===========================================================================
+
+  Future<void> _previewSelectedLabels() async {
+    final selectedList = widget.availableAssets
+        .where((a) => _selectedAssetIds.contains(a.assetId))
+        .toList();
+
+    if (selectedList.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least one asset tag to preview.'),
+          backgroundColor: ParishColors.goldAccent,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isPreviewing = true);
+
+    try {
+      final pdfBytes =
+      await AssetLabelPdfService.generateBatchAssetLabelsPdf(selectedList);
+      if (!mounted) return;
+      setState(() => _isPreviewing = false);
+
+      showDialog(
+        context: context,
+        builder: (ctx) {
+          final isScreenMobile = MediaQuery.of(ctx).size.width < 650;
+
+          return Dialog(
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: isScreenMobile ? 8 : 24,
+              vertical: isScreenMobile ? 12 : 24,
+            ),
+            backgroundColor: Colors.white,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                width: 980,
+                height: 820,
+                child: Scaffold(
+                  backgroundColor: Colors.white,
+                  appBar: AppBar(
+                    backgroundColor: ParishColors.marianBlueSurface,
+                    elevation: 0,
+                    leading: const Icon(
+                      Icons.qr_code,
+                      color: ParishColors.marianBlue,
+                    ),
+                    title: Text(
+                      'Batch Asset QR Tags Preview (${selectedList.length} selected)',
+                      style: TextStyle(
+                        color: ParishColors.textDark,
+                        fontSize: isScreenMobile ? 13 : 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    actions: [
+                      IconButton(
+                        icon: Icon(Icons.close, color: ParishColors.textDark),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                  ),
+                  body: PdfPreview(
+                    build: (format) async => pdfBytes,
+                    useActions: true,
+                    canChangeOrientation: false,
+                    canChangePageFormat: false,
+                    canDebug: false,
+                    dynamicLayout: false,
+                    enableScrollToPage: true,
+                    pdfFileName:
+                    'Asset_Tags_${DateTime.now().millisecondsSinceEpoch}.pdf',
+                    loadingWidget: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isPreviewing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Preview error: $e'),
           backgroundColor: ParishColors.mercyRed,
         ),
       );
@@ -129,8 +240,8 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
             vertical: isMobile ? 14 : 24,
           ),
           child: Container(
-            width: 700,
-            constraints: const BoxConstraints(maxHeight: 740),
+            width: 740,
+            constraints: const BoxConstraints(maxHeight: 760),
             child: Column(
               children: [
                 // Header Banner
@@ -150,7 +261,7 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           color: ParishColors.goldAccent,
                           shape: BoxShape.circle,
                         ),
@@ -191,7 +302,7 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                         icon: const Icon(Icons.close),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: _isBusy ? null : () => Navigator.pop(context),
                       ),
                     ],
                   ),
@@ -218,7 +329,7 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                         ),
                         child: Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.search,
                               size: 18,
                               color: ParishColors.marianBlue,
@@ -232,7 +343,7 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                                 style: TextStyle(fontSize: 13, color: textDark),
                                 decoration: InputDecoration(
                                   hintText:
-                                      'Filter by Control #, name, location...',
+                                  'Filter by Control #, name, location...',
                                   hintStyle: TextStyle(
                                     fontSize: 12.5,
                                     color: textMuted,
@@ -262,7 +373,9 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           InkWell(
-                            onTap: () => _toggleSelectAll(!_isAllSelected),
+                            onTap: _isBusy
+                                ? null
+                                : () => _toggleSelectAll(!_isAllSelected),
                             borderRadius: BorderRadius.circular(6),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -276,17 +389,17 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                                     value: _isAllSelected,
                                     activeColor: ParishColors.marianBlue,
                                     visualDensity: VisualDensity.compact,
-                                    onChanged: _toggleSelectAll,
+                                    onChanged: _isBusy ? null : _toggleSelectAll,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
                                     isMobile
                                         ? (_isAllSelected
-                                              ? 'Deselect'
-                                              : 'Select All')
+                                        ? 'Deselect'
+                                        : 'Select All')
                                         : (_isAllSelected
-                                              ? 'Deselect All'
-                                              : 'Select All Displayed'),
+                                        ? 'Deselect All'
+                                        : 'Select All Displayed'),
                                     style: TextStyle(
                                       fontSize: 12.5,
                                       fontWeight: FontWeight.bold,
@@ -337,206 +450,210 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                 Expanded(
                   child: displayed.isEmpty
                       ? Center(
-                          child: Text(
-                            'No asset items match your search filter.',
-                            style: TextStyle(color: textMuted, fontSize: 13),
-                          ),
-                        )
+                    child: Text(
+                      'No asset items match your search filter.',
+                      style: TextStyle(color: textMuted, fontSize: 13),
+                    ),
+                  )
                       : ListView.separated(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: isMobile ? 12 : 16,
-                            vertical: 8,
-                          ),
-                          itemCount: displayed.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 6),
-                          itemBuilder: (context, index) {
-                            final asset = displayed[index];
-                            final isSelected = _selectedAssetIds.contains(
-                              asset.assetId,
-                            );
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? 12 : 16,
+                      vertical: 8,
+                    ),
+                    itemCount: displayed.length,
+                    separatorBuilder: (_, __) =>
+                    const SizedBox(height: 6),
+                    itemBuilder: (context, index) {
+                      final asset = displayed[index];
+                      final isSelected = _selectedAssetIds.contains(
+                        asset.assetId,
+                      );
 
-                            return InkWell(
-                              onTap: () {
-                                setState(() {
-                                  if (isSelected) {
-                                    _selectedAssetIds.remove(asset.assetId);
-                                  } else {
-                                    _selectedAssetIds.add(asset.assetId);
-                                  }
-                                });
-                              },
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? ParishColors.marianBlueSurface
-                                            .withOpacity(0.5)
-                                      : ParishColors.cardWhite,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? ParishColors.marianBlue
-                                        : borderGrey,
-                                    width: isSelected ? 1.4 : 1.0,
-                                  ),
-                                ),
-                                child: Row(
+                      return InkWell(
+                        onTap: _isBusy
+                            ? null
+                            : () {
+                          setState(() {
+                            if (isSelected) {
+                              _selectedAssetIds.remove(asset.assetId);
+                            } else {
+                              _selectedAssetIds.add(asset.assetId);
+                            }
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? ParishColors.marianBlueSurface
+                                .withOpacity(0.5)
+                                : ParishColors.cardWhite,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected
+                                  ? ParishColors.marianBlue
+                                  : borderGrey,
+                              width: isSelected ? 1.4 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Checkbox(
+                                value: isSelected,
+                                activeColor: ParishColors.marianBlue,
+                                visualDensity: VisualDensity.compact,
+                                onChanged: _isBusy
+                                    ? null
+                                    : (val) {
+                                  setState(() {
+                                    if (val == true) {
+                                      _selectedAssetIds.add(
+                                        asset.assetId,
+                                      );
+                                    } else {
+                                      _selectedAssetIds.remove(
+                                        asset.assetId,
+                                      );
+                                    }
+                                  });
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                                   children: [
-                                    Checkbox(
-                                      value: isSelected,
-                                      activeColor: ParishColors.marianBlue,
-                                      visualDensity: VisualDensity.compact,
-                                      onChanged: (val) {
-                                        setState(() {
-                                          if (val == true) {
-                                            _selectedAssetIds.add(
-                                              asset.assetId,
-                                            );
-                                          } else {
-                                            _selectedAssetIds.remove(
-                                              asset.assetId,
-                                            );
-                                          }
-                                        });
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Text(
-                                                asset.controlNumber,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12.5,
-                                                  color:
-                                                      ParishColors.marianBlue,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 5,
-                                                      vertical: 1,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color:
-                                                      asset.unitPrice >= 10000.0
-                                                      ? ParishColors.goldLight
-                                                      : ParishColors
-                                                            .marianBlueSurface,
-                                                  borderRadius:
-                                                      BorderRadius.circular(3),
-                                                ),
-                                                child: Text(
-                                                  asset.inventorySectionCode,
-                                                  style: TextStyle(
-                                                    fontSize: 8.5,
-                                                    fontWeight: FontWeight.bold,
-                                                    color:
-                                                        asset.unitPrice >=
-                                                            10000.0
-                                                        ? ParishColors
-                                                              .goldAccent
-                                                        : ParishColors
-                                                              .marianBlue,
-                                                  ),
-                                                ),
-                                              ),
-                                              if (asset.quantity > 1) ...[
-                                                const SizedBox(width: 4),
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 5,
-                                                        vertical: 1,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: ParishColors
-                                                        .marianBlueSurface,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          3,
-                                                        ),
-                                                  ),
-                                                  child: Text(
-                                                    '${asset.quantity} units',
-                                                    style: TextStyle(
-                                                      fontSize: 8.5,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: ParishColors
-                                                          .marianBlue,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            asset.itemName,
-                                            style: TextStyle(
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.bold,
-                                              color: textDark,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          Text(
-                                            '${asset.displayClassification} • ${asset.displayLocation}',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: textMuted,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
+                                    Row(
                                       children: [
                                         Text(
-                                          'Acq: ${asset.acquisitionYear}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: textMuted,
-                                          ),
-                                        ),
-                                        Text(
-                                          asset.formattedUnitPrice,
-                                          style: TextStyle(
-                                            fontSize: 12,
+                                          asset.controlNumber,
+                                          style: const TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: ParishColors.oliveGreen,
+                                            fontSize: 12.5,
+                                            color:
+                                            ParishColors.marianBlue,
                                           ),
                                         ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 5,
+                                            vertical: 1,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color:
+                                            asset.unitPrice >= 10000.0
+                                                ? ParishColors.goldLight
+                                                : ParishColors
+                                                .marianBlueSurface,
+                                            borderRadius:
+                                            BorderRadius.circular(3),
+                                          ),
+                                          child: Text(
+                                            asset.inventorySectionCode,
+                                            style: TextStyle(
+                                              fontSize: 8.5,
+                                              fontWeight: FontWeight.bold,
+                                              color:
+                                              asset.unitPrice >=
+                                                  10000.0
+                                                  ? ParishColors
+                                                  .goldAccent
+                                                  : ParishColors
+                                                  .marianBlue,
+                                            ),
+                                          ),
+                                        ),
+                                        if (asset.quantity > 1) ...[
+                                          const SizedBox(width: 4),
+                                          Container(
+                                            padding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 5,
+                                              vertical: 1,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: ParishColors
+                                                  .marianBlueSurface,
+                                              borderRadius:
+                                              BorderRadius.circular(
+                                                3,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              '${asset.quantity} units',
+                                              style: const TextStyle(
+                                                fontSize: 8.5,
+                                                fontWeight:
+                                                FontWeight.bold,
+                                                color: ParishColors
+                                                    .marianBlue,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      asset.itemName,
+                                      style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: textDark,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      '${asset.displayClassification} • ${asset.displayLocation}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: textMuted,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
                               ),
-                            );
-                          },
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    'Acq: ${asset.acquisitionYear}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: textMuted,
+                                    ),
+                                  ),
+                                  Text(
+                                    asset.formattedUnitPrice,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.oliveGreen,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
+                      );
+                    },
+                  ),
                 ),
 
-                // Footer Actions
+                // Footer Actions: Cancel, Preview, and Print
                 Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: isMobile ? 14 : 20,
@@ -549,65 +666,195 @@ class _BatchPrintTagsDialogState extends State<_BatchPrintTagsDialog> {
                     ),
                     border: Border(top: BorderSide(color: borderGrey)),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      TextButton(
-                        onPressed: _isGeneratingPdf
-                            ? null
-                            : () => Navigator.pop(context),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(color: textMuted, fontSize: 13),
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: selectedCount > 0
-                              ? ParishColors.goldAccent
-                              : ParishColors.borderGrey,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(
-                            horizontal: isMobile ? 12 : 18,
-                            vertical: 10,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: (_isGeneratingPdf || selectedCount == 0)
-                            ? null
-                            : _printSelectedLabels,
-                        icon: _isGeneratingPdf
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.print, size: 16),
-                        label: Text(
-                          _isGeneratingPdf
-                              ? 'Generating...'
-                              : (isMobile
-                                    ? 'Print ($selectedCount)'
-                                    : 'Print $selectedCount Tag(s)'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: isMobile ? 12 : 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: isMobile
+                      ? _buildMobileFooter(selectedCount, textMuted, borderGrey)
+                      : _buildDesktopFooter(selectedCount, textMuted, borderGrey),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  // ===========================================================================
+  // Responsive Desktop & Mobile Footers
+  // ===========================================================================
+
+  Widget _buildDesktopFooter(
+      int selectedCount,
+      Color textMuted,
+      Color borderGrey,
+      ) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        TextButton(
+          onPressed: _isBusy ? null : () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: textMuted, fontSize: 13),
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Preview Button
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: ParishColors.marianBlue,
+                side: const BorderSide(color: ParishColors.marianBlue),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: (_isBusy || selectedCount == 0)
+                  ? null
+                  : _previewSelectedLabels,
+              icon: _isPreviewing
+                  ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+                  : const Icon(Icons.visibility_outlined, size: 16),
+              label: const Text(
+                'Preview Tags',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Print Button
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: selectedCount > 0
+                    ? ParishColors.goldAccent
+                    : ParishColors.borderGrey,
+                foregroundColor: Colors.white,
+                padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: (_isBusy || selectedCount == 0)
+                  ? null
+                  : _printSelectedLabels,
+              icon: _isGeneratingPdf
+                  ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+                  : const Icon(Icons.print, size: 16),
+              label: Text(
+                _isGeneratingPdf
+                    ? 'Generating...'
+                    : 'Print $selectedCount Tag(s)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileFooter(
+      int selectedCount,
+      Color textMuted,
+      Color borderGrey,
+      ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            // Preview Button
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ParishColors.marianBlue,
+                  side: const BorderSide(color: ParishColors.marianBlue),
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: (_isBusy || selectedCount == 0)
+                    ? null
+                    : _previewSelectedLabels,
+                icon: _isPreviewing
+                    ? const SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+                    : const Icon(Icons.visibility_outlined, size: 15),
+                label: const Text(
+                  'Preview',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Print Button
+            Expanded(
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: selectedCount > 0
+                      ? ParishColors.goldAccent
+                      : ParishColors.borderGrey,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: (_isBusy || selectedCount == 0)
+                    ? null
+                    : _printSelectedLabels,
+                icon: _isGeneratingPdf
+                    ? const SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+                    : const Icon(Icons.print, size: 15),
+                label: Text(
+                  _isGeneratingPdf ? 'Printing...' : 'Print ($selectedCount)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        TextButton(
+          onPressed: _isBusy ? null : () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: textMuted, fontSize: 12),
+          ),
+        ),
+      ],
     );
   }
 }

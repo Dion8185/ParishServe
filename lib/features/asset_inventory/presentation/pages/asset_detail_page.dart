@@ -103,12 +103,41 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   AssetLocationModel? _selectedLocation;
   AssetClassificationModel? _selectedClassification;
 
+  // Separated inline date mechanism (Month & Day are optional, no future dates allowed)
+  late int _selectedYear;
+  int? _selectedMonth; // null = optional/unspecified, NEVER forced to January
+  int? _selectedDay; // null = optional/unspecified, NEVER forced to 1st
+
   late String _conditionStatus;
   late String _operationalStatus;
   late String _modeOfAcquisition;
 
+  final List<String> _acquisitionModes = [
+    'Purchase',
+    'Donation',
+    'Transfer',
+    'Diocesan Grant',
+    'Inherited / Legacy',
+    'Found / Recovered',
+  ];
+
   final List<String> _conditionOptions = AssetModel.standardConditions;
   final List<String> _operationalStatusOptions = AssetModel.standardAvailability;
+
+  static const List<String> _monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
 
   bool get _hasPrevious => _currentIndex > 0;
   bool get _hasNext => _currentIndex < _assetList.length - 1;
@@ -162,6 +191,14 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         : 'Section 2 — Below ₱10,000.00';
   }
 
+  /// Returns null if month or day was left optional, completely preventing false "January 1" outputs
+  DateTime? get _effectiveDateOfAcquisition {
+    if (_selectedMonth != null && _selectedDay != null) {
+      return DateTime(_selectedYear, _selectedMonth!, _selectedDay!);
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -174,9 +211,37 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
   void _initializeCurrentAsset() {
     final asset = _currentAsset;
+    final now = DateTime.now();
+
     _conditionStatus = AssetModel.normalizeCondition(asset.conditionStatus);
     _operationalStatus = AssetModel.normalizeStatus(asset.operationalStatus);
     _modeOfAcquisition = asset.modeOfAcquisition;
+
+    final initialDate = asset.dateOfAcquisition;
+    final cappedYear = (initialDate != null && initialDate.year > now.year)
+        ? now.year
+        : (asset.acquisitionYear > now.year ? now.year : asset.acquisitionYear);
+    _selectedYear = cappedYear;
+
+    // Only populate month/day if explicitly recorded; otherwise keep null
+    if (initialDate != null) {
+      if (_selectedYear == now.year && initialDate.month > now.month) {
+        _selectedMonth = now.month;
+      } else {
+        _selectedMonth = initialDate.month;
+      }
+
+      if (_selectedYear == now.year &&
+          _selectedMonth == now.month &&
+          initialDate.day > now.day) {
+        _selectedDay = now.day;
+      } else {
+        _selectedDay = initialDate.day;
+      }
+    } else {
+      _selectedMonth = null;
+      _selectedDay = null;
+    }
 
     _nameController = TextEditingController(text: asset.itemName);
     _quantityController = TextEditingController(text: '${asset.quantity}');
@@ -405,6 +470,26 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   Future<void> _saveAssetUpdates() async {
+    // Strict validation: verify date cannot be in the future
+    final now = DateTime.now();
+    if (_selectedYear > now.year ||
+        (_selectedYear == now.year &&
+            _selectedMonth != null &&
+            _selectedMonth! > now.month) ||
+        (_selectedYear == now.year &&
+            _selectedMonth != null &&
+            _selectedMonth == now.month &&
+            _selectedDay != null &&
+            _selectedDay! > now.day)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Date of acquisition cannot be set to a future date.'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isUpdating = true);
     try {
       String? photoUrlToSave = _currentAsset.photoUrl;
@@ -432,7 +517,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         others: _othersController.text.trim(),
         remarks: _remarksController.text.trim(),
         photoUrl: photoUrlToSave,
-        dateOfAcquisition: _currentAsset.dateOfAcquisition,
+        dateOfAcquisition: _effectiveDateOfAcquisition,
+        acquisitionYear: _selectedYear,
         modeOfAcquisition: _modeOfAcquisition,
         quantity: _editQuantity,
         unitPrice: _editUnitPrice,
@@ -504,11 +590,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               decoration: InputDecoration(
                 labelText: 'Reason for Archiving *',
                 labelStyle: TextStyle(color: ParishColors.textDark),
-                hintText: 'e.g. Broken beyond repair, replaced by newer unit',
-                hintStyle: TextStyle(
-                  fontSize: 12.5,
-                  color: ParishColors.textMuted,
-                ),
                 border: const OutlineInputBorder(),
                 enabledBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -1617,7 +1698,251 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   // ===========================================================================
-  // Responsive Edit Form Card Mode (With 3R Camera Launch Button)
+  // UI Helpers: General Headers & Floating Label Input Decoration (No Hint Text)
+  // ===========================================================================
+
+  Widget _buildGeneralHeader(String title) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        color: ParishColors.textDark,
+        letterSpacing: 0.2,
+      ),
+    );
+  }
+
+  InputDecoration _floatingInputDecoration({
+    required String labelText,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      labelStyle: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: ParishColors.textMuted,
+      ),
+      floatingLabelStyle: const TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.bold,
+        color: ParishColors.marianBlue,
+      ),
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: ParishColors.backgroundLight,
+      isDense: true,
+      contentPadding:
+      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide:
+        const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.5),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Separated Inline Date Selector (Month, Day, Year with Year Capped at Now)
+  // ===========================================================================
+
+  Widget _buildSeparatedDateSelectors(bool isMobile) {
+    final now = DateTime.now();
+
+    // Strict validation: do not allow future years
+    final years = List<int>.generate(
+      now.year - 1940 + 1,
+          (i) => now.year - i,
+    );
+
+    // Calculate maximum days in selected month
+    int maxDays = 31;
+    if (_selectedMonth != null) {
+      if ([4, 6, 9, 11].contains(_selectedMonth)) {
+        maxDays = 30;
+      } else if (_selectedMonth == 2) {
+        final isLeap = (_selectedYear % 4 == 0 &&
+            (_selectedYear % 100 != 0 || _selectedYear % 400 == 0));
+        maxDays = isLeap ? 29 : 28;
+      }
+    }
+
+    // If current year and current month are selected, cap maxDays at today
+    if (_selectedYear == now.year &&
+        _selectedMonth != null &&
+        _selectedMonth == now.month) {
+      if (now.day < maxDays) {
+        maxDays = now.day;
+      }
+    }
+
+    final days = List<int>.generate(maxDays, (i) => i + 1);
+
+    // Max selectable months for current year
+    final int maxMonthIndex =
+    _selectedYear == now.year ? now.month : 12;
+
+    return Row(
+      children: [
+        // Month Dropdown (Optional, starts null, never forced to January)
+        Expanded(
+          flex: isMobile ? 4 : 5,
+          child: DropdownButtonFormField<int?>(
+            value: _selectedMonth,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Month',
+            ),
+            items: [
+              DropdownMenuItem<int?>(
+                value: null,
+                child: Text(
+                  'Month (Optional)',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: ParishColors.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ...List.generate(maxMonthIndex, (index) {
+                final monthNum = index + 1;
+                return DropdownMenuItem<int?>(
+                  value: monthNum,
+                  child: Text(
+                    _monthNames[index],
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }),
+            ],
+            onChanged: (val) {
+              setState(() {
+                _selectedMonth = val;
+                if (_selectedDay != null && _selectedDay! > maxDays) {
+                  _selectedDay = maxDays;
+                }
+              });
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+
+        // Day Dropdown (Optional, starts null, never forced to 1st)
+        Expanded(
+          flex: isMobile ? 3 : 3,
+          child: DropdownButtonFormField<int?>(
+            value: (_selectedDay != null && _selectedDay! <= maxDays)
+                ? _selectedDay
+                : null,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Day',
+            ),
+            items: [
+              DropdownMenuItem<int?>(
+                value: null,
+                child: Text(
+                  'Day',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: ParishColors.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ...days.map(
+                    (d) => DropdownMenuItem<int?>(
+                  value: d,
+                  child: Text(
+                    '$d',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            onChanged: (val) => setState(() => _selectedDay = val),
+          ),
+        ),
+        const SizedBox(width: 8),
+
+        // Year Dropdown (Required, strictly no future years)
+        Expanded(
+          flex: isMobile ? 4 : 4,
+          child: DropdownButtonFormField<int>(
+            value: _selectedYear,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Year *',
+            ),
+            items: years.map((y) {
+              return DropdownMenuItem<int>(
+                value: y,
+                child: Text(
+                  '$y',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _selectedYear = val;
+                  if (_selectedYear == now.year &&
+                      _selectedMonth != null &&
+                      _selectedMonth! > now.month) {
+                    _selectedMonth = now.month;
+                  }
+                  if (_selectedYear == now.year &&
+                      _selectedMonth != null &&
+                      _selectedMonth == now.month &&
+                      _selectedDay != null &&
+                      _selectedDay! > now.day) {
+                    _selectedDay = now.day;
+                  }
+                });
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Responsive Edit Form Card Mode (General Headers & Floating Labels)
   // ===========================================================================
 
   Widget _buildEditFormCard(bool isMobile) {
@@ -1663,7 +1988,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ),
 
           // Photo Upload / Camera Strip
-          _buildLabel('Item Photo (3R Framing Supported)'),
+          _buildGeneralHeader('Photographic Evidence'),
+          const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -1804,9 +2130,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
 
-          _buildLabel('Item Name *'),
+          // General Header: Name
+          _buildGeneralHeader('Name'),
+          const SizedBox(height: 8),
           TextFormField(
             controller: _nameController,
             style: TextStyle(
@@ -1814,69 +2142,74 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               color: textDark,
               fontWeight: FontWeight.bold,
             ),
-            decoration: _inputDecoration(
-                hint: 'e.g. Wooden Church Pew, Monoblock Chair'),
+            decoration: _floatingInputDecoration(
+              labelText: 'Item Name *',
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 18),
 
-          // Quantity & Unit Price
+          // General Header: Date of Acquisition (Separated Inline Dropdowns, No Future Dates)
+          _buildGeneralHeader('Date of Acquisition'),
+          const SizedBox(height: 8),
+          _buildSeparatedDateSelectors(isMobile),
+          const SizedBox(height: 18),
+
+          // General Header: Acquisition Method
+          _buildGeneralHeader('Acquisition Method'),
+          const SizedBox(height: 8),
+          _buildAcquisitionModeDropdown(),
+          const SizedBox(height: 18),
+
+          // General Header: Quantity & Valuation
+          _buildGeneralHeader('Quantity & Valuation'),
+          const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Quantity *'),
-                    TextFormField(
-                      controller: _quantityController,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: textDark,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      decoration: _inputDecoration(hint: 'e.g. 16'),
-                    ),
-                  ],
+                child: TextFormField(
+                  controller: _quantityController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: textDark,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  decoration: _floatingInputDecoration(
+                    labelText: 'Quantity *',
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 flex: 3,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Price per Unit (₱)'),
-                    TextFormField(
-                      controller: _unitPriceController,
-                      keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: textDark,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      decoration: _inputDecoration(
-                        hint: 'e.g. 2,500.00',
-                        prefixIcon: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 12),
-                          child: Text('₱',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, color: textDark)),
-                        ),
-                      ),
+                child: TextFormField(
+                  controller: _unitPriceController,
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [ThousandsSeparatorCurrencyFormatter()],
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: textDark,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  decoration: _floatingInputDecoration(
+                    labelText: 'Price per Unit (₱)',
+                    prefixIcon: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 12),
+                      child: Text('₱',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, color: textDark)),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
           Container(
             width: double.infinity,
@@ -1909,46 +2242,35 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
 
-          // Condition & Status
+          // General Header: Condition & Availability
+          _buildGeneralHeader('Condition & Availability'),
+          const SizedBox(height: 8),
           isMobile
               ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildLabel('Item Condition *'),
               _buildConditionDropdown(),
-              const SizedBox(height: 10),
-              _buildLabel('Availability *'),
+              const SizedBox(height: 12),
               _buildOperationalStatusDropdown(),
             ],
           )
               : Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Item Condition *'),
-                    _buildConditionDropdown(),
-                  ],
-                ),
+                child: _buildConditionDropdown(),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Availability *'),
-                    _buildOperationalStatusDropdown(),
-                  ],
-                ),
+                child: _buildOperationalStatusDropdown(),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
 
-          _buildLabel('Wireless RFID / NFC Tag (Optional)'),
+          // General Header: Wireless Identification
+          _buildGeneralHeader('Wireless Identification'),
+          const SizedBox(height: 8),
           TextFormField(
             controller: _rfidController,
             style: TextStyle(
@@ -1956,68 +2278,113 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               color: textDark,
               fontWeight: FontWeight.bold,
             ),
-            decoration: _inputDecoration(hint: 'e.g. 04:A2:4B:9C'),
+            decoration: _floatingInputDecoration(
+              labelText: 'Wireless RFID / NFC Tag (Optional)',
+            ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
 
-          // Dimensions, Color, Model
-          Row(
+          // General Header: Dimensions & Make
+          _buildGeneralHeader('Dimensions & Make'),
+          const SizedBox(height: 8),
+          isMobile
+              ? Column(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Dimensions'),
-                    TextFormField(
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
                       controller: _dimensionsController,
                       style: TextStyle(
                         fontSize: 13,
                         color: textDark,
                         fontWeight: FontWeight.bold,
                       ),
-                      decoration:
-                      _inputDecoration(hint: 'e.g. 50 inch, 10 ft x 3 ft'),
+                      decoration: _floatingInputDecoration(
+                        labelText: 'Dimensions',
+                      ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Color'),
-                    TextFormField(
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
                       controller: _colorController,
                       style: TextStyle(
                         fontSize: 13,
                         color: textDark,
                         fontWeight: FontWeight.bold,
                       ),
-                      decoration:
-                      _inputDecoration(hint: 'e.g. Black, Dark Walnut'),
+                      decoration: _floatingInputDecoration(
+                        labelText: 'Color',
+                      ),
                     ),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _modelController,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: textDark,
+                  fontWeight: FontWeight.bold,
+                ),
+                decoration: _floatingInputDecoration(
+                  labelText: 'Model / Maker',
+                ),
+              ),
+            ],
+          )
+              : Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _dimensionsController,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: textDark,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  decoration: _floatingInputDecoration(
+                    labelText: 'Size / Dimensions',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextFormField(
+                  controller: _colorController,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: textDark,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  decoration: _floatingInputDecoration(
+                    labelText: 'Color',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextFormField(
+                  controller: _modelController,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: textDark,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  decoration: _floatingInputDecoration(
+                    labelText: 'Model / Brand',
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 18),
 
-          _buildLabel('Model'),
-          TextFormField(
-            controller: _modelController,
-            style: TextStyle(
-              fontSize: 13,
-              color: textDark,
-              fontWeight: FontWeight.bold,
-            ),
-            decoration:
-            _inputDecoration(hint: 'e.g. Samsung, Custom Woodcraft'),
-          ),
-          const SizedBox(height: 14),
-
-          _buildLabel('Other Descriptions'),
+          // General Header: Additional Details
+          _buildGeneralHeader('Additional Details & Inscriptions'),
+          const SizedBox(height: 8),
           TextFormField(
             controller: _othersController,
             maxLines: 2,
@@ -2026,12 +2393,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               color: textDark,
               fontWeight: FontWeight.bold,
             ),
-            decoration: _inputDecoration(
-                hint: 'e.g. Donated by Santos Family, special donor tags'),
+            decoration: _floatingInputDecoration(
+              labelText: 'Other Descriptions / Inscriptions',
+            ),
           ),
-          const SizedBox(height: 12),
-
-          _buildLabel('Remarks'),
+          const SizedBox(height: 14),
           TextFormField(
             controller: _remarksController,
             maxLines: 2,
@@ -2040,8 +2406,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               color: textDark,
               fontWeight: FontWeight.bold,
             ),
-            decoration: _inputDecoration(
-                hint: 'e.g. Inspected and placed in main church nave'),
+            decoration: _floatingInputDecoration(
+              labelText: 'Remarks & Maintenance Observations',
+            ),
           ),
         ],
       ),
@@ -2615,7 +2982,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
     return DropdownButtonFormField<String>(
       value: effective,
-      decoration: _inputDecoration(),
+      decoration: _floatingInputDecoration(
+        labelText: 'Item Condition *',
+      ),
       items: items.map((c) {
         final desc = AssetModel.conditionDescriptions[c] ?? '';
         return DropdownMenuItem(
@@ -2643,7 +3012,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
     return DropdownButtonFormField<String>(
       value: effective,
-      decoration: _inputDecoration(),
+      decoration: _floatingInputDecoration(
+        labelText: 'Availability *',
+      ),
       items: items.map((s) {
         final desc = AssetModel.availabilityDescriptions[s] ?? '';
         return DropdownMenuItem(
@@ -2664,41 +3035,17 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: ParishColors.textDark,
-        ),
+  Widget _buildAcquisitionModeDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _modeOfAcquisition,
+      isExpanded: true,
+      decoration: _floatingInputDecoration(
+        labelText: 'How Acquired *',
       ),
-    );
-  }
-
-  InputDecoration _inputDecoration({String? hint, Widget? prefixIcon}) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
-      prefixIcon: prefixIcon,
-      filled: true,
-      fillColor: ParishColors.backgroundLight,
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-      ),
+      items: _acquisitionModes
+          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+          .toList(),
+      onChanged: (val) => setState(() => _modeOfAcquisition = val!),
     );
   }
 }

@@ -90,7 +90,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   bool _isLoadingReferences = true;
   bool _isLoadingSequence = false;
 
-  late DateTime _dateOfAcquisition;
+  // Separated inline date mechanism (Month & Day are optional, no future dates allowed)
+  late int _selectedYear;
+  int? _selectedMonth; // null = optional/unspecified, NEVER forced to January
+  int? _selectedDay; // null = optional/unspecified, NEVER forced to 1st
+
   late String _modeOfAcquisition;
   late String _conditionStatus;
   late String _operationalStatus;
@@ -115,9 +119,25 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   final List<String> _conditions = AssetModel.standardConditions;
   final List<String> _operationalStatuses = AssetModel.standardAvailability;
 
+  static const List<String> _monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
     final d = widget.initialDraft;
 
     _itemNameController = TextEditingController(text: d?.itemName ?? '');
@@ -136,7 +156,34 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     _sequenceNumberController =
         TextEditingController(text: d?.sequenceNumber ?? '001');
 
-    _dateOfAcquisition = d?.dateOfAcquisition ?? DateTime.now();
+    final initialDate = d?.dateOfAcquisition;
+
+    // Strict validation: cap at current year to prevent future dates
+    final cappedYear = (initialDate != null && initialDate.year > now.year)
+        ? now.year
+        : (initialDate?.year ?? now.year);
+    _selectedYear = cappedYear;
+
+    // Month and day are strictly optional: null by default unless explicitly saved in draft
+    if (initialDate != null) {
+      if (_selectedYear == now.year && initialDate.month > now.month) {
+        _selectedMonth = now.month;
+      } else {
+        _selectedMonth = initialDate.month;
+      }
+
+      if (_selectedYear == now.year &&
+          _selectedMonth == now.month &&
+          initialDate.day > now.day) {
+        _selectedDay = now.day;
+      } else {
+        _selectedDay = initialDate.day;
+      }
+    } else {
+      _selectedMonth = null;
+      _selectedDay = null;
+    }
+
     _modeOfAcquisition = d?.modeOfAcquisition ?? 'Purchase';
     _conditionStatus = AssetModel.normalizeCondition(d?.conditionStatus);
     _operationalStatus = AssetModel.normalizeStatus(d?.operationalStatus);
@@ -165,6 +212,14 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     super.dispose();
   }
 
+  /// Returns null if month or day was left optional, completely preventing false "January 1" outputs
+  DateTime? get _effectiveDateOfAcquisition {
+    if (_selectedMonth != null && _selectedDay != null) {
+      return DateTime(_selectedYear, _selectedMonth!, _selectedDay!);
+    }
+    return null;
+  }
+
   int get _parsedQuantity {
     final qty = int.tryParse(_quantityController.text.trim());
     return (qty != null && qty > 0) ? qty : 1;
@@ -187,8 +242,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   String get _controlNumberPrefix {
     final locAcronym = _selectedLocation?.acronym ?? 'C';
     final clsAcronym = _selectedClassification?.acronym ?? 'FF';
-    final year = _dateOfAcquisition.year;
-    return '$locAcronym-$clsAcronym $year-';
+    return '$locAcronym-$clsAcronym $_selectedYear-';
   }
 
   String get _fullControlNumber {
@@ -245,7 +299,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       final nextSeq = await AssetService.getNextControlNumberSequence(
         locationAcronym: _selectedLocation!.acronym,
         classificationAcronym: _selectedClassification!.acronym,
-        acquisitionYear: _dateOfAcquisition.year,
+        acquisitionYear: _selectedYear,
       );
 
       if (!mounted) return;
@@ -257,26 +311,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       if (mounted) setState(() => _isLoadingSequence = false);
     }
   }
-
-  Future<void> _pickDateOfAcquisition() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dateOfAcquisition,
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) {
-      final yearChanged = picked.year != _dateOfAcquisition.year;
-      setState(() => _dateOfAcquisition = picked);
-      if (yearChanged) {
-        await _fetchAutoSequenceNumber();
-      }
-    }
-  }
-
-  // ===========================================================================
-  // Dedicated 3R Camera Page Launch (Zero Page Reloads & In-Memory Watermark)
-  // ===========================================================================
 
   Future<void> _openDedicated3RCameraPage() async {
     final idLabel = _itemNameController.text.trim().isNotEmpty
@@ -425,10 +459,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     );
   }
 
-  // ===========================================================================
-  // Save as Draft Handler (Cloud-backed via Supabase Storage & Table)
-  // ===========================================================================
-
   Future<void> _saveAsDraft() async {
     setState(() {
       _isSavingDraft = true;
@@ -467,7 +497,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         quantity: _parsedQuantity,
         unitPrice: _parsedUnitPrice,
         totalCost: _calculatedTotalCost,
-        dateOfAcquisition: _dateOfAcquisition,
+        dateOfAcquisition: _effectiveDateOfAcquisition ?? DateTime(_selectedYear, 1, 1),
         modeOfAcquisition: _modeOfAcquisition,
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
@@ -518,10 +548,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     }
   }
 
-  // ===========================================================================
-  // Ledger Commit Handler (Full Validation & Cloud Draft Auto-Cleanup)
-  // ===========================================================================
-
   Future<void> _submitAsset() async {
     setState(() => _errorMessage = null);
 
@@ -548,6 +574,22 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       return;
     }
 
+    // Strict validation: verify date cannot be in the future
+    final now = DateTime.now();
+    if (_selectedYear > now.year ||
+        (_selectedYear == now.year &&
+            _selectedMonth != null &&
+            _selectedMonth! > now.month) ||
+        (_selectedYear == now.year &&
+            _selectedMonth != null &&
+            _selectedMonth == now.month &&
+            _selectedDay != null &&
+            _selectedDay! > now.day)) {
+      setState(() =>
+      _errorMessage = 'Date of acquisition cannot be set to a future date.');
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
@@ -564,6 +606,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
       final fullControlNo = _fullControlNumber;
 
+      // Passes null dateOfAcquisition if month and day are optional, preserving only acquisitionYear
       final createdAsset = await AssetService.registerAsset(
         itemName: _itemNameController.text.trim(),
         quantity: qty,
@@ -580,7 +623,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         others: _othersController.text.trim(),
         remarks: _remarksController.text.trim(),
         photoUrl: uploadedPhotoUrl,
-        dateOfAcquisition: _dateOfAcquisition,
+        dateOfAcquisition: _effectiveDateOfAcquisition,
+        acquisitionYear: _selectedYear,
         modeOfAcquisition: _modeOfAcquisition,
         rfidTag: _rfidTagController.text.trim(),
         conditionStatus: _conditionStatus,
@@ -739,11 +783,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                         ),
                       ],
 
-                      // 1. Photographic Evidence Section with Dedicated 3R Camera Launch
+                      // 1. Photographic Evidence Section
                       _buildFormSectionCard(
                         title: 'Photographic Evidence',
                         subtitle:
-                        'Capture 3R photo (10:7 Landscape or 7:10 Portrait) or upload file with security watermark',
+                        'Capture 3R photo (10:7 Landscape or 7:10 Portrait) or upload image',
                         icon: Icons.camera_alt_outlined,
                         iconColor: ParishColors.marianBlue,
                         child: _buildPhotoUploadBox(isMobile, borderGrey,
@@ -762,8 +806,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildControlNumberCard(isMobile),
-                            const SizedBox(height: 16),
-                            _buildLabel('Item Name *'),
+                            const SizedBox(height: 18),
+
+                            // General Header: Name
+                            _buildGeneralHeader('Name'),
+                            const SizedBox(height: 8),
                             TextFormField(
                               controller: _itemNameController,
                               validator: (v) =>
@@ -774,50 +821,32 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                   fontSize: 14,
                                   color: textDark,
                                   fontWeight: FontWeight.bold),
-                              decoration: _inputDecoration(
-                                hint:
-                                'e.g. Wooden Church Pew, Monoblock Chair, Flat Screen TV',
+                              decoration: _floatingInputDecoration(
+                                labelText: 'Item Name *',
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 18),
+
+                            // General Header: Location & Classification
+                            _buildGeneralHeader('Location & Classification'),
+                            const SizedBox(height: 8),
                             isMobile
                                 ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Category *'),
                                 _buildClassificationDropdown(),
                                 const SizedBox(height: 12),
-                                _buildLabel(
-                                    'Storage Location *'),
                                 _buildLocationDropdown(),
                               ],
                             )
                                 : Row(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
                               children: [
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Category *'),
-                                      _buildClassificationDropdown(),
-                                    ],
-                                  ),
+                                  child:
+                                  _buildClassificationDropdown(),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel(
-                                          'Storage Location *'),
-                                      _buildLocationDropdown(),
-                                    ],
-                                  ),
+                                  child: _buildLocationDropdown(),
                                 ),
                               ],
                             ),
@@ -826,11 +855,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       ),
                       const SizedBox(height: 18),
 
-                      // 3. Quantity, Valuation & Acquisition Section
+                      // 3. Acquisition Date, Valuation & Method Section
                       _buildFormSectionCard(
-                        title: 'Quantity, Valuation & Acquisition',
+                        title: 'Acquisition & Valuation',
                         subtitle:
-                        'Inventory book section tiering, count, pricing, and mode of reception',
+                        'Acquisition date (separated inline), value tiering, and quantity count',
                         icon: Icons.payments_outlined,
                         iconColor: ParishColors.oliveGreen,
                         headerTrailing: Container(
@@ -862,91 +891,89 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // General Header: Date of Acquisition
+                            _buildGeneralHeader('Date of Acquisition'),
+                            const SizedBox(height: 8),
+
+                            // Separated Inline Date Dropdowns (Month, Day, Year) - No future dates, Month & Day optional
+                            _buildSeparatedDateSelectors(isMobile),
+                            const SizedBox(height: 18),
+
+                            // General Header: Acquisition Method
+                            _buildGeneralHeader('Acquisition Method'),
+                            const SizedBox(height: 8),
+                            _buildAcquisitionModeDropdown(),
+                            const SizedBox(height: 18),
+
+                            // General Header: Quantity & Valuation
+                            _buildGeneralHeader('Quantity & Valuation'),
+                            const SizedBox(height: 8),
                             Row(
                               crossAxisAlignment:
                               CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   flex: 2,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Quantity *'),
-                                      TextFormField(
-                                        controller: _quantityController,
-                                        keyboardType:
-                                        TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter
-                                              .digitsOnly,
-                                        ],
-                                        validator: (v) {
-                                          final num = int.tryParse(
-                                              v?.trim() ?? '');
-                                          if (num == null || num <= 0) {
-                                            return 'Min 1';
-                                          }
-                                          return null;
-                                        },
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: textDark,
-                                        ),
-                                        decoration: _inputDecoration(
-                                            hint: 'e.g. 16'),
-                                      ),
+                                  child: TextFormField(
+                                    controller: _quantityController,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter
+                                          .digitsOnly,
                                     ],
+                                    validator: (v) {
+                                      final num = int.tryParse(
+                                          v?.trim() ?? '');
+                                      if (num == null || num <= 0) {
+                                        return 'Min 1';
+                                      }
+                                      return null;
+                                    },
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: textDark,
+                                    ),
+                                    decoration: _floatingInputDecoration(
+                                      labelText: 'Quantity *',
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   flex: 3,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel(
-                                          'Price per Unit (₱)'),
-                                      TextFormField(
-                                        controller:
-                                        _unitPriceController,
-                                        keyboardType:
-                                        const TextInputType
-                                            .numberWithOptions(
-                                          decimal: true,
+                                  child: TextFormField(
+                                    controller: _unitPriceController,
+                                    keyboardType: const TextInputType
+                                        .numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                    inputFormatters: [
+                                      ThousandsSeparatorCurrencyFormatter(),
+                                    ],
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: textDark,
+                                    ),
+                                    decoration: _floatingInputDecoration(
+                                      labelText: 'Price per Unit (₱)',
+                                      prefixIcon: Padding(
+                                        padding:
+                                        const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 12,
                                         ),
-                                        inputFormatters: [
-                                          ThousandsSeparatorCurrencyFormatter(),
-                                        ],
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: textDark,
-                                        ),
-                                        decoration: _inputDecoration(
-                                          hint: 'e.g. 2,500.00',
-                                          prefixIcon: Padding(
-                                            padding:
-                                            const EdgeInsets
-                                                .symmetric(
-                                              horizontal: 10,
-                                              vertical: 12,
-                                            ),
-                                            child: Text(
-                                              '₱',
-                                              style: TextStyle(
-                                                fontWeight:
-                                                FontWeight.bold,
-                                                fontSize: 15,
-                                                color: textDark,
-                                              ),
-                                            ),
+                                        child: Text(
+                                          '₱',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                            color: textDark,
                                           ),
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ],
@@ -986,48 +1013,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            isMobile
-                                ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                _buildLabel('Acquisition Date *'),
-                                _buildAcquisitionDateTile(
-                                    borderGrey),
-                                const SizedBox(height: 12),
-                                _buildLabel('How Acquired *'),
-                                _buildAcquisitionModeDropdown(),
-                              ],
-                            )
-                                : Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel(
-                                          'Acquisition Date *'),
-                                      _buildAcquisitionDateTile(
-                                          borderGrey),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel(
-                                          'How Acquired *'),
-                                      _buildAcquisitionModeDropdown(),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
                           ],
                         ),
                       ),
@@ -1037,151 +1022,66 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       _buildFormSectionCard(
                         title: 'Physical Specifications & Status',
                         subtitle:
-                        'Dimensions, color, model, tags, condition, and descriptions',
+                        'Dimensions, color, model, condition, availability, and notes',
                         icon: Icons.tune,
                         iconColor: ParishColors.goldAccent,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // General Header: Condition & Availability
+                            _buildGeneralHeader('Condition & Availability'),
+                            const SizedBox(height: 8),
                             isMobile
                                 ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Item Condition *'),
                                 _buildConditionDropdown(),
                                 const SizedBox(height: 12),
-                                _buildLabel('Availability *'),
                                 _buildOperationalStatusDropdown(),
                               ],
                             )
                                 : Row(
                               children: [
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel(
-                                          'Item Condition *'),
-                                      _buildConditionDropdown(),
-                                    ],
-                                  ),
+                                  child: _buildConditionDropdown(),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Availability *'),
-                                      _buildOperationalStatusDropdown(),
-                                    ],
-                                  ),
+                                  child:
+                                  _buildOperationalStatusDropdown(),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            _buildLabel(
-                                'Wireless RFID / NFC Tag (Optional)'),
+                            const SizedBox(height: 18),
+
+                            // General Header: Wireless Identification
+                            _buildGeneralHeader('Wireless Identification'),
+                            const SizedBox(height: 8),
                             TextFormField(
                               controller: _rfidTagController,
                               style: TextStyle(
                                   fontSize: 13.5,
                                   color: textDark,
                                   fontWeight: FontWeight.bold),
-                              decoration: _inputDecoration(
-                                hint: 'e.g. 04:A2:4B:9C',
+                              decoration: _floatingInputDecoration(
+                                labelText:
+                                'Wireless RFID / NFC Tag (Optional)',
                                 prefixIcon: const Icon(Icons.nfc,
                                     size: 16,
                                     color: ParishColors.marianBlue),
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 18),
+
+                            // General Header: Dimensions & Make
+                            _buildGeneralHeader('Dimensions & Make'),
+                            const SizedBox(height: 8),
                             isMobile
                                 ? Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                        CrossAxisAlignment
-                                            .start,
-                                        children: [
-                                          _buildLabel(
-                                              'Dimensions'),
-                                          TextFormField(
-                                            controller:
-                                            _dimensionsController,
-                                            style: TextStyle(
-                                                fontSize: 13,
-                                                color: textDark,
-                                                fontWeight:
-                                                FontWeight
-                                                    .bold),
-                                            decoration:
-                                            _inputDecoration(
-                                                hint:
-                                                'e.g. 50 inch, 10 ft x 3 ft'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                        CrossAxisAlignment
-                                            .start,
-                                        children: [
-                                          _buildLabel('Color'),
-                                          TextFormField(
-                                            controller:
-                                            _colorController,
-                                            style: TextStyle(
-                                                fontSize: 13,
-                                                color: textDark,
-                                                fontWeight:
-                                                FontWeight
-                                                    .bold),
-                                            decoration:
-                                            _inputDecoration(
-                                                hint:
-                                                'e.g. Black, Dark Walnut'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                _buildLabel('Model'),
-                                TextFormField(
-                                  controller: _modelController,
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      color: textDark,
-                                      fontWeight:
-                                      FontWeight.bold),
-                                  decoration: _inputDecoration(
-                                      hint:
-                                      'e.g. Samsung, Custom Woodcraft'),
-                                ),
-                              ],
-                            )
-                                : Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel(
-                                          'Size / Dimensions'),
-                                      TextFormField(
+                                      child: TextFormField(
                                         controller:
                                         _dimensionsController,
                                         style: TextStyle(
@@ -1190,21 +1090,14 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                             fontWeight:
                                             FontWeight.bold),
                                         decoration:
-                                        _inputDecoration(
-                                            hint:
-                                            'e.g. 50 inch, 10 ft x 3 ft'),
+                                        _floatingInputDecoration(
+                                          labelText: 'Dimensions',
+                                        ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Color'),
-                                      TextFormField(
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextFormField(
                                         controller:
                                         _colorController,
                                         style: TextStyle(
@@ -1213,40 +1106,82 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                             fontWeight:
                                             FontWeight.bold),
                                         decoration:
-                                        _inputDecoration(
-                                            hint:
-                                            'e.g. Black, Dark Walnut'),
+                                        _floatingInputDecoration(
+                                          labelText: 'Color',
+                                        ),
                                       ),
-                                    ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _modelController,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: textDark,
+                                      fontWeight: FontWeight.bold),
+                                  decoration:
+                                  _floatingInputDecoration(
+                                    labelText: 'Model / Maker',
+                                  ),
+                                ),
+                              ],
+                            )
+                                : Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller:
+                                    _dimensionsController,
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: textDark,
+                                        fontWeight:
+                                        FontWeight.bold),
+                                    decoration:
+                                    _floatingInputDecoration(
+                                      labelText:
+                                      'Size / Dimensions',
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      _buildLabel('Model'),
-                                      TextFormField(
-                                        controller:
-                                        _modelController,
-                                        style: TextStyle(
-                                            fontSize: 13,
-                                            color: textDark,
-                                            fontWeight:
-                                            FontWeight.bold),
-                                        decoration:
-                                        _inputDecoration(
-                                            hint:
-                                            'e.g. Samsung, Custom Woodcraft'),
-                                      ),
-                                    ],
+                                  child: TextFormField(
+                                    controller: _colorController,
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: textDark,
+                                        fontWeight:
+                                        FontWeight.bold),
+                                    decoration:
+                                    _floatingInputDecoration(
+                                      labelText: 'Color',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _modelController,
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: textDark,
+                                        fontWeight:
+                                        FontWeight.bold),
+                                    decoration:
+                                    _floatingInputDecoration(
+                                      labelText: 'Model / Brand',
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            _buildLabel('Other Descriptions'),
+                            const SizedBox(height: 18),
+
+                            // General Header: Additional Details
+                            _buildGeneralHeader('Additional Details & Inscriptions'),
+                            const SizedBox(height: 8),
                             TextFormField(
                               controller: _othersController,
                               maxLines: 2,
@@ -1254,13 +1189,12 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                   fontSize: 13,
                                   color: textDark,
                                   fontWeight: FontWeight.bold),
-                              decoration: _inputDecoration(
-                                hint:
-                                'e.g. Donated by Santos Family, special donor tags',
+                              decoration: _floatingInputDecoration(
+                                labelText:
+                                'Other Descriptions / Inscriptions',
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            _buildLabel('Remarks'),
+                            const SizedBox(height: 14),
                             TextFormField(
                               controller: _remarksController,
                               maxLines: 2,
@@ -1268,9 +1202,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                   fontSize: 13,
                                   color: textDark,
                                   fontWeight: FontWeight.bold),
-                              decoration: _inputDecoration(
-                                hint:
-                                'e.g. Inspected and placed in main church nave, clean condition',
+                              decoration: _floatingInputDecoration(
+                                labelText:
+                                'Remarks & Maintenance Observations',
                               ),
                             ),
                           ],
@@ -1292,6 +1226,255 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       },
     );
   }
+
+  // ===========================================================================
+  // UI Helpers: General Headers & Floating Label Input Decoration (No Hint Text)
+  // ===========================================================================
+
+  Widget _buildGeneralHeader(String title) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        color: ParishColors.textDark,
+        letterSpacing: 0.2,
+      ),
+    );
+  }
+
+  InputDecoration _floatingInputDecoration({
+    required String labelText,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      labelStyle: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: ParishColors.textMuted,
+      ),
+      floatingLabelStyle: const TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.bold,
+        color: ParishColors.marianBlue,
+      ),
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: ParishColors.backgroundLight,
+      isDense: true,
+      contentPadding:
+      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide:
+        const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.5),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Separated Inline Date Selector (Month, Day, Year with Year Capped at Now)
+  // ===========================================================================
+
+  Widget _buildSeparatedDateSelectors(bool isMobile) {
+    final now = DateTime.now();
+
+    // Strict validation: do not allow future years
+    final years = List<int>.generate(
+      now.year - 1940 + 1,
+          (i) => now.year - i,
+    );
+
+    // Calculate maximum days in selected month
+    int maxDays = 31;
+    if (_selectedMonth != null) {
+      if ([4, 6, 9, 11].contains(_selectedMonth)) {
+        maxDays = 30;
+      } else if (_selectedMonth == 2) {
+        final isLeap = (_selectedYear % 4 == 0 &&
+            (_selectedYear % 100 != 0 || _selectedYear % 400 == 0));
+        maxDays = isLeap ? 29 : 28;
+      }
+    }
+
+    // If current year and current month are selected, cap maxDays at today
+    if (_selectedYear == now.year &&
+        _selectedMonth != null &&
+        _selectedMonth == now.month) {
+      if (now.day < maxDays) {
+        maxDays = now.day;
+      }
+    }
+
+    final days = List<int>.generate(maxDays, (i) => i + 1);
+
+    // Max selectable months for current year
+    final int maxMonthIndex =
+    _selectedYear == now.year ? now.month : 12;
+
+    return Row(
+      children: [
+        // Month Dropdown (Optional, starts null, never forced to January)
+        Expanded(
+          flex: isMobile ? 4 : 5,
+          child: DropdownButtonFormField<int?>(
+            value: _selectedMonth,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Month',
+            ),
+            items: [
+              DropdownMenuItem<int?>(
+                value: null,
+                child: Text(
+                  'Month (Optional)',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: ParishColors.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ...List.generate(maxMonthIndex, (index) {
+                final monthNum = index + 1;
+                return DropdownMenuItem<int?>(
+                  value: monthNum,
+                  child: Text(
+                    _monthNames[index],
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }),
+            ],
+            onChanged: (val) {
+              setState(() {
+                _selectedMonth = val;
+                if (_selectedDay != null && _selectedDay! > maxDays) {
+                  _selectedDay = maxDays;
+                }
+              });
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+
+        // Day Dropdown (Optional, starts null, never forced to 1st)
+        Expanded(
+          flex: isMobile ? 3 : 3,
+          child: DropdownButtonFormField<int?>(
+            value: (_selectedDay != null && _selectedDay! <= maxDays)
+                ? _selectedDay
+                : null,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Day',
+            ),
+            items: [
+              DropdownMenuItem<int?>(
+                value: null,
+                child: Text(
+                  'Day',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: ParishColors.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ...days.map(
+                    (d) => DropdownMenuItem<int?>(
+                  value: d,
+                  child: Text(
+                    '$d',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            onChanged: (val) => setState(() => _selectedDay = val),
+          ),
+        ),
+        const SizedBox(width: 8),
+
+        // Year Dropdown (Required, strictly no future years)
+        Expanded(
+          flex: isMobile ? 4 : 4,
+          child: DropdownButtonFormField<int>(
+            value: _selectedYear,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Year *',
+            ),
+            items: years.map((y) {
+              return DropdownMenuItem<int>(
+                value: y,
+                child: Text(
+                  '$y',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _selectedYear = val;
+                  if (_selectedYear == now.year &&
+                      _selectedMonth != null &&
+                      _selectedMonth! > now.month) {
+                    _selectedMonth = now.month;
+                  }
+                  if (_selectedYear == now.year &&
+                      _selectedMonth != null &&
+                      _selectedMonth == now.month &&
+                      _selectedDay != null &&
+                      _selectedDay! > now.day) {
+                    _selectedDay = now.day;
+                  }
+                });
+                _fetchAutoSequenceNumber();
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // Section Cards & Form Fields
+  // ===========================================================================
 
   Widget _buildFormSectionCard({
     required String title,
@@ -1487,14 +1670,21 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                     color: ParishColors.marianBlue,
                   ),
                   decoration: InputDecoration(
+                    labelText: 'Sequence',
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      color: ParishColors.textMuted,
+                    ),
+                    floatingLabelStyle: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.marianBlue,
+                    ),
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 9),
-                    hintText: '001',
-                    hintStyle: TextStyle(
-                        color: ParishColors.textMuted, fontSize: 12),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: const BorderSide(
@@ -1538,10 +1728,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       ),
     );
   }
-
-  // ===========================================================================
-  // Photographic Evidence Box with 3R Camera Launch Button & Preview
-  // ===========================================================================
 
   Widget _buildPhotoUploadBox(
       bool isMobile,
@@ -1874,7 +2060,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     return DropdownButtonFormField<AssetClassificationModel>(
       value: _selectedClassification,
       isExpanded: true,
-      decoration: _inputDecoration(),
+      decoration: _floatingInputDecoration(
+        labelText: 'Category *',
+      ),
       items: _classifications.map((c) {
         return DropdownMenuItem(
           value: c,
@@ -1895,7 +2083,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     return DropdownButtonFormField<AssetLocationModel>(
       value: _selectedLocation,
       isExpanded: true,
-      decoration: _inputDecoration(),
+      decoration: _floatingInputDecoration(
+        labelText: 'Storage Location *',
+      ),
       items: _locations.map((l) {
         return DropdownMenuItem(
           value: l,
@@ -1912,37 +2102,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     );
   }
 
-  Widget _buildAcquisitionDateTile(Color borderGrey) {
-    return InkWell(
-      onTap: _pickDateOfAcquisition,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
-        decoration: BoxDecoration(
-          color: ParishColors.backgroundLight,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderGrey),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '${_dateOfAcquisition.year}-${_dateOfAcquisition.month.toString().padLeft(2, '0')}-${_dateOfAcquisition.day.toString().padLeft(2, '0')}',
-              style: TextStyle(
-                  color: ParishColors.textDark, fontWeight: FontWeight.bold),
-            ),
-            const Icon(Icons.calendar_today,
-                size: 18, color: ParishColors.marianBlue),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildAcquisitionModeDropdown() {
     return DropdownButtonFormField<String>(
       value: _modeOfAcquisition,
-      decoration: _inputDecoration(),
+      isExpanded: true,
+      decoration: _floatingInputDecoration(
+        labelText: 'How Acquired *',
+      ),
       items: _acquisitionModes
           .map((m) => DropdownMenuItem(value: m, child: Text(m)))
           .toList(),
@@ -1953,7 +2119,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   Widget _buildConditionDropdown() {
     return DropdownButtonFormField<String>(
       value: _conditionStatus,
-      decoration: _inputDecoration(),
+      isExpanded: true,
+      decoration: _floatingInputDecoration(
+        labelText: 'Item Condition *',
+      ),
       items: _conditions.map((c) {
         final desc = AssetModel.conditionDescriptions[c] ?? '';
         return DropdownMenuItem(
@@ -1971,7 +2140,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   Widget _buildOperationalStatusDropdown() {
     return DropdownButtonFormField<String>(
       value: AssetModel.normalizeStatus(_operationalStatus),
-      decoration: _inputDecoration(),
+      isExpanded: true,
+      decoration: _floatingInputDecoration(
+        labelText: 'Availability *',
+      ),
       items: _operationalStatuses.map((s) {
         final desc = AssetModel.availabilityDescriptions[s] ?? '';
         return DropdownMenuItem(
@@ -1983,44 +2155,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         );
       }).toList(),
       onChanged: (val) => setState(() => _operationalStatus = val!),
-    );
-  }
-
-  Widget _buildLabel(String label) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: ParishColors.textDark,
-        ),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration({String? hint, Widget? prefixIcon}) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
-      prefixIcon: prefixIcon,
-      filled: true,
-      fillColor: ParishColors.backgroundLight,
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-      ),
     );
   }
 }

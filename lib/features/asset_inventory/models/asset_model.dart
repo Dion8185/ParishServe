@@ -21,7 +21,7 @@ class AssetModel {
   final String? others;
   final String? remarks;
   final String? photoUrl;
-  final DateTime dateOfAcquisition;
+  final DateTime? dateOfAcquisition; // Nullable: allows recording year only
   final int acquisitionYear;
   final String modeOfAcquisition;
 
@@ -89,7 +89,6 @@ class AssetModel {
     'Disposed': 'Officially decommissioned, retired, or disposed',
   };
 
-  /// Maintained for backwards compatibility
   static const List<String> standardStatuses = standardAvailability;
   static const Map<String, String> statusDescriptions = availabilityDescriptions;
 
@@ -109,7 +108,7 @@ class AssetModel {
     this.others,
     this.remarks,
     this.photoUrl,
-    required this.dateOfAcquisition,
+    this.dateOfAcquisition,
     required this.acquisitionYear,
     this.modeOfAcquisition = 'Purchase',
     this.quantity = 1,
@@ -133,7 +132,6 @@ class AssetModel {
     this.updatedAt,
   }) : totalCost = totalCost ?? (quantity * unitPrice);
 
-  /// Normalizes condition strings into standard canonical names
   static String normalizeCondition(String? raw) {
     if (raw == null || raw.trim().isEmpty) return 'Good';
     final clean = raw.trim();
@@ -153,7 +151,6 @@ class AssetModel {
     return 'Good';
   }
 
-  /// Normalizes status strings into standard canonical Availability names ('In Used', 'In Storage', 'Disposed')
   static String normalizeStatus(String? raw) {
     if (raw == null || raw.trim().isEmpty) return 'In Storage';
     final clean = raw.trim();
@@ -175,29 +172,27 @@ class AssetModel {
     return 'In Storage';
   }
 
-  /// Human-readable date formatted as YYYY-MM-DD
+  /// Returns YYYY-MM-DD if full date is known, or just YYYY if month & day were optional.
+  /// Never forces January 1!
   String get formattedAcquisitionDate {
-    return '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}';
+    if (dateOfAcquisition == null) {
+      return '$acquisitionYear';
+    }
+    return '${dateOfAcquisition!.year}-${dateOfAcquisition!.month.toString().padLeft(2, '0')}-${dateOfAcquisition!.day.toString().padLeft(2, '0')}';
   }
 
-  /// Formatted registration date
   String get formattedRegistrationDate {
     return '${registrationDate.year}-${registrationDate.month.toString().padLeft(2, '0')}-${registrationDate.day.toString().padLeft(2, '0')}';
   }
 
-  /// Formatted last audit date
   String get formattedLastAuditedDate {
     if (lastAuditedAt == null) return 'Never Audited';
     return '${lastAuditedAt!.year}-${lastAuditedAt!.month.toString().padLeft(2, '0')}-${lastAuditedAt!.day.toString().padLeft(2, '0')}';
   }
 
-  /// Currency formatted acquisition price per unit
   String get formattedUnitPrice => '₱ ${formatCurrency(unitPrice)}';
-
-  /// Currency formatted total acquisition cost
   String get formattedTotalCost => '₱ ${formatCurrency(totalCost)}';
 
-  /// Static currency formatter helper (adds comma thousand separators and two decimal digits)
   static String formatCurrency(double amount) {
     final parts = amount.toStringAsFixed(2).split('.');
     final integerPart = parts[0];
@@ -213,9 +208,6 @@ class AssetModel {
     return '${buffer.toString()}.$decimalPart';
   }
 
-  /// Canonical Book of Inventory Section Classification:
-  /// Section 1: Acquisition price per unit of ₱10,000.00 or higher
-  /// Section 2: Acquisition price per unit lower than ₱10,000.00
   String get inventorySection {
     if (unitPrice >= 10000.0) {
       return 'Section 1 — ₱10,000.00 and Above';
@@ -224,19 +216,16 @@ class AssetModel {
     }
   }
 
-  /// Concise section tag for compact chips and badges
   String get inventorySectionCode {
     return unitPrice >= 10000.0 ? 'Section 1' : 'Section 2';
   }
 
-  /// Whether this item is disposed or marked archived
   bool get isEffectivelyArchived {
     if (isArchived) return true;
     final st = normalizeStatus(operationalStatus);
     return st == 'Disposed';
   }
 
-  /// Display string for location (combining name and acronym)
   String get displayLocation {
     if (locationName != null && locationName!.isNotEmpty) {
       return '$locationName ($locationAcronym)';
@@ -244,7 +233,6 @@ class AssetModel {
     return locationAcronym;
   }
 
-  /// Display string for classification (combining name and acronym)
   String get displayClassification {
     if (classificationName != null && classificationName!.isNotEmpty) {
       return '$classificationName ($classificationAcronym)';
@@ -252,26 +240,24 @@ class AssetModel {
     return classificationAcronym;
   }
 
-  /// Adaptive badge color based on standardized condition status
   Color get conditionColor {
     final normalized = normalizeCondition(conditionStatus);
     switch (normalized) {
       case 'Excellent':
-        return const Color(0xFF0D9488); // Teal
+        return const Color(0xFF0D9488);
       case 'Good':
         return ParishColors.oliveGreen;
       case 'Fair':
         return ParishColors.goldAccent;
       case 'Poor':
-        return const Color(0xFFEA580C); // Deep Orange
+        return const Color(0xFFEA580C);
       case 'Damaged':
         return ParishColors.mercyRed;
       default:
-        return const Color(0xFF64748B); // Slate Grey
+        return const Color(0xFF64748B);
     }
   }
 
-  /// Adaptive badge background surface color
   Color get conditionSurfaceColor {
     final normalized = normalizeCondition(conditionStatus);
     switch (normalized) {
@@ -289,7 +275,6 @@ class AssetModel {
     }
   }
 
-  /// Adaptive status color for Availability
   Color get statusColor {
     final normalized = normalizeStatus(operationalStatus);
     switch (normalized) {
@@ -303,7 +288,6 @@ class AssetModel {
     }
   }
 
-  /// Adaptive status surface color for Availability
   Color get statusSurfaceColor {
     final normalized = normalizeStatus(operationalStatus);
     switch (normalized) {
@@ -317,24 +301,23 @@ class AssetModel {
     }
   }
 
-  /// Icon based on classification acronym
   IconData get classificationIcon {
     switch (classificationAcronym.toUpperCase()) {
-      case 'SI': // Sacred Image
+      case 'SI':
         return Icons.person_pin;
-      case 'SV': // Sacred Vessel
+      case 'SV':
         return Icons.wine_bar;
-      case 'MI': // Musical Instrument
+      case 'MI':
         return Icons.piano;
-      case 'LB': // Liturgical Book
+      case 'LB':
         return Icons.menu_book;
-      case 'FF': // Furniture and Fixtures
+      case 'FF':
         return Icons.chair_outlined;
-      case 'OE': // Office Equipment
+      case 'OE':
         return Icons.computer;
-      case 'EE': // Electrical Equipment
+      case 'EE':
         return Icons.electrical_services;
-      case 'HT': // Hand Tools
+      case 'HT':
         return Icons.build;
       default:
         return Icons.inventory_2_outlined;
@@ -355,10 +338,9 @@ class AssetModel {
       return DateTime.tryParse(value.toString());
     }
 
-    final acqDate =
-    parseDate(map['date_of_acquisition'] ?? map['acquisition_date']);
-    final int acqYear =
-        int.tryParse(map['acquisition_year']?.toString() ?? '') ?? acqDate.year;
+    final acqDate = parseNullableDate(map['date_of_acquisition'] ?? map['acquisition_date']);
+    final int acqYear = int.tryParse(map['acquisition_year']?.toString() ?? '') ??
+        (acqDate?.year ?? DateTime.now().year);
 
     String? classifName;
     if (map['asset_classifications'] is Map) {
@@ -443,6 +425,10 @@ class AssetModel {
   }
 
   Map<String, dynamic> toMap() {
+    final String? dateString = dateOfAcquisition != null
+        ? '${dateOfAcquisition!.year}-${dateOfAcquisition!.month.toString().padLeft(2, '0')}-${dateOfAcquisition!.day.toString().padLeft(2, '0')}'
+        : null;
+
     return {
       'asset_id': assetId,
       'control_number': controlNumber,
@@ -458,7 +444,7 @@ class AssetModel {
       'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
       'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
       'photo_url': photoUrl?.trim().isEmpty ?? true ? null : photoUrl!.trim(),
-      'date_of_acquisition': formattedAcquisitionDate,
+      'date_of_acquisition': dateString,
       'acquisition_year': acquisitionYear,
       'mode_of_acquisition': modeOfAcquisition,
       'quantity': quantity,
@@ -481,94 +467,9 @@ class AssetModel {
       'registration_date': registrationDate.toIso8601String(),
       'category': classificationName ?? classificationAcronym,
       'storage_location': locationName ?? locationAcronym,
-      'acquisition_date': formattedAcquisitionDate,
+      'acquisition_date': dateString,
       'acquisition_mode': modeOfAcquisition,
       'description': remarks ?? others ?? itemName,
     };
-  }
-
-  AssetModel copyWith({
-    String? assetId,
-    String? controlNumber,
-    String? itemName,
-    String? classificationId,
-    String? classificationAcronym,
-    String? classificationName,
-    String? locationId,
-    String? locationAcronym,
-    String? locationName,
-    String? dimensions,
-    String? color,
-    String? model,
-    String? others,
-    String? remarks,
-    String? photoUrl,
-    DateTime? dateOfAcquisition,
-    int? acquisitionYear,
-    String? modeOfAcquisition,
-    int? quantity,
-    double? unitPrice,
-    double? totalCost,
-    String? rfidTag,
-    String? qrCodeToken,
-    String? conditionStatus,
-    String? operationalStatus,
-    bool? isArchived,
-    DateTime? archivedAt,
-    String? archivedBy,
-    String? archiveReason,
-    String? bulkBatchId,
-    int? itemSequenceInBatch,
-    DateTime? lastAuditedAt,
-    String? auditedBy,
-    String? createdBy,
-    DateTime? registrationDate,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) {
-    final newQty = quantity ?? this.quantity;
-    final newUnitPrice = unitPrice ?? this.unitPrice;
-    final newTotalCost = totalCost ?? (newQty * newUnitPrice);
-
-    return AssetModel(
-      assetId: assetId ?? this.assetId,
-      controlNumber: controlNumber ?? this.controlNumber,
-      itemName: itemName ?? this.itemName,
-      classificationId: classificationId ?? this.classificationId,
-      classificationAcronym:
-      classificationAcronym ?? this.classificationAcronym,
-      classificationName: classificationName ?? this.classificationName,
-      locationId: locationId ?? this.locationId,
-      locationAcronym: locationAcronym ?? this.locationAcronym,
-      locationName: locationName ?? this.locationName,
-      dimensions: dimensions ?? this.dimensions,
-      color: color ?? this.color,
-      model: model ?? this.model,
-      others: others ?? this.others,
-      remarks: remarks ?? this.remarks,
-      photoUrl: photoUrl ?? this.photoUrl,
-      dateOfAcquisition: dateOfAcquisition ?? this.dateOfAcquisition,
-      acquisitionYear: acquisitionYear ?? this.acquisitionYear,
-      modeOfAcquisition: modeOfAcquisition ?? this.modeOfAcquisition,
-      quantity: newQty,
-      unitPrice: newUnitPrice,
-      totalCost: newTotalCost,
-      rfidTag: rfidTag ?? this.rfidTag,
-      qrCodeToken: qrCodeToken ?? this.qrCodeToken,
-      conditionStatus: conditionStatus ?? this.conditionStatus,
-      operationalStatus: operationalStatus ?? this.operationalStatus,
-      isArchived: isArchived ?? this.isArchived,
-      archivedAt: archivedAt ?? this.archivedAt,
-      archivedBy: archivedBy ?? this.archivedBy,
-      archiveReason: archiveReason ?? this.archiveReason,
-      bulkBatchId: bulkBatchId ?? this.bulkBatchId,
-      itemSequenceInBatch: itemSequenceInBatch ?? this.itemSequenceInBatch,
-      lastAuditedAt: lastAuditedAt ?? this.lastAuditedAt,
-      auditedBy: auditedBy ?? this.auditedBy,
-      createdBy: createdBy ?? this.createdBy,
-      registrationDate: registrationDate ?? this.registrationDate,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
   }
 }

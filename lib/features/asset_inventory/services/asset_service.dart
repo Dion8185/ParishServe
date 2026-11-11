@@ -14,7 +14,6 @@ import '../models/asset_model.dart';
 class AssetService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  /// Fetches registered parish assets directly from parish_assets
   static Future<List<AssetModel>> getAssets({
     bool includeArchived = false,
     String? categoryFilter,
@@ -55,7 +54,8 @@ class AssetService {
       }
 
       if (conditionFilter != null && conditionFilter != 'All') {
-        query = query.eq('condition_status', AssetModel.normalizeCondition(conditionFilter));
+        query = query.eq(
+            'condition_status', AssetModel.normalizeCondition(conditionFilter));
       }
 
       if (sectionFilter != null && sectionFilter != 'All') {
@@ -82,9 +82,6 @@ class AssetService {
     }
   }
 
-  /// Looks up a single asset by Control Number, Asset ID, QR Token, or RFID tag.
-  /// Automatically strips serialized sub-unit suffixes (e.g. `C-FF 2026-0001/05` -> `C-FF 2026-0001`)
-  /// so scanning physical quantified items instantly resolves the parent record.
   static Future<AssetModel?> findAssetByIdentifier(String identifier) async {
     final clean = identifier.trim();
     if (clean.isEmpty) return null;
@@ -137,7 +134,6 @@ class AssetService {
     return null;
   }
 
-  /// Real-time autocomplete suggestions for search-as-you-type lookup
   static Future<List<AssetModel>> searchAssetSuggestions(
       String query, {
         int limit = 6,
@@ -207,8 +203,6 @@ class AssetService {
     }
   }
 
-  /// Calculates the next sequential number based on the last registered entry for
-  /// the given location, classification, and acquisition year.
   static Future<int> getNextControlNumberSequence({
     required String locationAcronym,
     required String classificationAcronym,
@@ -266,7 +260,6 @@ class AssetService {
     }
   }
 
-  /// Verifies if a specific control number is already present in the ledger.
   static Future<bool> checkControlNumberExists(String controlNumber) async {
     final clean = controlNumber.trim();
     if (clean.isEmpty) return false;
@@ -367,7 +360,8 @@ class AssetService {
     }
   }
 
-  /// Registers a parish asset with an assigned Control Number and specified quantity count.
+  /// Registers an asset. If month & day are optional, dateOfAcquisition is null
+  /// and only acquisitionYear is recorded—never defaulting to January 1!
   static Future<AssetModel> registerAsset({
     required String itemName,
     required int quantity,
@@ -384,7 +378,8 @@ class AssetService {
     String? others,
     String? remarks,
     String? photoUrl,
-    required DateTime dateOfAcquisition,
+    DateTime? dateOfAcquisition,
+    int? acquisitionYear,
     String modeOfAcquisition = 'Purchase',
     String? rfidTag,
     String conditionStatus = 'Good',
@@ -396,7 +391,8 @@ class AssetService {
     if (quantity <= 0) throw 'Quantity must be at least 1.';
 
     final validUserId = await _resolveValidUserId();
-    final int acquisitionYear = dateOfAcquisition.year;
+    final int finalAcqYear =
+        acquisitionYear ?? (dateOfAcquisition?.year ?? DateTime.now().year);
     final now = DateTime.now();
     final normalizedStatus = AssetModel.normalizeStatus(operationalStatus);
     final bool isDecommissioned = normalizedStatus == 'Disposed';
@@ -413,7 +409,7 @@ class AssetService {
       final controlNumbers = await generateControlNumberBatch(
         locationAcronym: locationAcronym,
         classificationAcronym: classificationAcronym,
-        acquisitionYear: acquisitionYear,
+        acquisitionYear: finalAcqYear,
         count: 1,
       );
       assignedControlNumber = controlNumbers.first;
@@ -421,8 +417,11 @@ class AssetService {
 
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
     final double calculatedTotalCost = quantity * safeUnitPrice;
-    final String dateString =
-        '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}';
+
+    // Only format YYYY-MM-DD if date is specified; if optional, keep null
+    final String? dateString = dateOfAcquisition != null
+        ? '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}'
+        : null;
 
     final String assetId = generatePermanentIdentifier('AST');
     final String qrCodeToken = generatePermanentIdentifier('QR');
@@ -443,7 +442,7 @@ class AssetService {
       'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
       'photo_url': photoUrl?.trim().isEmpty ?? true ? null : photoUrl!.trim(),
       'date_of_acquisition': dateString,
-      'acquisition_year': acquisitionYear,
+      'acquisition_year': finalAcqYear,
       'mode_of_acquisition': modeOfAcquisition,
       'quantity': quantity,
       'unit_price': safeUnitPrice,
@@ -504,57 +503,6 @@ class AssetService {
     return AssetModel.fromMap(response);
   }
 
-  /// Backward-compatible alias for single-record registration
-  static Future<List<AssetModel>> registerBulkAssets({
-    required String itemName,
-    required int quantity,
-    required double unitPrice,
-    required String classificationId,
-    required String classificationAcronym,
-    String? classificationName,
-    required String locationId,
-    required String locationAcronym,
-    String? locationName,
-    String? dimensions,
-    String? color,
-    String? model,
-    String? others,
-    String? remarks,
-    String? photoUrl,
-    required DateTime dateOfAcquisition,
-    String modeOfAcquisition = 'Purchase',
-    String? rfidTag,
-    String conditionStatus = 'Good',
-    String operationalStatus = 'In Storage',
-    String? customControlNumber,
-  }) async {
-    final asset = await registerAsset(
-      itemName: itemName,
-      quantity: quantity,
-      unitPrice: unitPrice,
-      classificationId: classificationId,
-      classificationAcronym: classificationAcronym,
-      classificationName: classificationName,
-      locationId: locationId,
-      locationAcronym: locationAcronym,
-      locationName: locationName,
-      dimensions: dimensions,
-      color: color,
-      model: model,
-      others: others,
-      remarks: remarks,
-      photoUrl: photoUrl,
-      dateOfAcquisition: dateOfAcquisition,
-      modeOfAcquisition: modeOfAcquisition,
-      rfidTag: rfidTag,
-      conditionStatus: conditionStatus,
-      operationalStatus: operationalStatus,
-      customControlNumber: customControlNumber,
-    );
-    return [asset];
-  }
-
-  /// Updates an asset record. Control Number remains strictly locked and preserved.
   static Future<AssetModel> updateAsset({
     required String assetId,
     required String itemName,
@@ -569,7 +517,8 @@ class AssetService {
     String? others,
     String? remarks,
     String? photoUrl,
-    required DateTime dateOfAcquisition,
+    DateTime? dateOfAcquisition,
+    int? acquisitionYear,
     required String modeOfAcquisition,
     int quantity = 1,
     required double unitPrice,
@@ -580,12 +529,17 @@ class AssetService {
     final cleanItemName = itemName.trim();
     if (cleanItemName.isEmpty) throw 'Item name is required.';
 
-    final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
+    final int finalAcqYear =
+        acquisitionYear ?? (dateOfAcquisition?.year ?? DateTime.now().year);
     final normalizedStatus = AssetModel.normalizeStatus(operationalStatus);
     final bool isDecommissioned = normalizedStatus == 'Disposed';
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
     final double safeTotalCost = quantity * safeUnitPrice;
+
+    final String? dateString = dateOfAcquisition != null
+        ? '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}'
+        : null;
 
     final updatePayload = {
       'item_name': cleanItemName,
@@ -600,9 +554,8 @@ class AssetService {
       'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
       'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
       if (photoUrl != null) 'photo_url': photoUrl.trim(),
-      'date_of_acquisition':
-      '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}',
-      'acquisition_year': dateOfAcquisition.year,
+      'date_of_acquisition': dateString,
+      'acquisition_year': finalAcqYear,
       'mode_of_acquisition': modeOfAcquisition,
       'quantity': quantity > 0 ? quantity : 1,
       'unit_price': safeUnitPrice,
@@ -626,9 +579,6 @@ class AssetService {
     return AssetModel.fromMap(response);
   }
 
-  /// Records an asset verification or audit inspection.
-  /// Fully supports [quantityDistribution] across multiple conditions & utilization statuses.
-  /// Does NOT modify the registered quantity during routine verification.
   static Future<void> recordAuditScan({
     required String assetId,
     required String controlNumber,
@@ -656,7 +606,6 @@ class AssetService {
 
     String combinedNotes = '';
 
-    // Record official quantity adjustments if triggered separately
     if (hasQtyChange) {
       final change = newQuantity - previousQuantity;
       final sign = change > 0 ? '+$change' : '$change';
@@ -669,7 +618,6 @@ class AssetService {
       '[QTY_ADJUST: from $previousQuantity to $newQuantity ($sign) | REASON: $reason]\n';
     }
 
-    // Embed structured quantity distribution metadata into audit record
     if (quantityDistribution != null && quantityDistribution.isNotEmpty) {
       final jsonPayload =
       jsonEncode(quantityDistribution.map((d) => d.toMap()).toList());
@@ -702,7 +650,6 @@ class AssetService {
       'audited_at': now.toIso8601String(),
     });
 
-    // Update parish_assets condition, status, and audit timestamps
     final Map<String, dynamic> assetUpdates = {
       'condition_status': normalizedNewCondition,
       'operational_status': normalizedNewStatus,
@@ -711,7 +658,6 @@ class AssetService {
       'updated_at': now.toIso8601String(),
     };
 
-    // If an official separate quantity adjustment was explicitly requested
     if (hasQtyChange && newQuantity > 0) {
       assetUpdates['quantity'] = newQuantity;
 
