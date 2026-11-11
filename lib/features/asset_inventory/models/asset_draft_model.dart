@@ -3,6 +3,7 @@
 // =============================================================================
 
 import 'dart:typed_data';
+import 'asset_model.dart';
 
 class AssetDraftModel {
   final String draftId;
@@ -50,7 +51,7 @@ class AssetDraftModel {
     required this.dateOfAcquisition,
     this.modeOfAcquisition = 'Purchase',
     this.conditionStatus = 'Good',
-    this.operationalStatus = 'Available',
+    this.operationalStatus = 'In Storage',
     this.dimensions,
     this.color,
     this.model,
@@ -138,6 +139,8 @@ class AssetDraftModel {
     final double uPrice = double.tryParse(map['unit_price']?.toString() ?? '') ?? 0.0;
     final double totCost = double.tryParse(map['total_cost']?.toString() ?? '') ?? (qty * uPrice);
 
+    final rawStatus = map['operational_status']?.toString() ?? map['status']?.toString();
+
     return AssetDraftModel(
       draftId: map['draft_id']?.toString() ?? '',
       itemName: map['item_name']?.toString() ?? '',
@@ -154,7 +157,7 @@ class AssetDraftModel {
       dateOfAcquisition: acqDate,
       modeOfAcquisition: map['mode_of_acquisition']?.toString() ?? 'Purchase',
       conditionStatus: map['condition_status']?.toString() ?? 'Good',
-      operationalStatus: map['operational_status']?.toString() ?? 'Available',
+      operationalStatus: AssetModel.normalizeStatus(rawStatus),
       dimensions: map['dimensions']?.toString(),
       color: map['color']?.toString(),
       model: map['model']?.toString(),

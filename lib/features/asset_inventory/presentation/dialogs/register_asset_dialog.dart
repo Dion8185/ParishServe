@@ -94,7 +94,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
   DateTime _dateOfAcquisition = DateTime.now();
   String _modeOfAcquisition = 'Purchase';
   String _conditionStatus = 'Good';
-  String _operationalStatus = 'Available';
+  String _operationalStatus = 'In Storage';
 
   // Photo & Security Watermark State
   Uint8List? _watermarkedPhotoBytes;
@@ -116,8 +116,8 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
   // Standardized Canonical Condition Options
   final List<String> _conditions = AssetModel.standardConditions;
 
-  // Standardized Canonical Status Options
-  final List<String> _operationalStatuses = AssetModel.standardStatuses;
+  // Standardized Canonical Availability Options
+  final List<String> _operationalStatuses = AssetModel.standardAvailability;
 
   @override
   void initState() {
@@ -940,7 +940,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                               _buildLabel('Item Condition *'),
                               _buildConditionDropdown(),
                               const SizedBox(height: 12),
-                              _buildLabel('Item Status *'),
+                              _buildLabel('Availability *'),
                               _buildOperationalStatusDropdown(),
                             ],
                           )
@@ -962,7 +962,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                   crossAxisAlignment:
                                   CrossAxisAlignment.start,
                                   children: [
-                                    _buildLabel('Item Status *'),
+                                    _buildLabel('Availability *'),
                                     _buildOperationalStatusDropdown(),
                                   ],
                                 ),
@@ -1755,15 +1755,15 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
 
   Widget _buildOperationalStatusDropdown() {
     return DropdownButtonFormField<String>(
-      value: _operationalStatus,
+      value: AssetModel.normalizeStatus(_operationalStatus),
       isExpanded: true,
       decoration: _inputDecoration(),
       items: _operationalStatuses.map((s) {
-        final desc = AssetModel.statusDescriptions[s] ?? '';
+        final desc = AssetModel.availabilityDescriptions[s] ?? '';
         return DropdownMenuItem(
           value: s,
           child: Text(
-            desc.isNotEmpty ? '$s ($desc)' : s,
+            desc.isNotEmpty ? '$s — $desc' : s,
             style: const TextStyle(fontSize: 13),
             overflow: TextOverflow.ellipsis,
           ),

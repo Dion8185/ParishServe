@@ -90,7 +90,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   // Standardized Canonical Options
   final List<String> _conditionOptions = AssetModel.standardConditions;
-  final List<String> _operationalStatusOptions = AssetModel.standardStatuses;
+  final List<String> _operationalStatusOptions = AssetModel.standardAvailability;
 
   bool get _isEffectivelyArchived => _asset.isEffectivelyArchived;
 
@@ -411,7 +411,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _operationalStatus == 'Retired' || _operationalStatus == 'Disposed'
+            _operationalStatus == 'Disposed' || _operationalStatus == 'Retired'
                 ? 'Item marked as $_operationalStatus and moved to Archive.'
                 : 'Item record updated successfully.',
           ),
@@ -777,7 +777,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      'Status: ${_asset.operationalStatus}',
+                      'Availability: ${_asset.operationalStatus}',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
@@ -862,7 +862,7 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildLabel('Status *'),
+                  _buildLabel('Availability *'),
                   _buildOperationalStatusDropdown(),
                 ],
               ),

@@ -16,7 +16,45 @@ import '../../services/asset_draft_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
-import '../dialogs/register_asset_dialog.dart';
+
+class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue,
+      TextEditingValue newValue,
+      ) {
+    if (newValue.text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    final clean = newValue.text.replaceAll(',', '');
+    if (!RegExp(r'^\d*(\.\d{0,2})?$').hasMatch(clean)) {
+      return oldValue;
+    }
+
+    final parts = clean.split('.');
+    final integerPart = parts[0];
+    final decimalPart = parts.length > 1 ? parts[1] : null;
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < integerPart.length; i++) {
+      if (i > 0 && (integerPart.length - i) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(integerPart[i]);
+    }
+
+    String formatted = buffer.toString();
+    if (decimalPart != null) {
+      formatted += '.$decimalPart';
+    }
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class RegisterAssetPage extends StatefulWidget {
   final VoidCallback? onAssetSaved;
@@ -76,7 +114,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   ];
 
   final List<String> _conditions = AssetModel.standardConditions;
-  final List<String> _operationalStatuses = AssetModel.standardStatuses;
+  final List<String> _operationalStatuses = AssetModel.standardAvailability;
 
   @override
   void initState() {
@@ -101,8 +139,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
     _dateOfAcquisition = d?.dateOfAcquisition ?? DateTime.now();
     _modeOfAcquisition = d?.modeOfAcquisition ?? 'Purchase';
-    _conditionStatus = d?.conditionStatus ?? 'Good';
-    _operationalStatus = d?.operationalStatus ?? 'Available';
+    _conditionStatus = AssetModel.normalizeCondition(d?.conditionStatus);
+    _operationalStatus = AssetModel.normalizeStatus(d?.operationalStatus);
     _existingPhotoUrl = d?.photoUrl;
     _watermarkedPhotoBytes = d?.localPhotoBytes;
     _photoFileName = d?.photoFileName;
@@ -377,7 +415,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
       String? uploadedDraftUrl = _existingPhotoUrl;
 
-      // Upload newly watermarked photo bytes to cloud storage if provided
       if (_watermarkedPhotoBytes != null && _photoFileName != null) {
         final uploaded = await AssetDraftService.uploadDraftPhoto(
           draftId: draftId,
@@ -525,7 +562,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         customControlNumber: fullControlNo,
       );
 
-      // Automatically clean up cloud draft upon successful registration
       if (widget.initialDraft != null) {
         await AssetDraftService.deleteDraft(widget.initialDraft!.draftId);
       }
@@ -641,7 +677,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 1. Error Banner
                       if (_errorMessage != null) ...[
                         Container(
                           width: double.infinity,
@@ -673,7 +708,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                         ),
                       ],
 
-                      // 2. FORM SECTION AT TOP: Photographic Evidence
+                      // 1. Photographic Evidence Section at Top
                       _buildFormSectionCard(
                         title: 'Photographic Evidence',
                         subtitle:
@@ -685,7 +720,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       ),
                       const SizedBox(height: 18),
 
-                      // 3. Form Section: Item Identification & Control Number
+                      // 2. Item Identification & Control Number Section
                       _buildFormSectionCard(
                         title: 'Item Identification & Control Number',
                         subtitle:
@@ -759,7 +794,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       ),
                       const SizedBox(height: 18),
 
-                      // 4. Form Section: Quantity, Valuation & Acquisition Mode
+                      // 3. Quantity, Valuation & Acquisition Section
                       _buildFormSectionCard(
                         title: 'Quantity, Valuation & Acquisition',
                         subtitle:
@@ -964,7 +999,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       ),
                       const SizedBox(height: 18),
 
-                      // 5. Form Section: Physical Specifications & Descriptions
+                      // 4. Physical Specifications & Descriptions Section
                       _buildFormSectionCard(
                         title: 'Physical Specifications & Status',
                         subtitle:
@@ -982,7 +1017,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                 _buildLabel('Item Condition *'),
                                 _buildConditionDropdown(),
                                 const SizedBox(height: 12),
-                                _buildLabel('Item Status *'),
+                                _buildLabel('Availability *'),
                                 _buildOperationalStatusDropdown(),
                               ],
                             )
@@ -1005,7 +1040,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                     crossAxisAlignment:
                                     CrossAxisAlignment.start,
                                     children: [
-                                      _buildLabel('Item Status *'),
+                                      _buildLabel('Availability *'),
                                       _buildOperationalStatusDropdown(),
                                     ],
                                   ),
@@ -1208,7 +1243,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       ),
                       const SizedBox(height: 24),
 
-                      // 6. Form Actions Section Card (Commit to Ledger or Save Cloud Draft)
+                      // 5. Form Actions Section Card
                       _buildFormActionSection(
                           isMobile, cardWhite, borderGrey, textMuted),
                       const SizedBox(height: 48),
@@ -1222,10 +1257,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       },
     );
   }
-
-  // ===========================================================================
-  // Section Card Container Helper
-  // ===========================================================================
 
   Widget _buildFormSectionCard({
     required String title,
@@ -1298,10 +1329,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       ),
     );
   }
-
-  // ===========================================================================
-  // Control Number Configuration Card
-  // ===========================================================================
 
   Widget _buildControlNumberCard(bool isMobile) {
     return Container(
@@ -1477,10 +1504,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     );
   }
 
-  // ===========================================================================
-  // Photo Upload & Watermark Box Helper (Cloud URL + Local Memory Fallback)
-  // ===========================================================================
-
   Widget _buildPhotoUploadBox(
       bool isMobile,
       Color borderGrey,
@@ -1603,10 +1626,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       ),
     );
   }
-
-  // ===========================================================================
-  // Form Action Section Card (Commit to Ledger or Save Cloud Draft)
-  // ===========================================================================
 
   Widget _buildFormActionSection(
       bool isMobile,
@@ -1777,10 +1796,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     );
   }
 
-  // ===========================================================================
-  // Dropdowns & Date Tile Helpers
-  // ===========================================================================
-
   Widget _buildClassificationDropdown() {
     return DropdownButtonFormField<AssetClassificationModel>(
       value: _selectedClassification,
@@ -1881,14 +1896,14 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
   Widget _buildOperationalStatusDropdown() {
     return DropdownButtonFormField<String>(
-      value: _operationalStatus,
+      value: AssetModel.normalizeStatus(_operationalStatus),
       decoration: _inputDecoration(),
       items: _operationalStatuses.map((s) {
-        final desc = AssetModel.statusDescriptions[s] ?? '';
+        final desc = AssetModel.availabilityDescriptions[s] ?? '';
         return DropdownMenuItem(
           value: s,
           child: Text(
-            desc.isNotEmpty ? '$s ($desc)' : s,
+            desc.isNotEmpty ? '$s — $desc' : s,
             style: const TextStyle(fontSize: 13),
           ),
         );

@@ -40,7 +40,9 @@ class AssetService {
       if (!includeArchived) {
         query = query
             .eq('is_archived', false)
-            .neq('operational_status', 'Decommissioned');
+            .neq('operational_status', 'Disposed')
+            .neq('operational_status', 'Decommissioned')
+            .neq('operational_status', 'Retired');
       }
 
       if (categoryFilter != null && categoryFilter != 'All') {
@@ -53,7 +55,7 @@ class AssetService {
       }
 
       if (conditionFilter != null && conditionFilter != 'All') {
-        query = query.eq('condition_status', conditionFilter);
+        query = query.eq('condition_status', AssetModel.normalizeCondition(conditionFilter));
       }
 
       if (sectionFilter != null && sectionFilter != 'All') {
@@ -385,8 +387,8 @@ class AssetService {
     required DateTime dateOfAcquisition,
     String modeOfAcquisition = 'Purchase',
     String? rfidTag,
-    String conditionStatus = 'VERIFIED / GOOD',
-    String operationalStatus = 'Active',
+    String conditionStatus = 'Good',
+    String operationalStatus = 'In Storage',
     String? customControlNumber,
   }) async {
     final cleanItemName = itemName.trim();
@@ -396,8 +398,8 @@ class AssetService {
     final validUserId = await _resolveValidUserId();
     final int acquisitionYear = dateOfAcquisition.year;
     final now = DateTime.now();
-    final bool isDecommissioned =
-        operationalStatus.trim().toLowerCase() == 'decommissioned';
+    final normalizedStatus = AssetModel.normalizeStatus(operationalStatus);
+    final bool isDecommissioned = normalizedStatus == 'Disposed';
 
     String assignedControlNumber;
     if (customControlNumber != null && customControlNumber.trim().isNotEmpty) {
@@ -451,13 +453,13 @@ class AssetService {
           ? rfidTag.trim()
           : null,
       'qr_code_token': qrCodeToken,
-      'condition_status': conditionStatus,
-      'operational_status': operationalStatus,
+      'condition_status': AssetModel.normalizeCondition(conditionStatus),
+      'operational_status': normalizedStatus,
       'is_archived': isDecommissioned,
       'archived_at': isDecommissioned ? now.toIso8601String() : null,
       'archived_by': isDecommissioned ? validUserId : null,
       'archive_reason': isDecommissioned
-          ? 'Registered with Decommissioned status.'
+          ? 'Registered with Disposed availability.'
           : null,
       'bulk_batch_id': null,
       'item_sequence_in_batch': null,
@@ -485,9 +487,9 @@ class AssetService {
         'control_number': assignedControlNumber,
         'audited_by': validUserId,
         'previous_condition': null,
-        'new_condition': conditionStatus,
+        'new_condition': AssetModel.normalizeCondition(conditionStatus),
         'previous_status': null,
-        'new_status': operationalStatus,
+        'new_status': normalizedStatus,
         'previous_location': null,
         'new_location': locationName ?? locationAcronym,
         'audit_method': 'MANUAL',
@@ -500,6 +502,56 @@ class AssetService {
     }
 
     return AssetModel.fromMap(response);
+  }
+
+  /// Backward-compatible alias for single-record registration
+  static Future<List<AssetModel>> registerBulkAssets({
+    required String itemName,
+    required int quantity,
+    required double unitPrice,
+    required String classificationId,
+    required String classificationAcronym,
+    String? classificationName,
+    required String locationId,
+    required String locationAcronym,
+    String? locationName,
+    String? dimensions,
+    String? color,
+    String? model,
+    String? others,
+    String? remarks,
+    String? photoUrl,
+    required DateTime dateOfAcquisition,
+    String modeOfAcquisition = 'Purchase',
+    String? rfidTag,
+    String conditionStatus = 'Good',
+    String operationalStatus = 'In Storage',
+    String? customControlNumber,
+  }) async {
+    final asset = await registerAsset(
+      itemName: itemName,
+      quantity: quantity,
+      unitPrice: unitPrice,
+      classificationId: classificationId,
+      classificationAcronym: classificationAcronym,
+      classificationName: classificationName,
+      locationId: locationId,
+      locationAcronym: locationAcronym,
+      locationName: locationName,
+      dimensions: dimensions,
+      color: color,
+      model: model,
+      others: others,
+      remarks: remarks,
+      photoUrl: photoUrl,
+      dateOfAcquisition: dateOfAcquisition,
+      modeOfAcquisition: modeOfAcquisition,
+      rfidTag: rfidTag,
+      conditionStatus: conditionStatus,
+      operationalStatus: operationalStatus,
+      customControlNumber: customControlNumber,
+    );
+    return [asset];
   }
 
   /// Updates an asset record. Control Number remains strictly locked and preserved.
@@ -530,8 +582,8 @@ class AssetService {
 
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
-    final bool isDecommissioned =
-        operationalStatus.trim().toLowerCase() == 'decommissioned';
+    final normalizedStatus = AssetModel.normalizeStatus(operationalStatus);
+    final bool isDecommissioned = normalizedStatus == 'Disposed';
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
     final double safeTotalCost = quantity * safeUnitPrice;
 
@@ -558,8 +610,8 @@ class AssetService {
       'cost': safeTotalCost,
       'rfid_tag':
       rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
-      'condition_status': conditionStatus,
-      'operational_status': operationalStatus,
+      'condition_status': AssetModel.normalizeCondition(conditionStatus),
+      'operational_status': normalizedStatus,
       'is_archived': isDecommissioned,
       'updated_at': now.toIso8601String(),
     };
@@ -631,15 +683,18 @@ class AssetService {
     final finalNotes =
     combinedNotes.trim().isEmpty ? null : combinedNotes.trim();
 
+    final normalizedNewCondition = AssetModel.normalizeCondition(newCondition);
+    final normalizedNewStatus = AssetModel.normalizeStatus(newStatus);
+
     await _client.from('asset_audit_logs').insert({
       'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
       'asset_id': assetId,
       'control_number': controlNumber,
       'audited_by': validUserId,
       'previous_condition': previousCondition,
-      'new_condition': newCondition,
+      'new_condition': normalizedNewCondition,
       'previous_status': previousStatus,
-      'new_status': newStatus,
+      'new_status': normalizedNewStatus,
       'previous_location': previousLocation,
       'new_location': newLocation,
       'audit_method': auditMethod,
@@ -649,8 +704,8 @@ class AssetService {
 
     // Update parish_assets condition, status, and audit timestamps
     final Map<String, dynamic> assetUpdates = {
-      'condition_status': newCondition,
-      'operational_status': newStatus,
+      'condition_status': normalizedNewCondition,
+      'operational_status': normalizedNewStatus,
       'last_audited_at': now.toIso8601String(),
       'audited_by': validUserId,
       'updated_at': now.toIso8601String(),
@@ -718,7 +773,7 @@ class AssetService {
       'archived_at': now.toIso8601String(),
       'archived_by': validUserId,
       'archive_reason': reason.trim(),
-      'operational_status': 'Decommissioned',
+      'operational_status': 'Disposed',
       'updated_at': now.toIso8601String(),
     }).eq('asset_id', assetId);
   }
@@ -729,7 +784,7 @@ class AssetService {
       'archived_at': null,
       'archived_by': null,
       'archive_reason': null,
-      'operational_status': 'Active',
+      'operational_status': 'In Storage',
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('asset_id', assetId);
   }

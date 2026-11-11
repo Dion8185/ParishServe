@@ -17,7 +17,45 @@ import '../../services/asset_label_pdf_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
-import '../dialogs/register_asset_dialog.dart';
+
+class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue,
+      TextEditingValue newValue,
+      ) {
+    if (newValue.text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    final clean = newValue.text.replaceAll(',', '');
+    if (!RegExp(r'^\d*(\.\d{0,2})?$').hasMatch(clean)) {
+      return oldValue;
+    }
+
+    final parts = clean.split('.');
+    final integerPart = parts[0];
+    final decimalPart = parts.length > 1 ? parts[1] : null;
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < integerPart.length; i++) {
+      if (i > 0 && (integerPart.length - i) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(integerPart[i]);
+    }
+
+    String formatted = buffer.toString();
+    if (decimalPart != null) {
+      formatted += '.$decimalPart';
+    }
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class AssetDetailPage extends StatefulWidget {
   final List<AssetModel> assets;
@@ -71,7 +109,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   late String _modeOfAcquisition;
 
   final List<String> _conditionOptions = AssetModel.standardConditions;
-  final List<String> _operationalStatusOptions = AssetModel.standardStatuses;
+  final List<String> _operationalStatusOptions = AssetModel.standardAvailability;
 
   bool get _hasPrevious => _currentIndex > 0;
   bool get _hasNext => _currentIndex < _assetList.length - 1;
@@ -404,8 +442,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _operationalStatus == 'Retired' || _operationalStatus == 'Disposed'
-                ? 'Item marked as $_operationalStatus and moved to Archive.'
+            _operationalStatus == 'Disposed'
+                ? 'Item marked as Disposed and moved to Archive.'
                 : 'Item record updated successfully.',
           ),
           backgroundColor: ParishColors.oliveGreen,
@@ -508,10 +546,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   Future<void> _printLabelSticker() async {
-    await AssetLabelPdfService.printSingleAssetLabel(
-      _currentAsset,
-      expandQuantified: true,
-    );
+    await AssetLabelPdfService.printSingleAssetLabel(_currentAsset);
   }
 
   @override
@@ -758,7 +793,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'ARCHIVED / DECOMMISSIONED ITEM',
+                        'ARCHIVED / DISPOSED ITEM',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -769,7 +804,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         asset.archiveReason != null &&
                             asset.archiveReason!.isNotEmpty
                             ? 'Reason: ${asset.archiveReason}'
-                            : 'This item has been officially retired or disposed.',
+                            : 'This item has been officially disposed.',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.bold,
@@ -809,7 +844,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Highlighted Diocesan Control Number Badge
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4.5),
@@ -995,7 +1029,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ),
               const Divider(height: 22),
 
-              // Header coordinates: Control No & Inventory Date
               isMobile
                   ? Column(
                 children: [
@@ -1024,7 +1057,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ),
               const SizedBox(height: 10),
 
-              // Core particulars grid with bold answers
               isMobile
                   ? Column(
                 children: [
@@ -1090,7 +1122,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
               const SizedBox(height: 16),
 
-              // 2.1 PHYSICAL SPECIFICATIONS & DESCRIPTIONS (Clean Modular Tiles)
+              // Physical Specifications
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -1121,7 +1153,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ),
                     const Divider(height: 16),
 
-                    // Dimension, Color, Model Modular Cards with bold values
                     isMobile
                         ? Column(
                       children: [
@@ -1172,7 +1203,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ],
                     ),
 
-                    // Other Descriptions (Clean, bold and renamed away from "markings/inscriptions")
                     if (hasOtherDescriptions) ...[
                       const SizedBox(height: 10),
                       Container(
@@ -1225,7 +1255,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ),
                     ],
 
-                    // RFID / NFC Tag Tile
                     if (hasRfid) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -1271,7 +1300,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
               const SizedBox(height: 14),
 
-              // 2.2 REMARKS & OBSERVATIONS CARD with bold text
+              // Remarks
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -1305,8 +1334,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       (asset.remarks != null && asset.remarks!.trim().isNotEmpty)
                           ? asset.remarks!.trim()
                           : (asset.quantity > 1
-                          ? 'Quantity: ${asset.quantity} units. Condition: ${asset.conditionStatus.toUpperCase()} • Status: ${asset.operationalStatus}'
-                          : 'Condition: ${asset.conditionStatus.toUpperCase()} • Status: ${asset.operationalStatus}'),
+                          ? 'Quantity: ${asset.quantity} units. Condition: ${asset.conditionStatus.toUpperCase()} • Availability: ${asset.operationalStatus}'
+                          : 'Condition: ${asset.conditionStatus.toUpperCase()} • Availability: ${asset.operationalStatus}'),
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -1323,7 +1352,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
         const SizedBox(height: 16),
 
-        // 3. OPERATIONAL STATUS & LIVE VALUATION METRICS DECK
+        // 3. AVAILABILITY & LIVE VALUATION METRICS DECK
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1339,7 +1368,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'OPERATIONAL STATUS & VALUATION METRICS',
+                    'AVAILABILITY & VALUATION METRICS',
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.bold,
@@ -1387,7 +1416,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
         const SizedBox(height: 16),
 
-        // 4. AUDIT & ADJUSTMENT HISTORY (With Quantity Distribution Breakdown Logs)
+        // 4. AUDIT & ADJUSTMENT HISTORY (Quantity Distribution Breakdown Logs)
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1852,7 +1881,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               _buildLabel('Item Condition *'),
               _buildConditionDropdown(),
               const SizedBox(height: 10),
-              _buildLabel('Item Status *'),
+              _buildLabel('Availability *'),
               _buildOperationalStatusDropdown(),
             ],
           )
@@ -1872,7 +1901,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildLabel('Item Status *'),
+                    _buildLabel('Availability *'),
                     _buildOperationalStatusDropdown(),
                   ],
                 ),
@@ -2165,7 +2194,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   ),
                 ] else ...[
                   OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
+                    style: ElevatedButton.styleFrom(
                       side: const BorderSide(
                           color: ParishColors.marianBlue, width: 1.4),
                       backgroundColor: ParishColors.marianBlueSurface,
@@ -2188,7 +2217,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   // ===========================================================================
-  // Helper Widgets (With Visual Quantity Distribution Log Support)
+  // Helper Widgets
   // ===========================================================================
 
   Widget _buildPhotoThumbnail({required double size}) {
@@ -2264,20 +2293,26 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
 
+    // Only render quantity distribution card if total verified quantity is greater than 1
+    final int totalDistQty = log.quantityDistribution != null
+        ? log.quantityDistribution!.fold<int>(0, (sum, d) => sum + d.quantity)
+        : 0;
+    final bool showDistributionCard = log.hasQuantityDistribution && totalDistQty > 1;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: log.hasQuantityAdjustment
             ? ParishColors.goldLight.withOpacity(0.4)
-            : (log.hasQuantityDistribution
+            : (showDistributionCard
             ? ParishColors.marianBlueSurface.withOpacity(0.3)
             : ParishColors.backgroundLight),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: log.hasQuantityAdjustment
               ? ParishColors.goldAccent.withOpacity(0.6)
-              : (log.hasQuantityDistribution
+              : (showDistributionCard
               ? ParishColors.marianBlue.withOpacity(0.35)
               : ParishColors.borderGrey),
         ),
@@ -2318,7 +2353,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ),
                     if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text('Status: ${log.newStatus}',
+                      Text('Availability: ${log.newStatus}',
                           style: TextStyle(fontSize: 11, color: textMuted)),
                     ],
                     if (log.newLocation != null &&
@@ -2333,8 +2368,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
 
-          // QUANTIFIED DISTRIBUTION BREAKDOWN LOG CARD
-          if (log.hasQuantityDistribution) ...[
+          // QUANTIFIED DISTRIBUTION BREAKDOWN LOG CARD (Only if total qty > 1)
+          if (showDistributionCard) ...[
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
@@ -2368,7 +2403,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ),
                       const Spacer(),
                       Text(
-                        '${log.quantityDistribution!.fold<int>(0, (sum, d) => sum + d.quantity)} units reconciled',
+                        '$totalDistQty units reconciled',
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.bold,
@@ -2385,7 +2420,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       final bool isDamaged =
                           dist.physicalCondition.toLowerCase() == 'damaged';
                       final bool isInUse =
-                          dist.utilizationStatus.toLowerCase() == 'in use';
+                      dist.utilizationStatus.toLowerCase().contains('use');
 
                       Color badgeBg;
                       Color badgeBorder;
@@ -2460,7 +2495,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ),
           ],
 
-          // OFFICIAL QUANTITY ADJUSTMENT LOG CARD (If triggered separately)
           if (log.hasQuantityAdjustment) ...[
             const SizedBox(height: 8),
             Container(
@@ -2575,11 +2609,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       value: effective,
       decoration: _inputDecoration(),
       items: items.map((s) {
-        final desc = AssetModel.statusDescriptions[s] ?? '';
+        final desc = AssetModel.availabilityDescriptions[s] ?? '';
         return DropdownMenuItem(
           value: s,
           child: Text(
-            desc.isNotEmpty ? '$s ($desc)' : s,
+            desc.isNotEmpty ? '$s — $desc' : s,
             style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,

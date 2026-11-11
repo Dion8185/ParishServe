@@ -74,15 +74,21 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     return _distributionEntries.fold(0, (sum, entry) => sum + entry.quantity);
   }
 
-  int get _inUseQuantity {
+  int get _inUsedQuantity {
     return _distributionEntries
-        .where((e) => e.status == 'In Use')
+        .where((e) => AssetModel.normalizeStatus(e.status) == 'In Used')
         .fold(0, (sum, entry) => sum + entry.quantity);
   }
 
-  int get _availableQuantity {
+  int get _inStorageQuantity {
     return _distributionEntries
-        .where((e) => e.status == 'Available')
+        .where((e) => AssetModel.normalizeStatus(e.status) == 'In Storage')
+        .fold(0, (sum, entry) => sum + entry.quantity);
+  }
+
+  int get _disposedQuantity {
+    return _distributionEntries
+        .where((e) => AssetModel.normalizeStatus(e.status) == 'Disposed')
         .fold(0, (sum, entry) => sum + entry.quantity);
   }
 
@@ -350,10 +356,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           }
         } else {
           // Fallback to default single combination matching asset registered totals
-          final defaultStatus =
-          asset.operationalStatus.trim().toLowerCase() == 'in use'
-              ? 'In Use'
-              : 'Available';
+          final defaultStatus = AssetModel.normalizeStatus(asset.operationalStatus);
           final defaultCondition =
           AssetQuantityDistribution.standardPhysicalConditions.contains(
               asset.conditionStatus)
@@ -465,7 +468,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     setState(() {
       _distributionEntries.add(
         _DistributionRowState(
-          status: 'In Use',
+          status: 'In Used',
           condition: 'Good',
           quantity: defaultQty,
           onChanged: () => setState(() {}),
@@ -541,10 +544,17 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     final completedControlNo = asset.controlNumber;
     final consolidated = _consolidateDistributions();
 
-    final inUseTotal = _inUseQuantity;
-    final availableTotal = _availableQuantity;
-    final dominantStatus =
-    inUseTotal >= availableTotal ? 'In Use' : 'Available';
+    final inUsedTotal = _inUsedQuantity;
+    final inStorageTotal = _inStorageQuantity;
+    final disposedTotal = _disposedQuantity;
+    String dominantStatus = 'In Storage';
+    if (inUsedTotal >= inStorageTotal && inUsedTotal >= disposedTotal) {
+      dominantStatus = 'In Used';
+    } else if (disposedTotal > inUsedTotal && disposedTotal > inStorageTotal) {
+      dominantStatus = 'Disposed';
+    } else {
+      dominantStatus = 'In Storage';
+    }
 
     final Map<String, int> condCounts = {};
     for (final d in consolidated) {
@@ -1695,9 +1705,9 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                       ? ParishColors.oliveGreen
                       : const Color(0xFFD97706)),
               _buildMiniMetricBadge(
-                  'In Use', '$_inUseQuantity', ParishColors.marianBlue),
+                  'In Used', '$_inUsedQuantity', ParishColors.marianBlue),
               _buildMiniMetricBadge(
-                  'Available', '$_availableQuantity', const Color(0xFF0D9488)),
+                  'In Storage', '$_inStorageQuantity', ParishColors.oliveGreen),
               _buildMiniMetricBadge(
                   'Damaged', '$_damagedQuantity', ParishColors.mercyRed),
             ],
@@ -2033,11 +2043,12 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   }
 
   Widget _buildStatusDropdown(_DistributionRowState item) {
+    final effectiveStatus = AssetModel.normalizeStatus(item.status);
     return DropdownButtonFormField<String>(
-      value: item.status,
+      value: effectiveStatus,
       isExpanded: true,
       decoration: InputDecoration(
-        labelText: 'Utilization Status',
+        labelText: 'Availability',
         labelStyle: TextStyle(fontSize: 11, color: ParishColors.textMuted),
         filled: true,
         fillColor: ParishColors.backgroundLight,

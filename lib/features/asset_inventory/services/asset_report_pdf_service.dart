@@ -218,7 +218,7 @@ class AssetReportPdfService {
     final String baseRemarks =
     asset.remarks != null && asset.remarks!.isNotEmpty
         ? asset.remarks!
-        : 'Condition: ${asset.conditionStatus.toUpperCase()} • Status: ${asset.operationalStatus}';
+        : 'Condition: ${asset.conditionStatus.toUpperCase()} • Availability: ${asset.operationalStatus}';
     final String fullRemarksText = '$remarksLead$baseRemarks';
 
     return pw.Container(

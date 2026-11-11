@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 
 /// Represents a classified batch of units under a single quantified asset
 class AssetQuantityDistribution {
-  final String utilizationStatus; // 'In Use', 'Available'
+  final String utilizationStatus; // 'In Used', 'In Storage', 'Disposed'
   final String physicalCondition; // 'Excellent', 'Good', 'Fair', 'Poor', 'Damaged'
   final int quantity;
 
@@ -18,8 +18,9 @@ class AssetQuantityDistribution {
   });
 
   static const List<String> standardUtilizationStatuses = [
-    'In Use',
-    'Available',
+    'In Used',
+    'In Storage',
+    'Disposed',
   ];
 
   static const List<String> standardPhysicalConditions = [
@@ -39,8 +40,19 @@ class AssetQuantityDistribution {
   }
 
   factory AssetQuantityDistribution.fromMap(Map<String, dynamic> map) {
+    final rawStatus = map['status']?.toString() ?? 'In Used';
+    String normStatus = 'In Used';
+    final lower = rawStatus.toLowerCase();
+    if (lower.contains('storage') || lower.contains('available') || lower.contains('reserved')) {
+      normStatus = 'In Storage';
+    } else if (lower.contains('disposed') || lower.contains('decommissioned')) {
+      normStatus = 'Disposed';
+    } else if (lower.contains('use') || lower == 'active') {
+      normStatus = 'In Used';
+    }
+
     return AssetQuantityDistribution(
-      utilizationStatus: map['status']?.toString() ?? 'In Use',
+      utilizationStatus: normStatus,
       physicalCondition: map['condition']?.toString() ?? 'Good',
       quantity: int.tryParse(map['quantity']?.toString() ?? '') ?? 1,
     );
@@ -106,8 +118,10 @@ class AssetAuditLogModel {
     if (!hasQuantityAdjustment) return 'No quantity change';
     final sign =
     quantityChange! > 0 ? '+${quantityChange!}' : '${quantityChange!}';
-    return '$sign units (from $previousQuantity to $newQuantity)';
+    return '$sign units (from $previousQuantity to $nextQty)';
   }
+
+  int? get nextQty => newQuantity;
 
   /// Formatted breakdown summary for audit log tiles
   String get formattedDistributionSummary {

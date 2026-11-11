@@ -33,13 +33,12 @@ class AssetModel {
   final String? rfidTag;
   final String qrCodeToken;
 
-  /// Standardized Asset Condition:
-  /// 'New', 'Excellent', 'Good', 'Fair', 'Poor', 'Damaged', 'Unserviceable', 'Unknown'
+  /// Standardized Physical Condition:
+  /// 'Excellent', 'Good', 'Fair', 'Poor', 'Damaged'
   final String conditionStatus;
 
-  /// Standardized Asset Status:
-  /// 'Available', 'In Use', 'Reserved', 'Under Maintenance', 'For Repair',
-  /// 'Missing', 'Lost', 'Retired', 'Disposed', 'Transferred'
+  /// Standardized Availability:
+  /// 'In Used', 'In Storage', 'Disposed'
   final String operationalStatus;
 
   final bool isArchived;
@@ -62,52 +61,37 @@ class AssetModel {
   // ===========================================================================
 
   static const List<String> standardConditions = [
-    'New',
     'Excellent',
     'Good',
     'Fair',
     'Poor',
     'Damaged',
-    'Unserviceable',
-    'Unknown',
   ];
 
   static const Map<String, String> conditionDescriptions = {
-    'New': 'Newly acquired',
-    'Excellent': 'Almost like new',
-    'Good': 'Functional, minimal wear',
-    'Fair': 'Functional, noticeable wear',
-    'Poor': 'Functional but needs attention',
-    'Damaged': 'Has physical damage',
-    'Unserviceable': 'Cannot be used in its current state',
-    'Unknown': 'Condition has not been assessed',
+    'Excellent': 'Almost like new, no noticeable wear',
+    'Good': 'Functional with minimal normal wear',
+    'Fair': 'Functional with noticeable wear',
+    'Poor': 'Functional but requires attention or repair',
+    'Damaged': 'Physical damage or unserviceable',
   };
 
-  static const List<String> standardStatuses = [
-    'Available',
-    'In Use',
-    'Reserved',
-    'Under Maintenance',
-    'For Repair',
-    'Missing',
-    'Lost',
-    'Retired',
+  /// Canonical Availability options across the entire system
+  static const List<String> standardAvailability = [
+    'In Used',
+    'In Storage',
     'Disposed',
-    'Transferred',
   ];
 
-  static const Map<String, String> statusDescriptions = {
-    'Available': 'Available for parish use',
-    'In Use': 'Currently being used',
-    'Reserved': 'Assigned for a scheduled activity',
-    'Under Maintenance': 'Currently being maintained',
-    'For Repair': 'Awaiting repair',
-    'Missing': 'Cannot be located during inventory',
-    'Lost': 'Confirmed lost',
-    'Retired': 'No longer used but still recorded',
-    'Disposed': 'Officially removed from inventory',
-    'Transferred': 'Moved to another parish location',
+  static const Map<String, String> availabilityDescriptions = {
+    'In Used': 'Currently deployed and actively utilized',
+    'In Storage': 'Kept in storage, sacristy, or reserve stock',
+    'Disposed': 'Officially decommissioned, retired, or disposed',
   };
+
+  /// Maintained for backwards compatibility
+  static const List<String> standardStatuses = standardAvailability;
+  static const Map<String, String> statusDescriptions = availabilityDescriptions;
 
   AssetModel({
     required this.assetId,
@@ -134,7 +118,7 @@ class AssetModel {
     this.rfidTag,
     required this.qrCodeToken,
     this.conditionStatus = 'Good',
-    this.operationalStatus = 'Available',
+    this.operationalStatus = 'In Storage',
     this.isArchived = false,
     this.archivedAt,
     this.archivedBy,
@@ -149,7 +133,7 @@ class AssetModel {
     this.updatedAt,
   }) : totalCost = totalCost ?? (quantity * unitPrice);
 
-  /// Normalizes legacy condition strings into standard canonical names
+  /// Normalizes condition strings into standard canonical names
   static String normalizeCondition(String? raw) {
     if (raw == null || raw.trim().isEmpty) return 'Good';
     final clean = raw.trim();
@@ -159,41 +143,36 @@ class AssetModel {
     }
 
     final upper = clean.toUpperCase();
-    if (upper.contains('NEW')) return 'New';
-    if (upper.contains('EXCELLENT')) return 'Excellent';
+    if (upper.contains('EXCELLENT') || upper.contains('NEW')) return 'Excellent';
     if (upper.contains('GOOD') || upper.contains('VERIFIED')) return 'Good';
     if (upper.contains('FAIR')) return 'Fair';
-    if (upper.contains('POOR')) return 'Poor';
-    if (upper.contains('DAMAGED')) return 'Damaged';
-    if (upper.contains('UNSERVICEABLE') || upper.contains('UNUSABLE')) {
-      return 'Unserviceable';
+    if (upper.contains('POOR') || upper.contains('REPAIR')) return 'Poor';
+    if (upper.contains('DAMAGED') || upper.contains('UNSERVICEABLE') || upper.contains('UNUSABLE')) {
+      return 'Damaged';
     }
-    if (upper.contains('REPAIR')) return 'Poor';
-    return clean;
+    return 'Good';
   }
 
-  /// Normalizes legacy status strings into standard canonical names
+  /// Normalizes status strings into standard canonical Availability names ('In Used', 'In Storage', 'Disposed')
   static String normalizeStatus(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return 'Available';
+    if (raw == null || raw.trim().isEmpty) return 'In Storage';
     final clean = raw.trim();
 
-    for (final st in standardStatuses) {
+    for (final st in standardAvailability) {
       if (st.toLowerCase() == clean.toLowerCase()) return st;
     }
 
     final lower = clean.toLowerCase();
-    if (lower == 'active') return 'Available';
-    if (lower.contains('storage') || lower.contains('reserved')) return 'Reserved';
-    if (lower.contains('maintenance')) return 'Under Maintenance';
-    if (lower.contains('repair')) return 'For Repair';
-    if (lower.contains('missing')) return 'Missing';
-    if (lower.contains('lost')) return 'Lost';
-    if (lower.contains('decommissioned') || lower.contains('retired')) {
-      return 'Retired';
+    if (lower == 'in use' || lower == 'in used' || lower == 'active' || lower == 'deployed' || lower.contains('use')) {
+      return 'In Used';
     }
-    if (lower.contains('disposed')) return 'Disposed';
-    if (lower.contains('transferred')) return 'Transferred';
-    return clean;
+    if (lower.contains('storage') || lower.contains('available') || lower.contains('reserved') || lower.contains('bodega') || lower.contains('sacristy')) {
+      return 'In Storage';
+    }
+    if (lower.contains('disposed') || lower.contains('decommissioned') || lower.contains('retired') || lower.contains('condemned') || lower.contains('lost') || lower.contains('missing')) {
+      return 'Disposed';
+    }
+    return 'In Storage';
   }
 
   /// Human-readable date formatted as YYYY-MM-DD
@@ -250,11 +229,11 @@ class AssetModel {
     return unitPrice >= 10000.0 ? 'Section 1' : 'Section 2';
   }
 
-  /// Whether this item is decommissioned, retired, disposed, or marked archived
+  /// Whether this item is disposed or marked archived
   bool get isEffectivelyArchived {
     if (isArchived) return true;
-    final st = operationalStatus.trim().toLowerCase();
-    return st == 'retired' || st == 'disposed' || st == 'decommissioned';
+    final st = normalizeStatus(operationalStatus);
+    return st == 'Disposed';
   }
 
   /// Display string for location (combining name and acronym)
@@ -277,8 +256,6 @@ class AssetModel {
   Color get conditionColor {
     final normalized = normalizeCondition(conditionStatus);
     switch (normalized) {
-      case 'New':
-        return ParishColors.marianBlue;
       case 'Excellent':
         return const Color(0xFF0D9488); // Teal
       case 'Good':
@@ -288,9 +265,7 @@ class AssetModel {
       case 'Poor':
         return const Color(0xFFEA580C); // Deep Orange
       case 'Damaged':
-      case 'Unserviceable':
         return ParishColors.mercyRed;
-      case 'Unknown':
       default:
         return const Color(0xFF64748B); // Slate Grey
     }
@@ -300,8 +275,6 @@ class AssetModel {
   Color get conditionSurfaceColor {
     final normalized = normalizeCondition(conditionStatus);
     switch (normalized) {
-      case 'New':
-        return ParishColors.marianBlueSurface;
       case 'Excellent':
         return const Color(0xFFCCFBF1);
       case 'Good':
@@ -311,59 +284,36 @@ class AssetModel {
       case 'Poor':
         return const Color(0xFFFFEDD5);
       case 'Damaged':
-      case 'Unserviceable':
-        return ParishColors.mercyRedSurface;
-      case 'Unknown':
       default:
         return const Color(0xFFF1F5F9);
     }
   }
 
-  /// Adaptive status color
+  /// Adaptive status color for Availability
   Color get statusColor {
     final normalized = normalizeStatus(operationalStatus);
     switch (normalized) {
-      case 'Available':
-        return ParishColors.oliveGreen;
-      case 'In Use':
+      case 'In Used':
         return ParishColors.marianBlue;
-      case 'Reserved':
-        return const Color(0xFF7C3AED); // Indigo
-      case 'Under Maintenance':
-      case 'For Repair':
-        return ParishColors.goldAccent;
-      case 'Missing':
-      case 'Lost':
+      case 'In Storage':
+        return ParishColors.oliveGreen;
       case 'Disposed':
-        return ParishColors.mercyRed;
-      case 'Retired':
-      case 'Transferred':
       default:
-        return const Color(0xFF64748B);
+        return ParishColors.mercyRed;
     }
   }
 
-  /// Adaptive status surface color
+  /// Adaptive status surface color for Availability
   Color get statusSurfaceColor {
     final normalized = normalizeStatus(operationalStatus);
     switch (normalized) {
-      case 'Available':
-        return ParishColors.oliveGreenSurface;
-      case 'In Use':
+      case 'In Used':
         return ParishColors.marianBlueSurface;
-      case 'Reserved':
-        return const Color(0xFFEDE9FE);
-      case 'Under Maintenance':
-      case 'For Repair':
-        return ParishColors.goldLight;
-      case 'Missing':
-      case 'Lost':
+      case 'In Storage':
+        return ParishColors.oliveGreenSurface;
       case 'Disposed':
-        return ParishColors.mercyRedSurface;
-      case 'Retired':
-      case 'Transferred':
       default:
-        return const Color(0xFFF1F5F9);
+        return ParishColors.mercyRedSurface;
     }
   }
 
@@ -438,10 +388,9 @@ class AssetModel {
         (rawCost > 0 ? rawCost : (qty * uPrice));
 
     final rawCondition = map['condition_status']?.toString();
-    final rawStatus =
-        map['operational_status']?.toString() ??
-            map['status']?.toString() ??
-            'Available';
+    final rawStatus = map['operational_status']?.toString() ??
+        map['status']?.toString() ??
+        'In Storage';
 
     return AssetModel(
       assetId: map['asset_id']?.toString() ??

@@ -69,10 +69,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     ...AssetModel.standardConditions,
   ];
 
-  // Standardized Canonical Status Options
+  // Standardized Canonical Availability Options
   final List<String> _operationalStatusOptions = [
     'All',
-    ...AssetModel.standardStatuses,
+    ...AssetModel.standardAvailability,
   ];
 
   AssetViewMode _viewMode = AssetViewMode.cards;
@@ -631,10 +631,10 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   ),
                   const SizedBox(height: 14),
 
-                  // 5. Item Operational Status Filter
+                  // 5. Item Availability Filter
                   if (_sectionTabController.index != 3) ...[
                     Text(
-                      'Operational Status',
+                      'Availability',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
@@ -1555,7 +1555,7 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
                   });
                 }),
               if (_selectedOperationalStatus != 'All' && _sectionTabController.index != 3)
-                _buildActiveFilterChip('Status: $_selectedOperationalStatus', () {
+                _buildActiveFilterChip('Availability: $_selectedOperationalStatus', () {
                   setState(() {
                     _selectedOperationalStatus = 'All';
                     _currentPage = 1;
