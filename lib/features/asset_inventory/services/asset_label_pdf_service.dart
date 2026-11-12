@@ -1,3 +1,4 @@
+
 // =============================================================================
 // FILE: lib/features/asset_inventory/services/asset_label_pdf_service.dart
 // =============================================================================
@@ -13,21 +14,27 @@ class AssetLabelPdfService {
 
   static const PdfColor marianBlue = PdfColor.fromInt(0xFF164E87);
   static const PdfColor goldAccent = PdfColor.fromInt(0xFFD49B18);
-  static const PdfColor textDark = PdfColor.fromInt(0xFF1E293B);
-  static const PdfColor textMuted = PdfColor.fromInt(0xFF64748B);
+  static const PdfColor textDark = PdfColor.fromInt(0xFF000000);
+  static const PdfColor textMuted = PdfColor.fromInt(0xFF718096);
   static const PdfColor borderGrey = PdfColor.fromInt(0xFFCBD5E1);
 
-  // Exact fixed card dimensions calibrated to fit exactly 3 columns across standard A4 Portrait
-  static const double stickerWidth = 62.5 * PdfPageFormat.mm;  // ~177.2 pt
-  static const double stickerHeight = 35.0 * PdfPageFormat.mm; // ~99.2 pt
-  static const double colSpacing = 4.0 * PdfPageFormat.mm;     // ~11.3 pt
-  static const double rowSpacing = 4.5 * PdfPageFormat.mm;     // ~12.8 pt
+  // ===========================================================================
+  // STICKER DIMENSIONS
+  // ===========================================================================
+
+  static const double stickerWidth = 62.5 * PdfPageFormat.mm;
+  static const double stickerHeight = 35.0 * PdfPageFormat.mm;
+
+  static const double colSpacing = 4.0 * PdfPageFormat.mm;
+  static const double rowSpacing = 4.5 * PdfPageFormat.mm;
+
   static const double horizontalMargin = 7.0 * PdfPageFormat.mm;
   static const double verticalMargin = 9.0 * PdfPageFormat.mm;
 
-  /// Generates a single printable sticker label (or expanded sub-unit roll if quantified).
-  /// If [expandQuantified] is true and asset has quantity > 1, generates individual
-  /// serialized stickers: `C-FF 2026-0001/01` to `C-FF 2026-0001/NN`.
+  // ===========================================================================
+  // SINGLE ASSET LABEL
+  // ===========================================================================
+
   static Future<Uint8List> generateSingleAssetLabelPdf(
       AssetModel asset, {
         bool expandQuantified = true,
@@ -43,11 +50,13 @@ class AssetLabelPdfService {
     final fontBold = await PdfGoogleFonts.arimoBold();
 
     final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
+      theme: pw.ThemeData.withFont(
+        base: fontRegular,
+        bold: fontBold,
+      ),
     );
 
     if (specificUnitIndex != null && specificUnitIndex > 0) {
-      // Print specific single sub-unit (e.g. reprint #4)
       pdf.addPage(
         pw.Page(
           pageFormat: pageFormat,
@@ -65,7 +74,6 @@ class AssetLabelPdfService {
         ),
       );
     } else if (expandQuantified && asset.quantity > 1) {
-      // Print roll of individual serialized labels: /01, /02, ... /NN
       for (int unit = 1; unit <= asset.quantity; unit++) {
         pdf.addPage(
           pw.Page(
@@ -85,7 +93,6 @@ class AssetLabelPdfService {
         );
       }
     } else {
-      // Master summary label
       pdf.addPage(
         pw.Page(
           pageFormat: pageFormat,
@@ -105,24 +112,29 @@ class AssetLabelPdfService {
     return pdf.save();
   }
 
-  /// Generates batch asset labels on standard Portrait A4 paper (210mm x 297mm).
-  /// Strictly lays out exactly 3 stickers per line across 7 rows (21 labels per page).
-  /// When [expandQuantified] is true, items with quantity > 1 generate individual serialized stickers:
-  /// e.g. `C-FF 2026-0001/01` through `C-FF 2026-0001/20`.
+  // ===========================================================================
+  // BATCH ASSET LABELS
+  // A4 PORTRAIT: 3 COLUMNS x 7 ROWS = 21 LABELS PER PAGE
+  // ===========================================================================
+
   static Future<Uint8List> generateBatchAssetLabelsPdf(
       List<AssetModel> assets, {
         bool expandQuantified = true,
       }) async {
-    const pageFormat = PdfPageFormat.a4; // Standard Portrait A4 (210 x 297 mm)
+    const pageFormat = PdfPageFormat.a4;
+
     final fontRegular = await PdfGoogleFonts.arimoRegular();
     final fontBold = await PdfGoogleFonts.arimoBold();
 
     final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
+      theme: pw.ThemeData.withFont(
+        base: fontRegular,
+        bold: fontBold,
+      ),
     );
 
-    // Flatten assets into individual sticker descriptors
     final List<_StickerDescriptor> stickerList = [];
+
     for (final asset in assets) {
       if (expandQuantified && asset.quantity > 1) {
         for (int unit = 1; unit <= asset.quantity; unit++) {
@@ -145,7 +157,8 @@ class AssetLabelPdfService {
       }
     }
 
-    const int labelsPerPage = 21; // Exactly 3 columns x 7 rows
+    const int labelsPerPage = 21;
+
     for (int i = 0; i < stickerList.length; i += labelsPerPage) {
       final pageStickers = stickerList.sublist(
         i,
@@ -154,13 +167,15 @@ class AssetLabelPdfService {
             : i + labelsPerPage,
       );
 
-      // Group into lines of exactly 3 stickers
       final List<List<_StickerDescriptor>> rowsOfThree = [];
+
       for (int r = 0; r < pageStickers.length; r += 3) {
         rowsOfThree.add(
           pageStickers.sublist(
             r,
-            (r + 3 > pageStickers.length) ? pageStickers.length : r + 3,
+            (r + 3 > pageStickers.length)
+                ? pageStickers.length
+                : r + 3,
           ),
         );
       }
@@ -177,18 +192,26 @@ class AssetLabelPdfService {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 for (int rIdx = 0; rIdx < rowsOfThree.length; rIdx++) ...[
-                  if (rIdx > 0) pw.SizedBox(height: rowSpacing),
+                  if (rIdx > 0)
+                    pw.SizedBox(height: rowSpacing),
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.start,
                     children: [
-                      for (int cIdx = 0; cIdx < rowsOfThree[rIdx].length; cIdx++) ...[
-                        if (cIdx > 0) pw.SizedBox(width: colSpacing),
+                      for (
+                      int cIdx = 0;
+                      cIdx < rowsOfThree[rIdx].length;
+                      cIdx++
+                      ) ...[
+                        if (cIdx > 0)
+                          pw.SizedBox(width: colSpacing),
                         _buildSingleAssetSticker(
                           rowsOfThree[rIdx][cIdx].asset,
                           fontRegular,
                           fontBold,
-                          subUnitIndex: rowsOfThree[rIdx][cIdx].subUnitIndex,
-                          totalUnits: rowsOfThree[rIdx][cIdx].totalUnits,
+                          subUnitIndex:
+                          rowsOfThree[rIdx][cIdx].subUnitIndex,
+                          totalUnits:
+                          rowsOfThree[rIdx][cIdx].totalUnits,
                         ),
                       ],
                     ],
@@ -204,6 +227,10 @@ class AssetLabelPdfService {
     return pdf.save();
   }
 
+  // ===========================================================================
+  // PRINTING METHODS
+  // ===========================================================================
+
   static Future<void> printSingleAssetLabel(
       AssetModel asset, {
         bool expandQuantified = true,
@@ -214,6 +241,7 @@ class AssetLabelPdfService {
       expandQuantified: expandQuantified,
       specificUnitIndex: specificUnitIndex,
     );
+
     await Printing.layoutPdf(
       onLayout: (format) async => pdfBytes,
       name: 'AssetLabel_${asset.controlNumber}',
@@ -228,6 +256,7 @@ class AssetLabelPdfService {
       assets,
       expandQuantified: expandQuantified,
     );
+
     await Printing.layoutPdf(
       onLayout: (format) async => pdfBytes,
       name: 'ParishAssets_Labels_${DateTime.now().millisecondsSinceEpoch}',
@@ -235,7 +264,32 @@ class AssetLabelPdfService {
   }
 
   // ===========================================================================
-  // Reference Sticker Layout (Calibrated 62.5mm width for Portrait 3-Column Fit)
+  // DATE FORMATTING
+  // ===========================================================================
+
+  static String _formatPrettyDate(DateTime? date) {
+    if (date == null) return '';
+
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  // ===========================================================================
+  // ASSET STICKER DESIGN
   // ===========================================================================
 
   static pw.Widget _buildSingleAssetSticker(
@@ -245,243 +299,234 @@ class AssetLabelPdfService {
         int? subUnitIndex,
         int? totalUnits,
       }) {
-    final bool isSerializedUnit = subUnitIndex != null &&
-        totalUnits != null &&
-        totalUnits > 1;
+    final bool isSerializedUnit =
+        subUnitIndex != null &&
+            totalUnits != null &&
+            totalUnits > 1;
 
-    final String subSuffix =
-    isSerializedUnit ? '/${subUnitIndex.toString().padLeft(2, '0')}' : '';
+    // Display-only suffix for quantified assets.
+    // Example: C-FF-2026-001#01
+    final String subSuffix = isSerializedUnit
+        ? ' #${subUnitIndex.toString().padLeft(2, '0')}'
+        : '';
 
-    final String displayControlNo = '${asset.controlNumber}$subSuffix';
+    final String displayControlNo =
+        '${asset.controlNumber}$subSuffix';
 
-    // QR payload embeds exact serialized sub-unit so scanner verifies specific unit directly
-    final String baseQr = asset.qrCodeToken.isNotEmpty
+    // IMPORTANT:
+    // QR DATA REMAINS COMPLETELY UNCHANGED.
+    // Do not append the quantified unit suffix to the QR payload.
+    final String qrData = asset.qrCodeToken.isNotEmpty
         ? asset.qrCodeToken
         : asset.controlNumber;
-    final String qrData = '$baseQr$subSuffix';
 
     final locationText =
-    asset.locationName != null && asset.locationName!.isNotEmpty
+    asset.locationName != null &&
+        asset.locationName!.isNotEmpty
         ? asset.locationName!
         : asset.locationAcronym;
 
     final classificationText =
-    asset.classificationName != null && asset.classificationName!.isNotEmpty
+    asset.classificationName != null &&
+        asset.classificationName!.isNotEmpty
         ? asset.classificationName!
         : asset.classificationAcronym;
+
+    final formattedAcqDate =
+    asset.dateOfAcquisition != null
+        ? _formatPrettyDate(asset.dateOfAcquisition)
+        : '${asset.acquisitionYear}';
+
+    // =========================================================================
+    // MAIN STICKER CONTAINER
+    // =========================================================================
 
     return pw.Container(
       width: stickerWidth,
       height: stickerHeight,
       decoration: pw.BoxDecoration(
         color: PdfColors.white,
-        borderRadius: pw.BorderRadius.circular(5.5),
-        border: pw.Border.all(color: marianBlue, width: 1.1),
+        borderRadius: pw.BorderRadius.circular(6.0),
+        border: pw.Border.all(
+          color: marianBlue,
+          width: 1.2,
+        ),
       ),
-      padding: const pw.EdgeInsets.symmetric(horizontal: 4.5, vertical: 3.5),
+      padding: const pw.EdgeInsets.symmetric(
+        horizontal: 4.5,
+        vertical: 3.5,
+      ),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          // Left: Scannable QR Code Box
-          pw.Column(
-            mainAxisAlignment: pw.MainAxisAlignment.center,
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.Container(
-                width: 42,
-                height: 42,
-                padding: const pw.EdgeInsets.all(1.5),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.white,
-                  border: pw.Border.all(color: borderGrey, width: 0.6),
-                  borderRadius: pw.BorderRadius.circular(3),
-                ),
-                child: pw.BarcodeWidget(
-                  barcode: pw.Barcode.qrCode(),
-                  data: qrData,
-                ),
-              ),
-              pw.SizedBox(height: 1.5),
-              pw.Text(
-                'DSP-SJP2',
-                style: pw.TextStyle(
-                  font: fontBold,
-                  fontSize: 5.2,
-                  fontWeight: pw.FontWeight.bold,
-                  color: marianBlue,
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(width: 4.5),
+          // ===================================================================
+          // LEFT SECTION: QR CODE AND PARISH IDENTIFIER
+          // ===================================================================
 
-          // Right: Parish Details & Control Coordinates
+          pw.SizedBox(
+            width: 42,
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                pw.Container(
+                  width: 42,
+                  height: 42,
+                  padding: const pw.EdgeInsets.all(1.5),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.white,
+                    border: pw.Border.all(
+                      color: borderGrey,
+                      width: 0.6,
+                    ),
+                    borderRadius: pw.BorderRadius.circular(3),
+                  ),
+                  child: pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: qrData,
+                    drawText: false,
+                  ),
+                ),
+                pw.SizedBox(height: 1.5),
+                pw.Text(
+                  'DSP-SJP2',
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 5.8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: marianBlue,
+                  ),
+                  maxLines: 1,
+                ),
+              ],
+            ),
+          ),
+
+          pw.SizedBox(width: 6.0),
+
+          // ===================================================================
+          // RIGHT SECTION: ASSET INFORMATION
+          // ===================================================================
+
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                // Top Header Row: Parish Title, Section Badge & Unit Suffix Tag
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'ST. JOHN PAUL II PARISH',
-                            style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 5.8,
-                              fontWeight: pw.FontWeight.bold,
-                              color: marianBlue,
-                            ),
-                            maxLines: 1,
-                          ),
-                          pw.Text(
-                            'Diocese of San Pablo • Property Tag',
-                            style: pw.TextStyle(
-                              font: fontRegular,
-                              fontSize: 4.4,
-                              color: textMuted,
-                            ),
-                            maxLines: 1,
-                          ),
-                        ],
+                // SECTION BADGE
+
+                pw.Align(
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 4.5,
+                      vertical: 1.2,
+                    ),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromInt(0xFFE7F1FC),
+                      borderRadius: pw.BorderRadius.circular(3.5),
+                    ),
+                    child: pw.Text(
+                      asset.inventorySectionCode,
+                      style: pw.TextStyle(
+                        font: fontBold,
+                        fontSize: 5.2,
+                        fontWeight: pw.FontWeight.bold,
+                        color: marianBlue,
                       ),
                     ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Container(
-                          padding: const pw.EdgeInsets.symmetric(
-                            horizontal: 3.0,
-                            vertical: 0.8,
-                          ),
-                          decoration: pw.BoxDecoration(
-                            color: asset.unitPrice >= 10000.0
-                                ? PdfColors.amber100
-                                : PdfColors.blue50,
-                            borderRadius: pw.BorderRadius.circular(2.5),
-                          ),
-                          child: pw.Text(
-                            asset.inventorySectionCode,
-                            style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 4.2,
-                              fontWeight: pw.FontWeight.bold,
-                              color: asset.unitPrice >= 10000.0
-                                  ? goldAccent
-                                  : marianBlue,
-                            ),
-                          ),
-                        ),
-                        if (isSerializedUnit) ...[
-                          pw.SizedBox(height: 1),
-                          pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(
-                              horizontal: 2.2,
-                              vertical: 0.5,
-                            ),
-                            decoration: pw.BoxDecoration(
-                              color: PdfColors.blue100,
-                              borderRadius: pw.BorderRadius.circular(2),
-                            ),
-                            child: pw.Text(
-                              'Unit $subUnitIndex of $totalUnits',
-                              style: pw.TextStyle(
-                                font: fontBold,
-                                fontSize: 4.2,
-                                color: marianBlue,
-                              ),
-                            ),
-                          ),
-                        ] else if (asset.quantity > 1) ...[
-                          pw.SizedBox(height: 1),
-                          pw.Text(
-                            'Total Qty: ${asset.quantity}',
-                            style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 4.8,
-                              color: marianBlue,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
 
-                // Gold Accent Separator Line
+                // PARISH HEADER
+
+                pw.SizedBox(
+                  width: double.infinity,
+                  child: pw.Text(
+                    'Saint John Paul II Parish - Asset Tag',
+                    style: pw.TextStyle(
+                      font: fontBold,
+                      fontSize: 7.2,
+                      fontWeight: pw.FontWeight.bold,
+                      color: marianBlue,
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+
+                // GOLD SEPARATOR
+
                 pw.Container(
-                  margin: const pw.EdgeInsets.symmetric(vertical: 1.0),
-                  height: 0.8,
+                  width: double.infinity,
+                  height: 1.0,
                   color: goldAccent,
                 ),
 
-                // Serialized Control Number
+                // CONTROL NUMBER
+
+                pw.Center(
+                  child: pw.Text(
+                    displayControlNo,
+                    style: pw.TextStyle(
+                      font: fontBold,
+                      fontSize: 12.0,
+                      fontWeight: pw.FontWeight.bold,
+                      color: textDark,
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+
+                // ASSET NAME
+
+                pw.Center(
+                  child: pw.Text(
+                    asset.itemName,
+                    style: pw.TextStyle(
+                      font: fontBold,
+                      fontSize: 9.8,
+                      fontWeight: pw.FontWeight.bold,
+                      color: marianBlue,
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+
+                // DATE ACQUIRED
+
                 pw.Text(
-                  displayControlNo,
+                  'Date Acquired: $formattedAcqDate',
                   style: pw.TextStyle(
                     font: fontBold,
-                    fontSize: isSerializedUnit ? 8.0 : 8.5,
+                    fontSize: 6.8,
                     fontWeight: pw.FontWeight.bold,
                     color: textDark,
                   ),
                   maxLines: 1,
                 ),
 
-                // Item Name
-                pw.Text(
-                  asset.itemName,
-                  style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 6.0,
-                    fontWeight: pw.FontWeight.bold,
-                    color: marianBlue,
-                  ),
-                  maxLines: 1,
-                ),
+                // LOCATION AND CLASSIFICATION
 
-                // Bottom Metadata Row: Location, Classification & Acq Date
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Location: $locationText',
-                            style: pw.TextStyle(
-                              font: fontRegular,
-                              fontSize: 4.2,
-                              color: textMuted,
-                            ),
-                            maxLines: 1,
-                          ),
-                          pw.Text(
-                            'Classification: $classificationText',
-                            style: pw.TextStyle(
-                              font: fontRegular,
-                              fontSize: 4.2,
-                              color: textMuted,
-                            ),
-                            maxLines: 1,
-                          ),
-                        ],
+                    pw.Text(
+                      'Location: $locationText',
+                      style: pw.TextStyle(
+                        font: fontRegular,
+                        fontSize: 6.2,
+                        color: textMuted,
                       ),
+                      maxLines: 1,
                     ),
                     pw.Text(
-                      'Acq: ${asset.formattedAcquisitionDate}',
+                      'Classification: $classificationText',
                       style: pw.TextStyle(
-                        font: fontBold,
-                        fontSize: 4.6,
-                        color: textDark,
+                        font: fontRegular,
+                        fontSize: 6.2,
+                        color: textMuted,
                       ),
+                      maxLines: 1,
                     ),
                   ],
                 ),
@@ -493,6 +538,10 @@ class AssetLabelPdfService {
     );
   }
 }
+
+// =============================================================================
+// STICKER DESCRIPTOR
+// =============================================================================
 
 class _StickerDescriptor {
   final AssetModel asset;
