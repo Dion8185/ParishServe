@@ -1,3 +1,4 @@
+
 // =============================================================================
 // FILE: lib/features/asset_inventory/presentation/dialogs/asset_report_filter_dialog.dart
 // =============================================================================
@@ -33,16 +34,29 @@ class _AssetReportFilterDialog extends StatefulWidget {
 
 class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   AssetReportFormat _selectedFormat = AssetReportFormat.photographicCards;
-  String _selectedSection = 'All'; // 'All', 'Section 1', 'Section 2'
-  String _dateScope = 'All Dates'; // 'All Dates', 'Custom Range'
+  String _selectedSection = 'All';
+  String _dateScope = 'All Dates';
 
   DateTimeRange? _selectedDateRange;
-  String _dateFieldToFilter =
-      'Acquisition Date'; // 'Acquisition Date' or 'Registration Date'
+  String _dateFieldToFilter = 'Acquisition Date';
 
   bool _includeArchived = false;
   bool _isGenerating = false;
-  String _activeOperation = ''; // 'printing', 'previewing', 'downloading'
+  String _activeOperation = '';
+
+  // PROGRESS MONITOR
+  String _progressMessage = 'Preparing your report...';
+  AssetReportProgress? _reportProgress;
+
+  // Individual item inclusion / exclusion state
+  final Set<String> _selectedAssetIds = {};
+  final TextEditingController _itemSearchController = TextEditingController();
+  String _itemSearchQuery = '';
+  int _itemPickerTab = 0;
+
+  // PDF Document Cache
+  Uint8List? _cachedPdfBytes;
+  String? _cachedPdfKey;
 
   final List<String> _sectionOptions = [
     'All',
@@ -50,28 +64,52 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
     'Section 2 (< ₱10,000.00)',
   ];
 
-  List<AssetModel> get _filteredAssets {
+  @override
+  void initState() {
+    super.initState();
+    _syncSelectedIdsWithScope();
+  }
+
+  @override
+  void dispose() {
+    _itemSearchController.dispose();
+    super.dispose();
+  }
+
+  void _invalidatePdfCache() {
+    _cachedPdfBytes = null;
+    _cachedPdfKey = null;
+  }
+
+  /// Synchronizes selected asset IDs with the active section/date scope.
+  void _syncSelectedIdsWithScope() {
+    final scopeAssets = _scopeFilteredAssets;
+    _selectedAssetIds.clear();
+    _selectedAssetIds.addAll(scopeAssets.map((a) => a.assetId));
+    _invalidatePdfCache();
+  }
+
+  /// Candidates matching the Section, Date Range, and Archive toggles.
+  List<AssetModel> get _scopeFilteredAssets {
     var list = widget.allAssets;
 
-    // 1. Archive filter
     if (!_includeArchived) {
       list = list.where((a) => !a.isEffectivelyArchived).toList();
     }
 
-    // 2. Section filter
     if (_selectedSection.contains('Section 1')) {
       list = list.where((a) => a.unitPrice >= 10000.0).toList();
     } else if (_selectedSection.contains('Section 2')) {
       list = list.where((a) => a.unitPrice < 10000.0).toList();
     }
 
-    // 3. Date range filter with null-safe handling for acquisition dates
     if (_dateScope == 'Custom Range' && _selectedDateRange != null) {
       final start = DateTime(
         _selectedDateRange!.start.year,
         _selectedDateRange!.start.month,
         _selectedDateRange!.start.day,
       );
+
       final end = DateTime(
         _selectedDateRange!.end.year,
         _selectedDateRange!.end.month,
@@ -85,28 +123,277 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
         if (_dateFieldToFilter == 'Acquisition Date') {
           if (a.dateOfAcquisition != null) {
             final targetDate = a.dateOfAcquisition!;
-            return targetDate.isAfter(start.subtract(const Duration(seconds: 1))) &&
+            return targetDate.isAfter(
+                start.subtract(const Duration(seconds: 1))) &&
                 targetDate.isBefore(end.add(const Duration(seconds: 1)));
           } else {
-            // When only acquisition year is known, check if it falls within the year span
-            return a.acquisitionYear >= start.year && a.acquisitionYear <= end.year;
+            return a.acquisitionYear >= start.year &&
+                a.acquisitionYear <= end.year;
           }
         } else {
           final targetDate = a.registrationDate;
-          return targetDate.isAfter(start.subtract(const Duration(seconds: 1))) &&
+          return targetDate.isAfter(
+              start.subtract(const Duration(seconds: 1))) &&
               targetDate.isBefore(end.add(const Duration(seconds: 1)));
         }
       }).toList();
     }
 
-    // Sort by control number
-    list.sort((a, b) => a.controlNumber.compareTo(b.controlNumber));
     return list;
   }
 
-  double get _totalValuation {
-    return _filteredAssets.fold<double>(0.0, (sum, a) => sum + a.totalCost);
+  /// All eligible assets that can be browsed / searched.
+  List<AssetModel> get _allEligibleAssets {
+    var list = widget.allAssets;
+
+    if (!_includeArchived) {
+      list = list.where((a) => !a.isEffectivelyArchived).toList();
+    }
+
+    return list;
   }
+
+  /// The final list of assets explicitly selected by the user.
+  List<AssetModel> get _selectedAssetsForReport {
+    return widget.allAssets
+        .where((a) => _selectedAssetIds.contains(a.assetId))
+        .toList();
+  }
+
+  /// Filtered items displayed in the item picker.
+  List<AssetModel> get _displayedPickerAssets {
+    List<AssetModel> source;
+
+    if (_itemPickerTab == 0) {
+      source = _scopeFilteredAssets;
+    } else if (_itemPickerTab == 1) {
+      source = _allEligibleAssets;
+    } else {
+      source = _selectedAssetsForReport;
+    }
+
+    if (_itemSearchQuery.trim().isEmpty) return source;
+
+    final q = _itemSearchQuery.toLowerCase().trim();
+
+    return source.where((a) {
+      return a.controlNumber.toLowerCase().contains(q) ||
+          a.itemName.toLowerCase().contains(q) ||
+          a.displayLocation.toLowerCase().contains(q) ||
+          a.displayClassification.toLowerCase().contains(q) ||
+          (a.model ?? '').toLowerCase().contains(q) ||
+          (a.others ?? '').toLowerCase().contains(q);
+    }).toList();
+  }
+
+  double get _totalValuation {
+    return _selectedAssetsForReport.fold<double>(
+      0.0,
+          (sum, a) => sum + a.totalCost,
+    );
+  }
+
+  // ===========================================================================
+  // PROGRESS MONITOR
+  // ===========================================================================
+
+  /// Converts the current service-stage progress into a continuous report
+  /// progress value. The service reports progress separately for each stage,
+  /// so the ranges below prevent the displayed percentage from resetting
+  /// whenever the report moves to another stage.
+  double _overallProgress(AssetReportProgress progress) {
+    final stageProgress = progress.total <= 0
+        ? 0.0
+        : (progress.completed / progress.total).clamp(0.0, 1.0).toDouble();
+
+    switch (progress.stage) {
+      case AssetReportProgressStage.preparing:
+        return 0.05 * stageProgress;
+      case AssetReportProgressStage.downloadingImages:
+        return 0.05 + (0.20 * stageProgress);
+      case AssetReportProgressStage.optimizingImages:
+        return 0.25 + (0.25 * stageProgress);
+      case AssetReportProgressStage.generatingPdf:
+        return 0.50 + (0.45 * stageProgress);
+      case AssetReportProgressStage.completed:
+        return 1.0;
+    }
+  }
+
+  String _progressDetail(AssetReportProgress progress) {
+    if (progress.stage == AssetReportProgressStage.generatingPdf &&
+        progress.totalPages > 0) {
+      return 'Page ${progress.currentPage} of ${progress.totalPages}';
+    }
+
+    if (progress.total > 0) {
+      return '${progress.completed} of ${progress.total} completed';
+    }
+
+    return '${_selectedAssetsForReport.length} asset(s) included in this report';
+  }
+
+  void _handleReportProgress(AssetReportProgress progress) {
+    if (!mounted) return;
+
+    setState(() {
+      _reportProgress = progress;
+      _progressMessage = progress.stageLabel;
+    });
+  }
+
+  /// Displays the current PDF generation stage and its reported progress.
+  Widget _buildProgressMonitor(bool isMobile) {
+    final operationIcon = _activeOperation == 'printing'
+        ? Icons.print_outlined
+        : _activeOperation == 'previewing'
+        ? Icons.visibility_outlined
+        : Icons.download_outlined;
+
+    final operationColor = _activeOperation == 'downloading'
+        ? ParishColors.oliveGreen
+        : ParishColors.marianBlue;
+
+    final selectedCount = _selectedAssetsForReport.length;
+    final progress = _reportProgress;
+    final overallProgress =
+    progress == null ? null : _overallProgress(progress);
+    final percentage = overallProgress == null
+        ? null
+        : (overallProgress * 100).round();
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isMobile ? 11 : 14),
+      decoration: BoxDecoration(
+        color: ParishColors.marianBlueSurface.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ParishColors.marianBlue.withOpacity(0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                operationIcon,
+                color: operationColor,
+                size: 19,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _progressMessage,
+                      style: TextStyle(
+                        fontSize: isMobile ? 12 : 13,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      progress == null
+                          ? '$selectedCount asset(s) included in this report'
+                          : _progressDetail(progress),
+                      style: TextStyle(
+                        fontSize: isMobile ? 10 : 11,
+                        color: ParishColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (percentage != null)
+                Text(
+                  '$percentage%',
+                  style: TextStyle(
+                    fontSize: isMobile ? 12 : 13,
+                    fontWeight: FontWeight.bold,
+                    color: operationColor,
+                  ),
+                )
+              else
+                SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: operationColor,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: LinearProgressIndicator(
+              value: overallProgress,
+              minHeight: 6,
+              backgroundColor: Colors.white,
+              color: operationColor,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            progress?.stage == AssetReportProgressStage.generatingPdf &&
+                progress!.currentPage >= progress.totalPages &&
+                progress.totalPages > 0
+                ? 'Finalizing the PDF document. Please keep this window open.'
+                : 'Please wait while the document is being prepared. '
+                'Avoid closing this window.',
+            style: TextStyle(
+              fontSize: isMobile ? 9.5 : 10.5,
+              color: ParishColors.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startProgress(String operation) {
+    setState(() {
+      _isGenerating = true;
+      _activeOperation = operation;
+      _reportProgress = null;
+
+      switch (operation) {
+        case 'printing':
+          _progressMessage = 'Preparing report for printing...';
+          break;
+        case 'previewing':
+          _progressMessage = 'Generating PDF preview...';
+          break;
+        case 'downloading':
+          _progressMessage = 'Preparing PDF for download...';
+          break;
+        default:
+          _progressMessage = 'Preparing your report...';
+      }
+    });
+  }
+
+  void _finishProgress() {
+    if (!mounted) return;
+
+    setState(() {
+      _isGenerating = false;
+      _activeOperation = '';
+      _progressMessage = '';
+      _reportProgress = null;
+    });
+  }
+
+  // ===========================================================================
+  // Date Range
+  // ===========================================================================
 
   Future<void> _pickCustomDateRange() async {
     final picked = await showDateRangePicker(
@@ -136,6 +423,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       setState(() {
         _selectedDateRange = picked;
         _dateScope = 'Custom Range';
+        _syncSelectedIdsWithScope();
       });
     }
   }
@@ -144,10 +432,13 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
     if (_dateScope == 'Custom Range' && _selectedDateRange != null) {
       final startStr =
           '${_selectedDateRange!.start.year}-${_selectedDateRange!.start.month.toString().padLeft(2, '0')}-${_selectedDateRange!.start.day.toString().padLeft(2, '0')}';
+
       final endStr =
           '${_selectedDateRange!.end.year}-${_selectedDateRange!.end.month.toString().padLeft(2, '0')}-${_selectedDateRange!.end.day.toString().padLeft(2, '0')}';
+
       return '$startStr to $endStr ($_dateFieldToFilter)';
     }
+
     return 'All Registered Dates';
   }
 
@@ -159,31 +450,61 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
 
   String _generateFileName() {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
+
     return _selectedFormat == AssetReportFormat.photographicCards
         ? 'Photographic_Inventory_$timestamp.pdf'
         : 'Inventory_Listing_$timestamp.pdf';
   }
 
+  String _computeCacheKey(List<AssetModel> targets) {
+    final sortedIds = targets.map((a) => a.assetId).toList()..sort();
+
+    return '${_selectedFormat.name}|$_selectedSection|$_dateScope|'
+        '${_selectedDateRange?.start.millisecondsSinceEpoch}|'
+        '${_selectedDateRange?.end.millisecondsSinceEpoch}|'
+        '$_dateFieldToFilter|$_includeArchived|${targets.length}|'
+        '${sortedIds.join(",")}';
+  }
+
   Future<Uint8List?> _buildPdfBytes() async {
-    final targets = _filteredAssets;
+    final targets = _selectedAssetsForReport;
+
     if (targets.isEmpty) return null;
+
+    final currentKey = _computeCacheKey(targets);
+
+    if (_cachedPdfBytes != null && _cachedPdfKey == currentKey) {
+      return _cachedPdfBytes;
+    }
+
+    // Yield control so progress indicators can paint immediately.
+    await Future.delayed(const Duration(milliseconds: 16));
 
     final dateRangeLabel = _buildDateRangeLabel();
     final sectionLabel = _buildSectionLabel();
 
+    Uint8List result;
+
     if (_selectedFormat == AssetReportFormat.photographicCards) {
-      return await AssetReportPdfService.generatePhotographicReportPdf(
+      result = await AssetReportPdfService.generatePhotographicReportPdf(
         targets,
         dateRangeLabel: dateRangeLabel,
         sectionLabel: sectionLabel,
+        onProgress: _handleReportProgress,
       );
     } else {
-      return await AssetReportPdfService.generateTableReportPdf(
+      result = await AssetReportPdfService.generateTableReportPdf(
         targets,
         dateRangeLabel: dateRangeLabel,
         sectionLabel: sectionLabel,
+        onProgress: _handleReportProgress,
       );
     }
+
+    _cachedPdfBytes = result;
+    _cachedPdfKey = currentKey;
+
+    return result;
   }
 
   // ===========================================================================
@@ -191,64 +512,63 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   // ===========================================================================
 
   Future<void> _handlePrintReport() async {
-    final targets = _filteredAssets;
+    final targets = _selectedAssetsForReport;
+
     if (targets.isEmpty) {
       _showEmptySnackBar();
       return;
     }
 
-    setState(() {
-      _isGenerating = true;
-      _activeOperation = 'printing';
-    });
+    _startProgress('printing');
 
     try {
-      final dateRangeLabel = _buildDateRangeLabel();
-      final sectionLabel = _buildSectionLabel();
-
-      if (_selectedFormat == AssetReportFormat.photographicCards) {
-        await AssetReportPdfService.printPhotographicReport(
-          targets,
-          dateRangeLabel: dateRangeLabel,
-          sectionLabel: sectionLabel,
-        );
-      } else {
-        await AssetReportPdfService.printTableReport(
-          targets,
-          dateRangeLabel: dateRangeLabel,
-          sectionLabel: sectionLabel,
-        );
-      }
+      final pdfBytes = await _buildPdfBytes();
 
       if (!mounted) return;
+
+      _finishProgress();
+
+      if (pdfBytes == null) {
+        _showEmptySnackBar();
+        return;
+      }
+
+      await Printing.layoutPdf(
+        onLayout: (format) async => pdfBytes,
+        name: _generateFileName(),
+      );
+
+      if (!mounted) return;
+
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isGenerating = false);
+
+      _finishProgress();
       _showErrorSnackBar('Report printing failed: $e');
     }
   }
 
   // ===========================================================================
-  // 2. Interactive In-App PDF Preview Action (Fast, Clean, No Toolbar)
+  // 2. Interactive In-App PDF Preview
   // ===========================================================================
 
   Future<void> _handlePreviewPdf() async {
-    final targets = _filteredAssets;
+    final targets = _selectedAssetsForReport;
+
     if (targets.isEmpty) {
       _showEmptySnackBar();
       return;
     }
 
-    setState(() {
-      _isGenerating = true;
-      _activeOperation = 'previewing';
-    });
+    _startProgress('previewing');
 
     try {
       final pdfBytes = await _buildPdfBytes();
+
       if (!mounted) return;
-      setState(() => _isGenerating = false);
+
+      _finishProgress();
 
       if (pdfBytes == null) {
         _showEmptySnackBar();
@@ -256,7 +576,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       }
 
       final fileName = _generateFileName();
-      final previewTitle = _selectedFormat == AssetReportFormat.photographicCards
+
+      final previewTitle =
+      _selectedFormat == AssetReportFormat.photographicCards
           ? 'Photographic Evidence Preview'
           : 'Property & Inventory Listing Preview';
 
@@ -266,8 +588,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
           final isScreenMobile = MediaQuery.of(ctx).size.width < 650;
 
           return Dialog(
-            shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             insetPadding: EdgeInsets.symmetric(
               horizontal: isScreenMobile ? 8 : 24,
               vertical: isScreenMobile ? 12 : 24,
@@ -297,7 +620,33 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                     ),
                     actions: [
                       IconButton(
-                        icon: Icon(Icons.close, color: ParishColors.textDark),
+                        icon: const Icon(
+                          Icons.print,
+                          color: ParishColors.marianBlue,
+                        ),
+                        tooltip: 'Print Now',
+                        onPressed: () => Printing.layoutPdf(
+                          onLayout: (format) async => pdfBytes,
+                          name: fileName,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.download,
+                          color: ParishColors.oliveGreen,
+                        ),
+                        tooltip: 'Download PDF',
+                        onPressed: () => Printing.sharePdf(
+                          bytes: pdfBytes,
+                          filename: fileName,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          color: ParishColors.textDark,
+                        ),
                         onPressed: () => Navigator.pop(ctx),
                       ),
                       const SizedBox(width: 8),
@@ -311,6 +660,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                     canDebug: false,
                     dynamicLayout: false,
                     enableScrollToPage: true,
+                    dpi: 140,
+                    maxPageWidth: 720,
                     pdfFileName: fileName,
                     loadingWidget: const Center(
                       child: CircularProgressIndicator(),
@@ -324,7 +675,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isGenerating = false);
+
+      _finishProgress();
       _showErrorSnackBar('Preview generation failed: $e');
     }
   }
@@ -334,21 +686,21 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   // ===========================================================================
 
   Future<void> _handleDownloadPdf() async {
-    final targets = _filteredAssets;
+    final targets = _selectedAssetsForReport;
+
     if (targets.isEmpty) {
       _showEmptySnackBar();
       return;
     }
 
-    setState(() {
-      _isGenerating = true;
-      _activeOperation = 'downloading';
-    });
+    _startProgress('downloading');
 
     try {
       final pdfBytes = await _buildPdfBytes();
+
       if (!mounted) return;
-      setState(() => _isGenerating = false);
+
+      _finishProgress();
 
       if (pdfBytes == null) {
         _showEmptySnackBar();
@@ -356,12 +708,14 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       }
 
       final fileName = _generateFileName();
+
       await Printing.sharePdf(
         bytes: pdfBytes,
         filename: fileName,
       );
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Document ready for download: $fileName'),
@@ -370,7 +724,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isGenerating = false);
+
+      _finishProgress();
       _showErrorSnackBar('Download failed: $e');
     }
   }
@@ -378,8 +733,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   void _showEmptySnackBar() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content:
-        Text('No assets match the selected criteria to generate a report.'),
+        content: Text(
+          'Please select at least 1 item to include in the report.',
+        ),
         backgroundColor: ParishColors.goldAccent,
       ),
     );
@@ -394,28 +750,71 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
     );
   }
 
+  // ===========================================================================
+  // Selection Toggling Helpers
+  // ===========================================================================
+
+  void _toggleAssetSelection(String assetId) {
+    setState(() {
+      if (_selectedAssetIds.contains(assetId)) {
+        _selectedAssetIds.remove(assetId);
+      } else {
+        _selectedAssetIds.add(assetId);
+      }
+
+      _invalidatePdfCache();
+    });
+  }
+
+  void _selectAllDisplayed() {
+    setState(() {
+      for (final a in _displayedPickerAssets) {
+        _selectedAssetIds.add(a.assetId);
+      }
+
+      _invalidatePdfCache();
+    });
+  }
+
+  void _deselectAllDisplayed() {
+    setState(() {
+      for (final a in _displayedPickerAssets) {
+        _selectedAssetIds.remove(a.assetId);
+      }
+
+      _invalidatePdfCache();
+    });
+  }
+
+  // ===========================================================================
+  // Main Build
+  // ===========================================================================
+
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
-    final filtered = _filteredAssets;
+    final selectedCount = _selectedAssetsForReport.length;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final bool isMobile = constraints.maxWidth < 650;
 
         return Dialog(
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           backgroundColor: ParishColors.cardWhite,
           insetPadding: EdgeInsets.symmetric(
             horizontal: isMobile ? 12 : 24,
-            vertical: isMobile ? 14 : 24,
+            vertical: isMobile ? 14 : 20,
           ),
           child: Container(
-            width: 720,
-            constraints: const BoxConstraints(maxHeight: 760),
+            width: 780,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.92,
+            ),
             child: Column(
               children: [
                 // Header Banner
@@ -426,8 +825,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   ),
                   decoration: BoxDecoration(
                     color: ParishColors.marianBlueSurface,
-                    borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
                     border: Border(bottom: BorderSide(color: borderGrey)),
                   ),
                   child: Row(
@@ -458,10 +858,11 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                               ),
                             ),
                             Text(
-                              'Preview, download, or print photographic evidence cards and 13-column ledgers',
+                              'Filter by section and individually select/exclude specific items for print',
                               style: TextStyle(
-                                  fontSize: isMobile ? 11 : 12,
-                                  color: textMuted),
+                                fontSize: isMobile ? 11 : 12,
+                                color: textMuted,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -472,8 +873,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                         icon: const Icon(Icons.close),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed:
-                        _isGenerating ? null : () => Navigator.pop(context),
+                        onPressed: _isGenerating
+                            ? null
+                            : () => Navigator.pop(context),
                       ),
                     ],
                   ),
@@ -482,7 +884,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 // Form Content
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: EdgeInsets.all(isMobile ? 14 : 22),
+                    padding: EdgeInsets.all(isMobile ? 14 : 20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -506,10 +908,16 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                 icon: Icons.photo_library_outlined,
                                 isSelected: _selectedFormat ==
                                     AssetReportFormat.photographicCards,
-                                onTap: () => setState(
-                                      () => _selectedFormat =
-                                      AssetReportFormat.photographicCards,
-                                ),
+                                onTap: () {
+                                  if (_selectedFormat !=
+                                      AssetReportFormat.photographicCards) {
+                                    setState(() {
+                                      _selectedFormat =
+                                          AssetReportFormat.photographicCards;
+                                      _invalidatePdfCache();
+                                    });
+                                  }
+                                },
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -517,14 +925,20 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                               child: _buildFormatSelectorCard(
                                 title: 'Tabular Ledger',
                                 subtitle:
-                                '13 columns • A4 Landscape with location & inventory dates',
+                                '20 entries per A4 Landscape • Arranged by Control # suffix',
                                 icon: Icons.table_chart_outlined,
                                 isSelected: _selectedFormat ==
                                     AssetReportFormat.ledgerTable,
-                                onTap: () => setState(
-                                      () => _selectedFormat =
-                                      AssetReportFormat.ledgerTable,
-                                ),
+                                onTap: () {
+                                  if (_selectedFormat !=
+                                      AssetReportFormat.ledgerTable) {
+                                    setState(() {
+                                      _selectedFormat =
+                                          AssetReportFormat.ledgerTable;
+                                      _invalidatePdfCache();
+                                    });
+                                  }
+                                },
                               ),
                             ),
                           ],
@@ -533,7 +947,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
 
                         // 2. Book of Inventory Section Scope
                         Text(
-                          '2. Book of Inventory Section *',
+                          '2. Book of Inventory Section Filter',
                           style: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.bold,
@@ -547,11 +961,14 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                           decoration: InputDecoration(
                             isDense: true,
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 12),
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
                             filled: true,
                             fillColor: ParishColors.backgroundLight,
                             border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
                               borderSide: BorderSide(color: borderGrey),
@@ -560,22 +977,31 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                           items: _sectionOptions.map((sec) {
                             return DropdownMenuItem(
                               value: sec,
-                              child: Text(sec,
-                                  style:
-                                  TextStyle(fontSize: 13, color: textDark)),
+                              child: Text(
+                                sec,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: textDark,
+                                ),
+                              ),
                             );
                           }).toList(),
-                          onChanged: (val) {
+                          onChanged: _isGenerating
+                              ? null
+                              : (val) {
                             if (val != null) {
-                              setState(() => _selectedSection = val);
+                              setState(() {
+                                _selectedSection = val;
+                                _syncSelectedIdsWithScope();
+                              });
                             }
                           },
                         ),
                         const SizedBox(height: 18),
 
-                        // 3. Date Range Scope
+                        // 3. Date Range Scope & Archive Options
                         Text(
-                          '3. Date Range Filtering',
+                          '3. Date Range & Archive Status',
                           style: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.bold,
@@ -598,8 +1024,12 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12,
                               ),
-                              onSelected: (_) =>
-                                  setState(() => _dateScope = 'All Dates'),
+                              onSelected: _isGenerating
+                                  ? null
+                                  : (_) => setState(() {
+                                _dateScope = 'All Dates';
+                                _syncSelectedIdsWithScope();
+                              }),
                             ),
                             ChoiceChip(
                               label: Text(
@@ -616,7 +1046,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12,
                               ),
-                              onSelected: (_) => _pickCustomDateRange(),
+                              onSelected: _isGenerating
+                                  ? null
+                                  : (_) => _pickCustomDateRange(),
                             ),
                           ],
                         ),
@@ -627,8 +1059,10 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                             children: [
                               Text(
                                 'Filter by: ',
-                                style:
-                                TextStyle(fontSize: 12, color: textMuted),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: textMuted,
+                                ),
                               ),
                               const SizedBox(width: 6),
                               DropdownButton<String>(
@@ -650,18 +1084,22 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                     child: Text('Registration Date'),
                                   ),
                                 ],
-                                onChanged: (val) {
+                                onChanged: _isGenerating
+                                    ? null
+                                    : (val) {
                                   if (val != null) {
-                                    setState(() => _dateFieldToFilter = val);
+                                    setState(() {
+                                      _dateFieldToFilter = val;
+                                      _syncSelectedIdsWithScope();
+                                    });
                                   }
                                 },
                               ),
                             ],
                           ),
                         ],
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
 
-                        // 4. Archive Toggle
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           activeColor: ParishColors.oliveGreen,
@@ -675,50 +1113,82 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                           ),
                           subtitle: Text(
                             'Append assets that have been officially retired or disposed',
-                            style: TextStyle(fontSize: 11, color: textMuted),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: textMuted,
+                            ),
                           ),
                           value: _includeArchived,
-                          onChanged: (val) =>
-                              setState(() => _includeArchived = val),
+                          onChanged: _isGenerating
+                              ? null
+                              : (val) => setState(() {
+                            _includeArchived = val;
+                            _syncSelectedIdsWithScope();
+                          }),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 18),
 
-                        // Preview Summary Box
+                        // 4. Individual Item Selection
+                        _buildIndividualItemPickerSection(
+                          isMobile,
+                          borderGrey,
+                          textDark,
+                          textMuted,
+                        ),
+                        const SizedBox(height: 18),
+
+                        // 5. Selected Summary Box
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: ParishColors.oliveGreenSurface,
+                            color: selectedCount > 0
+                                ? ParishColors.oliveGreenSurface
+                                : const Color(0xFFFFFBEB),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: ParishColors.oliveGreen.withOpacity(0.4),
+                              color: selectedCount > 0
+                                  ? ParishColors.oliveGreen.withOpacity(0.4)
+                                  : const Color(0xFFF59E0B)
+                                  .withOpacity(0.5),
                             ),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Matching Assets for Report',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.oliveGreen,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      selectedCount > 0
+                                          ? 'Matching Assets for Report'
+                                          : 'No Items Selected',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: selectedCount > 0
+                                            ? ParishColors.oliveGreen
+                                            : const Color(0xFFD97706),
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${filtered.length} item line(s) selected',
-                                    style: TextStyle(
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: textDark,
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      selectedCount > 0
+                                          ? '$selectedCount item(s) selected for report'
+                                          : 'Select at least 1 item in the checklist above',
+                                      style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: selectedCount > 0
+                                            ? textDark
+                                            : const Color(0xFFD97706),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
+                              const SizedBox(width: 12),
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
@@ -749,7 +1219,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   ),
                 ),
 
-                // Multi-Action Responsive Footer
+                // Responsive Footer + Progress Monitor
                 Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: isMobile ? 14 : 22,
@@ -757,19 +1227,437 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   ),
                   decoration: BoxDecoration(
                     color: ParishColors.cardWhite,
-                    borderRadius:
-                    const BorderRadius.vertical(bottom: Radius.circular(20)),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(20),
+                    ),
                     border: Border(top: BorderSide(color: borderGrey)),
                   ),
-                  child: isMobile
-                      ? _buildMobileFooter(filtered.length)
-                      : _buildDesktopFooter(filtered.length, textMuted),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // PROGRESS MONITOR
+                      if (_isGenerating) ...[
+                        _buildProgressMonitor(isMobile),
+                        const SizedBox(height: 12),
+                      ],
+
+                      if (isMobile)
+                        _buildMobileFooter(selectedCount)
+                      else
+                        _buildDesktopFooter(selectedCount, textMuted),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  // ===========================================================================
+  // Individual Item Selection Checklist & Scope Filter Widget
+  // ===========================================================================
+
+  Widget _buildIndividualItemPickerSection(
+      bool isMobile,
+      Color borderGrey,
+      Color textDark,
+      Color textMuted,
+      ) {
+    final displayed = _displayedPickerAssets;
+    final totalScopeCount = _scopeFilteredAssets.length;
+    final totalEligibleCount = _allEligibleAssets.length;
+    final totalSelectedCount = _selectedAssetIds.length;
+
+    final bool allDisplayedSelected = displayed.isNotEmpty &&
+        displayed.every((a) => _selectedAssetIds.contains(a.assetId));
+
+    return Container(
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderGrey),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '4. Individual Item Selection & Exclusions',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Check/uncheck items to include or exclude. Search to cherry-pick items from other sections.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: totalSelectedCount > 0
+                      ? ParishColors.marianBlueSurface
+                      : ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '$totalSelectedCount Selected',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: totalSelectedCount > 0
+                        ? ParishColors.marianBlue
+                        : textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Scope View Tabs
+          Container(
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: borderGrey.withOpacity(0.6),
+              ),
+            ),
+            padding: const EdgeInsets.all(3),
+            child: Row(
+              children: [
+                _buildPickerTab(0, 'Scope Filter ($totalScopeCount)'),
+                _buildPickerTab(1, 'All Assets ($totalEligibleCount)'),
+                _buildPickerTab(2, 'Selected ($totalSelectedCount)'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Search Field
+          Container(
+            height: 38,
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: borderGrey),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.search,
+                  size: 16,
+                  color: ParishColors.marianBlue,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _itemSearchController,
+                    enabled: !_isGenerating,
+                    onChanged: (val) {
+                      setState(() => _itemSearchQuery = val);
+                    },
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: textDark,
+                    ),
+                    decoration: InputDecoration(
+                      hintText:
+                      'Search by control #, item name, or location...',
+                      hintStyle: TextStyle(
+                        fontSize: 11.5,
+                        color: textMuted,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ),
+                if (_itemSearchQuery.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear, size: 14),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: _isGenerating
+                        ? null
+                        : () {
+                      _itemSearchController.clear();
+                      setState(() => _itemSearchQuery = '');
+                    },
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Quick Selection Toolbar
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Showing ${displayed.length} item(s)',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: textMuted,
+                ),
+              ),
+              TextButton(
+                onPressed: _isGenerating || displayed.isEmpty
+                    ? null
+                    : (allDisplayedSelected
+                    ? _deselectAllDisplayed
+                    : _selectAllDisplayed),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                child: Text(
+                  allDisplayedSelected
+                      ? 'Deselect Displayed'
+                      : 'Select All Displayed',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.marianBlue,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 10),
+
+          // Selectable Items Checklist
+          Container(
+            height: 220,
+            decoration: BoxDecoration(
+              color: ParishColors.backgroundLight.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: borderGrey.withOpacity(0.6),
+              ),
+            ),
+            child: displayed.isEmpty
+                ? Center(
+              child: Text(
+                _itemSearchQuery.isNotEmpty
+                    ? 'No items match "$_itemSearchQuery"'
+                    : 'No items found in this tab.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textMuted,
+                ),
+              ),
+            )
+                : ListView.separated(
+              padding: const EdgeInsets.all(6),
+              itemCount: displayed.length,
+              separatorBuilder: (_, __) =>
+              const SizedBox(height: 4),
+              itemBuilder: (context, index) {
+                final asset = displayed[index];
+                final isSelected =
+                _selectedAssetIds.contains(asset.assetId);
+
+                return InkWell(
+                  onTap: _isGenerating
+                      ? null
+                      : () => _toggleAssetSelection(asset.assetId),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? ParishColors.marianBlueSurface
+                          .withOpacity(0.5)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? ParishColors.marianBlue
+                            : borderGrey.withOpacity(0.5),
+                        width: isSelected ? 1.2 : 0.8,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: isSelected,
+                          activeColor: ParishColors.marianBlue,
+                          visualDensity: VisualDensity.compact,
+                          onChanged: _isGenerating
+                              ? null
+                              : (_) => _toggleAssetSelection(
+                            asset.assetId,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                            children: [
+                              Wrap(
+                                crossAxisAlignment:
+                                WrapCrossAlignment.center,
+                                spacing: 6,
+                                runSpacing: 2,
+                                children: [
+                                  Text(
+                                    asset.controlNumber,
+                                    style: const TextStyle(
+                                      fontFamily: 'Courier',
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.marianBlue,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding:
+                                    const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: asset.unitPrice >= 10000.0
+                                          ? ParishColors.goldLight
+                                          : ParishColors
+                                          .marianBlueSurface,
+                                      borderRadius:
+                                      BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      asset.inventorySectionCode,
+                                      style: TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.bold,
+                                        color:
+                                        asset.unitPrice >= 10000.0
+                                            ? ParishColors.goldAccent
+                                            : ParishColors
+                                            .marianBlue,
+                                      ),
+                                    ),
+                                  ),
+                                  if (asset.quantity > 1)
+                                    Text(
+                                      '(${asset.quantity}x)',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: textMuted,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              Text(
+                                asset.itemName,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: textDark,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '${asset.displayLocation} • Acq: ${asset.formattedAcquisitionDate}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: textMuted,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          asset.formattedTotalCost,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.oliveGreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPickerTab(int tabIndex, String label) {
+    final bool isSelected = _itemPickerTab == tabIndex;
+
+    return Expanded(
+      child: InkWell(
+        onTap: _isGenerating
+            ? null
+            : () => setState(() => _itemPickerTab = tabIndex),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: isSelected
+                ? [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ]
+                : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight:
+              isSelected ? FontWeight.bold : FontWeight.w600,
+              color: isSelected
+                  ? ParishColors.marianBlue
+                  : ParishColors.textMuted,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
     );
   }
 
@@ -784,47 +1672,72 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         TextButton(
-          onPressed: _isGenerating ? null : () => Navigator.pop(context),
-          child: Text('Cancel', style: TextStyle(color: textMuted)),
+          onPressed:
+          _isGenerating ? null : () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: textMuted),
+          ),
         ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Preview Button
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: ParishColors.marianBlue,
-                side: const BorderSide(color: ParishColors.marianBlue),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                side: const BorderSide(
+                  color: ParishColors.marianBlue,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              onPressed: canProceed ? _handlePreviewPdf : null,
-              icon: (_isGenerating && _activeOperation == 'previewing')
+              onPressed:
+              canProceed ? _handlePreviewPdf : null,
+              icon: (_isGenerating &&
+                  _activeOperation == 'previewing')
                   ? const SizedBox(
                 width: 14,
                 height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
               )
-                  : const Icon(Icons.visibility_outlined, size: 17),
-              label: const Text('Preview PDF',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  : const Icon(
+                Icons.visibility_outlined,
+                size: 17,
+              ),
+              label: const Text(
+                'Preview PDF',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
             ),
             const SizedBox(width: 8),
-
-            // Download Button
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: ParishColors.oliveGreen,
-                side: const BorderSide(color: ParishColors.oliveGreen),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                side: const BorderSide(
+                  color: ParishColors.oliveGreen,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              onPressed: canProceed ? _handleDownloadPdf : null,
-              icon: (_isGenerating && _activeOperation == 'downloading')
+              onPressed:
+              canProceed ? _handleDownloadPdf : null,
+              icon: (_isGenerating &&
+                  _activeOperation == 'downloading')
                   ? const SizedBox(
                 width: 14,
                 height: 14,
@@ -833,24 +1746,35 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   color: ParishColors.oliveGreen,
                 ),
               )
-                  : const Icon(Icons.download_outlined, size: 17),
-              label: const Text('Download PDF',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  : const Icon(
+                Icons.download_outlined,
+                size: 17,
+              ),
+              label: const Text(
+                'Download PDF',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
             ),
             const SizedBox(width: 8),
-
-            // Print Button
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: ParishColors.marianBlue,
                 foregroundColor: Colors.white,
-                padding:
-                const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              onPressed: canProceed ? _handlePrintReport : null,
-              icon: (_isGenerating && _activeOperation == 'printing')
+              onPressed:
+              canProceed ? _handlePrintReport : null,
+              icon: (_isGenerating &&
+                  _activeOperation == 'printing')
                   ? const SizedBox(
                 width: 14,
                 height: 14,
@@ -861,11 +1785,14 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               )
                   : const Icon(Icons.print, size: 17),
               label: Text(
-                _isGenerating && _activeOperation == 'printing'
+                _isGenerating &&
+                    _activeOperation == 'printing'
                     ? 'Preparing...'
                     : 'Print ($itemCount)',
-                style:
-                const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
               ),
             ),
           ],
@@ -886,22 +1813,36 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: ParishColors.marianBlue,
-                  side: const BorderSide(color: ParishColors.marianBlue),
+                  side: const BorderSide(
+                    color: ParishColors.marianBlue,
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                onPressed: canProceed ? _handlePreviewPdf : null,
-                icon: (_isGenerating && _activeOperation == 'previewing')
+                onPressed:
+                canProceed ? _handlePreviewPdf : null,
+                icon: (_isGenerating &&
+                    _activeOperation == 'previewing')
                     ? const SizedBox(
                   width: 12,
                   height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                  ),
                 )
-                    : const Icon(Icons.visibility_outlined, size: 15),
-                label: const Text('Preview',
-                    style:
-                    TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    : const Icon(
+                  Icons.visibility_outlined,
+                  size: 15,
+                ),
+                label: const Text(
+                  'Preview',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -909,13 +1850,18 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: ParishColors.oliveGreen,
-                  side: const BorderSide(color: ParishColors.oliveGreen),
+                  side: const BorderSide(
+                    color: ParishColors.oliveGreen,
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                onPressed: canProceed ? _handleDownloadPdf : null,
-                icon: (_isGenerating && _activeOperation == 'downloading')
+                onPressed:
+                canProceed ? _handleDownloadPdf : null,
+                icon: (_isGenerating &&
+                    _activeOperation == 'downloading')
                     ? const SizedBox(
                   width: 12,
                   height: 12,
@@ -924,10 +1870,17 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                     color: ParishColors.oliveGreen,
                   ),
                 )
-                    : const Icon(Icons.download_outlined, size: 15),
-                label: const Text('Download',
-                    style:
-                    TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    : const Icon(
+                  Icons.download_outlined,
+                  size: 15,
+                ),
+                label: const Text(
+                  'Download',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -936,8 +1889,12 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
         Row(
           children: [
             TextButton(
-              onPressed: _isGenerating ? null : () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+              onPressed:
+              _isGenerating ? null : () => Navigator.pop(context),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(fontSize: 12),
+              ),
             ),
             const SizedBox(width: 6),
             Expanded(
@@ -947,10 +1904,13 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                onPressed: canProceed ? _handlePrintReport : null,
-                icon: (_isGenerating && _activeOperation == 'printing')
+                onPressed:
+                canProceed ? _handlePrintReport : null,
+                icon: (_isGenerating &&
+                    _activeOperation == 'printing')
                     ? const SizedBox(
                   width: 14,
                   height: 14,
@@ -961,11 +1921,14 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 )
                     : const Icon(Icons.print, size: 16),
                 label: Text(
-                  _isGenerating && _activeOperation == 'printing'
+                  _isGenerating &&
+                      _activeOperation == 'printing'
                       ? 'Building...'
                       : 'Print ($itemCount Items)',
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 12.5),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
             ),
@@ -983,7 +1946,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
     required VoidCallback onTap,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: _isGenerating ? null : onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -993,8 +1956,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               : ParishColors.backgroundLight,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color:
-            isSelected ? ParishColors.marianBlue : ParishColors.borderGrey,
+            color: isSelected
+                ? ParishColors.marianBlue
+                : ParishColors.borderGrey,
             width: isSelected ? 1.6 : 1.0,
           ),
         ),
@@ -1033,7 +1997,10 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
             const SizedBox(height: 2),
             Text(
               subtitle,
-              style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted),
+              style: TextStyle(
+                fontSize: 10.5,
+                color: ParishColors.textMuted,
+              ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),

@@ -3003,7 +3003,6 @@ import 'package:printing/printing.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/database/local_database_service.dart';
 import '../../../receipts/models/pos_item_model.dart';
-import '../../../receipts/presentation/dialogs/receipt_detail_dialog.dart';
 import '../../../receipts/services/particulars_service.dart';
 import '../../../receipts/services/receipt_pdf_generator.dart';
 import '../../../receipts/services/secretary_service.dart';
@@ -3011,6 +3010,7 @@ import '../../models/certificate_template_model.dart';
 import '../../services/certificate_pdf_generator.dart';
 import '../../services/certificate_service.dart';
 import '../../utils/placeholder_registry.dart';
+import '../../validators/sacramental_validators.dart';
 
 /// Opens the full-page Certificate Generation Desk
 Future<void> showGenerateCertificateModal(
@@ -3071,6 +3071,9 @@ class _GenerateCertificatePageState
   bool _isGenerating = false;
   String? _errorMessage;
 
+  DateTime _dateReleased = DateTime.now();
+  bool _dateReleasedHasError = false;
+
   List<CertificateTemplateModel> _availableTemplates = [];
   CertificateTemplateModel? _selectedTemplate;
 
@@ -3093,6 +3096,26 @@ class _GenerateCertificatePageState
       return custom.isEmpty ? 'General Legal / Personal Records' : custom;
     }
     return _selectedPurposePreset;
+  }
+
+  Future<void> _selectDateReleased(BuildContext context) async {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final initial = _dateReleased.isBefore(todayStart) ? todayStart : _dateReleased;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: todayStart,
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _dateReleased = picked;
+        _dateReleasedHasError = false;
+      });
+    }
   }
 
   @override
@@ -3353,6 +3376,7 @@ class _GenerateCertificatePageState
       sacramentType: widget.sacramentType,
       recordData: widget.rawRecordData,
       purpose: _effectivePurpose,
+      issueDate: _dateReleased,
     );
     return PlaceholderRegistry.renderTemplate(
       _selectedTemplate!.bodyWording,
@@ -3415,6 +3439,7 @@ class _GenerateCertificatePageState
                   purpose: _effectivePurpose,
                   verificationId: previewVerificationId,
                   qrVerificationUrl: previewQrUrl,
+                  issueDate: _dateReleased,
                 ),
                 useActions: false,
                 allowPrinting: false,
@@ -3461,6 +3486,15 @@ class _GenerateCertificatePageState
     if (_selectedTemplate == null) return;
     setState(() => _errorMessage = null);
 
+    final releaseDateErr = SacramentalValidators.validateCertificateReleaseDate(_dateReleased);
+    if (releaseDateErr != null) {
+      setState(() {
+        _dateReleasedHasError = true;
+        _errorMessage = releaseDateErr;
+      });
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -3482,6 +3516,7 @@ class _GenerateCertificatePageState
         purpose: _effectivePurpose,
         verificationId: verificationId,
         qrVerificationUrl: qrVerificationUrl,
+        issueDate: _dateReleased,
       );
 
       String? linkedTransactionId;
@@ -3537,6 +3572,7 @@ class _GenerateCertificatePageState
         qrVerificationUrl: qrVerificationUrl,
         transactionId: linkedTransactionId,
         receiptNumber: linkedReceiptNumber,
+        issueDate: _dateReleased,
       );
 
       if (!mounted) return;
@@ -4094,6 +4130,49 @@ class _GenerateCertificatePageState
               ),
             ),
           ],
+          const SizedBox(height: 18),
+
+          Text('3. Date Released (Present & Future Only)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark)),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => _selectDateReleased(context),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: ParishColors.backgroundLight,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _dateReleasedHasError ? Colors.red : borderGrey,
+                  width: _dateReleasedHasError ? 1.5 : 1.0,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today, size: 18, color: ParishColors.marianBlue),
+                      const SizedBox(width: 10),
+                      Text(
+                        '${PlaceholderRegistry.monthNames[_dateReleased.month - 1]} ${PlaceholderRegistry.formatOrdinal(_dateReleased.day)}, ${_dateReleased.year}',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textDark),
+                      ),
+                    ],
+                  ),
+                  const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                ],
+              ),
+            ),
+          ),
+          if (_dateReleasedHasError) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Date Released must be today or a future date.',
+              style: TextStyle(fontSize: 12, color: Colors.red),
+            ),
+          ],
         ],
       ),
     );
@@ -4117,7 +4196,7 @@ class _GenerateCertificatePageState
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '3. Record in Receipt Ledger',
+                  '4. Record in Receipt Ledger',
                   style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
                 ),
               ),
@@ -4215,7 +4294,7 @@ class _GenerateCertificatePageState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '4. Rendered Certificate Text',
+                '5. Rendered Certificate Text',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark),
               ),
               TextButton.icon(
@@ -6425,6 +6504,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
+    final upperDateBound = (dateType == 2) ? DateTime(2100) : now;
 
     if (dateType == 0) {
       initialDate = _registryDate;
@@ -6436,9 +6516,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -17501,6 +17581,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
+    final upperDateBound = (dateType == 3) ? DateTime(2100) : now;
 
     if (dateType == 0) {
       initialDate = _registryDate;
@@ -17514,9 +17595,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -20041,6 +20122,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
+    final upperDateBound = (dateType == 0) ? DateTime(2100) : now;
 
     if (dateType == 0) {
       initialDate = _dateOfReception ?? now;
@@ -20052,9 +20134,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -20114,9 +20196,12 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       _scrollToTop();
       return false;
     }
-    final notFutureDate = SacramentalValidators.validateNotFutureDate(_dateOfReception, 'Date of Reception');
-    if (notFutureDate != null) {
-      setState(() => _errorMessage = notFutureDate);
+    final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
+    if (receptionError != null) {
+      setState(() {
+        _dateOfReceptionHasError = true;
+        _errorMessage = receptionError;
+      });
       _scrollToTop();
       return false;
     }
@@ -20139,13 +20224,6 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     );
     if (placeError != null) {
       setState(() => _errorMessage = placeError);
-      _scrollToTop();
-      return false;
-    }
-
-    final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
-    if (receptionError != null) {
-      setState(() => _errorMessage = receptionError);
       _scrollToTop();
       return false;
     }
@@ -22190,13 +22268,14 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
 
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
+    final upperDateBound = DateTime(2100);
     DateTime initialDate = (dateType == 0) ? (_dateOfDeath ?? now) : (_dateOfBurial ?? now);
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -24226,6 +24305,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     DateTime initialDate;
+    final upperDateBound = (dateType == 0) ? DateTime(2100) : now;
 
     if (dateType == 0) {
       initialDate = _dateOfCommunion ?? now;
@@ -24235,9 +24315,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
-      lastDate: now,
+      lastDate: upperDateBound,
     );
 
     if (picked != null) {
@@ -24287,13 +24367,6 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
         _dateOfCommunionHasError = true;
         _errorMessage = 'Date of First Holy Communion is required.';
       });
-      _scrollToTop();
-      return false;
-    }
-
-    final communionDateNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfCommunion, 'Date of First Holy Communion');
-    if (communionDateNotFuture != null) {
-      setState(() => _errorMessage = communionDateNotFuture);
       _scrollToTop();
       return false;
     }
@@ -26170,7 +26243,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     if (dateType == 4) initialDate = _licenseDateRegistered ?? now;
     if (dateType == 5) initialDate = _crasmValidityDate ?? now;
 
-    final DateTime upperDateBound = (dateType == 5) ? now.add(const Duration(days: 3650)) : now;
+    final DateTime upperDateBound = (dateType == 3)
+        ? DateTime(2100)
+        : ((dateType == 5) ? now.add(const Duration(days: 3650)) : now);
 
     final picked = await showDatePicker(
       context: context,
@@ -26275,13 +26350,6 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
         _dateOfMarriageHasError = true;
         _errorMessage = 'Date of Marriage is required.';
       });
-      _scrollToTop();
-      return false;
-    }
-
-    final marriageNotFuture = SacramentalValidators.validateNotFutureDate(_dateOfMarriage, 'Date of Marriage');
-    if (marriageNotFuture != null) {
-      setState(() => _errorMessage = marriageNotFuture);
       _scrollToTop();
       return false;
     }
@@ -38700,6 +38768,7 @@ class CertificateService {
     String? qrVerificationUrl,
     String? transactionId,
     String? receiptNumber,
+    DateTime? issueDate,
   }) async {
     final effectiveVerificationId =
         verificationId ?? generateSecureVerificationId();
@@ -38712,7 +38781,7 @@ class CertificateService {
       throw 'Authentication required. Please sign in to issue an official certificate.';
     }
 
-    final now = DateTime.now();
+    final now = issueDate ?? DateTime.now();
 
     String? pdfPath;
     final isOnline = await RecordsSyncService.instance.checkConnectivity();
@@ -43138,14 +43207,20 @@ class PlaceholderRegistry {
     final map = <String, String>{
       '{Purpose}': purpose.trim().isEmpty ? 'General Legal / Personal Records' : purpose.trim(),
       '{Date Issued}': issueParts['formatted']!,
+      '{Date Released}': issueParts['formatted']!,
+      '{Date of Release}': issueParts['formatted']!,
       '{nth Day Issued}': issueParts['ordinalDay']!,
       '{nth Day of Issue}': issueParts['ordinalDay']!,
+      '{nth Day Released}': issueParts['ordinalDay']!,
       '{Day Issued}': issueParts['day']!,
       '{Day of Issue}': issueParts['day']!,
+      '{Day Released}': issueParts['day']!,
       '{Month of Issue}': issueParts['month']!,
       '{Month Issued}': issueParts['month']!,
+      '{Month of Release}': issueParts['month']!,
       '{Year of Issue}': issueParts['year']!,
       '{Year Issued}': issueParts['year']!,
+      '{Year of Release}': issueParts['year']!,
       '{Book Number}': book,
       '{Page Number}': page,
       '{Line Number}': line,
@@ -43928,11 +44003,9 @@ class SacramentalValidators {
     return '$totalDays day(s) old';
   }
 
-  /// Validates Date of Baptism relative to Date of Birth and today.
+  /// Validates Date of Baptism relative to Date of Birth (Past, Present, and Future dates allowed).
   static String? validateBaptismDate(DateTime? baptismDate, DateTime? dob) {
     if (baptismDate == null) return 'Date of Baptism is required.';
-    final notFutureErr = validateNotFutureDate(baptismDate, 'Date of Baptism', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (dob != null && baptismDate.isBefore(dob)) {
       return 'Date of Baptism cannot be earlier than Date of Birth.';
@@ -43940,11 +44013,9 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates Confirmation Date relative to required prior Baptism Date and today.
+  /// Validates Confirmation Date relative to required prior Baptism Date (Past, Present, and Future dates allowed).
   static String? validateConfirmationDate(DateTime? confirmationDate, DateTime? baptismDate) {
     if (confirmationDate == null) return 'Date of Confirmation is required.';
-    final notFutureErr = validateNotFutureDate(confirmationDate, 'Date of Confirmation', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (baptismDate != null && confirmationDate.isBefore(baptismDate)) {
       return 'Date of Confirmation cannot be earlier than Date of Baptism.';
@@ -43952,11 +44023,9 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates First Holy Communion date relative to prior Baptism Date and today.
+  /// Validates First Holy Communion date relative to prior Baptism Date (Past, Present, and Future dates allowed).
   static String? validateCommunionDate(DateTime? communionDate, DateTime? baptismDate) {
     if (communionDate == null) return 'Date of First Holy Communion is required.';
-    final notFutureErr = validateNotFutureDate(communionDate, 'Date of First Holy Communion', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (baptismDate != null && communionDate.isBefore(baptismDate)) {
       return 'Date of First Communion cannot be earlier than Date of Baptism.';
@@ -43964,15 +44033,10 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates Death and Burial dates consistency and non-future bounds.
+  /// Validates Death and Burial dates consistency (Past, Present, and Future dates allowed).
   static String? validateBurialDate(DateTime? burialDate, DateTime? deathDate) {
     if (deathDate == null) return 'Date of Death is required.';
-    final notFutureDeath = validateNotFutureDate(deathDate, 'Date of Death', isRequired: true);
-    if (notFutureDeath != null) return notFutureDeath;
-
     if (burialDate == null) return 'Date of Burial is required.';
-    final notFutureBurial = validateNotFutureDate(burialDate, 'Date of Burial', isRequired: true);
-    if (notFutureBurial != null) return notFutureBurial;
 
     if (burialDate.isBefore(deathDate)) {
       return 'Date of Burial cannot be earlier than Date of Death.';
@@ -43980,14 +44044,24 @@ class SacramentalValidators {
     return null;
   }
 
-  /// Validates Reception into Full Communion (Conversion) date relative to birth date.
+  /// Validates Reception into Full Communion (Conversion) date relative to birth date (Past, Present, and Future dates allowed).
   static String? validateReceptionDate(DateTime? receptionDate, DateTime? dob) {
     if (receptionDate == null) return 'Date of Reception into Full Communion is required.';
-    final notFutureErr = validateNotFutureDate(receptionDate, 'Date of Reception', isRequired: true);
-    if (notFutureErr != null) return notFutureErr;
 
     if (dob != null && receptionDate.isBefore(dob)) {
       return 'Date of Reception cannot be earlier than Date of Birth.';
+    }
+    return null;
+  }
+
+  /// Validates Certificate Date of Release (Present and Future dates only; no past dates).
+  static String? validateCertificateReleaseDate(DateTime? releaseDate) {
+    if (releaseDate == null) return 'Date Released is required.';
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    if (releaseDate.isBefore(todayStart)) {
+      return 'Date Released must be today or a future date.';
     }
     return null;
   }
