@@ -1,4 +1,3 @@
-
 // =============================================================================
 // FILE: lib/features/asset_inventory/presentation/dialogs/asset_report_filter_dialog.dart
 // =============================================================================
@@ -12,27 +11,30 @@ import '../../services/asset_report_pdf_service.dart';
 
 enum AssetReportFormat { photographicCards, ledgerTable }
 
+/// Opens the Report Generator as a full page.
+/// Preserved as a top-level helper for backward compatibility across the app.
 void showAssetReportFilterModal(
     BuildContext context, {
       required List<AssetModel> allAssets,
     }) {
-  showDialog(
-    context: context,
-    builder: (ctx) => _AssetReportFilterDialog(allAssets: allAssets),
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => AssetReportFilterPage(allAssets: allAssets),
+    ),
   );
 }
 
-class _AssetReportFilterDialog extends StatefulWidget {
+class AssetReportFilterPage extends StatefulWidget {
   final List<AssetModel> allAssets;
 
-  const _AssetReportFilterDialog({super.key, required this.allAssets});
+  const AssetReportFilterPage({super.key, required this.allAssets});
 
   @override
-  State<_AssetReportFilterDialog> createState() =>
-      _AssetReportFilterDialogState();
+  State<AssetReportFilterPage> createState() => _AssetReportFilterPageState();
 }
 
-class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
+class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
   AssetReportFormat _selectedFormat = AssetReportFormat.photographicCards;
   String _selectedSection = 'All';
   String _dateScope = 'All Dates';
@@ -44,7 +46,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   bool _isGenerating = false;
   String _activeOperation = '';
 
-  // PROGRESS MONITOR
+  // Progress Monitor State
   String _progressMessage = 'Preparing your report...';
   AssetReportProgress? _reportProgress;
 
@@ -52,7 +54,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   final Set<String> _selectedAssetIds = {};
   final TextEditingController _itemSearchController = TextEditingController();
   String _itemSearchQuery = '';
-  int _itemPickerTab = 0;
+  int _itemPickerTab = 0; // 0 = Scope Filtered, 1 = All Assets, 2 = Selected Only
 
   // PDF Document Cache
   Uint8List? _cachedPdfBytes;
@@ -197,10 +199,6 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   // PROGRESS MONITOR
   // ===========================================================================
 
-  /// Converts the current service-stage progress into a continuous report
-  /// progress value. The service reports progress separately for each stage,
-  /// so the ranges below prevent the displayed percentage from resetting
-  /// whenever the report moves to another stage.
   double _overallProgress(AssetReportProgress progress) {
     final stageProgress = progress.total <= 0
         ? 0.0
@@ -242,7 +240,6 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
     });
   }
 
-  /// Displays the current PDF generation stage and its reported progress.
   Widget _buildProgressMonitor(bool isMobile) {
     final operationIcon = _activeOperation == 'printing'
         ? Icons.print_outlined
@@ -264,10 +261,10 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(isMobile ? 11 : 14),
+      padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
         color: ParishColors.marianBlueSurface.withOpacity(0.55),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: ParishColors.marianBlue.withOpacity(0.25),
         ),
@@ -281,9 +278,9 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               Icon(
                 operationIcon,
                 color: operationColor,
-                size: 19,
+                size: 20,
               ),
-              const SizedBox(width: 9),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,7 +288,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                     Text(
                       _progressMessage,
                       style: TextStyle(
-                        fontSize: isMobile ? 12 : 13,
+                        fontSize: isMobile ? 12.5 : 13.5,
                         fontWeight: FontWeight.bold,
                         color: ParishColors.textDark,
                       ),
@@ -302,7 +299,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                           ? '$selectedCount asset(s) included in this report'
                           : _progressDetail(progress),
                       style: TextStyle(
-                        fontSize: isMobile ? 10 : 11,
+                        fontSize: isMobile ? 10.5 : 11.5,
                         color: ParishColors.textMuted,
                       ),
                     ),
@@ -314,15 +311,15 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 Text(
                   '$percentage%',
                   style: TextStyle(
-                    fontSize: isMobile ? 12 : 13,
+                    fontSize: isMobile ? 12.5 : 14,
                     fontWeight: FontWeight.bold,
                     color: operationColor,
                   ),
                 )
               else
                 SizedBox(
-                  width: 17,
-                  height: 17,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: operationColor,
@@ -340,16 +337,15 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               color: operationColor,
             ),
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 8),
           Text(
             progress?.stage == AssetReportProgressStage.generatingPdf &&
                 progress!.currentPage >= progress.totalPages &&
                 progress.totalPages > 0
-                ? 'Finalizing the PDF document. Please keep this window open.'
-                : 'Please wait while the document is being prepared. '
-                'Avoid closing this window.',
+                ? 'Finalizing the PDF document. Please wait...'
+                : 'Processing documents and images. Please avoid closing this page.',
             style: TextStyle(
-              fontSize: isMobile ? 9.5 : 10.5,
+              fontSize: isMobile ? 10 : 11,
               color: ParishColors.textMuted,
             ),
           ),
@@ -477,7 +473,6 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       return _cachedPdfBytes;
     }
 
-    // Yield control so progress indicators can paint immediately.
     await Future.delayed(const Duration(milliseconds: 16));
 
     final dateRangeLabel = _buildDateRangeLabel();
@@ -537,10 +532,6 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
         onLayout: (format) async => pdfBytes,
         name: _generateFileName(),
       );
-
-      if (!mounted) return;
-
-      Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
 
@@ -787,472 +778,462 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   }
 
   // ===========================================================================
-  // Main Build
+  // Main Build: Full-Page Layout
   // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
+    final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
     final selectedCount = _selectedAssetsForReport.length;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isMobile = constraints.maxWidth < 650;
+        final double screenWidth = constraints.maxWidth;
+        final bool isMobile = screenWidth < 680;
 
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          backgroundColor: ParishColors.cardWhite,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: isMobile ? 12 : 24,
-            vertical: isMobile ? 14 : 20,
-          ),
-          child: Container(
-            width: 780,
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.92,
+        return Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhite,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
+              onPressed: () => Navigator.pop(context),
             ),
-            child: Column(
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header Banner
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 16 : 22,
-                    vertical: isMobile ? 12 : 16,
+                Text(
+                  'Generate Inventory Reports',
+                  style: TextStyle(
+                    fontSize: isMobile ? 16 : 18,
+                    fontWeight: FontWeight.bold,
+                    color: textDark,
                   ),
-                  decoration: BoxDecoration(
-                    color: ParishColors.marianBlueSurface,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                    border: Border(bottom: BorderSide(color: borderGrey)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  'Photographic evidence cards & 20-row diocesan ledger with custom item selection',
+                  style: TextStyle(
+                    fontSize: isMobile ? 10.5 : 12,
+                    color: textMuted,
                   ),
-                  child: Row(
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(1.0),
+              child: Divider(height: 1, color: borderGrey.withOpacity(0.5)),
+            ),
+          ),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 14 : 24,
+                vertical: isMobile ? 14 : 22,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1000),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          color: ParishColors.marianBlue,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.picture_as_pdf_outlined,
-                          color: Colors.white,
-                          size: 22,
-                        ),
+                      // 1. Choose Report Format
+                      _buildSectionHeader(
+                        title: '1. Select Report Format *',
+                        textDark: textDark,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildFormatSelectorCard(
+                              title: 'Photographic Cards',
+                              subtitle:
+                              '2 items per A4 page • Photos & specifications form',
+                              icon: Icons.photo_library_outlined,
+                              isSelected: _selectedFormat ==
+                                  AssetReportFormat.photographicCards,
+                              onTap: () {
+                                if (_selectedFormat !=
+                                    AssetReportFormat.photographicCards) {
+                                  setState(() {
+                                    _selectedFormat =
+                                        AssetReportFormat.photographicCards;
+                                    _invalidatePdfCache();
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildFormatSelectorCard(
+                              title: 'Tabular Ledger',
+                              subtitle:
+                              '20 entries per A4 Landscape • Arranged by Control # suffix',
+                              icon: Icons.table_chart_outlined,
+                              isSelected: _selectedFormat ==
+                                  AssetReportFormat.ledgerTable,
+                              onTap: () {
+                                if (_selectedFormat !=
+                                    AssetReportFormat.ledgerTable) {
+                                  setState(() {
+                                    _selectedFormat =
+                                        AssetReportFormat.ledgerTable;
+                                    _invalidatePdfCache();
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // 2. Book of Inventory Section Scope & Filtering
+                      _buildSectionHeader(
+                        title: '2. Book of Inventory Scope & Date Filters',
+                        textDark: textDark,
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: EdgeInsets.all(isMobile ? 14 : 18),
+                        decoration: BoxDecoration(
+                          color: cardWhite,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: borderGrey),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Generate Inventory Reports',
+                              'Book of Inventory Section',
                               style: TextStyle(
-                                fontSize: isMobile ? 16 : 18,
+                                fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: textDark,
                               ),
                             ),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              value: _selectedSection,
+                              isExpanded: true,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                filled: true,
+                                fillColor: ParishColors.backgroundLight,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(color: borderGrey),
+                                ),
+                              ),
+                              items: _sectionOptions.map((sec) {
+                                return DropdownMenuItem(
+                                  value: sec,
+                                  child: Text(
+                                    sec,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: textDark,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: _isGenerating
+                                  ? null
+                                  : (val) {
+                                if (val != null) {
+                                  setState(() {
+                                    _selectedSection = val;
+                                    _syncSelectedIdsWithScope();
+                                  });
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 16),
                             Text(
-                              'Filter by section and individually select/exclude specific items for print',
+                              'Date Scope',
                               style: TextStyle(
-                                fontSize: isMobile ? 11 : 12,
-                                color: textMuted,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: textDark,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: _isGenerating
-                            ? null
-                            : () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('All Registered Items'),
+                                  selected: _dateScope == 'All Dates',
+                                  selectedColor: ParishColors.marianBlue,
+                                  labelStyle: TextStyle(
+                                    color: _dateScope == 'All Dates'
+                                        ? Colors.white
+                                        : textDark,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                  onSelected: _isGenerating
+                                      ? null
+                                      : (_) => setState(() {
+                                    _dateScope = 'All Dates';
+                                    _syncSelectedIdsWithScope();
+                                  }),
+                                ),
+                                ChoiceChip(
+                                  label: Text(
+                                    _selectedDateRange == null
+                                        ? 'Pick Custom Date Range'
+                                        : '${_selectedDateRange!.start.month}/${_selectedDateRange!.start.day}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.month}/${_selectedDateRange!.end.day}/${_selectedDateRange!.end.year}',
+                                  ),
+                                  selected: _dateScope == 'Custom Range',
+                                  selectedColor: ParishColors.marianBlue,
+                                  labelStyle: TextStyle(
+                                    color: _dateScope == 'Custom Range'
+                                        ? Colors.white
+                                        : textDark,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                  onSelected: _isGenerating
+                                      ? null
+                                      : (_) => _pickCustomDateRange(),
+                                ),
+                              ],
+                            ),
 
-                // Form Content
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(isMobile ? 14 : 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 1. Choose Report Format
-                        Text(
-                          '1. Select Report Format *',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildFormatSelectorCard(
-                                title: 'Photographic Cards',
-                                subtitle:
-                                '2 items per A4 page • Photos & specifications form',
-                                icon: Icons.photo_library_outlined,
-                                isSelected: _selectedFormat ==
-                                    AssetReportFormat.photographicCards,
-                                onTap: () {
-                                  if (_selectedFormat !=
-                                      AssetReportFormat.photographicCards) {
-                                    setState(() {
-                                      _selectedFormat =
-                                          AssetReportFormat.photographicCards;
-                                      _invalidatePdfCache();
-                                    });
-                                  }
-                                },
+                            if (_dateScope == 'Custom Range') ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Text(
+                                    'Filter by: ',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: textMuted,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  DropdownButton<String>(
+                                    value: _dateFieldToFilter,
+                                    isDense: true,
+                                    underline: const SizedBox.shrink(),
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.marianBlue,
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'Acquisition Date',
+                                        child: Text('Acquisition Date'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Registration Date',
+                                        child: Text('Registration Date'),
+                                      ),
+                                    ],
+                                    onChanged: _isGenerating
+                                        ? null
+                                        : (val) {
+                                      if (val != null) {
+                                        setState(() {
+                                          _dateFieldToFilter = val;
+                                          _syncSelectedIdsWithScope();
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _buildFormatSelectorCard(
-                                title: 'Tabular Ledger',
-                                subtitle:
-                                '20 entries per A4 Landscape • Arranged by Control # suffix',
-                                icon: Icons.table_chart_outlined,
-                                isSelected: _selectedFormat ==
-                                    AssetReportFormat.ledgerTable,
-                                onTap: () {
-                                  if (_selectedFormat !=
-                                      AssetReportFormat.ledgerTable) {
-                                    setState(() {
-                                      _selectedFormat =
-                                          AssetReportFormat.ledgerTable;
-                                      _invalidatePdfCache();
-                                    });
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-
-                        // 2. Book of Inventory Section Scope
-                        Text(
-                          '2. Book of Inventory Section Filter',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          value: _selectedSection,
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                            filled: true,
-                            fillColor: ParishColors.backgroundLight,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide(color: borderGrey),
-                            ),
-                          ),
-                          items: _sectionOptions.map((sec) {
-                            return DropdownMenuItem(
-                              value: sec,
-                              child: Text(
-                                sec,
+                            ],
+                            const SizedBox(height: 12),
+                            const Divider(height: 18),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: ParishColors.oliveGreen,
+                              title: Text(
+                                'Include Decommissioned / Retired Items',
                                 style: TextStyle(
                                   fontSize: 13,
+                                  fontWeight: FontWeight.w600,
                                   color: textDark,
                                 ),
                               ),
-                            );
-                          }).toList(),
-                          onChanged: _isGenerating
-                              ? null
-                              : (val) {
-                            if (val != null) {
-                              setState(() {
-                                _selectedSection = val;
-                                _syncSelectedIdsWithScope();
-                              });
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 18),
-
-                        // 3. Date Range Scope & Archive Options
-                        Text(
-                          '3. Date Range & Archive Status',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            ChoiceChip(
-                              label: const Text('All Registered Items'),
-                              selected: _dateScope == 'All Dates',
-                              selectedColor: ParishColors.marianBlue,
-                              labelStyle: TextStyle(
-                                color: _dateScope == 'All Dates'
-                                    ? Colors.white
-                                    : textDark,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                              onSelected: _isGenerating
-                                  ? null
-                                  : (_) => setState(() {
-                                _dateScope = 'All Dates';
-                                _syncSelectedIdsWithScope();
-                              }),
-                            ),
-                            ChoiceChip(
-                              label: Text(
-                                _selectedDateRange == null
-                                    ? 'Pick Custom Date Range'
-                                    : '${_selectedDateRange!.start.month}/${_selectedDateRange!.start.day}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.month}/${_selectedDateRange!.end.day}/${_selectedDateRange!.end.year}',
-                              ),
-                              selected: _dateScope == 'Custom Range',
-                              selectedColor: ParishColors.marianBlue,
-                              labelStyle: TextStyle(
-                                color: _dateScope == 'Custom Range'
-                                    ? Colors.white
-                                    : textDark,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                              onSelected: _isGenerating
-                                  ? null
-                                  : (_) => _pickCustomDateRange(),
-                            ),
-                          ],
-                        ),
-
-                        if (_dateScope == 'Custom Range') ...[
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Text(
-                                'Filter by: ',
+                              subtitle: Text(
+                                'Append assets that have been officially retired or disposed',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   color: textMuted,
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                              DropdownButton<String>(
-                                value: _dateFieldToFilter,
-                                isDense: true,
-                                underline: const SizedBox.shrink(),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: ParishColors.marianBlue,
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'Acquisition Date',
-                                    child: Text('Acquisition Date'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'Registration Date',
-                                    child: Text('Registration Date'),
-                                  ),
-                                ],
-                                onChanged: _isGenerating
-                                    ? null
-                                    : (val) {
-                                  if (val != null) {
-                                    setState(() {
-                                      _dateFieldToFilter = val;
-                                      _syncSelectedIdsWithScope();
-                                    });
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: ParishColors.oliveGreen,
-                          title: Text(
-                            'Include Decommissioned / Retired Items',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: textDark,
+                              value: _includeArchived,
+                              onChanged: _isGenerating
+                                  ? null
+                                  : (val) => setState(() {
+                                _includeArchived = val;
+                                _syncSelectedIdsWithScope();
+                              }),
                             ),
-                          ),
-                          subtitle: Text(
-                            'Append assets that have been officially retired or disposed',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: textMuted,
-                            ),
-                          ),
-                          value: _includeArchived,
-                          onChanged: _isGenerating
-                              ? null
-                              : (val) => setState(() {
-                            _includeArchived = val;
-                            _syncSelectedIdsWithScope();
-                          }),
+                          ],
                         ),
-                        const SizedBox(height: 18),
+                      ),
+                      const SizedBox(height: 20),
 
-                        // 4. Individual Item Selection
-                        _buildIndividualItemPickerSection(
-                          isMobile,
-                          borderGrey,
-                          textDark,
-                          textMuted,
-                        ),
-                        const SizedBox(height: 18),
+                      // 3. Individual Item Selection Checklist
+                      _buildIndividualItemPickerSection(
+                        isMobile,
+                        borderGrey,
+                        cardWhite,
+                        textDark,
+                        textMuted,
+                      ),
+                      const SizedBox(height: 20),
 
-                        // 5. Selected Summary Box
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
+                      // 4. Selected Summary Box
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: selectedCount > 0
+                              ? ParishColors.oliveGreenSurface
+                              : const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
                             color: selectedCount > 0
-                                ? ParishColors.oliveGreenSurface
-                                : const Color(0xFFFFFBEB),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: selectedCount > 0
-                                  ? ParishColors.oliveGreen.withOpacity(0.4)
-                                  : const Color(0xFFF59E0B)
-                                  .withOpacity(0.5),
-                            ),
+                                ? ParishColors.oliveGreen.withOpacity(0.4)
+                                : const Color(0xFFF59E0B).withOpacity(0.5),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      selectedCount > 0
-                                          ? 'Matching Assets for Report'
-                                          : 'No Items Selected',
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: selectedCount > 0
-                                            ? ParishColors.oliveGreen
-                                            : const Color(0xFFD97706),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      selectedCount > 0
-                                          ? '$selectedCount item(s) selected for report'
-                                          : 'Select at least 1 item in the checklist above',
-                                      style: TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: selectedCount > 0
-                                            ? textDark
-                                            : const Color(0xFFD97706),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Total Valuation',
+                                  Text(
+                                    selectedCount > 0
+                                        ? 'Matching Assets for Report'
+                                        : 'No Items Selected',
                                     style: TextStyle(
-                                      fontSize: 11.5,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: ParishColors.oliveGreen,
+                                      color: selectedCount > 0
+                                          ? ParishColors.oliveGreen
+                                          : const Color(0xFFD97706),
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 3),
                                   Text(
-                                    '₱ ${AssetModel.formatCurrency(_totalValuation)}',
-                                    style: const TextStyle(
-                                      fontSize: 15,
+                                    selectedCount > 0
+                                        ? '$selectedCount item(s) selected for report'
+                                        : 'Select at least 1 item in the checklist above',
+                                    style: TextStyle(
+                                      fontSize: 14,
                                       fontWeight: FontWeight.bold,
-                                      color: ParishColors.oliveGreen,
+                                      color: selectedCount > 0
+                                          ? textDark
+                                          : const Color(0xFFD97706),
                                     ),
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 14),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text(
+                                  'Total Valuation',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.oliveGreen,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '₱ ${AssetModel.formatCurrency(_totalValuation)}',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.oliveGreen,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
+                      ),
+                      const SizedBox(height: 20),
 
-                // Responsive Footer + Progress Monitor
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 14 : 22,
-                    vertical: isMobile ? 12 : 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: ParishColors.cardWhite,
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(20),
-                    ),
-                    border: Border(top: BorderSide(color: borderGrey)),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // PROGRESS MONITOR
-                      if (_isGenerating) ...[
-                        _buildProgressMonitor(isMobile),
-                        const SizedBox(height: 12),
-                      ],
-
-                      if (isMobile)
-                        _buildMobileFooter(selectedCount)
-                      else
-                        _buildDesktopFooter(selectedCount, textMuted),
+                      // 5. Actions Card with Progress Monitor
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(isMobile ? 14 : 20),
+                        decoration: BoxDecoration(
+                          color: cardWhite,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: borderGrey),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isGenerating) ...[
+                              _buildProgressMonitor(isMobile),
+                              const SizedBox(height: 16),
+                            ],
+                            if (isMobile)
+                              _buildMobileFooter(selectedCount)
+                            else
+                              _buildDesktopFooter(selectedCount, textMuted),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: isMobile ? 36 : 56),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+
+  // ===========================================================================
+  // Section Header Helper
+  // ===========================================================================
+
+  Widget _buildSectionHeader({
+    required String title,
+    required Color textDark,
+  }) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.bold,
+        color: textDark,
+      ),
     );
   }
 
@@ -1263,6 +1244,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
   Widget _buildIndividualItemPickerSection(
       bool isMobile,
       Color borderGrey,
+      Color cardWhite,
       Color textDark,
       Color textMuted,
       ) {
@@ -1276,11 +1258,11 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
 
     return Container(
       decoration: BoxDecoration(
-        color: ParishColors.cardWhite,
+        color: cardWhite,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderGrey),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(isMobile ? 14 : 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1291,7 +1273,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '4. Individual Item Selection & Exclusions',
+                      '3. Individual Item Selection & Exclusions',
                       style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.bold,
@@ -1311,19 +1293,19 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
+                  horizontal: 10,
+                  vertical: 4.5,
                 ),
                 decoration: BoxDecoration(
                   color: totalSelectedCount > 0
                       ? ParishColors.marianBlueSurface
                       : ParishColors.backgroundLight,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   '$totalSelectedCount Selected',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.bold,
                     color: totalSelectedCount > 0
                         ? ParishColors.marianBlue
@@ -1333,18 +1315,18 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
 
           // Scope View Tabs
           Container(
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: borderGrey.withOpacity(0.6),
               ),
             ),
-            padding: const EdgeInsets.all(3),
+            padding: const EdgeInsets.all(3.5),
             child: Row(
               children: [
                 _buildPickerTab(0, 'Scope Filter ($totalScopeCount)'),
@@ -1353,11 +1335,11 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
           // Search Field
           Container(
-            height: 38,
+            height: 40,
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight,
               borderRadius: BorderRadius.circular(8),
@@ -1368,7 +1350,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               children: [
                 const Icon(
                   Icons.search,
-                  size: 16,
+                  size: 18,
                   color: ParishColors.marianBlue,
                 ),
                 const SizedBox(width: 8),
@@ -1380,14 +1362,14 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                       setState(() => _itemSearchQuery = val);
                     },
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 13,
                       color: textDark,
                     ),
                     decoration: InputDecoration(
                       hintText:
-                      'Search by control #, item name, or location...',
+                      'Search by control #, item name, location, or description...',
                       hintStyle: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: 12,
                         color: textMuted,
                       ),
                       border: InputBorder.none,
@@ -1398,7 +1380,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 ),
                 if (_itemSearchQuery.isNotEmpty)
                   IconButton(
-                    icon: const Icon(Icons.clear, size: 14),
+                    icon: const Icon(Icons.clear, size: 16),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     onPressed: _isGenerating
@@ -1411,7 +1393,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
           // Quick Selection Toolbar
           Row(
@@ -1420,7 +1402,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               Text(
                 'Showing ${displayed.length} item(s)',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 11.5,
                   color: textMuted,
                 ),
               ),
@@ -1432,14 +1414,14 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                     : _selectAllDisplayed),
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
                 child: Text(
                   allDisplayedSelected
                       ? 'Deselect Displayed'
                       : 'Select All Displayed',
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.bold,
                     color: ParishColors.marianBlue,
                   ),
@@ -1449,12 +1431,12 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
           ),
           const Divider(height: 10),
 
-          // Selectable Items Checklist
+          // Selectable Items Checklist (Expanded to 300px height for comfortable page view)
           Container(
-            height: 220,
+            height: isMobile ? 260 : 300,
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: borderGrey.withOpacity(0.6),
               ),
@@ -1466,16 +1448,16 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                     ? 'No items match "$_itemSearchQuery"'
                     : 'No items found in this tab.',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 12.5,
                   color: textMuted,
                 ),
               ),
             )
                 : ListView.separated(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(8),
               itemCount: displayed.length,
               separatorBuilder: (_, __) =>
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 final asset = displayed[index];
                 final isSelected =
@@ -1488,20 +1470,20 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
+                      horizontal: 10,
+                      vertical: 8,
                     ),
                     decoration: BoxDecoration(
                       color: isSelected
                           ? ParishColors.marianBlueSurface
-                          .withOpacity(0.5)
+                          .withOpacity(0.55)
                           : Colors.white,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: isSelected
                             ? ParishColors.marianBlue
                             : borderGrey.withOpacity(0.5),
-                        width: isSelected ? 1.2 : 0.8,
+                        width: isSelected ? 1.3 : 0.8,
                       ),
                     ),
                     child: Row(
@@ -1516,7 +1498,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                             asset.assetId,
                           ),
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 6),
                         Expanded(
                           child: Column(
                             crossAxisAlignment:
@@ -1532,7 +1514,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                     asset.controlNumber,
                                     style: const TextStyle(
                                       fontFamily: 'Courier',
-                                      fontSize: 11.5,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                       color: ParishColors.marianBlue,
                                     ),
@@ -1540,8 +1522,8 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                   Container(
                                     padding:
                                     const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 1,
+                                      horizontal: 5,
+                                      vertical: 1.5,
                                     ),
                                     decoration: BoxDecoration(
                                       color: asset.unitPrice >= 10000.0
@@ -1549,12 +1531,12 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                           : ParishColors
                                           .marianBlueSurface,
                                       borderRadius:
-                                      BorderRadius.circular(3),
+                                      BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       asset.inventorySectionCode,
                                       style: TextStyle(
-                                        fontSize: 8.5,
+                                        fontSize: 9,
                                         fontWeight: FontWeight.bold,
                                         color:
                                         asset.unitPrice >= 10000.0
@@ -1568,17 +1550,18 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                                     Text(
                                       '(${asset.quantity}x)',
                                       style: TextStyle(
-                                        fontSize: 9.5,
+                                        fontSize: 10,
                                         fontWeight: FontWeight.bold,
                                         color: textMuted,
                                       ),
                                     ),
                                 ],
                               ),
+                              const SizedBox(height: 2),
                               Text(
                                 asset.itemName,
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 12.5,
                                   fontWeight: FontWeight.bold,
                                   color: textDark,
                                 ),
@@ -1588,7 +1571,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                               Text(
                                 '${asset.displayLocation} • Acq: ${asset.formattedAcquisitionDate}',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 10.5,
                                   color: textMuted,
                                 ),
                                 maxLines: 1,
@@ -1597,11 +1580,11 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 8),
                         Text(
                           asset.formattedTotalCost,
                           style: const TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: ParishColors.oliveGreen,
                           ),
@@ -1626,12 +1609,12 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
         onTap: _isGenerating
             ? null
             : () => setState(() => _itemPickerTab = tabIndex),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: 7),
           decoration: BoxDecoration(
             color: isSelected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
             boxShadow: isSelected
                 ? [
               BoxShadow(
@@ -1646,7 +1629,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: 11,
               fontWeight:
               isSelected ? FontWeight.bold : FontWeight.w600,
               color: isSelected
@@ -1671,12 +1654,15 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        TextButton(
-          onPressed:
-          _isGenerating ? null : () => Navigator.pop(context),
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: _isGenerating ? null : () => Navigator.pop(context),
           child: Text(
-            'Cancel',
-            style: TextStyle(color: textMuted),
+            'Back to Inventory',
+            style: TextStyle(color: textMuted, fontWeight: FontWeight.bold),
           ),
         ),
         Row(
@@ -1689,17 +1675,15 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   color: ParishColors.marianBlue,
                 ),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
+                  horizontal: 16,
                   vertical: 12,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
-              onPressed:
-              canProceed ? _handlePreviewPdf : null,
-              icon: (_isGenerating &&
-                  _activeOperation == 'previewing')
+              onPressed: canProceed ? _handlePreviewPdf : null,
+              icon: (_isGenerating && _activeOperation == 'previewing')
                   ? const SizedBox(
                 width: 14,
                 height: 14,
@@ -1719,7 +1703,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: ParishColors.oliveGreen,
@@ -1727,17 +1711,15 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   color: ParishColors.oliveGreen,
                 ),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
+                  horizontal: 16,
                   vertical: 12,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
-              onPressed:
-              canProceed ? _handleDownloadPdf : null,
-              icon: (_isGenerating &&
-                  _activeOperation == 'downloading')
+              onPressed: canProceed ? _handleDownloadPdf : null,
+              icon: (_isGenerating && _activeOperation == 'downloading')
                   ? const SizedBox(
                 width: 14,
                 height: 14,
@@ -1758,23 +1740,21 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: ParishColors.marianBlue,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
+                  horizontal: 22,
                   vertical: 12,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
-              onPressed:
-              canProceed ? _handlePrintReport : null,
-              icon: (_isGenerating &&
-                  _activeOperation == 'printing')
+              onPressed: canProceed ? _handlePrintReport : null,
+              icon: (_isGenerating && _activeOperation == 'printing')
                   ? const SizedBox(
                 width: 14,
                 height: 14,
@@ -1785,8 +1765,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
               )
                   : const Icon(Icons.print, size: 17),
               label: Text(
-                _isGenerating &&
-                    _activeOperation == 'printing'
+                _isGenerating && _activeOperation == 'printing'
                     ? 'Preparing...'
                     : 'Print ($itemCount)',
                 style: const TextStyle(
@@ -1816,15 +1795,13 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   side: const BorderSide(
                     color: ParishColors.marianBlue,
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                onPressed:
-                canProceed ? _handlePreviewPdf : null,
-                icon: (_isGenerating &&
-                    _activeOperation == 'previewing')
+                onPressed: canProceed ? _handlePreviewPdf : null,
+                icon: (_isGenerating && _activeOperation == 'previewing')
                     ? const SizedBox(
                   width: 12,
                   height: 12,
@@ -1853,15 +1830,13 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                   side: const BorderSide(
                     color: ParishColors.oliveGreen,
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                onPressed:
-                canProceed ? _handleDownloadPdf : null,
-                icon: (_isGenerating &&
-                    _activeOperation == 'downloading')
+                onPressed: canProceed ? _handleDownloadPdf : null,
+                icon: (_isGenerating && _activeOperation == 'downloading')
                     ? const SizedBox(
                   width: 12,
                   height: 12,
@@ -1889,8 +1864,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
         Row(
           children: [
             TextButton(
-              onPressed:
-              _isGenerating ? null : () => Navigator.pop(context),
+              onPressed: _isGenerating ? null : () => Navigator.pop(context),
               child: const Text(
                 'Cancel',
                 style: TextStyle(fontSize: 12),
@@ -1902,15 +1876,13 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ParishColors.marianBlue,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                onPressed:
-                canProceed ? _handlePrintReport : null,
-                icon: (_isGenerating &&
-                    _activeOperation == 'printing')
+                onPressed: canProceed ? _handlePrintReport : null,
+                icon: (_isGenerating && _activeOperation == 'printing')
                     ? const SizedBox(
                   width: 14,
                   height: 14,
@@ -1921,8 +1893,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
                 )
                     : const Icon(Icons.print, size: 16),
                 label: Text(
-                  _isGenerating &&
-                      _activeOperation == 'printing'
+                  _isGenerating && _activeOperation == 'printing'
                       ? 'Building...'
                       : 'Print ($itemCount Items)',
                   style: const TextStyle(
@@ -1949,7 +1920,7 @@ class _AssetReportFilterDialogState extends State<_AssetReportFilterDialog> {
       onTap: _isGenerating ? null : onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
               ? ParishColors.marianBlueSurface
