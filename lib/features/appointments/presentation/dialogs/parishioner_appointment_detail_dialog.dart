@@ -1,3 +1,7 @@
+// =============================================================================
+// FILE: lib/features/appointments/presentation/dialogs/parishioner_appointment_detail_dialog.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/appointment_model.dart';
@@ -36,6 +40,15 @@ class _ParishionerAppointmentDetailDialogState
     extends State<_ParishionerAppointmentDetailDialog> {
   bool _isCancelling = false;
 
+  bool _isOutsideVenue(String venue) {
+    final v = venue.toLowerCase();
+    return v.contains('outside') ||
+        v.contains('off-site') ||
+        v.contains('hospital') ||
+        v.contains('residence') ||
+        v.contains('home');
+  }
+
   Future<void> _cancelBooking() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -44,7 +57,7 @@ class _ParishionerAppointmentDetailDialogState
         title: const Text('Cancel Appointment Request?',
             style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text(
-          'Are you sure you want to cancel this booking request? This will release the time slot on the parish calendar.',
+          'Are you sure you want to cancel this booking request? This will immediately release the time slot on the parish calendar.',
           style: TextStyle(fontSize: 13.5),
         ),
         actions: [
@@ -104,32 +117,40 @@ class _ParishionerAppointmentDetailDialogState
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final status = a.appointmentStatus.toLowerCase();
-    final bool canModify = status != 'cancelled' && status != 'completed';
 
-    Color statusColor = ParishColors.goldAccent;
-    Color statusSurface = ParishColors.goldLight;
+    // Strict lock: Concluded/Completed or Cancelled appointments are read-only
+    final bool isCompleted = status == 'completed';
+    final bool isCancelled = status == 'cancelled';
+    final bool canModify = !isCompleted && !isCancelled;
+    final bool isOutside = _isOutsideVenue(a.venue);
+
+    Color statusColor = const Color(0xFFD97706); // Amber: Pending
+    Color statusSurface = const Color(0xFFFFFBEB);
     String statusExplanation =
-        'Your request is currently being reviewed by the Parish Office staff.';
+        'Your request has been submitted and is currently being reviewed by the Parish Office staff.';
 
     if (status == 'confirmed') {
-      statusColor = ParishColors.oliveGreen;
-      statusSurface = ParishColors.oliveGreenSurface;
+      statusColor = const Color(0xFF16A34A); // Green: Confirmed
+      statusSurface = const Color(0xFFF0FDF4);
       statusExplanation =
       'Your schedule has been confirmed and locked on the Parish Master Calendar.';
     } else if (status == 'completed') {
-      statusColor = ParishColors.marianBlue;
-      statusSurface = ParishColors.marianBlueSurface;
-      statusExplanation = 'This liturgical service has been concluded.';
+      statusColor = const Color(0xFF64748B); // Gray: Concluded
+      statusSurface = const Color(0xFFF1F5F9);
+      statusExplanation = 'This liturgical ceremony has been concluded.';
     } else if (status == 'cancelled') {
-      statusColor = ParishColors.mercyRed;
-      statusSurface = ParishColors.mercyRedSurface;
+      statusColor = const Color(0xFFDC2626); // Red: Cancelled
+      statusSurface = const Color(0xFFFEF2F2);
       statusExplanation = 'This appointment request was cancelled.';
     } else if (status == 'rescheduled') {
-      statusColor = const Color(0xFF7C3AED);
-      statusSurface = const Color(0xFFF3E8FF);
+      statusColor = const Color(0xFFD97706); // Amber: Rescheduled / Pending check
+      statusSurface = const Color(0xFFFFFBEB);
       statusExplanation =
-      'This service has been moved to a new schedule. Please check the date and time.';
+      'This service has been moved to a new schedule. Please verify the date and time.';
     }
+
+    final formattedTime = AppointmentService.formatTime12Hour(a.requestedTime);
+    final duration = AppointmentService.getMinimumDurationMinutes(a.serviceType);
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -182,11 +203,61 @@ class _ParishionerAppointmentDetailDialogState
 
             _buildDetailRow(Icons.person_outline, 'Requester', a.requesterName),
             _buildDetailRow(Icons.phone_outlined, 'Contact', a.contactNumber),
-            if (a.email != null)
+            if (a.email != null && a.email!.isNotEmpty)
               _buildDetailRow(Icons.email_outlined, 'Email', a.email!),
-            _buildDetailRow(Icons.access_time, 'Scheduled Date',
-                '${a.formattedDate} • ${a.formattedTimeRange}'),
-            _buildDetailRow(Icons.location_on_outlined, 'Venue', a.venue),
+
+            // Estimated Schedule
+            _buildDetailRow(Icons.access_time, 'Estimated Schedule',
+                '${a.formattedDate} at $formattedTime (~${duration}m)'),
+
+            // Venue with Grounds vs Outside Badge
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    isOutside ? Icons.pin_drop_outlined : Icons.church_outlined,
+                    size: 18,
+                    color: ParishColors.marianBlue,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: TextStyle(fontSize: 13, color: textDark),
+                        children: [
+                          TextSpan(
+                            text: 'Venue: ',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: textMuted),
+                          ),
+                          TextSpan(text: '${a.venue} ', style: const TextStyle(fontWeight: FontWeight.w600)),
+                          WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: isOutside ? ParishColors.goldLight : ParishColors.marianBlueSurface,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                isOutside ? 'OUTSIDE PARISH' : 'PARISH GROUNDS',
+                                style: TextStyle(
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isOutside ? ParishColors.goldAccent : ParishColors.marianBlue,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             _buildDetailRow(Icons.church_outlined, 'Presiding Clergy', a.officiantName),
 
             if (a.appointmentRemarks != null &&
@@ -230,13 +301,13 @@ class _ParishionerAppointmentDetailDialogState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'STATUS: ${a.appointmentStatus.toUpperCase()}',
+                    isCompleted ? 'STATUS: CONCLUDED' : 'STATUS: ${a.appointmentStatus.toUpperCase()}',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                         color: statusColor),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     statusExplanation,
                     style: TextStyle(fontSize: 11.5, color: textDark, height: 1.3),
@@ -254,8 +325,8 @@ class _ParishionerAppointmentDetailDialogState
                   padding: EdgeInsets.all(8.0),
                   child: CircularProgressIndicator()))
         else ...[
+          // Actions: Strictly locked if completed or cancelled
           if (canModify) ...[
-            // Parishioner Reschedule Request Action
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Color(0xFF7C3AED)),
@@ -268,7 +339,7 @@ class _ParishionerAppointmentDetailDialogState
                   onRescheduled: widget.onStatusUpdated,
                 );
               },
-              icon: const Icon(Icons.update, size: 16),
+              icon: const Icon(Icons.edit_calendar, size: 16),
               label: const Text('Request Reschedule'),
             ),
             TextButton(

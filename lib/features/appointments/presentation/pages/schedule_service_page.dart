@@ -21,6 +21,7 @@ import '../dialogs/appointment_submission_success_dialog.dart';
 Future<void> navigateToScheduleServicePage(
     BuildContext context, {
       DateTime? initialDate,
+      TimeOfDay? initialTime,
       VoidCallback? onAppointmentSaved,
     }) {
   return Navigator.push(
@@ -28,6 +29,7 @@ Future<void> navigateToScheduleServicePage(
     MaterialPageRoute(
       builder: (_) => ScheduleServicePage(
         initialDate: initialDate,
+        initialTime: initialTime,
         onAppointmentSaved: onAppointmentSaved,
       ),
     ),
@@ -87,6 +89,7 @@ class _ServicePreset {
   final String defaultOfficiant;
   final String durationLabel;
   final bool isCommunityBaptism;
+  final bool isAnytimeAllowed;
 
   const _ServicePreset({
     required this.durationMinutes,
@@ -94,16 +97,19 @@ class _ServicePreset {
     required this.defaultOfficiant,
     required this.durationLabel,
     this.isCommunityBaptism = false,
+    this.isAnytimeAllowed = false,
   });
 }
 
 class ScheduleServicePage extends StatefulWidget {
   final DateTime? initialDate;
+  final TimeOfDay? initialTime;
   final VoidCallback? onAppointmentSaved;
 
   const ScheduleServicePage({
     super.key,
     this.initialDate,
+    this.initialTime,
     this.onAppointmentSaved,
   });
 
@@ -117,18 +123,27 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   final _requesterNameController = TextEditingController();
   final _contactNumberController = TextEditingController();
   final _emailController = TextEditingController();
-  final _idNumberController = TextEditingController();
   final _remarksController = TextEditingController();
+  final _idNumberController = TextEditingController();
+  final _outsideLocationController = TextEditingController();
 
   final FocusNode _nameFocusNode = FocusNode();
   final FocusNode _contactFocusNode = FocusNode();
-  final FocusNode _emailFocusNode = FocusNode();
 
   String _selectedService = 'Nuptial Mass (Wedding)';
-  String _selectedVenue = 'Main Church Altar';
   String _selectedOfficiant = 'Rev. Fr. Roy';
   String _selectedIdType = 'Philippine National ID (PhilID / ePhilID)';
 
+  // Venue state
+  bool _isOnParishGrounds = true;
+
+  // Single service time state
+  late DateTime _selectedDate;
+  TimeOfDay _estimatedServiceTime = const TimeOfDay(hour: 10, minute: 0);
+  int _estimatedDurationMinutes = 60;
+  bool _allowMondayException = false;
+
+  // Preserved Parishioner Valid ID attachment
   Uint8List? _attachedIdFileBytes;
   String? _attachedIdFileName;
   int? _attachedIdFileSize;
@@ -139,10 +154,6 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   static const int _maxAttachmentAttemptsPerWindow = 5;
   static const Duration _rateLimitWindow = Duration(minutes: 5);
   static const Duration _pickCooldown = Duration(seconds: 3);
-
-  late DateTime _selectedDate;
-  TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
-  late TimeOfDay _endTime;
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -192,63 +203,62 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   final Map<String, _ServicePreset> _presets = const {
     'Nuptial Mass (Wedding)': _ServicePreset(
       durationMinutes: 90,
-      defaultVenue: 'Main Church Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hr 30 mins',
     ),
     'Community Baptism': _ServicePreset(
       durationMinutes: 60,
-      defaultVenue: 'Baptistery & Main Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour (11:00 AM Batch)',
       isCommunityBaptism: true,
     ),
+    'Confirmation (Kumpil)': _ServicePreset(
+      durationMinutes: 60,
+      defaultVenue: 'Parish Grounds',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '1 hour',
+    ),
     'Funeral Mass & Blessing': _ServicePreset(
       durationMinutes: 60,
-      defaultVenue: 'Main Church Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour',
     ),
     'Anointing of the Sick & Viaticum': _ServicePreset(
       durationMinutes: 45,
-      defaultVenue: 'Off-site / Home Visit',
+      defaultVenue: 'Outside Parish',
       defaultOfficiant: 'Rev. Fr. Roy',
-      durationLabel: '45 mins',
+      durationLabel: '45 mins (Emergency / Anytime)',
+      isAnytimeAllowed: true,
+    ),
+    'Confession & Spiritual Direction': _ServicePreset(
+      durationMinutes: 30,
+      defaultVenue: 'Parish Grounds',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '30 mins (Flexible / Anytime)',
+      isAnytimeAllowed: true,
     ),
     'House / Business Blessing': _ServicePreset(
       durationMinutes: 45,
-      defaultVenue: 'Off-site / Home Visit',
+      defaultVenue: 'Outside Parish',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '45 mins',
+    ),
+    'Canonical Interview / Pre-Cana': _ServicePreset(
+      durationMinutes: 45,
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '45 mins',
     ),
     'Thanksgiving Mass Intention': _ServicePreset(
       durationMinutes: 60,
-      defaultVenue: 'Main Church Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour',
     ),
-    'Canonical Interview / Pre-Cana': _ServicePreset(
-      durationMinutes: 45,
-      defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Roy',
-      durationLabel: '45 mins',
-    ),
-    'Confession & Spiritual Direction': _ServicePreset(
-      durationMinutes: 30,
-      defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Roy',
-      durationLabel: '30 mins',
-    ),
   };
-
-  final List<String> _venues = [
-    'Main Church Altar',
-    'Baptistery & Main Altar',
-    'Parish Hall',
-    'Mortuary Chapel',
-    'Sanctuary / Sacristy',
-    'Off-site / Home Visit',
-  ];
 
   final List<String> _officiants = [
     'Rev. Fr. Roy',
@@ -269,33 +279,52 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
     final today = DateTime(now.year, now.month, now.day);
 
     if (widget.initialDate != null) {
-      var target = DateTime(
+      final target = DateTime(
         widget.initialDate!.year,
         widget.initialDate!.month,
         widget.initialDate!.day,
       );
-      if (target.isBefore(today)) {
-        target = _getInitialValidDate();
-      }
-      if (_presets[_selectedService]?.isCommunityBaptism == true &&
-          target.weekday != DateTime.saturday &&
-          target.weekday != DateTime.sunday) {
-        target = _getInitialValidDate();
-      }
-      _selectedDate = target;
+      _selectedDate = target.isBefore(today) ? _getInitialValidDate() : target;
     } else {
       _selectedDate = _getInitialValidDate();
     }
 
-    _applyPresetInitialTimes();
+    if (widget.initialTime != null) {
+      _estimatedServiceTime = widget.initialTime!;
+    }
+
+    _applyServicePreset(_selectedService, retainCustomTime: widget.initialTime != null);
     LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
 
     _nameFocusNode.addListener(() => setState(() {}));
     _contactFocusNode.addListener(() => setState(() {}));
-    _emailFocusNode.addListener(() => setState(() {}));
 
     _restoreDraft();
     _runLiveConflictCheck();
+  }
+
+  void _applyServicePreset(String service, {bool retainCustomTime = false}) {
+    final preset = _presets[service];
+    if (preset == null) return;
+
+    _estimatedDurationMinutes = preset.durationMinutes;
+
+    if (preset.defaultVenue.toLowerCase().contains('outside')) {
+      _isOnParishGrounds = false;
+    } else {
+      _isOnParishGrounds = true;
+      _outsideLocationController.clear();
+    }
+
+    if (!retainCustomTime) {
+      if (preset.isCommunityBaptism) {
+        _estimatedServiceTime = const TimeOfDay(hour: 11, minute: 0);
+      } else if (!preset.isAnytimeAllowed) {
+        if (_estimatedServiceTime.hour < 9 || _estimatedServiceTime.hour >= 17) {
+          _estimatedServiceTime = const TimeOfDay(hour: 10, minute: 0);
+        }
+      }
+    }
   }
 
   String? _validateFullName(String? value) {
@@ -344,100 +373,17 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   }
 
   bool get _isNameValid => _validateFullName(_requesterNameController.text) == null;
-  bool get _isPhoneValid =>
-      SacramentalValidators.validatePhoneNumber(_contactNumberController.text) == null &&
-          _contactNumberController.text.trim().isNotEmpty;
-  bool get _isEmailValid {
-    final text = _emailController.text.trim();
-    if (text.isEmpty) return !_isParishioner;
-    return RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(text);
-  }
-
-  Future<void> _saveDraft() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final draftMap = {
-        'service': _selectedService,
-        'requesterName': _requesterNameController.text.trim(),
-        'contact': _contactNumberController.text.trim(),
-        'email': _emailController.text.trim(),
-        'idType': _selectedIdType,
-        'idNumber': _idNumberController.text.trim(),
-        'remarks': _remarksController.text.trim(),
-        'venue': _selectedVenue,
-        'officiant': _selectedOfficiant,
-        'date': _selectedDate.toIso8601String(),
-        'startHour': _startTime.hour,
-        'startMinute': _startTime.minute,
-      };
-      await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
-    } catch (_) {}
-  }
-
-  Future<void> _restoreDraft() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_draftStorageKey);
-      if (raw != null && raw.isNotEmpty) {
-        final map = jsonDecode(raw) as Map<String, dynamic>;
-        if (mounted) {
-          setState(() {
-            if (!_isParishioner &&
-                map['requesterName'] != null &&
-                (map['requesterName'] as String).isNotEmpty) {
-              _requesterNameController.text = map['requesterName'];
-            }
-            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
-              _contactNumberController.text = map['contact'];
-            }
-            if (!_isParishioner &&
-                map['email'] != null &&
-                (map['email'] as String).isNotEmpty) {
-              _emailController.text = map['email'];
-            }
-            if (map['idNumber'] != null) _idNumberController.text = map['idNumber'];
-            if (map['remarks'] != null) _remarksController.text = map['remarks'];
-            if (map['service'] != null && _presets.containsKey(map['service'])) {
-              _selectedService = map['service'];
-            }
-            if (map['venue'] != null && _venues.contains(map['venue'])) {
-              _selectedVenue = map['venue'];
-            }
-            if (map['officiant'] != null && _officiants.contains(map['officiant'])) {
-              _selectedOfficiant = _isParishioner ? 'Rev. Fr. Roy' : map['officiant'];
-            }
-            if (map['idType'] != null && _philippineIdTypes.contains(map['idType'])) {
-              _selectedIdType = map['idType'];
-            }
-            if (map['date'] != null) {
-              final draftDate = DateTime.tryParse(map['date']);
-              final now = DateTime.now();
-              final today = DateTime(now.year, now.month, now.day);
-              if (draftDate != null && !draftDate.isBefore(today)) {
-                _selectedDate = draftDate;
-              }
-            }
-          });
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _clearDraft() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_draftStorageKey);
-    } catch (_) {}
-  }
 
   DateTime _getInitialValidDate() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     var date = today.add(const Duration(days: 1));
-    final isCommunity = _presets[_selectedService]?.isCommunityBaptism ?? false;
+    final preset = _presets[_selectedService];
+    final isCommunity = preset?.isCommunityBaptism ?? false;
+    final isAnytime = preset?.isAnytimeAllowed ?? false;
 
     while (date.isBefore(today) ||
-        date.weekday == DateTime.monday ||
+        (!isAnytime && date.weekday == DateTime.monday && _isParishioner) ||
         LiturgicalCalendarService.isDateBlockedSync(date) ||
         (isCommunity &&
             date.weekday != DateTime.saturday &&
@@ -453,31 +399,12 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
     _requesterNameController.dispose();
     _contactNumberController.dispose();
     _emailController.dispose();
-    _idNumberController.dispose();
     _remarksController.dispose();
+    _idNumberController.dispose();
+    _outsideLocationController.dispose();
     _nameFocusNode.dispose();
     _contactFocusNode.dispose();
-    _emailFocusNode.dispose();
     super.dispose();
-  }
-
-  TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
-    final totalMinutes = (time.hour * 60) + time.minute + minutesToAdd;
-    final newHour = (totalMinutes ~/ 60) % 24;
-    final newMinute = totalMinutes % 60;
-    return TimeOfDay(hour: newHour, minute: newMinute);
-  }
-
-  void _applyPresetInitialTimes() {
-    final preset = _presets[_selectedService]!;
-    if (preset.isCommunityBaptism) {
-      _startTime = const TimeOfDay(hour: 11, minute: 0);
-    } else {
-      if (_startTime.hour < 9 || _startTime.hour >= 17) {
-        _startTime = const TimeOfDay(hour: 10, minute: 0);
-      }
-    }
-    _endTime = _addMinutes(_startTime, preset.durationMinutes);
   }
 
   String _formatTimeOfDay(TimeOfDay time) {
@@ -491,6 +418,117 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
     final period = time.hour >= 12 ? 'PM' : 'AM';
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute $period';
+  }
+
+  TimeOfDay _calculateEndTime(TimeOfDay start, int durationMinutes) {
+    final totalMinutes = (start.hour * 60) + start.minute + durationMinutes;
+    final newHour = (totalMinutes ~/ 60) % 24;
+    final newMinute = totalMinutes % 60;
+    return TimeOfDay(hour: newHour, minute: newMinute);
+  }
+
+  Future<void> _pickServiceTime() async {
+    final preset = _presets[_selectedService];
+    if (preset?.isCommunityBaptism == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Community Baptism ceremony strictly begins at 11:00 AM on Weekends.'),
+          backgroundColor: ParishColors.goldAccent,
+        ),
+      );
+      return;
+    }
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _estimatedServiceTime,
+    );
+
+    if (picked != null) {
+      setState(() {
+        _estimatedServiceTime = picked;
+      });
+      _saveDraft();
+      _runLiveConflictCheck();
+    }
+  }
+
+  Future<void> _pickDate() async {
+    await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final preset = _presets[_selectedService];
+    final isCommunity = preset?.isCommunityBaptism ?? false;
+    final isAnytime = preset?.isAnytimeAllowed ?? false;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 730)),
+      selectableDayPredicate: (DateTime day) {
+        if (day.isBefore(today)) return false;
+        if (!isAnytime && day.weekday == DateTime.monday && _isParishioner) return false;
+        if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
+        if (isCommunity &&
+            day.weekday != DateTime.saturday &&
+            day.weekday != DateTime.sunday) {
+          return false;
+        }
+        return true;
+      },
+    );
+
+    if (picked != null) {
+      if (picked.weekday == DateTime.monday && !isAnytime && !_isParishioner) {
+        final allowed = await _confirmMondayExceptionDialog(picked);
+        if (!allowed) return;
+        _allowMondayException = true;
+      } else {
+        _allowMondayException = false;
+      }
+
+      setState(() => _selectedDate = picked);
+      _saveDraft();
+      _runLiveConflictCheck();
+    }
+  }
+
+  Future<bool> _confirmMondayExceptionDialog(DateTime date) async {
+    final dateStr =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 24),
+            SizedBox(width: 8),
+            Text('Monday Schedule Exception', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Text(
+          'Mondays ($dateStr) are designated Clergy Rest Days and the parish office is closed.\n\n'
+              'Do you want to schedule this appointment on Monday as an administrative exception?',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Allow Monday Exception'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
   }
 
   Future<void> _pickIdDocument() async {
@@ -580,18 +618,11 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
+                  const Row(
                     children: [
-                      const Icon(Icons.verified_user_outlined, color: ParishColors.marianBlue, size: 22),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Attached ID Inspection',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: ParishColors.textDark,
-                        ),
-                      ),
+                      Icon(Icons.verified_user_outlined, color: ParishColors.marianBlue, size: 22),
+                      SizedBox(width: 8),
+                      Text('Attached ID Inspection', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     ],
                   ),
                   IconButton(
@@ -604,46 +635,24 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    color: ParishColors.backgroundLight,
-                    child: InteractiveViewer(
-                      panEnabled: true,
-                      minScale: 0.8,
-                      maxScale: 4.0,
-                      child: Center(
-                        child: Image.memory(
-                          bytes,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    minScale: 0.8,
+                    maxScale: 4.0,
+                    child: Center(
+                      child: Image.memory(bytes, fit: BoxFit.contain),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      fileName,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: ParishColors.textMuted,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.marianBlue,
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Looks Good'),
-                  ),
-                ],
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.marianBlue,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Looks Good'),
               ),
             ],
           ),
@@ -655,7 +664,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   void _triggerDebouncedValidation() {
     _saveDraft();
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
       _runLiveConflictCheck();
       _runDuplicateRequesterCheck();
     });
@@ -691,33 +700,42 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
       _suggestedSlot = null;
     });
 
+    final preset = _presets[_selectedService];
+    if (preset?.isAnytimeAllowed == true) {
+      setState(() => _isLiveChecking = false);
+      return;
+    }
+
     final dateStr =
         '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-    final startStr = _formatTimeOfDay(_startTime);
-    final endStr = _formatTimeOfDay(_endTime);
+    final startStr = _formatTimeOfDay(_estimatedServiceTime);
+    final computedEnd = _calculateEndTime(_estimatedServiceTime, _estimatedDurationMinutes);
+    final endStr = _formatTimeOfDay(computedEnd);
+    final venueStr = _isOnParishGrounds
+        ? 'Parish Grounds'
+        : 'Outside Parish (${_outsideLocationController.text.trim()})';
 
     final warning = await AppointmentService.checkScheduleConflictSilent(
       date: dateStr,
       startTime: startStr,
       endTime: endStr,
-      venue: _selectedVenue,
+      venue: venueStr,
       officiant: _selectedOfficiant,
       serviceType: _selectedService,
+      allowMondayException: _allowMondayException,
     );
 
     if (!mounted) return;
 
     if (warning != null) {
-      final preset = _presets[_selectedService];
-      final duration = preset?.durationMinutes ?? 60;
-
       final nextSlot = await AppointmentService.findNextAvailableSlot(
         date: dateStr,
-        durationMinutes: duration,
-        venue: _selectedVenue,
+        durationMinutes: _estimatedDurationMinutes,
+        venue: venueStr,
         officiant: _selectedOfficiant,
-        preferredStartTime: _startTime,
+        preferredStartTime: _estimatedServiceTime,
         serviceType: _selectedService,
+        allowMondayException: _allowMondayException,
       );
 
       setState(() {
@@ -737,166 +755,75 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   void _applySuggestedSlot() {
     if (_suggestedSlot != null) {
       setState(() {
-        _startTime = _suggestedSlot!['start']!;
-        _endTime = _suggestedSlot!['end']!;
+        _estimatedServiceTime = _suggestedSlot!['start']!;
       });
       _runLiveConflictCheck();
     }
   }
 
-  void _onServiceSelected(String service) {
-    setState(() {
-      _selectedService = service;
-      final preset = _presets[service];
-      if (preset != null) {
-        _selectedVenue = preset.defaultVenue;
-        _selectedOfficiant = 'Rev. Fr. Roy';
-
-        if (preset.isCommunityBaptism) {
-          _startTime = const TimeOfDay(hour: 11, minute: 0);
-          if (_selectedDate.weekday != DateTime.saturday &&
-              _selectedDate.weekday != DateTime.sunday) {
-            _selectedDate = _getInitialValidDate();
-          }
-        } else {
-          if (_startTime.hour < 9 || _startTime.hour >= 17) {
-            _startTime = const TimeOfDay(hour: 10, minute: 0);
-          }
-        }
-        _endTime = _addMinutes(_startTime, preset.durationMinutes);
-      }
-    });
-    _saveDraft();
-    _runLiveConflictCheck();
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draftMap = {
+        'service': _selectedService,
+        'requesterName': _requesterNameController.text.trim(),
+        'contact': _contactNumberController.text.trim(),
+        'email': _emailController.text.trim(),
+        'remarks': _remarksController.text.trim(),
+        'outsideLocation': _outsideLocationController.text.trim(),
+        'isOnParishGrounds': _isOnParishGrounds,
+        'date': _selectedDate.toIso8601String(),
+        'startHour': _estimatedServiceTime.hour,
+        'startMinute': _estimatedServiceTime.minute,
+        'duration': _estimatedDurationMinutes,
+      };
+      await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
+    } catch (_) {}
   }
 
-  Future<void> _pickDate() async {
-    await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final preset = _presets[_selectedService];
-    final isCommunity = preset?.isCommunityBaptism ?? false;
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 365)),
-      selectableDayPredicate: (DateTime day) {
-        if (day.isBefore(today)) return false;
-        if (day.weekday == DateTime.monday) return false;
-        if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
-        if (isCommunity &&
-            day.weekday != DateTime.saturday &&
-            day.weekday != DateTime.sunday) {
-          return false;
+  Future<void> _restoreDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_draftStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            if (!_isParishioner && map['requesterName'] != null) {
+              _requesterNameController.text = map['requesterName'];
+            }
+            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
+              _contactNumberController.text = map['contact'];
+            }
+            if (!_isParishioner && map['email'] != null) {
+              _emailController.text = map['email'];
+            }
+            if (map['remarks'] != null) _remarksController.text = map['remarks'];
+            if (map['outsideLocation'] != null) _outsideLocationController.text = map['outsideLocation'];
+            if (map['isOnParishGrounds'] != null) _isOnParishGrounds = map['isOnParishGrounds'];
+            if (map['service'] != null && _presets.containsKey(map['service'])) {
+              _selectedService = map['service'];
+            }
+            if (map['duration'] != null) _estimatedDurationMinutes = map['duration'];
+            if (map['date'] != null) {
+              final draftDate = DateTime.tryParse(map['date']);
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+              if (draftDate != null && !draftDate.isBefore(today)) {
+                _selectedDate = draftDate;
+              }
+            }
+          });
         }
-        return true;
-      },
-    );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-      _saveDraft();
-      _runLiveConflictCheck();
-    }
+      }
+    } catch (_) {}
   }
 
-  Future<void> _pickTime(bool isStart) async {
-    final preset = _presets[_selectedService];
-    final minDuration = preset?.durationMinutes ?? 60;
-
-    if (preset?.isCommunityBaptism == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Community Baptism ceremony strictly begins at 11:00 AM on Weekends.'),
-          backgroundColor: ParishColors.goldAccent,
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    final initial = isStart ? _startTime : _endTime;
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-    );
-
-    if (picked != null) {
-      final pickedMinutes = picked.hour * 60 + picked.minute;
-
-      if (isStart) {
-        if (pickedMinutes < AppointmentService.operatingDayStartMin) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Parish appointments cannot be scheduled before 9:00 AM.'),
-              backgroundColor: ParishColors.mercyRed,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-
-        if (pickedMinutes + minDuration > AppointmentService.operatingDayEndMin) {
-          final maxStartMinutes = AppointmentService.operatingDayEndMin - minDuration;
-          final maxStartTod = AppointmentService.minutesToTimeOfDay(maxStartMinutes);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$_selectedService requires $minDuration minutes and must conclude by 5:00 PM. Latest allowed start time is ${_formatTime12Hour(maxStartTod)}.',
-              ),
-              backgroundColor: ParishColors.mercyRed,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
-        }
-
-        setState(() {
-          _startTime = picked;
-          _endTime = _addMinutes(picked, minDuration);
-        });
-      } else {
-        final startMinutes = _startTime.hour * 60 + _startTime.minute;
-
-        if (pickedMinutes > AppointmentService.operatingDayEndMin) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Appointment end time cannot exceed parish operating hours (5:00 PM).'),
-              backgroundColor: ParishColors.mercyRed,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-
-        if (pickedMinutes - startMinutes < minDuration) {
-          final requiredEndTod = _addMinutes(_startTime, minDuration);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$_selectedService requires a minimum duration of $minDuration minutes. End time cannot be earlier than ${_formatTime12Hour(requiredEndTod)}.',
-              ),
-              backgroundColor: ParishColors.mercyRed,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
-        }
-
-        setState(() {
-          _endTime = picked;
-        });
-      }
-
-      _saveDraft();
-      _runLiveConflictCheck();
-    }
+  Future<void> _clearDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftStorageKey);
+    } catch (_) {}
   }
 
   Future<void> _submitAppointment() async {
@@ -921,76 +848,57 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
       return;
     }
 
-    final preset = _presets[_selectedService];
-    final minDuration = preset?.durationMinutes ?? 60;
-    final startMinutes = _startTime.hour * 60 + _startTime.minute;
-    final endMinutes = _endTime.hour * 60 + _endTime.minute;
-
-    if (endMinutes - startMinutes < minDuration) {
-      setState(() => _errorMessage = '$_selectedService requires at least $minDuration minutes duration.');
-      return;
-    }
-
-    if (preset?.isCommunityBaptism == true) {
-      if (_selectedDate.weekday != DateTime.saturday &&
-          _selectedDate.weekday != DateTime.sunday) {
-        setState(() => _errorMessage = 'Community Baptism is strictly restricted to Weekends.');
+    // Venue resolution
+    String resolvedVenue;
+    if (_isOnParishGrounds) {
+      resolvedVenue = 'Parish Grounds';
+    } else {
+      final loc = _outsideLocationController.text.trim();
+      if (loc.isEmpty) {
+        setState(() => _errorMessage = 'Please specify the location outside the parish.');
         return;
       }
+      resolvedVenue = 'Outside Parish ($loc)';
     }
 
-    final startStr = _formatTimeOfDay(_startTime);
-    final endStr = _formatTimeOfDay(_endTime);
-
+    final startStr = _formatTimeOfDay(_estimatedServiceTime);
+    final computedEnd = _calculateEndTime(_estimatedServiceTime, _estimatedDurationMinutes);
+    final endStr = _formatTimeOfDay(computedEnd);
     final dateStr =
         '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-    final emailValue = _emailController.text.trim();
-    final requesterNameVal = _requesterNameController.text.trim();
+
+    final preset = _presets[_selectedService];
+    final isAnytime = preset?.isAnytimeAllowed ?? false;
+
+    final rawContact = _contactNumberController.text.trim();
+    final contact = rawContact.isNotEmpty ? rawContact : 'N/A';
 
     setState(() => _isSubmitting = true);
 
     try {
-      final duplicateWarning = await AppointmentService.checkDuplicateRequester(
-        requesterName: requesterNameVal,
-        date: dateStr,
-        serviceType: _selectedService,
-      );
-      if (duplicateWarning != null) {
-        setState(() {
-          _errorMessage = duplicateWarning;
-          _isSubmitting = false;
-        });
-        return;
+      if (!isAnytime) {
+        final conflictWarning = await AppointmentService.checkScheduleConflictSilent(
+          date: dateStr,
+          startTime: startStr,
+          endTime: endStr,
+          venue: resolvedVenue,
+          officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
+          serviceType: _selectedService,
+          allowMondayException: _allowMondayException,
+        );
+
+        if (conflictWarning != null) {
+          setState(() {
+            _errorMessage = conflictWarning;
+          });
+          return;
+        }
       }
 
-      final conflictWarning = await AppointmentService.checkScheduleConflictSilent(
-        date: dateStr,
-        startTime: startStr,
-        endTime: endStr,
-        venue: _selectedVenue,
-        officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
-        serviceType: _selectedService,
-      );
-      if (conflictWarning != null) {
-        setState(() {
-          _errorMessage = conflictWarning;
-          _isSubmitting = false;
-        });
-        return;
-      }
-    } catch (preCheckError) {
-      setState(() {
-        _errorMessage = preCheckError.toString().replaceFirst('Exception: ', '');
-        _isSubmitting = false;
-      });
-      return;
-    }
+      String? uploadedDocumentPath;
+      final tempId = 'APT-${DateTime.now().millisecondsSinceEpoch % 1000000}';
 
-    String? uploadedDocumentPath;
-    final tempId = 'APT-${DateTime.now().millisecondsSinceEpoch % 1000000}';
-
-    try {
-      if (_attachedIdFileBytes != null && _attachedIdFileName != null) {
+      if (_isParishioner && _attachedIdFileBytes != null && _attachedIdFileName != null) {
         uploadedDocumentPath = await AppointmentService.uploadIdDocument(
           appointmentId: tempId,
           fileBytes: _attachedIdFileBytes!,
@@ -998,20 +906,21 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
         );
       }
 
-      final createdAppointment = await AppointmentService.createAppointment(
+      final created = await AppointmentService.createAppointment(
         serviceType: _selectedService,
-        requesterName: requesterNameVal,
-        contactNumber: _contactNumberController.text.trim(),
-        email: emailValue,
+        requesterName: _requesterNameController.text.trim(),
+        contactNumber: contact,
+        email: _emailController.text.trim(),
         date: dateStr,
         startTime: startStr,
         endTime: endStr,
-        venue: _selectedVenue,
+        venue: resolvedVenue,
         officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
-        idType: _selectedIdType,
-        idNumber: _idNumberController.text.trim(),
+        idType: _isParishioner ? _selectedIdType : null,
+        idNumber: _isParishioner ? _idNumberController.text.trim() : null,
         idDocumentUrl: uploadedDocumentPath,
         remarks: _remarksController.text.trim(),
+        allowMondayException: _allowMondayException,
       );
 
       await _clearDraft();
@@ -1019,26 +928,44 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
       if (!mounted) return;
       Navigator.pop(context);
 
-      showAppointmentSubmissionSuccessModal(
-        context,
-        appointment: createdAppointment,
-        userEmail: emailValue,
-      );
+      // Staff confirmation: Quick toast banner without patronizing checklist
+      if (!_isParishioner) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Appointment plotted: ${created.serviceType} for ${created.requesterName} ($dateStr at ${_formatTime12Hour(_estimatedServiceTime)}).',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: ParishColors.oliveGreen,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        showAppointmentSubmissionSuccessModal(
+          context,
+          appointment: created,
+          userEmail: _emailController.text.trim(),
+        );
+      }
 
       widget.onAppointmentSaved?.call();
     } catch (e) {
-      if (uploadedDocumentPath != null) {
-        try {
-          await Supabase.instance.client.storage
-              .from('appointment-documents')
-              .remove([uploadedDocumentPath]);
-        } catch (_) {}
-      }
-
-      final cleanError = e.toString().replaceFirst('Exception: ', '');
-      setState(() => _errorMessage = cleanError);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -1066,7 +993,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
             ),
             Text(
-              'St. John Paul II Parish • Operational window: 9:00 AM – 5:00 PM (Closed on Mondays)',
+              'St. John Paul II Parish • Pastoral Liturgy Desk',
               style: TextStyle(fontSize: 12, color: textMuted),
             ),
           ],
@@ -1156,7 +1083,13 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                 .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
                 .toList(),
             onChanged: (val) {
-              if (val != null) _onServiceSelected(val);
+              if (val != null) {
+                setState(() {
+                  _selectedService = val;
+                  _applyServicePreset(val);
+                });
+                _triggerDebouncedValidation();
+              }
             },
             decoration: _inputDecoration(),
           ),
@@ -1187,7 +1120,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildFieldLabel('Contact Number *'),
+                    _buildFieldLabel(_isParishioner ? 'Contact Number *' : 'Contact Number (Optional)'),
                     TextFormField(
                       controller: _contactNumberController,
                       focusNode: _contactFocusNode,
@@ -1199,10 +1132,8 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                         PhilippinePhoneInputFormatter(),
                       ],
                       onChanged: (_) => _triggerDebouncedValidation(),
-                      validator: SacramentalValidators.validatePhoneNumber,
                       decoration: _inputDecoration(
                         hint: '09XX-XXX-XXXX',
-                        suffixIcon: _isPhoneValid ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 18) : null,
                       ),
                     ),
                   ],
@@ -1216,7 +1147,6 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                     _buildFieldLabel(_isParishioner ? 'Email (Linked) *' : 'Email (Optional)'),
                     TextFormField(
                       controller: _emailController,
-                      focusNode: _emailFocusNode,
                       enabled: !_isParishioner,
                       maxLength: 100,
                       buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
@@ -1239,199 +1169,59 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
           ),
           const SizedBox(height: 16),
 
-          _buildFieldLabel(_isParishioner ? 'Valid Identification Document * (Required)' : 'Valid ID Document (Optional)'),
-          DropdownButtonFormField<String>(
-            value: _selectedIdType,
-            isExpanded: true,
-            items: _philippineIdTypes
-                .map((id) => DropdownMenuItem(value: id, child: Text(id, overflow: TextOverflow.ellipsis)))
-                .toList(),
-            onChanged: (val) {
-              if (val != null) setState(() => _selectedIdType = val);
-            },
-            decoration: _inputDecoration(),
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _idNumberController,
-            maxLength: 50,
-            buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-            decoration: _inputDecoration(hint: 'ID Serial / Control Number (Optional)'),
-          ),
-          const SizedBox(height: 10),
-
-          // File Upload Attachment Box with Thumbnail & Zoom Preview Modal
+          // Venue Architecture: Parish Grounds vs. Outside Parish (Custom Free-Text)
+          _buildFieldLabel('Venue / Location *'),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _attachedIdFileBytes != null
-                  ? ParishColors.oliveGreenSurface
-                  : (_idFileHasError ? ParishColors.mercyRedSurface : ParishColors.backgroundLight),
+              color: ParishColors.backgroundLight,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _attachedIdFileBytes != null
-                    ? ParishColors.oliveGreen
-                    : (_idFileHasError ? ParishColors.mercyRed : borderGrey),
-              ),
+              border: Border.all(color: borderGrey),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _attachedIdFileBytes != null ? Icons.check_circle : Icons.attach_file,
-                          color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : ParishColors.marianBlue,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _attachedIdFileBytes != null
-                              ? 'Valid ID Document Attached'
-                              : 'Attach valid ID photo (JPG, PNG, PDF up to 5MB)',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                            color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : textDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_attachedIdFileBytes != null)
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
-                        onPressed: _removeAttachedIdDocument,
-                        tooltip: 'Remove',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Center(child: Text('Parish Grounds', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                        selected: _isOnParishGrounds,
+                        onSelected: (_) {
+                          setState(() {
+                            _isOnParishGrounds = true;
+                            _outsideLocationController.clear();
+                          });
+                          _triggerDebouncedValidation();
+                        },
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Center(child: Text('Outside Parish', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                        selected: !_isOnParishGrounds,
+                        onSelected: (_) {
+                          setState(() {
+                            _isOnParishGrounds = false;
+                          });
+                          _triggerDebouncedValidation();
+                        },
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                if (_attachedIdFileBytes == null) ...[
-                  Text(
-                    'Stored securely and verified during secretariat review.',
-                    style: TextStyle(fontSize: 11.5, color: textMuted),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: _pickIdDocument,
-                    icon: const Icon(Icons.upload_file, size: 16),
-                    label: const Text('Choose File'),
-                  ),
-                ] else ...[
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: borderGrey.withValues(alpha: 0.6)),
-                    ),
-                    child: Row(
-                      children: [
-                        if (_isImageAttachment)
-                          InkWell(
-                            onTap: () => _openImagePreviewDialog(
-                              _attachedIdFileBytes!,
-                              _attachedIdFileName ?? 'valid_id.jpg',
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Stack(
-                              alignment: Alignment.bottomRight,
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    _attachedIdFileBytes!,
-                                    width: 58,
-                                    height: 58,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    borderRadius: const BorderRadius.only(
-                                      topLeft: Radius.circular(6),
-                                      bottomRight: Radius.circular(8),
-                                    ),
-                                  ),
-                                  child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          Container(
-                            width: 58,
-                            height: 58,
-                            decoration: BoxDecoration(
-                              color: ParishColors.mercyRedSurface,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: ParishColors.mercyRed.withValues(alpha: 0.3)),
-                            ),
-                            child: const Icon(Icons.picture_as_pdf, color: ParishColors.mercyRed, size: 28),
-                          ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _attachedIdFileName ?? 'valid_id.jpg',
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB • ${_isImageAttachment ? "Tap thumbnail to inspect" : "PDF document"}',
-                                style: TextStyle(fontSize: 11, color: textMuted),
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  if (_isImageAttachment)
-                                    InkWell(
-                                      onTap: () => _openImagePreviewDialog(
-                                        _attachedIdFileBytes!,
-                                        _attachedIdFileName ?? 'valid_id.jpg',
-                                      ),
-                                      child: const Row(
-                                        children: [
-                                          Icon(Icons.remove_red_eye_outlined, size: 14, color: ParishColors.marianBlue),
-                                          SizedBox(width: 4),
-                                          Text(
-                                            'Inspect',
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  if (_isImageAttachment) const SizedBox(width: 14),
-                                  InkWell(
-                                    onTap: _pickIdDocument,
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.sync, size: 14, color: textMuted),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Change File',
-                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+
+                // If outside parish: presents an empty text field for Sister to freely type
+                if (!_isOnParishGrounds) ...[
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _outsideLocationController,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    onChanged: (_) => _triggerDebouncedValidation(),
+                    validator: (v) => v == null || v.trim().isEmpty ? 'Please specify the exact venue or address' : null,
+                    decoration: _inputDecoration(
+                      hint: 'Type location (e.g. Sitio Ilaya, Brgy. Labuin / San Pedro Hospital)',
                     ),
                   ),
                 ],
@@ -1440,7 +1230,117 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
           ),
           const SizedBox(height: 16),
 
-          _buildFieldLabel('Remarks / Intentions / Special Instructions'),
+          // Portal-Only ID Upload (Completely Hidden for Staff)
+          if (_isParishioner) ...[
+            _buildFieldLabel('Valid Identification Document * (Required)'),
+            DropdownButtonFormField<String>(
+              value: _selectedIdType,
+              isExpanded: true,
+              items: _philippineIdTypes
+                  .map((id) => DropdownMenuItem(value: id, child: Text(id, overflow: TextOverflow.ellipsis)))
+                  .toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedIdType = val);
+              },
+              decoration: _inputDecoration(),
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _idNumberController,
+              maxLength: 50,
+              buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+              decoration: _inputDecoration(hint: 'ID Serial / Control Number (Optional)'),
+            ),
+            const SizedBox(height: 10),
+
+            // Attachment Box
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _attachedIdFileBytes != null
+                    ? ParishColors.oliveGreenSurface
+                    : (_idFileHasError ? ParishColors.mercyRedSurface : ParishColors.backgroundLight),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _attachedIdFileBytes != null
+                      ? ParishColors.oliveGreen
+                      : (_idFileHasError ? ParishColors.mercyRed : borderGrey),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _attachedIdFileBytes != null ? Icons.check_circle : Icons.attach_file,
+                            color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : ParishColors.marianBlue,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _attachedIdFileBytes != null
+                                ? 'Valid ID Document Attached'
+                                : 'Attach valid ID photo (JPG, PNG, PDF up to 5MB)',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : textDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_attachedIdFileBytes != null)
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
+                          onPressed: _removeAttachedIdDocument,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_attachedIdFileBytes == null) ...[
+                    Text('Stored securely and verified during secretariat review.', style: TextStyle(fontSize: 11.5, color: textMuted)),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _pickIdDocument,
+                      icon: const Icon(Icons.upload_file, size: 16),
+                      label: const Text('Choose File'),
+                    ),
+                  ] else ...[
+                    InkWell(
+                      onTap: () => _openImagePreviewDialog(_attachedIdFileBytes!, _attachedIdFileName ?? 'valid_id.jpg'),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.memory(_attachedIdFileBytes!, width: 44, height: 44, fit: BoxFit.cover),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_attachedIdFileName ?? 'valid_id.jpg', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                Text('Tap to inspect image', style: TextStyle(fontSize: 11, color: textMuted)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          _buildFieldLabel('Remarks / Intentions / Special Instructions (Optional)'),
           TextFormField(
             controller: _remarksController,
             maxLines: 3,
@@ -1454,9 +1354,6 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
   }
 
   Widget _buildInspectionAndRulesSidebar(Color textDark, Color textMuted, Color cardWhite, Color borderGrey) {
-    final currentPreset = _presets[_selectedService];
-    final isTuesday = _selectedDate.weekday == DateTime.tuesday;
-
     return Column(
       children: [
         Container(
@@ -1500,66 +1397,65 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
               ),
               const SizedBox(height: 14),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildFieldLabel('Start Time *'),
-                        InkWell(
-                          onTap: () => _pickTime(true),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              // Single Estimated Service Time Picker
+              _buildFieldLabel('Service Time *'),
+              InkWell(
+                onTap: _pickServiceTime,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: ParishColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: borderGrey),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _formatTime12Hour(_estimatedServiceTime),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                      ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: currentPreset?.isCommunityBaptism == true
-                                  ? ParishColors.borderGrey.withValues(alpha: 0.2)
-                                  : ParishColors.backgroundLight,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: borderGrey),
+                              color: ParishColors.marianBlueSurface,
+                              borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(_formatTime12Hour(_startTime), style: TextStyle(fontWeight: FontWeight.bold, color: textDark)),
-                                const Icon(Icons.access_time, size: 16),
-                              ],
+                            child: Text(
+                              '~${_estimatedDurationMinutes}m',
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.access_time, size: 16),
+                        ],
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildFieldLabel('End Time (Auto) *'),
-                        InkWell(
-                          onTap: () => _pickTime(false),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: ParishColors.backgroundLight,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: borderGrey),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(_formatTime12Hour(_endTime), style: TextStyle(fontWeight: FontWeight.bold, color: textDark)),
-                                const Icon(Icons.access_time, size: 16),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Duration selector pills
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [30, 45, 60, 90, 120].map((dur) {
+                  final isSelected = _estimatedDurationMinutes == dur;
+                  final label = dur < 60 ? '${dur}m' : '${dur ~/ 60}${dur % 60 != 0 ? ".5" : ""}h';
+                  return ChoiceChip(
+                    label: Text(label, style: const TextStyle(fontSize: 11)),
+                    selected: isSelected,
+                    selectedColor: ParishColors.marianBlueSurface,
+                    onSelected: (_) {
+                      setState(() => _estimatedDurationMinutes = dur);
+                      _triggerDebouncedValidation();
+                    },
+                  );
+                }).toList(),
               ),
               const SizedBox(height: 14),
 
@@ -1600,7 +1496,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                             onPressed: _applySuggestedSlot,
                             icon: const Icon(Icons.bolt, size: 16),
                             label: Text(
-                              'Auto-Set: ${_formatTime12Hour(_suggestedSlot!['start']!)} - ${_formatTime12Hour(_suggestedSlot!['end']!)}',
+                              'Auto-Set: ${_formatTime12Hour(_suggestedSlot!['start']!)}',
                               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -1615,7 +1511,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                   decoration: BoxDecoration(
                     color: ParishColors.oliveGreenSurface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.3)),
+                    border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
                   ),
                   child: const Row(
                     children: [
@@ -1623,7 +1519,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Requested slot is open on the parish calendar.',
+                          'Requested slot is open on the parish ledger.',
                           style: TextStyle(color: ParishColors.oliveGreen, fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -1633,41 +1529,22 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
               ],
               const SizedBox(height: 16),
 
-              _buildFieldLabel('Venue *'),
-              DropdownButtonFormField<String>(
-                value: _selectedVenue,
-                isExpanded: true,
-                items: _venues.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedVenue = val);
-                    _runLiveConflictCheck();
-                  }
-                },
-                decoration: _inputDecoration(),
-              ),
-              const SizedBox(height: 14),
-
-              _buildFieldLabel(_isParishioner ? 'Presiding Clergy (Parish Priest)' : 'Presiding Clergy *'),
-              _isParishioner
-                  ? TextFormField(
-                initialValue: 'Rev. Fr. Roy (Parish Priest)',
-                enabled: false,
-                decoration: _inputDecoration(prefixIcon: const Icon(Icons.lock_outline, size: 18)),
-              )
-                  : DropdownButtonFormField<String>(
-                value: _selectedOfficiant,
-                isExpanded: true,
-                items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedOfficiant = val);
-                    _runLiveConflictCheck();
-                  }
-                },
-                decoration: _inputDecoration(),
-              ),
-              const SizedBox(height: 20),
+              if (!_isParishioner) ...[
+                _buildFieldLabel('Presiding Clergy *'),
+                DropdownButtonFormField<String>(
+                  value: _selectedOfficiant,
+                  isExpanded: true,
+                  items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedOfficiant = val);
+                      _runLiveConflictCheck();
+                    }
+                  },
+                  decoration: _inputDecoration(),
+                ),
+                const SizedBox(height: 20),
+              ],
 
               SizedBox(
                 width: double.infinity,
@@ -1687,7 +1564,7 @@ class _ScheduleServicePageState extends State<ScheduleServicePage> {
                         ? 'Validating & Submitting...'
                         : (_isParishioner
                         ? 'Submit for Office Approval'
-                        : (isTuesday ? 'Submit for Priest Approval' : 'Confirm & Schedule')),
+                        : 'Plot on Calendar'),
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                 ),

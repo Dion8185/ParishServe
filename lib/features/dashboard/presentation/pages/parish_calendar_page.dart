@@ -16,6 +16,59 @@ import '../../../auth/services/user_service.dart';
 
 enum CalendarViewMode { month, week, day }
 
+class AppointmentStatusColors {
+  static Color getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'confirmed':
+      case 'approved':
+        return const Color(0xFF16A34A); // Green: Approved / Confirmed
+      case 'pending':
+      case 'rescheduled':
+        return const Color(0xFFD97706); // Yellow / Amber: Pending
+      case 'completed':
+        return const Color(0xFF64748B); // Gray: Concluded / Completed
+      case 'cancelled':
+      case 'rejected':
+      default:
+        return const Color(0xFFDC2626); // Red: Cancelled / Rejected
+    }
+  }
+
+  static Color getStatusSurface(String status) {
+    switch (status.toLowerCase()) {
+      case 'confirmed':
+      case 'approved':
+        return const Color(0xFFF0FDF4); // Green Surface
+      case 'pending':
+      case 'rescheduled':
+        return const Color(0xFFFFFBEB); // Yellow Surface
+      case 'completed':
+        return const Color(0xFFF1F5F9); // Gray Surface
+      case 'cancelled':
+      case 'rejected':
+      default:
+        return const Color(0xFFFEF2F2); // Red Surface
+    }
+  }
+}
+
+class _TimetableSlot {
+  final String label;
+  final int hour;
+  final int minute;
+  final String slotNote;
+
+  const _TimetableSlot({
+    required this.label,
+    required this.hour,
+    required this.minute,
+    this.slotNote = '',
+  });
+
+  int get totalMinutes => hour * 60 + minute;
+  TimeOfDay get timeOfDay => TimeOfDay(hour: hour, minute: minute);
+}
+
 class ParishCalendarPage extends StatefulWidget {
   const ParishCalendarPage({super.key});
 
@@ -24,7 +77,7 @@ class ParishCalendarPage extends StatefulWidget {
 }
 
 class _ParishCalendarPageState extends State<ParishCalendarPage> {
-  CalendarViewMode _currentView = CalendarViewMode.month;
+  CalendarViewMode _currentView = CalendarViewMode.week;
   DateTime _selectedDate = DateTime.now();
   String _selectedCategory = 'All';
 
@@ -33,11 +86,24 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  // Strict Color-Code Scheme
-  static const Color colorGlobalLiturgical = Color(0xFFDC2626);   // RED: Universal Roman Rite
-  static const Color colorPhilippineSpecific = Color(0xFF2563EB); // BLUE: Philippine Proper Feasts
-  static const Color colorAppointments = Color(0xFFF59E0B);       // AMBER: Sacramental Bookings
-  static const Color colorCertificatePickup = Color(0xFF059669);  // EMERALD GREEN: Ready for Pickup
+  static const Color colorGlobalLiturgical = Color(0xFFDC2626);   // Red
+  static const Color colorPhilippineSpecific = Color(0xFF2563EB); // Blue
+  static const Color colorAppointments = Color(0xFFD97706);       // Amber
+  static const Color colorCertificatePickup = Color(0xFF059669);  // Emerald
+
+  static const List<_TimetableSlot> _timetableSlots = [
+    _TimetableSlot(label: '08:00 AM', hour: 8, minute: 0, slotNote: 'Morning Mass / Early Rite'),
+    _TimetableSlot(label: '09:00 AM', hour: 9, minute: 0, slotNote: 'Office Opens'),
+    _TimetableSlot(label: '10:00 AM', hour: 10, minute: 0, slotNote: 'Morning Service Window'),
+    _TimetableSlot(label: '11:00 AM', hour: 11, minute: 0, slotNote: 'Community Baptism (Weekends)'),
+    _TimetableSlot(label: '12:00 PM', hour: 12, minute: 0, slotNote: 'Midday Angelus / Desk Break'),
+    _TimetableSlot(label: '01:30 PM', hour: 13, minute: 30, slotNote: 'Afternoon Desk Reopens'),
+    _TimetableSlot(label: '02:30 PM', hour: 14, minute: 30, slotNote: 'Afternoon Rite Window'),
+    _TimetableSlot(label: '03:30 PM', hour: 15, minute: 30, slotNote: 'Afternoon Rite Window'),
+    _TimetableSlot(label: '04:30 PM', hour: 16, minute: 30, slotNote: 'Late Afternoon / Anticipated'),
+    _TimetableSlot(label: '05:30 PM', hour: 17, minute: 30, slotNote: 'Weekday Mass Slot'),
+    _TimetableSlot(label: '06:30 PM+', hour: 18, minute: 30, slotNote: 'Sick Calls / Emergencies'),
+  ];
 
   bool get _isParishioner =>
       AuthService.currentUser?.userRole.toLowerCase() == 'user';
@@ -104,6 +170,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     }
   }
 
+  /// Strictly filters out cancelled appointments from calendar views
   List<AppointmentModel> _appointmentsForDate(DateTime date) {
     if (_selectedCategory == 'Global Liturgical' ||
         _selectedCategory == 'Philippine Proper' ||
@@ -111,6 +178,8 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       return [];
     }
     return _appointments.where((a) {
+      final st = a.appointmentStatus.toLowerCase();
+      if (st == 'cancelled') return false; // Strictly filtered
       return a.requestedDate.year == date.year &&
           a.requestedDate.month == date.month &&
           a.requestedDate.day == date.day;
@@ -275,7 +344,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     );
   }
 
-  void _openBookingForDate(DateTime date) {
+  void _openBookingForDate(DateTime date, {TimeOfDay? initialTime}) {
     if (_isPastDate(date)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -285,7 +354,53 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       );
       return;
     }
-    if (date.weekday == DateTime.monday) {
+
+    // Monday Guidance: Allow sick calls & emergency confessions with confirmation
+    if (date.weekday == DateTime.monday && !_isParishioner) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 22),
+              SizedBox(width: 8),
+              Text('Monday Schedule Exception', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ],
+          ),
+          content: const Text(
+            'Mondays are designated Clergy Rest Days and the secretariat is closed.\n\n'
+                'Emergency Sick Calls (Anointing/Viaticum), confessions, and administrative exceptions may proceed.',
+            style: TextStyle(fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                showScheduleAppointmentModal(
+                  context,
+                  initialDate: date,
+                  initialTime: initialTime,
+                  onAppointmentSaved: _loadData,
+                );
+              },
+              child: const Text('Allow Exception & Plot'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (date.weekday == DateTime.monday && _isParishioner) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('The Parish Office is closed on Mondays (Clergy Rest Day).'),
@@ -294,19 +409,20 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       );
       return;
     }
+
     if (LiturgicalCalendarService.isDateBlockedSync(date)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Appointments are restricted on this day due to a major liturgical celebration.'),
-          backgroundColor: ParishColors.mercyRed,
+          content: Text('Notice: A major solemn liturgical celebration is scheduled for this day.'),
+          backgroundColor: ParishColors.goldAccent,
         ),
       );
-      return;
     }
 
     showScheduleAppointmentModal(
       context,
       initialDate: date,
+      initialTime: initialTime,
       onAppointmentSaved: _loadData,
     );
   }
@@ -319,7 +435,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isDesktop = constraints.maxWidth >= 900;
+        final bool isDesktop = constraints.maxWidth >= 960;
 
         return Scaffold(
           backgroundColor: ParishColors.backgroundLight,
@@ -327,37 +443,38 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             backgroundColor: ParishColors.cardWhite,
             elevation: 0,
             leading: IconButton(
-              icon: Icon(Icons.arrow_back, color: ParishColors.marianBlueAdaptive, size: 26),
+              icon: Icon(Icons.arrow_back, color: ParishColors.marianBlueAdaptive, size: 24),
               onPressed: () => Navigator.pop(context),
             ),
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _isParishioner ? 'My Parish Calendar' : 'Parish Master Calendar',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColorDark),
+                  _isParishioner ? 'My Parish Schedule' : 'Parish Liturgy & Booking Ledger',
+                  style: TextStyle(fontSize: 17.5, fontWeight: FontWeight.bold, color: textColorDark),
                 ),
                 Text(
                   _isParishioner
-                      ? 'Your Bookings, Certificate Pickups & Catholic Feasts'
-                      : 'Diocese of San Pablo • Liturgical & Appointment Engine',
-                  style: TextStyle(fontSize: 12, color: textColorMuted),
+                      ? 'Live tracking of your sacrament requests & celebrations'
+                      : 'Interactive Weekly Timetable • Click any slot to plot bookings',
+                  style: TextStyle(fontSize: 11.5, color: textColorMuted),
                 ),
               ],
             ),
             actions: [
               IconButton(
-                icon: Icon(Icons.refresh, color: ParishColors.marianBlueAdaptive),
+                icon: Icon(Icons.refresh, color: ParishColors.marianBlueAdaptive, size: 20),
                 onPressed: _loadData,
-                tooltip: 'Sync Calendar Data',
+                tooltip: 'Synchronize Schedule',
               ),
               Padding(
-                padding: const EdgeInsets.only(right: 12.0),
+                padding: const EdgeInsets.only(right: 14.0),
                 child: TextButton.icon(
                   style: TextButton.styleFrom(
                     backgroundColor: ParishColors.marianBlueSurface,
                     foregroundColor: ParishColors.marianBlueAdaptive,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   onPressed: () {
                     setState(() => _selectedDate = DateTime.now());
@@ -365,8 +482,8 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                       if (mounted) setState(() {});
                     });
                   },
-                  icon: const Icon(Icons.today, size: 18),
-                  label: const Text('Today', style: TextStyle(fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.today, size: 16),
+                  label: const Text('Today', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 ),
               ),
             ],
@@ -375,7 +492,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             children: [
               if (_isLoading)
                 const LinearProgressIndicator(
-                  minHeight: 3,
+                  minHeight: 2.5,
                   backgroundColor: Colors.transparent,
                   color: colorAppointments,
                 ),
@@ -385,7 +502,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
               if (_errorMessage != null)
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   color: ParishColors.mercyRedSurface,
                   child: Text(
                     'Sync Notice: $_errorMessage',
@@ -408,81 +525,51 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   Widget _buildControlHeader(bool isDesktop) {
     return Container(
       color: ParishColors.cardWhite,
-      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16, vertical: 10),
-      child: isDesktop
-          ? Row(
+      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 20 : 14, vertical: 8),
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          SizedBox(
-            width: 380,
-            height: 42,
-            child: Container(
-              decoration: BoxDecoration(
-                color: ParishColors.backgroundLight,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: ParishColors.borderGrey),
-              ),
-              child: Row(
-                children: [
-                  _buildViewTab(CalendarViewMode.month, 'Month View', Icons.calendar_view_month),
-                  _buildViewTab(CalendarViewMode.week, 'Week View', Icons.calendar_view_week),
-                  _buildViewTab(CalendarViewMode.day, 'Day View', Icons.calendar_view_day),
-                ],
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              IconButton(
-                icon: Icon(Icons.chevron_left, size: 28, color: ParishColors.marianBlueAdaptive),
-                onPressed: () => _navigateDate(-1),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _getDateHeaderTitle(),
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(Icons.chevron_right, size: 28, color: ParishColors.marianBlueAdaptive),
-                onPressed: () => _navigateDate(1),
-              ),
-            ],
-          ),
-        ],
-      )
-          : Column(
-        children: [
           Container(
-            height: 42,
+            height: 38,
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               border: Border.all(color: ParishColors.borderGrey),
             ),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                _buildViewTab(CalendarViewMode.week, 'Week Ledger', Icons.table_chart_outlined),
                 _buildViewTab(CalendarViewMode.month, 'Month', Icons.calendar_view_month),
-                _buildViewTab(CalendarViewMode.week, 'Week', Icons.calendar_view_week),
                 _buildViewTab(CalendarViewMode.day, 'Day', Icons.calendar_view_day),
               ],
             ),
           ),
-          const SizedBox(height: 10),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: Icon(Icons.chevron_left, size: 28, color: ParishColors.marianBlueAdaptive),
+                icon: Icon(Icons.chevron_left, size: 26, color: ParishColors.marianBlueAdaptive),
                 onPressed: () => _navigateDate(-1),
+                tooltip: 'Previous',
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(6),
               ),
+              const SizedBox(width: 8),
               Text(
                 _getDateHeaderTitle(),
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
+                style: TextStyle(
+                  fontSize: isDesktop ? 16 : 14.5,
+                  fontWeight: FontWeight.bold,
+                  color: ParishColors.marianBlueAdaptive,
+                ),
               ),
+              const SizedBox(width: 8),
               IconButton(
-                icon: Icon(Icons.chevron_right, size: 28, color: ParishColors.marianBlueAdaptive),
+                icon: Icon(Icons.chevron_right, size: 26, color: ParishColors.marianBlueAdaptive),
                 onPressed: () => _navigateDate(1),
+                tooltip: 'Next',
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(6),
               ),
             ],
           ),
@@ -493,31 +580,30 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
 
   Widget _buildViewTab(CalendarViewMode mode, String label, IconData icon) {
     final isSelected = _currentView == mode;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _currentView = mode),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          margin: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: isSelected ? ParishColors.marianBlue : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 15, color: isSelected ? Colors.white : ParishColors.textMuted),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: isSelected ? Colors.white : ParishColors.textMuted,
-                ),
+    return InkWell(
+      onTap: () => setState(() => _currentView = mode),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: isSelected ? ParishColors.marianBlue : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: isSelected ? Colors.white : ParishColors.textMuted),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : ParishColors.textMuted,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -545,110 +631,591 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   Widget _buildFilterAndLegendBar(bool isDesktop) {
     return Container(
       color: ParishColors.cardWhite,
-      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16, vertical: 8),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        alignment: WrapAlignment.spaceBetween,
+      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 20 : 12, vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _categories.map((cat) {
-                final isSelected = _selectedCategory == cat;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: FilterChip(
-                    label: Text(cat),
-                    selected: isSelected,
-                    selectedColor: cat == 'Certificate Pickups'
-                        ? ParishColors.oliveGreenSurface
-                        : ParishColors.marianBlueSurface,
-                    backgroundColor: ParishColors.backgroundLight,
-                    checkmarkColor: cat == 'Certificate Pickups'
-                        ? ParishColors.oliveGreen
-                        : ParishColors.marianBlueAdaptive,
-                    labelStyle: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected
-                          ? (cat == 'Certificate Pickups' ? ParishColors.oliveGreen : ParishColors.marianBlueAdaptive)
-                          : ParishColors.textMuted,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(
-                        color: isSelected
-                            ? (cat == 'Certificate Pickups' ? ParishColors.oliveGreen : ParishColors.marianBlueAdaptive)
-                            : ParishColors.borderGrey,
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _categories.map((cat) {
+                  final isSelected = _selectedCategory == cat;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: ChoiceChip(
+                      label: Text(cat),
+                      selected: isSelected,
+                      selectedColor: ParishColors.marianBlueSurface,
+                      backgroundColor: ParishColors.backgroundLight,
+                      labelStyle: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? ParishColors.marianBlueAdaptive : ParishColors.textMuted,
                       ),
+                      onSelected: (_) => setState(() => _selectedCategory = cat),
                     ),
-                    onSelected: (_) => setState(() => _selectedCategory = cat),
-                  ),
-                );
-              }).toList(),
+                  );
+                }).toList(),
+              ),
             ),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildLegendItem(colorGlobalLiturgical, 'Global Feasts'),
-              const SizedBox(width: 10),
-              _buildLegendItem(colorPhilippineSpecific, 'Philippine Proper'),
-              const SizedBox(width: 10),
-              _buildLegendItem(colorAppointments, _isParishioner ? 'My Bookings' : 'Bookings'),
-              if (_isParishioner) ...[
-                const SizedBox(width: 10),
-                _buildLegendItem(colorCertificatePickup, 'Certificate Pickup'),
+          const SizedBox(width: 8),
+          if (isDesktop)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildLegendPill(colorGlobalLiturgical, 'Global Feasts'),
+                const SizedBox(width: 8),
+                _buildLegendPill(colorPhilippineSpecific, 'Philippine Feasts'),
+                const SizedBox(width: 8),
+                _buildLegendPill(colorAppointments, _isParishioner ? 'My Bookings' : 'Booked Rites'),
+                const SizedBox(width: 8),
+                _buildLegendPill(const Color(0xFF94A3B8), 'Monday Rest'),
               ],
-              const SizedBox(width: 10),
-              _buildLegendItem(const Color(0xFF94A3B8), 'Monday Rest', isGray: true),
-            ],
-          ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildLegendItem(Color color, String label, {bool isGray = false}) {
+  Widget _buildLegendPill(Color color, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: isGray ? ParishColors.textMuted : ParishColors.textDark,
-          ),
-        ),
+        Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text(text, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600)),
       ],
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // Master View Switcher
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   Widget _buildCurrentCalendarView(bool isDesktop) {
     switch (_currentView) {
-      case CalendarViewMode.month:
-        return isDesktop ? _buildDesktopSplitMonthView() : _buildMobileMonthView();
       case CalendarViewMode.week:
-        return isDesktop ? _buildDesktopWeekBoard() : _buildMobileWeekView();
+        return isDesktop ? _buildDesktopTimetableGrid() : _buildMobileTimetableGrid();
+      case CalendarViewMode.month:
+        return _buildDesktopSplitMonthView();
       case CalendarViewMode.day:
         return _buildDayView(isDesktop);
     }
   }
 
   // ===========================================================================
-  // 1. DESKTOP MONTH VIEW
+  // 1. DESKTOP TIMETABLE GRID (WEEK VIEW)
+  // ===========================================================================
+  Widget _buildDesktopTimetableGrid() {
+    final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday % 7));
+    final weekDays = List.generate(7, (i) => startOfWeek.add(Duration(days: i)));
+    final dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+    return Container(
+      color: ParishColors.backgroundLight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const double timeColumnWidth = 86.0;
+          final double availableWidth = constraints.maxWidth - timeColumnWidth;
+          final double dayColumnWidth = (availableWidth / 7).clamp(160.0, 320.0);
+
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: timeColumnWidth + (dayColumnWidth * 7),
+              child: Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: ParishColors.cardWhite,
+                      border: Border(bottom: BorderSide(color: ParishColors.borderGrey, width: 1.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: timeColumnWidth,
+                          height: 72,
+                          child: Center(
+                            child: Text(
+                              'TIME / SLOT',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.textMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                        ...List.generate(7, (index) {
+                          final day = weekDays[index];
+                          final isToday = day.year == _today.year && day.month == _today.month && day.day == _today.day;
+                          final isMonday = day.weekday == DateTime.monday;
+                          final feasts = _liturgicalFeastsForDate(day);
+                          final pickups = _certificatePickupsForDate(day);
+
+                          return Container(
+                            width: dayColumnWidth,
+                            height: 72,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isToday
+                                  ? ParishColors.marianBlueSurface
+                                  : (isMonday ? const Color(0xFFF1F5F9) : ParishColors.cardWhite),
+                              border: Border(
+                                left: BorderSide(color: ParishColors.borderGrey.withOpacity(0.5)),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      dayNames[index],
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isMonday ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: isToday ? ParishColors.marianBlue : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        '${day.day}',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: isToday ? Colors.white : ParishColors.textDark,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isMonday) ...[
+                                      const Spacer(),
+                                      const Text(
+                                        'REST DAY',
+                                        style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                if (feasts.isNotEmpty)
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: feasts.first.categorySurfaceColor,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: feasts.first.categoryBadgeColor.withOpacity(0.3)),
+                                    ),
+                                    child: Text(
+                                      feasts.first.name,
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: feasts.first.categoryBadgeColor,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  )
+                                else if (pickups.isNotEmpty)
+                                  Text(
+                                    '${pickups.length} Certificate Pickup',
+                                    style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: colorCertificatePickup),
+                                  )
+                                else
+                                  Text(
+                                    isMonday ? 'Secretariat Closed' : 'Available for plotting',
+                                    style: TextStyle(fontSize: 9.5, color: ParishColors.textMuted),
+                                    maxLines: 1,
+                                  ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: _timetableSlots.map((slot) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              border: Border(bottom: BorderSide(color: ParishColors.borderGrey.withOpacity(0.4))),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: timeColumnWidth,
+                                  height: 84,
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                  alignment: Alignment.topCenter,
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        slot.label,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.marianBlueAdaptive,
+                                        ),
+                                      ),
+                                      if (slot.label.contains('11:00')) ...[
+                                        const SizedBox(height: 2),
+                                        const Text(
+                                          'Baptism',
+                                          style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+
+                                ...List.generate(7, (dayIdx) {
+                                  final day = weekDays[dayIdx];
+                                  final isMonday = day.weekday == DateTime.monday;
+                                  final isPast = _isPastDate(day);
+                                  final cellAppointments = _getAppointmentsInSlot(day, slot);
+
+                                  return Container(
+                                    width: dayColumnWidth,
+                                    height: 84,
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(
+                                      color: isMonday ? const Color(0xFFF8FAFC) : ParishColors.cardWhite,
+                                      border: Border(
+                                        left: BorderSide(color: ParishColors.borderGrey.withOpacity(0.4)),
+                                      ),
+                                    ),
+                                    child: cellAppointments.isNotEmpty
+                                        ? _buildCellBookedAppointments(cellAppointments)
+                                        : _buildCellEmptySlot(day, slot, isMonday, isPast),
+                                  );
+                                }),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 2. MOBILE TIMETABLE VIEW
+  // ===========================================================================
+  Widget _buildMobileTimetableGrid() {
+    final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday % 7));
+    final weekDays = List.generate(7, (i) => startOfWeek.add(Duration(days: i)));
+    final dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+    final isMonday = _selectedDate.weekday == DateTime.monday;
+    final isPast = _isPastDate(_selectedDate);
+    final dayFeasts = _liturgicalFeastsForDate(_selectedDate);
+    final dayPickups = _certificatePickupsForDate(_selectedDate);
+
+    return Column(
+      children: [
+        Container(
+          color: ParishColors.cardWhite,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: ParishColors.borderGrey)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(7, (idx) {
+              final day = weekDays[idx];
+              final isSelected = day.day == _selectedDate.day && day.month == _selectedDate.month;
+              final hasBookings = _appointmentsForDate(day).isNotEmpty;
+
+              return InkWell(
+                onTap: () => setState(() => _selectedDate = day),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? ParishColors.marianBlue : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        dayNames[idx],
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.white : ParishColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${day.day}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.white : ParishColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: hasBookings ? colorAppointments : Colors.transparent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+
+        if (dayFeasts.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            color: dayFeasts.first.categorySurfaceColor,
+            child: Row(
+              children: [
+                Icon(Icons.church, size: 16, color: dayFeasts.first.categoryBadgeColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${dayFeasts.first.name} (${dayFeasts.first.gradeName})',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: dayFeasts.first.categoryBadgeColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        if (dayPickups.isNotEmpty) ...[
+          ...dayPickups.map((p) => Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: _buildCertificatePickupCard(p),
+          )),
+        ],
+
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            itemCount: _timetableSlots.length,
+            itemBuilder: (context, idx) {
+              final slot = _timetableSlots[idx];
+              final cellAppointments = _getAppointmentsInSlot(_selectedDate, slot);
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: isMonday ? const Color(0xFFF8FAFC) : ParishColors.cardWhite,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ParishColors.borderGrey.withOpacity(0.6)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 78,
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            slot.label,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ParishColors.marianBlue),
+                          ),
+                          Text(
+                            slot.hour >= 12 ? 'PM' : 'AM',
+                            style: TextStyle(fontSize: 10, color: ParishColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: cellAppointments.isNotEmpty
+                            ? _buildCellBookedAppointments(cellAppointments)
+                            : _buildCellEmptySlot(_selectedDate, slot, isMonday, isPast),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<AppointmentModel> _getAppointmentsInSlot(DateTime date, _TimetableSlot slot) {
+    final dayAppointments = _appointmentsForDate(date);
+
+    return dayAppointments.where((a) {
+      try {
+        final parts = a.requestedTime.split(':');
+        final aptHour = int.parse(parts[0]);
+        final aptMin = int.parse(parts[1]);
+        final aptTotalMin = aptHour * 60 + aptMin;
+
+        final slotStart = slot.totalMinutes;
+        final slotEnd = slotStart + 60;
+
+        return aptTotalMin >= slotStart && aptTotalMin < slotEnd;
+      } catch (_) {
+        return false;
+      }
+    }).toList();
+  }
+
+  Widget _buildCellBookedAppointments(List<AppointmentModel> appointments) {
+    return Column(
+      children: appointments.map((apt) {
+        final bool isOutside = apt.venue.toLowerCase().contains('outside');
+        final bool isBatch = apt.serviceType.toLowerCase().contains('community baptism');
+        final statusColor = AppointmentStatusColors.getStatusColor(apt.appointmentStatus);
+        final statusSurface = AppointmentStatusColors.getStatusSurface(apt.appointmentStatus);
+
+        return InkWell(
+          onTap: () => _openAppointmentDetail(apt),
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 2),
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: statusSurface,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: statusColor.withOpacity(0.6),
+                width: 1.0,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        apt.serviceType,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: isBatch ? ParishColors.marianBlue : statusColor,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      AppointmentService.formatTime12Hour(apt.requestedTime),
+                      style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                    ),
+                  ],
+                ),
+                Text(
+                  apt.requesterName,
+                  style: TextStyle(fontSize: 10, color: ParishColors.textMuted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isOutside ? 'Outside' : 'Church Altar',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.bold,
+                    color: isOutside ? const Color(0xFFD97706) : ParishColors.marianBlue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildCellEmptySlot(DateTime day, _TimetableSlot slot, bool isMonday, bool isPast) {
+    if (isPast) {
+      return Container(
+        alignment: Alignment.center,
+        child: Text('—', style: TextStyle(color: ParishColors.borderGrey, fontSize: 13)),
+      );
+    }
+
+    if (isMonday) {
+      return InkWell(
+        onTap: () => _openBookingForDate(day, initialTime: slot.timeOfDay),
+        child: Container(
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_clock, size: 14, color: const Color(0xFF94A3B8).withOpacity(0.7)),
+              const Text(
+                'Rest Day',
+                style: TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return InkWell(
+      onTap: () => _openBookingForDate(day, initialTime: slot.timeOfDay),
+      borderRadius: BorderRadius.circular(6),
+      child: Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add, size: 14, color: ParishColors.marianBlue.withOpacity(0.35)),
+            const SizedBox(width: 2),
+            Text(
+              'Open',
+              style: TextStyle(fontSize: 10, color: ParishColors.marianBlue.withOpacity(0.55), fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 3. FULL DESKTOP SPLIT MONTH VIEW (100% PRESERVED)
   // ===========================================================================
   Widget _buildDesktopSplitMonthView() {
     final selectedDayEvents = _appointmentsForDate(_selectedDate);
@@ -658,14 +1225,14 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     final isSelectedTuesday = _selectedDate.weekday == DateTime.tuesday;
     final isPast = _isPastDate(_selectedDate);
     final isBlocked = LiturgicalCalendarService.isDateBlockedSync(_selectedDate);
-    final bool canSchedule = !isPast && !isSelectedMonday && !isBlocked;
+    final bool canSchedule = !isPast && !isBlocked;
 
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // LEFT PANEL (58%): Month Grid
+          // Left Month Grid (58%)
           Expanded(
             flex: 58,
             child: Container(
@@ -692,7 +1259,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
           ),
           const SizedBox(width: 24),
 
-          // RIGHT PANEL (42%): Real-time Selected Date Schedule Details
+          // Right Day Details Panel (42%)
           Expanded(
             flex: 42,
             child: Container(
@@ -779,7 +1346,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                       const SizedBox(height: 12),
                     ],
 
-                    // Certificate Pickup Events
                     if (selectedDayPickups.isNotEmpty) ...[
                       Text(
                         'Certificate Pickups for Today',
@@ -790,7 +1356,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                       const SizedBox(height: 14),
                     ],
 
-                    // Liturgical Feasts for this date
                     ...selectedDayFeasts.map((f) => _buildLiturgicalEventCard(f)),
 
                     const SizedBox(height: 8),
@@ -855,7 +1420,9 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     );
   }
 
-  // Mobile Stacked Month View
+  // ===========================================================================
+  // 4. MOBILE STACKED MONTH VIEW
+  // ===========================================================================
   Widget _buildMobileMonthView() {
     final selectedDayEvents = _appointmentsForDate(_selectedDate);
     final selectedDayFeasts = _liturgicalFeastsForDate(_selectedDate);
@@ -864,7 +1431,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     final isSelectedTuesday = _selectedDate.weekday == DateTime.tuesday;
     final isPast = _isPastDate(_selectedDate);
     final isBlocked = LiturgicalCalendarService.isDateBlockedSync(_selectedDate);
-    final bool canSchedule = !isPast && !isSelectedMonday && !isBlocked;
+    final bool canSchedule = !isPast && !isBlocked;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -1106,326 +1673,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }
 
   // ===========================================================================
-  // 2. WEEK VIEW
-  // ===========================================================================
-  Widget _buildDesktopWeekBoard() {
-    final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday % 7));
-    final weekDays = List.generate(7, (i) => startOfWeek.add(Duration(days: i)));
-    final dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: List.generate(7, (index) {
-          final day = weekDays[index];
-          final isMonday = day.weekday == DateTime.monday;
-          final isSelected = day.day == _selectedDate.day && day.month == _selectedDate.month;
-          final isPast = _isPastDate(day);
-
-          final dayAppointments = _appointmentsForDate(day);
-          final dayFeasts = _liturgicalFeastsForDate(day);
-          final dayPickups = _certificatePickupsForDate(day);
-
-          return Expanded(
-            child: Container(
-              margin: EdgeInsets.only(right: index < 6 ? 10 : 0),
-              decoration: BoxDecoration(
-                color: isMonday ? const Color(0xFFF8FAFC) : ParishColors.cardWhite,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isSelected ? ParishColors.marianBlue : ParishColors.borderGrey,
-                  width: isSelected ? 2 : 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  InkWell(
-                    onTap: () => setState(() => _selectedDate = day),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? ParishColors.marianBlue
-                            : (isMonday ? const Color(0xFFF1F5F9) : ParishColors.marianBlueSurface),
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            dayNames[index].toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: isSelected
-                                  ? Colors.white
-                                  : (isMonday ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${day.day}',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: isSelected
-                                  ? Colors.white
-                                  : (isPast ? ParishColors.textMuted.withOpacity(0.5) : ParishColors.textDark),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ...dayPickups.map((p) => InkWell(
-                            onTap: () => _showPickupDetailsDialog(p),
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: colorCertificatePickup.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: colorCertificatePickup.withOpacity(0.5)),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.verified, size: 12, color: colorCertificatePickup),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      'Pickup: ${p["sacrament_type"] ?? "Cert"}',
-                                      style: const TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: colorCertificatePickup,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )),
-
-                          ...dayFeasts.map((f) => Container(
-                            margin: const EdgeInsets.only(bottom: 6),
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: f.categorySurfaceColor,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: f.categoryBadgeColor.withOpacity(0.4)),
-                            ),
-                            child: Text(
-                              f.name,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                color: f.categoryBadgeColor,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          )),
-
-                          if (dayAppointments.isEmpty && dayFeasts.isEmpty && dayPickups.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 12.0),
-                              child: Text(
-                                isPast
-                                    ? 'Archived'
-                                    : (isMonday ? 'Rest Day' : (_isParishioner ? 'No Bookings' : 'Open')),
-                                style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
-                              ),
-                            )
-                          else
-                            ...dayAppointments.map((a) => InkWell(
-                              onTap: () => _openAppointmentDetail(a),
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 6),
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: colorAppointments.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: colorAppointments.withOpacity(0.5)),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      a.requestedTime.length >= 5 ? a.requestedTime.substring(0, 5) : a.requestedTime,
-                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: colorAppointments),
-                                    ),
-                                    Text(
-                                      a.serviceType,
-                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textDark),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
-  Widget _buildMobileWeekView() {
-    final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday % 7));
-    final weekDays = List.generate(7, (i) => startOfWeek.add(Duration(days: i)));
-    final dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: 7,
-      itemBuilder: (context, index) {
-        final day = weekDays[index];
-        final isMonday = day.weekday == DateTime.monday;
-        final isSelected = day.day == _selectedDate.day && day.month == _selectedDate.month;
-        final isPast = _isPastDate(day);
-
-        final dayAppointments = _appointmentsForDate(day);
-        final dayFeasts = _liturgicalFeastsForDate(day);
-        final dayPickups = _certificatePickupsForDate(day);
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: isMonday ? const Color(0xFFF8FAFC) : ParishColors.cardWhite,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? ParishColors.marianBlue : (isMonday ? const Color(0xFFCBD5E1) : ParishColors.borderGrey),
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isMonday ? const Color(0xFFF1F5F9) : ParishColors.marianBlueSurface,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          dayNames[index],
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: isMonday ? const Color(0xFF64748B) : ParishColors.marianBlueAdaptive,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${day.month}/${day.day}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: isPast ? ParishColors.textMuted.withOpacity(0.6) : ParishColors.textDark,
-                          ),
-                        ),
-                        if (isMonday) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF64748B),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'CLERGY REST DAY',
-                              style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    Text(
-                      '${dayAppointments.length} bookings${dayPickups.isNotEmpty ? " • ${dayPickups.length} pickup" : ""}',
-                      style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-
-              ...dayPickups.map((p) => Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-                child: _buildCertificatePickupCard(p),
-              )),
-
-              ...dayFeasts.map((f) => Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: f.isPhilippineSpecific ? colorPhilippineSpecific : colorGlobalLiturgical,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        f.name,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: f.isPhilippineSpecific ? colorPhilippineSpecific : colorGlobalLiturgical,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              )),
-
-              if (dayAppointments.isEmpty && dayFeasts.isEmpty && dayPickups.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Text(
-                    isPast
-                        ? 'Past date recorded.'
-                        : (isMonday ? 'Closed for Pastoral Rest Day.' : 'No events scheduled.'),
-                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-                  ),
-                )
-              else
-                ...dayAppointments.map((a) => Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                  child: _buildAppointmentCard(a),
-                )),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ===========================================================================
-  // 3. DAY VIEW
+  // 5. DAY VIEW
   // ===========================================================================
   Widget _buildDayView(bool isDesktop) {
     final isMonday = _selectedDate.weekday == DateTime.monday;
@@ -1543,22 +1791,22 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
             ),
             child: slotAppointments.isEmpty
                 ? InkWell(
-              onTap: (isMonday || isPast) ? null : () => _openBookingForDate(_selectedDate),
+              onTap: isPast ? null : () => _openBookingForDate(_selectedDate),
               child: Row(
                 children: [
                   Icon(
-                    isMonday || isPast ? Icons.block : Icons.add_circle_outline,
+                    isMonday ? Icons.lock_clock : (isPast ? Icons.block : Icons.add_circle_outline),
                     size: 16,
-                    color: isMonday || isPast ? const Color(0xFF94A3B8) : colorAppointments,
+                    color: isPast ? const Color(0xFF94A3B8) : colorAppointments,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     isPast
                         ? 'Past Slot (Archived)'
-                        : (isMonday ? 'Monday Locked' : 'Available (Tap to book)'),
+                        : (isMonday ? 'Monday (Tap to allow exception)' : 'Available (Tap to book)'),
                     style: TextStyle(
                       fontSize: 12,
-                      color: isMonday || isPast ? const Color(0xFF94A3B8) : ParishColors.textMuted,
+                      color: isPast ? const Color(0xFF94A3B8) : ParishColors.textMuted,
                     ),
                   ),
                 ],
@@ -1572,10 +1820,6 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
       ],
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Cards & Notices
-  // ---------------------------------------------------------------------------
 
   Widget _buildCertificatePickupCard(Map<String, dynamic> req) {
     final sacrament = req['sacrament_type'] ?? 'Sacrament';
@@ -1647,21 +1891,21 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFCBD5E1)),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const Icon(Icons.history, color: Color(0xFF64748B), size: 20),
-          const SizedBox(width: 10),
+          Icon(Icons.history, color: Color(0xFF64748B), size: 20),
+          SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Past Date (Historical Ledger)',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF334155)),
                 ),
                 Text(
                   'This date has passed. Bookings are only accepted for today and future calendar dates.',
-                  style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
+                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                 ),
               ],
             ),
@@ -1695,7 +1939,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'Parish secretariat is closed and routine appointments cannot be scheduled on Mondays.',
+                  'Parish secretariat is closed. Emergency Sick Calls (Viaticum) and Confessions may proceed by exception.',
                   style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                 ),
               ],
@@ -1856,7 +2100,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                         ),
                       ),
                       Text(
-                        apt.formattedTimeRange,
+                        AppointmentService.formatTime12Hour(apt.requestedTime),
                         style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
                       ),
                     ],
@@ -1904,7 +2148,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
   }) {
     IconData icon = Icons.event_available;
     String title = _isParishioner ? 'No Personal Bookings' : 'No Appointments Booked';
-    String message = 'This day is open for bookings within 9:00 AM – 5:00 PM.';
+    String message = 'This day is open for bookings.';
 
     if (isPast) {
       icon = Icons.history;
@@ -1913,14 +2157,14 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
     } else if (isMonday) {
       icon = Icons.lock_clock;
       title = 'Pastoral Rest Day';
-      message = 'The Parish Office is closed on Mondays for Clergy Rest and Sanctuary Care.';
+      message = 'The Parish Office is closed on Mondays for Clergy Rest (Exceptions permitted).';
     } else if (isBlocked) {
       icon = Icons.church;
       title = 'Liturgical Solemnity';
       message = 'Pastoral bookings are restricted today due to a major Catholic solemnity.';
     }
 
-    final bool canBook = !isPast && !isMonday && !isBlocked;
+    final bool canBook = !isPast && !isBlocked;
 
     return Container(
       width: double.infinity,

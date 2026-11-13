@@ -1,6 +1,11 @@
+// =============================================================================
+// FILE: lib/features/appointments/presentation/widgets/appointment_card.dart
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/appointment_model.dart';
+import '../../services/appointment_service.dart';
 import '../dialogs/appointment_detail_dialog.dart';
 
 class AppointmentCard extends StatelessWidget {
@@ -13,27 +18,50 @@ class AppointmentCard extends StatelessWidget {
     this.onRefresh,
   });
 
+  IconData _getServiceIcon(String serviceType) {
+    final s = serviceType.toLowerCase();
+    if (s.contains('wedding') || s.contains('nuptial')) return Icons.favorite;
+    if (s.contains('confirmation') || s.contains('kumpil')) return Icons.local_fire_department;
+    if (s.contains('baptism')) return Icons.water_drop;
+    if (s.contains('funeral')) return Icons.church;
+    if (s.contains('anointing') || s.contains('sick') || s.contains('viaticum')) return Icons.medical_services_outlined;
+    if (s.contains('confession')) return Icons.lock_open;
+    if (s.contains('blessing')) return Icons.wb_sunny_outlined;
+    return Icons.event_available;
+  }
+
+  bool _isOutsideVenue(String venue) {
+    final v = venue.toLowerCase();
+    return v.contains('outside') ||
+        v.contains('off-site') ||
+        v.contains('hospital') ||
+        v.contains('residence') ||
+        v.contains('home');
+  }
+
   @override
   Widget build(BuildContext context) {
     final a = appointment;
     final status = a.appointmentStatus.toLowerCase();
-    final bool hasId = a.idType != null || a.idDocumentUrl != null;
+    final bool hasUploadedIdPending =
+        a.idDocumentUrl != null && a.idDocumentUrl!.isNotEmpty && !a.isIdVerified;
+    final bool isOutside = _isOutsideVenue(a.venue);
 
-    Color statusColor = ParishColors.goldAccent;
-    Color statusSurface = ParishColors.goldLight;
+    Color statusColor = const Color(0xFFD97706); // Amber
+    Color statusSurface = const Color(0xFFFFFBEB);
     if (status == 'confirmed') {
-      statusColor = ParishColors.oliveGreen;
-      statusSurface = ParishColors.oliveGreenSurface;
+      statusColor = const Color(0xFF16A34A); // Green
+      statusSurface = const Color(0xFFF0FDF4);
     } else if (status == 'completed') {
-      statusColor = ParishColors.marianBlue;
-      statusSurface = ParishColors.marianBlueSurface;
+      statusColor = const Color(0xFF64748B); // Gray
+      statusSurface = const Color(0xFFF1F5F9);
     } else if (status == 'cancelled') {
-      statusColor = ParishColors.mercyRed;
-      statusSurface = ParishColors.mercyRedSurface;
-    } else if (status == 'rescheduled') {
-      statusColor = const Color(0xFF7C3AED); // Royal Violet
-      statusSurface = const Color(0xFFF3E8FF);
+      statusColor = const Color(0xFFDC2626); // Red
+      statusSurface = const Color(0xFFFEF2F2);
     }
+
+    final formattedTime = AppointmentService.formatTime12Hour(a.requestedTime);
+    final duration = AppointmentService.getMinimumDurationMinutes(a.serviceType);
 
     return InkWell(
       onTap: () => showAppointmentDetailModal(
@@ -44,28 +72,38 @@ class AppointmentCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: ParishColors.cardWhite,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: ParishColors.borderGrey),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Liturgical Rite Icon
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: statusSurface,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                Icons.calendar_month,
+                _getServiceIcon(a.serviceType),
                 color: statusColor,
-                size: 26,
+                size: 22,
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
+
+            // Appointment Content
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,18 +113,18 @@ class AppointmentCard extends StatelessWidget {
                     children: [
                       Text(
                         a.appointmentId,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ParishColors.marianBlue),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: ParishColors.marianBlue),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
                           color: statusSurface,
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           a.appointmentStatus.toUpperCase(),
                           style: TextStyle(
-                            fontSize: 10.5,
+                            fontSize: 9.5,
                             fontWeight: FontWeight.bold,
                             color: statusColor,
                           ),
@@ -94,74 +132,92 @@ class AppointmentCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     a.serviceType,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
                   ),
                   Text(
                     'Requester: ${a.requesterName} (${a.contactNumber})',
-                    style: TextStyle(fontSize: 12.5, color: ParishColors.textMuted),
+                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
                   ),
                   const SizedBox(height: 6),
+
+                  // Single Service Time with Runtime Duration
                   Row(
                     children: [
-                      Icon(Icons.access_time, size: 14, color: ParishColors.textMuted),
+                      Icon(Icons.access_time, size: 13, color: ParishColors.textMuted),
                       const SizedBox(width: 4),
                       Text(
-                        '${a.formattedDate} • ${a.formattedTimeRange}',
-                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+                        '${a.formattedDate} at $formattedTime (~${duration}m)',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.textDark),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
+
+                  // Venue Badge (Parish Grounds vs Outside)
                   Row(
                     children: [
-                      Icon(Icons.location_on_outlined, size: 14, color: ParishColors.textMuted),
+                      Icon(
+                        isOutside ? Icons.pin_drop_outlined : Icons.church_outlined,
+                        size: 13,
+                        color: isOutside ? ParishColors.goldAccent : ParishColors.marianBlue,
+                      ),
                       const SizedBox(width: 4),
-                      Text(a.venue, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: isOutside ? ParishColors.goldLight : ParishColors.marianBlueSurface,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                isOutside ? 'OUTSIDE PARISH' : 'PARISH GROUNDS',
+                                style: TextStyle(
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isOutside ? ParishColors.goldAccent : ParishColors.marianBlue,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                a.venue,
+                                style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
 
-                  // ID Clearance Indicator Pill for Staff Triage
-                  if (hasId) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                          decoration: BoxDecoration(
-                            color: a.isIdVerified
-                                ? ParishColors.oliveGreenSurface
-                                : ParishColors.goldLight,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: a.isIdVerified
-                                  ? ParishColors.oliveGreen.withValues(alpha: 0.5)
-                                  : ParishColors.goldAccent.withValues(alpha: 0.5),
-                            ),
+                  // Optional ID Pill: Only shows if an online portal user submitted an ID awaiting review
+                  if (hasUploadedIdPending) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: ParishColors.goldLight,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: ParishColors.goldAccent.withOpacity(0.4)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.badge_outlined, size: 11, color: ParishColors.goldAccent),
+                          SizedBox(width: 4),
+                          Text(
+                            'Portal ID Pending Review',
+                            style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                a.isIdVerified ? Icons.verified : Icons.badge_outlined,
-                                size: 12,
-                                color: a.isIdVerified ? ParishColors.oliveGreen : ParishColors.goldAccent,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                a.isIdVerified ? 'ID Verified' : 'ID Clearance Needed',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: a.isIdVerified ? ParishColors.oliveGreen : ParishColors.goldAccent,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ],

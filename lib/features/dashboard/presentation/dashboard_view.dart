@@ -296,11 +296,11 @@ class _DashboardViewState extends State<DashboardView> {
               _buildGreetingBanner(greeting, displayName, roleDisplay, isDesktop),
               const SizedBox(height: 16),
 
-              // 2. Quick Actions Tray (Responsive Action Cards)
+              // 2. Quick Actions Tray
               _buildCompactActionLaunchpad(context, isDesktop, isMobile),
               const SizedBox(height: 20),
 
-              // 3. Parish dashboard overview
+              // 3. Parish Overview
               Padding(
                 padding: const EdgeInsets.only(left: 2, bottom: 12),
                 child: Row(
@@ -589,7 +589,7 @@ class _DashboardViewState extends State<DashboardView> {
   }
 
   // ===========================================================================
-  // QUICK ACTIONS TRAY (Responsive Action Cards)
+  // Quick Actions Launchpad
   // ===========================================================================
   Widget _buildCompactActionLaunchpad(BuildContext context, bool isDesktop, bool isMobile) {
     final role = widget.currentUser?.userRole.toLowerCase() ?? '';
@@ -635,8 +635,8 @@ class _DashboardViewState extends State<DashboardView> {
           onTap: () => _showNewRecordSelector(context),
         ),
         _QuickAction(
-          label: 'Calendar',
-          icon: Icons.calendar_month,
+          label: 'Week Ledger',
+          icon: Icons.table_chart_outlined,
           color: const Color(0xFF2563EB),
           onTap: () => Navigator.push(
             context,
@@ -719,7 +719,6 @@ class _DashboardViewState extends State<DashboardView> {
         ),
       ]);
     } else {
-      // Secretary / Admin (Full Operations Suite)
       items.addAll([
         _QuickAction(
           label: 'POS Cashier',
@@ -802,7 +801,6 @@ class _DashboardViewState extends State<DashboardView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
               Container(
@@ -844,14 +842,12 @@ class _DashboardViewState extends State<DashboardView> {
           ),
           const SizedBox(height: 14),
 
-          // Responsive card grid
           LayoutBuilder(
             builder: (context, c) {
               const gap = 10.0;
               final w = c.maxWidth;
 
               int cols = w >= 760 ? 4 : (w >= 480 ? 3 : 2);
-              // Avoid orphan rows (e.g. 4 items in 3 cols, 6 items in 4 cols)
               if (cols == 3 && items.length % 3 != 0) cols = 2;
               if (cols == 4 && items.length % 4 != 0 && items.length % 3 == 0) cols = 3;
 
@@ -875,7 +871,7 @@ class _DashboardViewState extends State<DashboardView> {
   }
 
   // ===========================================================================
-  // UNIFIED CALENDAR CARD (Grid + Integrated Date Inspector Footer)
+  // UNIFIED CALENDAR CARD
   // ===========================================================================
   Widget _buildUnifiedCalendarCard(BuildContext context, {required bool isDesktop}) {
     final now = DateTime.now();
@@ -903,7 +899,6 @@ class _DashboardViewState extends State<DashboardView> {
       ),
       child: Column(
         children: [
-          // 1. Calendar Header Bar
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
@@ -944,10 +939,10 @@ class _DashboardViewState extends State<DashboardView> {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.calendar_month, size: 14, color: ParishColors.marianBlue),
+                        Icon(Icons.table_chart_outlined, size: 14, color: ParishColors.marianBlue),
                         SizedBox(width: 5),
                         Text(
-                          'Full View',
+                          'Open Ledger',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: ParishColors.marianBlue,
@@ -963,7 +958,6 @@ class _DashboardViewState extends State<DashboardView> {
           ),
           const Divider(height: 1),
 
-          // 2. Day of Week Header & Month Grid
           Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -1071,7 +1065,7 @@ class _DashboardViewState extends State<DashboardView> {
             ),
           ),
 
-          // 3. Compact Date Inspector Footer (Seamlessly embedded)
+          // Date Inspector Footer
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1126,29 +1120,31 @@ class _DashboardViewState extends State<DashboardView> {
                       else
                         Text(
                           isMonday
-                              ? 'Office closed for Clergy Rest Day'
-                              : (isTuesday ? 'Office open (Tuesday approval required)' : 'Office open (8:00 AM – 5:00 PM)'),
+                              ? 'Clergy Rest Day (Emergency pastoral care accessible)'
+                              : (isTuesday ? 'Office open (Tuesday Priest review)' : 'Office open (8:00 AM – 5:00 PM)'),
                           style: TextStyle(fontSize: 11, color: ParishColors.textMuted),
                         ),
                     ],
                   ),
                 ),
-                if (!isMonday)
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.marianBlue,
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () => navigateToScheduleServicePage(
-                      context,
-                      initialDate: _selectedCalendarDate,
-                    ),
-                    icon: const Icon(Icons.add_task, size: 14),
-                    label: const Text('Book', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
+                  onPressed: () => navigateToScheduleServicePage(
+                    context,
+                    initialDate: _selectedCalendarDate,
+                  ),
+                  icon: const Icon(Icons.add_task, size: 14),
+                  label: Text(
+                    isMonday ? 'Plot' : 'Book',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1329,7 +1325,7 @@ class _DashboardViewState extends State<DashboardView> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-
+              Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: ParishColors.textDark, height: 1.0)),
               const SizedBox(width: 3),
               Padding(
                 padding: const EdgeInsets.only(bottom: 2),
@@ -1387,7 +1383,6 @@ class _DashboardViewState extends State<DashboardView> {
                   ],
                 ),
               ),
-
             ],
           ),
           const SizedBox(height: 15),
@@ -1399,6 +1394,7 @@ class _DashboardViewState extends State<DashboardView> {
     );
   }
 
+  // FIXED: Directly references ParishColors.textDark to resolve compilation scope error
   Widget _buildScheduleRow(String title, String timing, IconData icon) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1421,7 +1417,7 @@ class _DashboardViewState extends State<DashboardView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
+                  Text(title, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
                   const SizedBox(height: 3),
                   Text(timing, style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted, height: 1.3)),
                 ],
@@ -1483,7 +1479,7 @@ class _DashboardViewState extends State<DashboardView> {
                 const SizedBox(width: 9),
                 Expanded(
                   child: Text(
-                    'Tuesday to Sunday\\n8:00 AM – 12:00 PM  |  1:30 PM – 5:00 PM',
+                    'Tuesday to Sunday\n8:00 AM – 12:00 PM  |  1:30 PM – 5:00 PM',
                     style: TextStyle(fontSize: 11, color: textDark, height: 1.5, fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -1498,7 +1494,7 @@ class _DashboardViewState extends State<DashboardView> {
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
-                  'Monday: Closed for Canonical Clergy Rest Day & Sanctification',
+                  'Monday: Closed for Clergy Rest Day (Emergency pastoral care accessible)',
                   style: TextStyle(fontSize: 10.5, color: textMuted, height: 1.35),
                 ),
               ),
@@ -1519,7 +1515,7 @@ class _DashboardViewState extends State<DashboardView> {
 }
 
 // =============================================================================
-// Quick Action model + tile
+// Quick Action Models & Widgets
 // =============================================================================
 class _QuickAction {
   final String label;

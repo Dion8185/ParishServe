@@ -39,7 +39,7 @@ class NotificationService {
       OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
       OneSignal.initialize(_oneSignalAppId);
 
-      // Request notification permissions asynchronously so it does not block the Android draw traversal
+      // Request notification permissions asynchronously
       OneSignal.Notifications.requestPermission(true).then((permissionGranted) {
         debugPrint('[NotificationService] Push Permission Granted: $permissionGranted');
       }).catchError((e) {
@@ -113,8 +113,7 @@ class NotificationService {
     }
   }
 
-  /// Dispatches a push notification to all devices tagged with [targetRole] (e.g. 'secretary', 'parishpriest')
-  /// by invoking the Supabase Edge Function 'dispatch-alert'.
+  /// Dispatches a push notification to all devices tagged with [targetRole]
   static Future<void> sendRolePushNotification({
     required String targetRole,
     required String title,
@@ -143,7 +142,6 @@ class NotificationService {
   }
 
   /// Dispatches a direct push notification to a specific requester account [targetUserId]
-  /// via the Supabase Edge Function 'dispatch-alert'.
   static Future<void> sendUserPushNotification({
     required String targetUserId,
     required String title,
@@ -195,12 +193,25 @@ class NotificationService {
       return;
     }
 
-    final type = (additionalData['type'] ?? additionalData['alertType'] ?? additionalData['notification_type'])?.toString().toLowerCase() ?? '';
-    final refId = (additionalData['appointment_id'] ?? additionalData['reference_id'] ?? additionalData['node_id'] ?? additionalData['service_request_id'])?.toString();
+    final type = (additionalData['type'] ??
+        additionalData['alertType'] ??
+        additionalData['notification_type'])
+        ?.toString()
+        .toLowerCase() ??
+        '';
+
+    final refId = (additionalData['appointment_id'] ??
+        additionalData['reference_id'] ??
+        additionalData['node_id'] ??
+        additionalData['service_request_id'])
+        ?.toString();
 
     try {
-      // 1. Appointments, Tuesday Approvals, and 24h/12h Reminders
-      if (type.contains('appointment') || type.contains('tuesday') || type.contains('reminder')) {
+      // 1. Appointments, Reschedules, Tuesday Approvals, and 24h/12h Reminders
+      if (type.contains('appointment') ||
+          type.contains('tuesday') ||
+          type.contains('reminder') ||
+          type.contains('reschedule')) {
         debugPrint('[NotificationService] Deep-linking to Appointment Detail: $refId');
         showAppointmentDetailModal(
           context,
@@ -208,10 +219,16 @@ class NotificationService {
         );
       }
       // 2. Smart Archive IoT Environmental Breaches
-      else if (type.contains('iot') || type.contains('humidity') || type.contains('temperature')) {
+      else if (type.contains('iot') ||
+          type.contains('humidity') ||
+          type.contains('temperature')) {
         debugPrint('[NotificationService] Deep-linking to Smart Archive Sensor Dialog: $refId');
-        final tempStr = additionalData['temperature'] != null ? '${additionalData["temperature"]} °C' : '28.5 °C';
-        final humStr = additionalData['humidity'] != null ? '${additionalData["humidity"]} %' : '68.2 %';
+        final tempStr = additionalData['temperature'] != null
+            ? '${additionalData["temperature"]} °C'
+            : '28.5 °C';
+        final humStr = additionalData['humidity'] != null
+            ? '${additionalData["humidity"]} %'
+            : '68.2 %';
 
         showSensorDetailModal(
           context,

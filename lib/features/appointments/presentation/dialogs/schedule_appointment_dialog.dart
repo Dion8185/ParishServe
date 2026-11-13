@@ -21,6 +21,7 @@ import 'appointment_submission_success_dialog.dart';
 void showScheduleAppointmentModal(
     BuildContext context, {
       DateTime? initialDate,
+      TimeOfDay? initialTime,
       VoidCallback? onAppointmentSaved,
     }) {
   showDialog(
@@ -28,6 +29,7 @@ void showScheduleAppointmentModal(
     barrierDismissible: false,
     builder: (ctx) => _ScheduleAppointmentDialog(
       initialDate: initialDate,
+      initialTime: initialTime,
       onAppointmentSaved: onAppointmentSaved,
     ),
   );
@@ -90,6 +92,7 @@ class _ServicePreset {
   final String defaultOfficiant;
   final String durationLabel;
   final bool isCommunityBaptism;
+  final bool isAnytimeAllowed;
 
   const _ServicePreset({
     required this.durationMinutes,
@@ -97,15 +100,18 @@ class _ServicePreset {
     required this.defaultOfficiant,
     required this.durationLabel,
     this.isCommunityBaptism = false,
+    this.isAnytimeAllowed = false,
   });
 }
 
 class _ScheduleAppointmentDialog extends StatefulWidget {
   final DateTime? initialDate;
+  final TimeOfDay? initialTime;
   final VoidCallback? onAppointmentSaved;
 
   const _ScheduleAppointmentDialog({
     this.initialDate,
+    this.initialTime,
     this.onAppointmentSaved,
   });
 
@@ -120,39 +126,42 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   final _requesterNameController = TextEditingController();
   final _contactNumberController = TextEditingController();
   final _emailController = TextEditingController();
-  final _idNumberController = TextEditingController();
   final _remarksController = TextEditingController();
+  final _idNumberController = TextEditingController();
+  final _outsideLocationController = TextEditingController();
 
   final FocusNode _nameFocusNode = FocusNode();
   final FocusNode _contactFocusNode = FocusNode();
-  final FocusNode _emailFocusNode = FocusNode();
 
   String _selectedService = 'Nuptial Mass (Wedding)';
-  String _selectedVenue = 'Main Church Altar';
   String _selectedOfficiant = 'Rev. Fr. Roy';
   String _selectedIdType = 'Philippine National ID (PhilID / ePhilID)';
 
-  // In-Memory Temporary Image File State
+  // Venue state
+  bool _isOnParishGrounds = true;
+
+  // Single Estimated Service Time State
+  late DateTime _selectedDate;
+  TimeOfDay _estimatedServiceTime = const TimeOfDay(hour: 10, minute: 0);
+  int _estimatedDurationMinutes = 60;
+  bool _allowMondayException = false;
+
+  // Preserved Portal-Only Valid ID File State
   Uint8List? _attachedIdFileBytes;
   String? _attachedIdFileName;
   int? _attachedIdFileSize;
   bool _idFileHasError = false;
 
-  // Upload & File Picker Rate Limiter State
   DateTime? _lastFilePickAttemptTime;
   final List<DateTime> _recentAttachmentAttempts = [];
   static const int _maxAttachmentAttemptsPerWindow = 5;
   static const Duration _rateLimitWindow = Duration(minutes: 5);
   static const Duration _pickCooldown = Duration(seconds: 3);
 
-  late DateTime _selectedDate;
-  TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
-  late TimeOfDay _endTime;
-
   bool _isSubmitting = false;
   String? _errorMessage;
 
-  // Live Validation & Smart Conflict State
+  // Live Validation & Conflict State
   bool _isLiveChecking = false;
   String? _liveConflictWarning;
   String? _duplicateRequesterWarning;
@@ -198,63 +207,62 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   final Map<String, _ServicePreset> _presets = const {
     'Nuptial Mass (Wedding)': _ServicePreset(
       durationMinutes: 90,
-      defaultVenue: 'Main Church Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hr 30 mins',
     ),
     'Community Baptism': _ServicePreset(
       durationMinutes: 60,
-      defaultVenue: 'Baptistery & Main Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour (11:00 AM Batch)',
       isCommunityBaptism: true,
     ),
+    'Confirmation (Kumpil)': _ServicePreset(
+      durationMinutes: 60,
+      defaultVenue: 'Parish Grounds',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '1 hour',
+    ),
     'Funeral Mass & Blessing': _ServicePreset(
       durationMinutes: 60,
-      defaultVenue: 'Main Church Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour',
     ),
     'Anointing of the Sick & Viaticum': _ServicePreset(
       durationMinutes: 45,
-      defaultVenue: 'Off-site / Home Visit',
+      defaultVenue: 'Outside Parish',
       defaultOfficiant: 'Rev. Fr. Roy',
-      durationLabel: '45 mins',
+      durationLabel: '45 mins (Emergency / Anytime)',
+      isAnytimeAllowed: true,
+    ),
+    'Confession & Spiritual Direction': _ServicePreset(
+      durationMinutes: 30,
+      defaultVenue: 'Parish Grounds',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '30 mins (Flexible / Anytime)',
+      isAnytimeAllowed: true,
     ),
     'House / Business Blessing': _ServicePreset(
       durationMinutes: 45,
-      defaultVenue: 'Off-site / Home Visit',
+      defaultVenue: 'Outside Parish',
+      defaultOfficiant: 'Rev. Fr. Roy',
+      durationLabel: '45 mins',
+    ),
+    'Canonical Interview / Pre-Cana': _ServicePreset(
+      durationMinutes: 45,
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '45 mins',
     ),
     'Thanksgiving Mass Intention': _ServicePreset(
       durationMinutes: 60,
-      defaultVenue: 'Main Church Altar',
+      defaultVenue: 'Parish Grounds',
       defaultOfficiant: 'Rev. Fr. Roy',
       durationLabel: '1 hour',
     ),
-    'Canonical Interview / Pre-Cana': _ServicePreset(
-      durationMinutes: 45,
-      defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Roy',
-      durationLabel: '45 mins',
-    ),
-    'Confession & Spiritual Direction': _ServicePreset(
-      durationMinutes: 30,
-      defaultVenue: 'Sanctuary / Sacristy',
-      defaultOfficiant: 'Rev. Fr. Roy',
-      durationLabel: '30 mins',
-    ),
   };
-
-  final List<String> _venues = [
-    'Main Church Altar',
-    'Baptistery & Main Altar',
-    'Parish Hall',
-    'Mortuary Chapel',
-    'Sanctuary / Sacristy',
-    'Off-site / Home Visit',
-  ];
 
   final List<String> _officiants = [
     'Rev. Fr. Roy',
@@ -275,72 +283,81 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     final today = DateTime(now.year, now.month, now.day);
 
     if (widget.initialDate != null) {
-      var target = DateTime(
+      final target = DateTime(
         widget.initialDate!.year,
         widget.initialDate!.month,
         widget.initialDate!.day,
       );
-      if (target.isBefore(today)) {
-        target = _getInitialValidDate();
-      }
-      if (_presets[_selectedService]?.isCommunityBaptism == true &&
-          target.weekday != DateTime.saturday &&
-          target.weekday != DateTime.sunday) {
-        target = _getInitialValidDate();
-      }
-      _selectedDate = target;
+      _selectedDate = target.isBefore(today) ? _getInitialValidDate() : target;
     } else {
       _selectedDate = _getInitialValidDate();
     }
 
-    _applyPresetInitialTimes();
+    if (widget.initialTime != null) {
+      _estimatedServiceTime = widget.initialTime!;
+    }
+
+    _applyServicePreset(_selectedService, retainCustomTime: widget.initialTime != null);
     LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
 
     _nameFocusNode.addListener(() => setState(() {}));
     _contactFocusNode.addListener(() => setState(() {}));
-    _emailFocusNode.addListener(() => setState(() {}));
 
     _restoreDraft();
     _runLiveConflictCheck();
+  }
+
+  void _applyServicePreset(String service, {bool retainCustomTime = false}) {
+    final preset = _presets[service];
+    if (preset == null) return;
+
+    _estimatedDurationMinutes = preset.durationMinutes;
+
+    if (preset.defaultVenue.toLowerCase().contains('outside')) {
+      _isOnParishGrounds = false;
+    } else {
+      _isOnParishGrounds = true;
+      _outsideLocationController.clear();
+    }
+
+    if (!retainCustomTime) {
+      if (preset.isCommunityBaptism) {
+        _estimatedServiceTime = const TimeOfDay(hour: 11, minute: 0);
+      } else if (!preset.isAnytimeAllowed) {
+        if (_estimatedServiceTime.hour < 9 || _estimatedServiceTime.hour >= 17) {
+          _estimatedServiceTime = const TimeOfDay(hour: 10, minute: 0);
+        }
+      }
+    }
   }
 
   String? _validateFullName(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Requester full name is required.';
     }
-    if (value.startsWith(' ')) {
-      return 'Name cannot begin with a space.';
-    }
-    if (value.endsWith(' ')) {
-      return 'Name cannot end with a trailing space.';
+    if (value.startsWith(' ') || value.endsWith(' ')) {
+      return 'Name cannot start or end with a space.';
     }
     if (value.contains(RegExp(r'\s{2,}'))) {
       return 'Name cannot contain consecutive spaces.';
     }
 
     final trimmed = value.trim();
-    if (trimmed.length < 2) {
-      return 'Name must be at least 2 characters.';
-    }
-    if (trimmed.length > 70) {
-      return 'Name cannot exceed 70 characters.';
-    }
+    if (trimmed.length < 2) return 'Name must be at least 2 characters.';
+    if (trimmed.length > 70) return 'Name cannot exceed 70 characters.';
 
     final nameRegex = RegExp(r"^[a-zA-ZÀ-ÿ\u0100-\u024FÑñ\s.\-’']+$");
     if (!nameRegex.hasMatch(trimmed)) {
-      return 'Name contains invalid characters (letters, hyphens, and spaces only).';
+      return 'Name contains invalid characters (letters and spaces only).';
     }
 
     final lower = trimmed.toLowerCase();
-
     if (RegExp(r'(.)\1{2,}', caseSensitive: false).hasMatch(trimmed)) {
       return 'Name cannot contain 3 or more identical letters consecutively.';
     }
-
     if (RegExp(r'(.{2,4})\1{2,}', caseSensitive: false).hasMatch(lower)) {
-      return 'Please enter a genuine name (repetitive text pattern detected).';
+      return 'Please enter a genuine name (repetitive pattern detected).';
     }
-
     for (final walk in _keyboardWalks) {
       if (lower.contains(walk)) {
         return 'Please enter a genuine name (keyboard sequence detected).';
@@ -349,116 +366,28 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
     final onlyLetters = lower.replaceAll(RegExp(r'[^a-zà-ÿñ]'), '');
     if (onlyLetters.length >= 3) {
-      final hasVowel = RegExp(r'[aeiouyà-ÿ]').hasMatch(onlyLetters);
-      if (!hasVowel) {
+      if (!RegExp(r'[aeiouyà-ÿ]').hasMatch(onlyLetters)) {
         return 'Name must contain at least one vowel sound.';
       }
-
       if (RegExp(r'[bcdfghjklmnpqrstvwxz]{5,}').hasMatch(onlyLetters)) {
         return 'Name contains too many consecutive consonants.';
       }
     }
-
     return null;
   }
 
   bool get _isNameValid => _validateFullName(_requesterNameController.text) == null;
 
-  bool get _isPhoneValid =>
-      SacramentalValidators.validatePhoneNumber(_contactNumberController.text) == null &&
-          _contactNumberController.text.trim().isNotEmpty;
-
-  bool get _isEmailValid {
-    final text = _emailController.text.trim();
-    if (text.isEmpty) return !_isParishioner;
-    return RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(text);
-  }
-
-  Future<void> _saveDraft() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final draftMap = {
-        'service': _selectedService,
-        'requesterName': _requesterNameController.text.trim(),
-        'contact': _contactNumberController.text.trim(),
-        'email': _emailController.text.trim(),
-        'idType': _selectedIdType,
-        'idNumber': _idNumberController.text.trim(),
-        'remarks': _remarksController.text.trim(),
-        'venue': _selectedVenue,
-        'officiant': _selectedOfficiant,
-        'date': _selectedDate.toIso8601String(),
-        'startHour': _startTime.hour,
-        'startMinute': _startTime.minute,
-      };
-      await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
-    } catch (_) {}
-  }
-
-  Future<void> _restoreDraft() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_draftStorageKey);
-      if (raw != null && raw.isNotEmpty) {
-        final map = jsonDecode(raw) as Map<String, dynamic>;
-        if (mounted) {
-          setState(() {
-            if (!_isParishioner &&
-                map['requesterName'] != null &&
-                (map['requesterName'] as String).isNotEmpty) {
-              _requesterNameController.text = map['requesterName'];
-            }
-            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
-              _contactNumberController.text = map['contact'];
-            }
-            if (!_isParishioner &&
-                map['email'] != null &&
-                (map['email'] as String).isNotEmpty) {
-              _emailController.text = map['email'];
-            }
-            if (map['idNumber'] != null) _idNumberController.text = map['idNumber'];
-            if (map['remarks'] != null) _remarksController.text = map['remarks'];
-            if (map['service'] != null && _presets.containsKey(map['service'])) {
-              _selectedService = map['service'];
-            }
-            if (map['venue'] != null && _venues.contains(map['venue'])) {
-              _selectedVenue = map['venue'];
-            }
-            if (map['officiant'] != null && _officiants.contains(map['officiant'])) {
-              _selectedOfficiant = _isParishioner ? 'Rev. Fr. Roy' : map['officiant'];
-            }
-            if (map['idType'] != null && _philippineIdTypes.contains(map['idType'])) {
-              _selectedIdType = map['idType'];
-            }
-            if (map['date'] != null) {
-              final draftDate = DateTime.tryParse(map['date']);
-              final now = DateTime.now();
-              final today = DateTime(now.year, now.month, now.day);
-              if (draftDate != null && !draftDate.isBefore(today)) {
-                _selectedDate = draftDate;
-              }
-            }
-          });
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _clearDraft() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_draftStorageKey);
-    } catch (_) {}
-  }
-
   DateTime _getInitialValidDate() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     var date = today.add(const Duration(days: 1));
-    final isCommunity = _presets[_selectedService]?.isCommunityBaptism ?? false;
+    final preset = _presets[_selectedService];
+    final isCommunity = preset?.isCommunityBaptism ?? false;
+    final isAnytime = preset?.isAnytimeAllowed ?? false;
 
     while (date.isBefore(today) ||
-        date.weekday == DateTime.monday ||
+        (!isAnytime && date.weekday == DateTime.monday && _isParishioner) ||
         LiturgicalCalendarService.isDateBlockedSync(date) ||
         (isCommunity && date.weekday != DateTime.saturday && date.weekday != DateTime.sunday)) {
       date = date.add(const Duration(days: 1));
@@ -472,31 +401,12 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     _requesterNameController.dispose();
     _contactNumberController.dispose();
     _emailController.dispose();
-    _idNumberController.dispose();
     _remarksController.dispose();
+    _idNumberController.dispose();
+    _outsideLocationController.dispose();
     _nameFocusNode.dispose();
     _contactFocusNode.dispose();
-    _emailFocusNode.dispose();
     super.dispose();
-  }
-
-  TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
-    final totalMinutes = (time.hour * 60) + time.minute + minutesToAdd;
-    final newHour = (totalMinutes ~/ 60) % 24;
-    final newMinute = totalMinutes % 60;
-    return TimeOfDay(hour: newHour, minute: newMinute);
-  }
-
-  void _applyPresetInitialTimes() {
-    final preset = _presets[_selectedService]!;
-    if (preset.isCommunityBaptism) {
-      _startTime = const TimeOfDay(hour: 11, minute: 0);
-    } else {
-      if (_startTime.hour < 9 || _startTime.hour >= 17) {
-        _startTime = const TimeOfDay(hour: 10, minute: 0);
-      }
-    }
-    _endTime = _addMinutes(_startTime, preset.durationMinutes);
   }
 
   String _formatTimeOfDay(TimeOfDay time) {
@@ -512,18 +422,126 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     return '$hour:$minute $period';
   }
 
+  TimeOfDay _calculateEndTime(TimeOfDay start, int durationMinutes) {
+    final totalMinutes = (start.hour * 60) + start.minute + durationMinutes;
+    final newHour = (totalMinutes ~/ 60) % 24;
+    final newMinute = totalMinutes % 60;
+    return TimeOfDay(hour: newHour, minute: newMinute);
+  }
+
+  Future<void> _pickServiceTime() async {
+    final preset = _presets[_selectedService];
+    if (preset?.isCommunityBaptism == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Community Baptism ceremony strictly takes place at 11:00 AM on Weekends.'),
+          backgroundColor: ParishColors.goldAccent,
+        ),
+      );
+      return;
+    }
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _estimatedServiceTime,
+    );
+
+    if (picked != null) {
+      setState(() {
+        _estimatedServiceTime = picked;
+      });
+      _saveDraft();
+      _runLiveConflictCheck();
+    }
+  }
+
+  Future<void> _pickDate() async {
+    await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final preset = _presets[_selectedService];
+    final isCommunity = preset?.isCommunityBaptism ?? false;
+    final isAnytime = preset?.isAnytimeAllowed ?? false;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 730)),
+      selectableDayPredicate: (DateTime day) {
+        if (day.isBefore(today)) return false;
+        if (!isAnytime && day.weekday == DateTime.monday && _isParishioner) return false;
+        if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
+        if (isCommunity && day.weekday != DateTime.saturday && day.weekday != DateTime.sunday) {
+          return false;
+        }
+        return true;
+      },
+    );
+
+    if (picked != null) {
+      if (picked.weekday == DateTime.monday && !isAnytime && !_isParishioner) {
+        final allowed = await _confirmMondayExceptionDialog(picked);
+        if (!allowed) return;
+        _allowMondayException = true;
+      } else {
+        _allowMondayException = false;
+      }
+
+      setState(() => _selectedDate = picked);
+      _saveDraft();
+      _runLiveConflictCheck();
+    }
+  }
+
+  Future<bool> _confirmMondayExceptionDialog(DateTime date) async {
+    final dateStr =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 24),
+            SizedBox(width: 8),
+            Text('Monday Schedule Exception', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Text(
+          'Mondays ($dateStr) are designated Clergy Rest Days and the parish office is closed.\n\n'
+              'Do you want to schedule this appointment on Monday as an administrative exception?',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Allow Monday Exception'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
+  }
+
   Future<void> _pickIdDocument() async {
     final now = DateTime.now();
-
     if (_lastFilePickAttemptTime != null &&
         now.difference(_lastFilePickAttemptTime!) < _pickCooldown) {
-      final waitSec = _pickCooldown.inSeconds - now.difference(_lastFilePickAttemptTime!).inSeconds;
+      final waitSec =
+          _pickCooldown.inSeconds - now.difference(_lastFilePickAttemptTime!).inSeconds;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Please wait $waitSec second(s) before choosing another file.'),
           backgroundColor: ParishColors.goldAccent,
-          duration: const Duration(seconds: 2),
         ),
       );
       return;
@@ -534,9 +552,8 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Rate limit reached: Maximum 5 file selections per 5 minutes. Please wait a moment.'),
+          content: Text('Rate limit reached: Maximum 5 file selections per 5 minutes.'),
           backgroundColor: ParishColors.mercyRed,
-          duration: const Duration(seconds: 4),
         ),
       );
       return;
@@ -557,7 +574,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('File size exceeds 5MB limit. Please attach a smaller image or compressed PDF.'),
+              content: Text('File size exceeds 5MB limit. Please attach a smaller file.'),
               backgroundColor: ParishColors.mercyRed,
             ),
           );
@@ -565,23 +582,12 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
         }
 
         final Uint8List bytes = await file.readAsBytes();
-
         setState(() {
           _attachedIdFileBytes = bytes;
           _attachedIdFileName = file.name;
           _attachedIdFileSize = fileSize;
           _idFileHasError = false;
         });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('"${file.name}" attached locally. It will be uploaded securely upon booking confirmation.'),
-              backgroundColor: ParishColors.oliveGreen,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
       }
     } catch (e) {
       debugPrint('Error picking ID file: $e');
@@ -596,7 +602,6 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     });
   }
 
-  /// Interactive zoomable modal dialog to inspect attached ID photo
   void _openImagePreviewDialog(Uint8List bytes, String fileName) {
     showDialog(
       context: context,
@@ -613,18 +618,11 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
+                  const Row(
                     children: [
-                      const Icon(Icons.verified_user_outlined, color: ParishColors.marianBlue, size: 22),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Attached ID Inspection',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: ParishColors.textDark,
-                        ),
-                      ),
+                      Icon(Icons.verified_user_outlined, color: ParishColors.marianBlue, size: 22),
+                      SizedBox(width: 8),
+                      Text('Attached ID Inspection', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     ],
                   ),
                   IconButton(
@@ -644,39 +642,20 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       minScale: 0.8,
                       maxScale: 4.0,
                       child: Center(
-                        child: Image.memory(
-                          bytes,
-                          fit: BoxFit.contain,
-                        ),
+                        child: Image.memory(bytes, fit: BoxFit.contain),
                       ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      fileName,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: ParishColors.textMuted,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.marianBlue,
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Looks Good'),
-                  ),
-                ],
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ParishColors.marianBlue,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Looks Good'),
               ),
             ],
           ),
@@ -688,7 +667,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   void _triggerDebouncedValidation() {
     _saveDraft();
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
       _runLiveConflictCheck();
       _runDuplicateRequesterCheck();
     });
@@ -724,33 +703,42 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       _suggestedSlot = null;
     });
 
+    final preset = _presets[_selectedService];
+    if (preset?.isAnytimeAllowed == true) {
+      setState(() => _isLiveChecking = false);
+      return;
+    }
+
     final dateStr =
         '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-    final startStr = _formatTimeOfDay(_startTime);
-    final endStr = _formatTimeOfDay(_endTime);
+    final startStr = _formatTimeOfDay(_estimatedServiceTime);
+    final computedEnd = _calculateEndTime(_estimatedServiceTime, _estimatedDurationMinutes);
+    final endStr = _formatTimeOfDay(computedEnd);
+    final venueStr = _isOnParishGrounds
+        ? 'Parish Grounds'
+        : 'Outside Parish (${_outsideLocationController.text.trim()})';
 
     final warning = await AppointmentService.checkScheduleConflictSilent(
       date: dateStr,
       startTime: startStr,
       endTime: endStr,
-      venue: _selectedVenue,
+      venue: venueStr,
       officiant: _selectedOfficiant,
       serviceType: _selectedService,
+      allowMondayException: _allowMondayException,
     );
 
     if (!mounted) return;
 
     if (warning != null) {
-      final preset = _presets[_selectedService];
-      final duration = preset?.durationMinutes ?? 60;
-
       final nextSlot = await AppointmentService.findNextAvailableSlot(
         date: dateStr,
-        durationMinutes: duration,
-        venue: _selectedVenue,
+        durationMinutes: _estimatedDurationMinutes,
+        venue: venueStr,
         officiant: _selectedOfficiant,
-        preferredStartTime: _startTime,
+        preferredStartTime: _estimatedServiceTime,
         serviceType: _selectedService,
+        allowMondayException: _allowMondayException,
       );
 
       setState(() {
@@ -770,216 +758,75 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
   void _applySuggestedSlot() {
     if (_suggestedSlot != null) {
       setState(() {
-        _startTime = _suggestedSlot!['start']!;
-        _endTime = _suggestedSlot!['end']!;
+        _estimatedServiceTime = _suggestedSlot!['start']!;
       });
       _runLiveConflictCheck();
     }
   }
 
-  void _onServiceSelected(String service) {
-    setState(() {
-      _selectedService = service;
-      final preset = _presets[service];
-      if (preset != null) {
-        _selectedVenue = preset.defaultVenue;
-        _selectedOfficiant = 'Rev. Fr. Roy';
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draftMap = {
+        'service': _selectedService,
+        'requesterName': _requesterNameController.text.trim(),
+        'contact': _contactNumberController.text.trim(),
+        'email': _emailController.text.trim(),
+        'remarks': _remarksController.text.trim(),
+        'outsideLocation': _outsideLocationController.text.trim(),
+        'isOnParishGrounds': _isOnParishGrounds,
+        'date': _selectedDate.toIso8601String(),
+        'startHour': _estimatedServiceTime.hour,
+        'startMinute': _estimatedServiceTime.minute,
+        'duration': _estimatedDurationMinutes,
+      };
+      await prefs.setString(_draftStorageKey, jsonEncode(draftMap));
+    } catch (_) {}
+  }
 
-        if (preset.isCommunityBaptism) {
-          _startTime = const TimeOfDay(hour: 11, minute: 0);
-          if (_selectedDate.weekday != DateTime.saturday &&
-              _selectedDate.weekday != DateTime.sunday) {
-            _selectedDate = _getInitialValidDate();
-          }
-        } else {
-          if (_startTime.hour < 9 || _startTime.hour >= 17) {
-            _startTime = const TimeOfDay(hour: 10, minute: 0);
-          }
+  Future<void> _restoreDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_draftStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            if (!_isParishioner && map['requesterName'] != null) {
+              _requesterNameController.text = map['requesterName'];
+            }
+            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
+              _contactNumberController.text = map['contact'];
+            }
+            if (!_isParishioner && map['email'] != null) {
+              _emailController.text = map['email'];
+            }
+            if (map['remarks'] != null) _remarksController.text = map['remarks'];
+            if (map['outsideLocation'] != null) _outsideLocationController.text = map['outsideLocation'];
+            if (map['isOnParishGrounds'] != null) _isOnParishGrounds = map['isOnParishGrounds'];
+            if (map['service'] != null && _presets.containsKey(map['service'])) {
+              _selectedService = map['service'];
+            }
+            if (map['duration'] != null) _estimatedDurationMinutes = map['duration'];
+            if (map['date'] != null) {
+              final draftDate = DateTime.tryParse(map['date']);
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+              if (draftDate != null && !draftDate.isBefore(today)) {
+                _selectedDate = draftDate;
+              }
+            }
+          });
         }
-
-        _endTime = _addMinutes(_startTime, preset.durationMinutes);
       }
-    });
-    _saveDraft();
-    _runLiveConflictCheck();
+    } catch (_) {}
   }
 
-  Future<void> _pickDate() async {
-    await LiturgicalCalendarService.getCalendarForYear(_selectedDate.year);
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final preset = _presets[_selectedService];
-    final isCommunity = preset?.isCommunityBaptism ?? false;
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 365)),
-      selectableDayPredicate: (DateTime day) {
-        if (day.isBefore(today)) return false;
-        if (day.weekday == DateTime.monday) return false;
-        if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
-        if (isCommunity &&
-            day.weekday != DateTime.saturday &&
-            day.weekday != DateTime.sunday) {
-          return false;
-        }
-        return true;
-      },
-    );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-      _saveDraft();
-      _runLiveConflictCheck();
-    }
-  }
-
-  Future<void> _pickTime(bool isStart) async {
-    final preset = _presets[_selectedService];
-    final minDuration = preset?.durationMinutes ?? 60;
-
-    if (preset?.isCommunityBaptism == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Community Baptism ceremony strictly begins at 11:00 AM on Weekends.'),
-          backgroundColor: ParishColors.goldAccent,
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    final initial = isStart ? _startTime : _endTime;
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-    );
-
-    if (picked != null) {
-      final pickedMinutes = picked.hour * 60 + picked.minute;
-
-      if (isStart) {
-        if (pickedMinutes < AppointmentService.operatingDayStartMin) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Parish appointments cannot be scheduled before 9:00 AM.'),
-              backgroundColor: ParishColors.mercyRed,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-
-        if (pickedMinutes + minDuration > AppointmentService.operatingDayEndMin) {
-          final maxStartMinutes = AppointmentService.operatingDayEndMin - minDuration;
-          final maxStartTod = AppointmentService.minutesToTimeOfDay(maxStartMinutes);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$_selectedService requires $minDuration minutes and must conclude by 5:00 PM. Latest allowed start time is ${_formatTime12Hour(maxStartTod)}.',
-              ),
-              backgroundColor: ParishColors.mercyRed,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
-        }
-
-        setState(() {
-          _startTime = picked;
-          _endTime = _addMinutes(picked, minDuration);
-        });
-      } else {
-        final startMinutes = _startTime.hour * 60 + _startTime.minute;
-
-        if (pickedMinutes > AppointmentService.operatingDayEndMin) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Appointment end time cannot exceed parish operating hours (5:00 PM).'),
-              backgroundColor: ParishColors.mercyRed,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-
-        if (pickedMinutes - startMinutes < minDuration) {
-          final requiredEndTod = _addMinutes(_startTime, minDuration);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$_selectedService requires a minimum of $minDuration minutes. End time cannot be earlier than ${_formatTime12Hour(requiredEndTod)}.',
-              ),
-              backgroundColor: ParishColors.mercyRed,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
-        }
-
-        setState(() {
-          _endTime = picked;
-        });
-      }
-
-      _saveDraft();
-      _runLiveConflictCheck();
-    }
-  }
-
-  void _showErrorPromptDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        backgroundColor: ParishColors.cardWhite,
-        title: Row(
-          children: [
-            Icon(
-              message.toLowerCase().contains('conflict')
-                  ? Icons.warning_amber_rounded
-                  : Icons.error_outline,
-              color: ParishColors.mercyRed,
-              size: 28,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message.toLowerCase().contains('conflict')
-                    ? 'Schedule Conflict Detected'
-                    : 'Booking Notice',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 17,
-                  color: ParishColors.mercyRed,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.marianBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Understood'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _clearDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftStorageKey);
+    } catch (_) {}
   }
 
   Future<void> _submitAppointment() async {
@@ -995,7 +842,7 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
     final targetDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
     if (targetDay.isBefore(today)) {
-      setState(() => _errorMessage = 'Cannot schedule appointments on past dates.');
+      setState(() => _errorMessage = 'Cannot schedule appointments for past dates.');
       return;
     }
 
@@ -1004,78 +851,58 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
       return;
     }
 
-    final preset = _presets[_selectedService];
-    final minDuration = preset?.durationMinutes ?? 60;
-    final startMinutes = _startTime.hour * 60 + _startTime.minute;
-    final endMinutes = _endTime.hour * 60 + _endTime.minute;
-
-    if (endMinutes - startMinutes < minDuration) {
-      setState(() => _errorMessage = '$_selectedService requires at least $minDuration minutes duration.');
-      return;
-    }
-
-    if (preset?.isCommunityBaptism == true) {
-      if (_selectedDate.weekday != DateTime.saturday &&
-          _selectedDate.weekday != DateTime.sunday) {
-        setState(() => _errorMessage = 'Community Baptism is strictly restricted to Weekends (Saturday & Sunday).');
+    // Venue resolution
+    String resolvedVenue;
+    if (_isOnParishGrounds) {
+      resolvedVenue = 'Parish Grounds';
+    } else {
+      final loc = _outsideLocationController.text.trim();
+      if (loc.isEmpty) {
+        setState(() => _errorMessage = 'Please specify the location outside the parish.');
         return;
       }
+      resolvedVenue = 'Outside Parish ($loc)';
     }
 
-    final startStr = _formatTimeOfDay(_startTime);
-    final endStr = _formatTimeOfDay(_endTime);
-
+    final startStr = _formatTimeOfDay(_estimatedServiceTime);
+    final computedEnd = _calculateEndTime(_estimatedServiceTime, _estimatedDurationMinutes);
+    final endStr = _formatTimeOfDay(computedEnd);
     final dateStr =
         '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-    final emailValue = _emailController.text.trim();
-    final requesterNameVal = _requesterNameController.text.trim();
+
+    final preset = _presets[_selectedService];
+    final isAnytime = preset?.isAnytimeAllowed ?? false;
+
+    final rawContact = _contactNumberController.text.trim();
+    final contact = rawContact.isNotEmpty ? rawContact : 'N/A';
 
     setState(() => _isSubmitting = true);
 
     try {
-      final duplicateWarning = await AppointmentService.checkDuplicateRequester(
-        requesterName: requesterNameVal,
-        date: dateStr,
-        serviceType: _selectedService,
-      );
-      if (duplicateWarning != null) {
-        setState(() {
-          _errorMessage = duplicateWarning;
-          _isSubmitting = false;
-        });
-        _showErrorPromptDialog(duplicateWarning);
-        return;
+      if (!isAnytime) {
+        final conflictWarning = await AppointmentService.checkScheduleConflictSilent(
+          date: dateStr,
+          startTime: startStr,
+          endTime: endStr,
+          venue: resolvedVenue,
+          officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
+          serviceType: _selectedService,
+          allowMondayException: _allowMondayException,
+        );
+
+        if (conflictWarning != null) {
+          setState(() {
+            _errorMessage = conflictWarning;
+            _isSubmitting = false;
+          });
+          return;
+        }
       }
 
-      final conflictWarning = await AppointmentService.checkScheduleConflictSilent(
-        date: dateStr,
-        startTime: startStr,
-        endTime: endStr,
-        venue: _selectedVenue,
-        officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
-        serviceType: _selectedService,
-      );
-      if (conflictWarning != null) {
-        setState(() {
-          _errorMessage = conflictWarning;
-          _isSubmitting = false;
-        });
-        _showErrorPromptDialog(conflictWarning);
-        return;
-      }
-    } catch (preCheckError) {
-      setState(() {
-        _errorMessage = preCheckError.toString().replaceFirst('Exception: ', '');
-        _isSubmitting = false;
-      });
-      return;
-    }
+      String? uploadedDocumentPath;
+      final tempId = 'APT-${DateTime.now().millisecondsSinceEpoch % 1000000}';
 
-    String? uploadedDocumentPath;
-    final tempId = 'APT-${DateTime.now().millisecondsSinceEpoch % 1000000}';
-
-    try {
-      if (_attachedIdFileBytes != null && _attachedIdFileName != null) {
+      if (_isParishioner && _attachedIdFileBytes != null && _attachedIdFileName != null) {
         uploadedDocumentPath = await AppointmentService.uploadIdDocument(
           appointmentId: tempId,
           fileBytes: _attachedIdFileBytes!,
@@ -1083,49 +910,62 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
         );
       }
 
-      final createdAppointment = await AppointmentService.createAppointment(
+      final created = await AppointmentService.createAppointment(
         serviceType: _selectedService,
-        requesterName: requesterNameVal,
-        contactNumber: _contactNumberController.text.trim(),
-        email: emailValue,
+        requesterName: _requesterNameController.text.trim(),
+        contactNumber: contact,
+        email: _emailController.text.trim(),
         date: dateStr,
         startTime: startStr,
         endTime: endStr,
-        venue: _selectedVenue,
+        venue: resolvedVenue,
         officiant: _isParishioner ? 'Rev. Fr. Roy' : _selectedOfficiant,
-        idType: _selectedIdType,
-        idNumber: _idNumberController.text.trim(),
+        idType: _isParishioner ? _selectedIdType : null,
+        idNumber: _isParishioner ? _idNumberController.text.trim() : null,
         idDocumentUrl: uploadedDocumentPath,
         remarks: _remarksController.text.trim(),
+        allowMondayException: _allowMondayException,
       );
 
       await _clearDraft();
 
       if (!mounted) return;
-
       Navigator.pop(context);
 
-      showAppointmentSubmissionSuccessModal(
-        context,
-        appointment: createdAppointment,
-        userEmail: emailValue,
-      );
+      // Staff confirmation: Quick toast banner without patronizing checklist
+      if (!_isParishioner) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Appointment plotted: ${created.serviceType} for ${created.requesterName} ($dateStr at ${_formatTime12Hour(_estimatedServiceTime)}).',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: ParishColors.oliveGreen,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        showAppointmentSubmissionSuccessModal(
+          context,
+          appointment: created,
+          userEmail: _emailController.text.trim(),
+        );
+      }
 
       widget.onAppointmentSaved?.call();
     } catch (e) {
-      if (uploadedDocumentPath != null) {
-        try {
-          await Supabase.instance.client.storage
-              .from('appointment-documents')
-              .remove([uploadedDocumentPath]);
-        } catch (_) {}
-      }
-
-      final cleanError = e.toString().replaceFirst('Exception: ', '');
+      if (!mounted) return;
       setState(() {
-        _errorMessage = cleanError;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
-      _showErrorPromptDialog(cleanError);
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -1135,61 +975,56 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   @override
   Widget build(BuildContext context) {
-    final textDarkColor = ParishColors.textDark;
-    final textMutedColor = ParishColors.textMuted;
-    final cardWhiteColor = ParishColors.cardWhite;
-    final borderGreyColor = ParishColors.borderGrey;
-    final currentPreset = _presets[_selectedService];
+    final textDark = ParishColors.textDark;
+    final textMuted = ParishColors.textMuted;
+    final cardWhite = ParishColors.cardWhite;
+    final borderGrey = ParishColors.borderGrey;
     final isTuesday = _selectedDate.weekday == DateTime.tuesday;
-    final hasConflict = _liveConflictWarning != null;
+    final isMonday = _selectedDate.weekday == DateTime.monday;
+    final preset = _presets[_selectedService];
+    final isAnytime = preset?.isAnytimeAllowed ?? false;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: cardWhiteColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      backgroundColor: cardWhite,
       child: Container(
         width: double.maxFinite,
-        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 760),
+        constraints: const BoxConstraints(maxWidth: 580, maxHeight: 740),
         child: Column(
           children: [
             // Modal Header
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
                 color: ParishColors.marianBlueSurface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                border: Border(bottom: BorderSide(color: borderGreyColor)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                border: Border(bottom: BorderSide(color: borderGrey)),
               ),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: ParishColors.marianBlueAdaptive,
+                    padding: const EdgeInsets.all(7),
+                    decoration: const BoxDecoration(
+                      color: ParishColors.marianBlue,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.edit_calendar, color: Colors.white, size: 20),
+                    child: const Icon(Icons.event_available, color: Colors.white, size: 18),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isParishioner ? 'Request Parish Service' : 'Schedule Parish Service',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+                          _isParishioner ? 'Request Parish Appointment' : 'Plot Parish Appointment',
+                          style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
-                          currentPreset?.isCommunityBaptism == true
-                              ? 'Community Baptism: Weekends (Strictly 11:00 AM Batch)'
-                              : 'Operating Hours: 9:00 AM – 5:00 PM (Mondays Closed)',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: currentPreset?.isCommunityBaptism == true ? FontWeight.bold : FontWeight.normal,
-                            color: currentPreset?.isCommunityBaptism == true
-                                ? ParishColors.marianBlueAdaptive
-                                : textMutedColor,
-                          ),
+                          _isParishioner
+                              ? 'Online Pastoral Sacrament & Service Request'
+                              : 'Staff Quick-Plot Ledger • Single Estimated Time',
+                          style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
                     ),
@@ -1202,10 +1037,10 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
               ),
             ),
 
-            // Form Content
+            // Form Body
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(18),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -1214,26 +1049,21 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                       if (_errorMessage != null) ...[
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(bottom: 14),
                           decoration: BoxDecoration(
                             color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: ParishColors.mercyRed),
                           ),
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
-                              const SizedBox(width: 10),
+                              const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 20),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   _errorMessage!,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: ParishColors.mercyRed,
-                                  ),
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
                                 ),
                               ),
                             ],
@@ -1241,117 +1071,230 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                         ),
                       ],
 
-                      _buildFieldLabel('Service Requested *'),
+                      // 1. Sacrament / Service Dropdown (Confirmation Included)
+                      _buildFieldLabel('Sacrament or Service *'),
                       DropdownButtonFormField<String>(
                         value: _selectedService,
                         isExpanded: true,
-                        items: _presets.keys
-                            .map((s) => DropdownMenuItem(
-                          value: s,
-                          child: Text(s, style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis),
-                        ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) _onServiceSelected(val);
-                        },
                         decoration: _inputDecoration(),
-                      ),
-                      const SizedBox(height: 8),
-
-                      if (currentPreset != null) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: ParishColors.marianBlueSurface,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.marianBlueAdaptive.withOpacity(0.2)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.auto_awesome, size: 16, color: ParishColors.marianBlueAdaptive),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  currentPreset.isCommunityBaptism
-                                      ? 'Preset: Community Baptism (Weekends Strictly 11:00 AM • Baptistery)'
-                                      : 'Preset: ${currentPreset.durationLabel} • Operating window 9:00 AM – 5:00 PM.',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: ParishColors.marianBlueAdaptive,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 14),
-
-                      _buildFieldLabel(_isParishioner
-                          ? 'Requester Full Name (Account Linked)'
-                          : 'Requester Full Name *'),
-                      TextFormField(
-                        controller: _requesterNameController,
-                        focusNode: _nameFocusNode,
-                        enabled: !_isParishioner,
-                        maxLength: 70,
-                        buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                        inputFormatters: [TitleCaseInputFormatter()],
-                        onChanged: (_) {
-                          setState(() {});
-                          _triggerDebouncedValidation();
+                        items: _presets.keys.map((s) {
+                          return DropdownMenuItem(
+                            value: s,
+                            child: Text(s, style: const TextStyle(fontSize: 13.5), overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedService = val;
+                              _applyServicePreset(val);
+                            });
+                            _triggerDebouncedValidation();
+                          }
                         },
-                        validator: _validateFullName,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: _isParishioner ? textMutedColor : textDarkColor,
-                          fontWeight: _isParishioner ? FontWeight.w600 : FontWeight.normal,
-                        ),
-                        decoration: _inputDecoration(
-                          hint: 'First Name and Last Name',
-                          prefixIcon: _isParishioner
-                              ? Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive)
-                              : null,
-                          suffixIcon: _isNameValid
-                              ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20)
-                              : null,
-                        ),
                       ),
-
-                      if (_duplicateRequesterWarning != null && !_isParishioner) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: ParishColors.goldLight,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.goldAccent),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _duplicateRequesterWarning!,
-                                  style: TextStyle(fontSize: 11.5, color: textDarkColor, fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 14),
 
+                      // 2. Date and Single Service Time Row
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
+                            flex: 5,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildFieldLabel('Contact Number *'),
+                                _buildFieldLabel('Ceremony Date *'),
+                                InkWell(
+                                  onTap: _pickDate,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    height: 46,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    decoration: BoxDecoration(
+                                      color: ParishColors.backgroundLight,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: borderGrey),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                        ),
+                                        const Icon(Icons.calendar_month, size: 18, color: ParishColors.marianBlue),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 5,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildFieldLabel(isAnytime ? 'Service Time (Anytime) *' : 'Service Time *'),
+                                InkWell(
+                                  onTap: _pickServiceTime,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    height: 46,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    decoration: BoxDecoration(
+                                      color: ParishColors.backgroundLight,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: borderGrey),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          _formatTime12Hour(_estimatedServiceTime),
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                                        ),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                              decoration: BoxDecoration(
+                                                color: ParishColors.marianBlueSurface,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '~${_estimatedDurationMinutes}m',
+                                                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            const Icon(Icons.access_time, size: 16, color: ParishColors.marianBlue),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      if (isMonday && !isAnytime) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          _allowMondayException
+                              ? 'Monday Exception Granted: Will be scheduled on Monday.'
+                              : 'Notice: Monday is Clergy Rest Day. Slot filed as Pending.',
+                          style: TextStyle(fontSize: 11, color: _allowMondayException ? ParishColors.oliveGreen : textMuted),
+                        ),
+                      ],
+                      if (isTuesday) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Notice: Tuesday bookings are reviewed by Rev. Fr. Roy prior to ceremony confirmation.',
+                          style: TextStyle(fontSize: 11, color: textMuted),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+
+                      // 3. Venue: Parish Grounds (As Is) vs. Outside Parish (Custom Free-Text)
+                      _buildFieldLabel('Venue Location *'),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: borderGrey),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: const Center(child: Text('Parish Grounds', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                                    selected: _isOnParishGrounds,
+                                    onSelected: (_) {
+                                      setState(() {
+                                        _isOnParishGrounds = true;
+                                        _outsideLocationController.clear();
+                                      });
+                                      _triggerDebouncedValidation();
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: const Center(child: Text('Outside Parish', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                                    selected: !_isOnParishGrounds,
+                                    onSelected: (_) {
+                                      setState(() {
+                                        _isOnParishGrounds = false;
+                                      });
+                                      _triggerDebouncedValidation();
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // If outside parish: presents an empty text field for Sister to freely type
+                            if (!_isOnParishGrounds) ...[
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _outsideLocationController,
+                                style: const TextStyle(fontSize: 12.5),
+                                onChanged: (_) => _triggerDebouncedValidation(),
+                                decoration: _inputDecoration(
+                                  hint: 'Type location (e.g. Sitio Ilaya, Brgy. Labuin / San Pedro Hospital)',
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // 4. Requester Name & Mobile
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildFieldLabel(_isParishioner ? 'Requester (Linked)' : 'Requester Full Name *'),
+                                TextFormField(
+                                  controller: _requesterNameController,
+                                  focusNode: _nameFocusNode,
+                                  enabled: !_isParishioner,
+                                  inputFormatters: [TitleCaseInputFormatter()],
+                                  validator: (v) => _validateFullName(v),
+                                  onChanged: (_) => _triggerDebouncedValidation(),
+                                  style: const TextStyle(fontSize: 13),
+                                  decoration: _inputDecoration(
+                                    hint: 'First and Last Name',
+                                    suffixIcon: _isNameValid ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 16) : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 5,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildFieldLabel(_isParishioner ? 'Contact Number *' : 'Contact Number (Optional)'),
                                 TextFormField(
                                   controller: _contactNumberController,
                                   focusNode: _contactFocusNode,
@@ -1363,609 +1306,212 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
                                     PhilippinePhoneInputFormatter(),
                                   ],
                                   onChanged: (_) => _triggerDebouncedValidation(),
-                                  validator: SacramentalValidators.validatePhoneNumber,
-                                  style: const TextStyle(fontSize: 14),
-                                  decoration: _inputDecoration(
-                                    hint: '09XX-XXX-XXXX',
-                                    suffixIcon: _isPhoneValid
-                                        ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20)
-                                        : null,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildFieldLabel(_isParishioner
-                                    ? 'Email Address (Account Linked) *'
-                                    : 'Email (Optional)'),
-                                TextFormField(
-                                  controller: _emailController,
-                                  focusNode: _emailFocusNode,
-                                  enabled: !_isParishioner,
-                                  maxLength: 100,
-                                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                                  keyboardType: TextInputType.emailAddress,
-                                  onChanged: (_) => _triggerDebouncedValidation(),
-                                  validator: (v) {
-                                    final text = (v ?? '').trim();
-                                    if (_isParishioner && text.isEmpty) {
-                                      return 'Email address is required';
-                                    }
-                                    if (text.isNotEmpty &&
-                                        !RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(text)) {
-                                      return 'Invalid email address';
-                                    }
-                                    return null;
-                                  },
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: _isParishioner ? textMutedColor : textDarkColor,
-                                    fontWeight: _isParishioner ? FontWeight.w600 : FontWeight.normal,
-                                  ),
-                                  decoration: _inputDecoration(
-                                    hint: 'name@email.com',
-                                    prefixIcon: _isParishioner
-                                        ? Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive)
-                                        : Icon(Icons.email_outlined, size: 18, color: ParishColors.marianBlueAdaptive),
-                                    suffixIcon: _emailController.text.trim().isNotEmpty
-                                        ? (_isEmailValid
-                                        ? const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20)
-                                        : const Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 20))
-                                        : null,
-                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                  decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
                                 ),
                               ],
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
 
-                      _buildFieldLabel(_isParishioner
-                          ? 'Identification Document for Verification * (Required)'
-                          : 'Identification Document for Verification *'),
-                      DropdownButtonFormField<String>(
-                        value: _selectedIdType,
-                        isExpanded: true,
-                        items: _philippineIdTypes
-                            .map((id) => DropdownMenuItem(
-                          value: id,
-                          child: Text(id, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-                        ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _selectedIdType = val);
-                            _saveDraft();
-                          }
-                        },
-                        decoration: _inputDecoration(),
-                      ),
-                      const SizedBox(height: 10),
-
-                      TextFormField(
-                        controller: _idNumberController,
-                        maxLength: 50,
-                        buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                        style: const TextStyle(fontSize: 13),
-                        onChanged: (_) => _saveDraft(),
-                        decoration: _inputDecoration(
-                          hint: 'ID Serial / Control Number (Optional)',
-                          prefixIcon: Icon(Icons.badge_outlined, size: 18, color: ParishColors.marianBlueAdaptive),
+                      // 5. Preserved Portal-Only Valid ID Verification (Hidden for Staff)
+                      if (_isParishioner) ...[
+                        _buildFieldLabel('Identification Document for Verification * (Required)'),
+                        DropdownButtonFormField<String>(
+                          value: _selectedIdType,
+                          isExpanded: true,
+                          items: _philippineIdTypes.map((id) => DropdownMenuItem(value: id, child: Text(id, style: const TextStyle(fontSize: 13)))).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _selectedIdType = val);
+                              _saveDraft();
+                            }
+                          },
+                          decoration: _inputDecoration(),
                         ),
-                      ),
-                      const SizedBox(height: 10),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _idNumberController,
+                          maxLength: 50,
+                          buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: _inputDecoration(hint: 'ID Serial / Control Number (Optional)'),
+                          onChanged: (_) => _saveDraft(),
+                        ),
+                        const SizedBox(height: 8),
 
-                      // =======================================================
-                      // Valid ID Attachment Box with Thumbnail & Zoom Preview
-                      // =======================================================
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _attachedIdFileBytes != null
-                              ? ParishColors.oliveGreenSurface
-                              : (_idFileHasError ? ParishColors.mercyRedSurface : ParishColors.backgroundLight),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
+                        // ID Attachment Box
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
                             color: _attachedIdFileBytes != null
-                                ? ParishColors.oliveGreen
-                                : (_idFileHasError ? ParishColors.mercyRed : borderGreyColor),
-                            width: _idFileHasError || _attachedIdFileBytes != null ? 1.4 : 1.0,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      _attachedIdFileBytes != null
-                                          ? Icons.check_circle
-                                          : Icons.attach_file,
-                                      size: 18,
-                                      color: _attachedIdFileBytes != null
-                                          ? ParishColors.oliveGreen
-                                          : ParishColors.marianBlueAdaptive,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _attachedIdFileBytes != null
-                                          ? 'Valid ID Document Attached'
-                                          : (_isParishioner ? 'Attach Valid ID Photo * (Required)' : 'Attach Valid ID Photo (Optional)'),
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: _attachedIdFileBytes != null
-                                            ? ParishColors.oliveGreen
-                                            : textDarkColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (_attachedIdFileBytes != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
-                                    onPressed: _removeAttachedIdDocument,
-                                    tooltip: 'Remove Selected File',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                              ],
+                                ? ParishColors.oliveGreenSurface
+                                : (_idFileHasError ? ParishColors.mercyRedSurface : ParishColors.backgroundLight),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _attachedIdFileBytes != null
+                                  ? ParishColors.oliveGreen
+                                  : (_idFileHasError ? ParishColors.mercyRed : borderGrey),
                             ),
-                            const SizedBox(height: 8),
-                            if (_attachedIdFileBytes == null) ...[
-                              Text(
-                                'Select a clear front photo of your ID (JPG, PNG, or PDF, max 5MB). File upload is deferred until booking confirmation to save storage.',
-                                style: TextStyle(fontSize: 11.5, color: textMutedColor),
-                              ),
-                              const SizedBox(height: 10),
-                              SizedBox(
-                                height: 38,
-                                child: OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.2),
-                                    foregroundColor: ParishColors.marianBlueAdaptive,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        _attachedIdFileBytes != null ? Icons.check_circle : Icons.attach_file,
+                                        size: 18,
+                                        color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : ParishColors.marianBlue,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _attachedIdFileBytes != null ? 'Valid ID Document Attached' : 'Attach Valid ID Photo * (Required)',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: _attachedIdFileBytes != null ? ParishColors.oliveGreen : textDark,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                  if (_attachedIdFileBytes != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
+                                      onPressed: _removeAttachedIdDocument,
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              if (_attachedIdFileBytes == null) ...[
+                                Text('Please upload a clear photo of your ID (Max 5MB).', style: TextStyle(fontSize: 11.5, color: textMuted)),
+                                const SizedBox(height: 8),
+                                OutlinedButton.icon(
                                   onPressed: _pickIdDocument,
                                   icon: const Icon(Icons.upload_file, size: 16),
-                                  label: const Text('Select ID Photo / File', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  label: const Text('Select ID Photo / File'),
                                 ),
-                              ),
-                            ] else ...[
-                              // Preview Container
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: borderGreyColor.withValues(alpha: 0.6)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    if (_isImageAttachment) ...[
-                                      // Image Thumbnail (Tap to zoom)
-                                      InkWell(
-                                        onTap: () => _openImagePreviewDialog(
-                                          _attachedIdFileBytes!,
-                                          _attachedIdFileName ?? 'valid_id.jpg',
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Stack(
-                                          alignment: Alignment.bottomRight,
+                              ] else ...[
+                                InkWell(
+                                  onTap: () => _openImagePreviewDialog(_attachedIdFileBytes!, _attachedIdFileName ?? 'valid_id.jpg'),
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: Image.memory(_attachedIdFileBytes!, width: 44, height: 44, fit: BoxFit.cover),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            ClipRRect(
-                                              borderRadius: BorderRadius.circular(8),
-                                              child: Image.memory(
-                                                _attachedIdFileBytes!,
-                                                width: 58,
-                                                height: 58,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                            Container(
-                                              padding: const EdgeInsets.all(3),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black.withValues(alpha: 0.6),
-                                                borderRadius: const BorderRadius.only(
-                                                  topLeft: Radius.circular(6),
-                                                  bottomRight: Radius.circular(8),
-                                                ),
-                                              ),
-                                              child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
-                                            ),
+                                            Text(_attachedIdFileName ?? 'valid_id.jpg', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                            Text('Tap to inspect image', style: TextStyle(fontSize: 11, color: textMuted)),
                                           ],
                                         ),
                                       ),
-                                    ] else ...[
-                                      // PDF Document Placeholder
-                                      Container(
-                                        width: 58,
-                                        height: 58,
-                                        decoration: BoxDecoration(
-                                          color: ParishColors.mercyRedSurface,
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: ParishColors.mercyRed.withValues(alpha: 0.3)),
-                                        ),
-                                        child: const Icon(Icons.picture_as_pdf, color: ParishColors.mercyRed, size: 28),
-                                      ),
                                     ],
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            _attachedIdFileName ?? 'valid_id.jpg',
-                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '${((_attachedIdFileSize ?? 0) / 1024).toStringAsFixed(1)} KB • ${_isImageAttachment ? "Tap thumbnail to inspect" : "PDF document"}',
-                                            style: TextStyle(fontSize: 11, color: textMutedColor),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            children: [
-                                              if (_isImageAttachment)
-                                                InkWell(
-                                                  onTap: () => _openImagePreviewDialog(
-                                                    _attachedIdFileBytes!,
-                                                    _attachedIdFileName ?? 'valid_id.jpg',
-                                                  ),
-                                                  child: const Row(
-                                                    children: [
-                                                      Icon(Icons.remove_red_eye_outlined, size: 14, color: ParishColors.marianBlue),
-                                                      SizedBox(width: 4),
-                                                      Text(
-                                                        'Inspect',
-                                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              if (_isImageAttachment) const SizedBox(width: 14),
-                                              InkWell(
-                                                onTap: _pickIdDocument,
-                                                child: Row(
-                                                  children: [
-                                                    Icon(Icons.sync, size: 14, color: textMutedColor),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Change File',
-                                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMutedColor),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      _buildFieldLabel(currentPreset?.isCommunityBaptism == true
-                          ? 'Scheduled Date * (Weekends Only for Baptism)'
-                          : 'Scheduled Date * (Mondays & Solemnities Restricted)'),
-                      InkWell(
-                        onTap: _pickDate,
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                          decoration: BoxDecoration(
-                            color: ParishColors.backgroundLight,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: borderGreyColor),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDarkColor),
-                              ),
-                              Icon(Icons.calendar_month, color: ParishColors.marianBlueAdaptive, size: 20),
+                              ],
                             ],
                           ),
                         ),
+                        const SizedBox(height: 14),
+                      ],
+
+                      // 6. Presiding Clergy & Remarks
+                      if (!_isParishioner) ...[
+                        _buildFieldLabel('Presiding Clergy *'),
+                        DropdownButtonFormField<String>(
+                          value: _selectedOfficiant,
+                          isExpanded: true,
+                          decoration: _inputDecoration(),
+                          items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13)))).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _selectedOfficiant = val);
+                              _triggerDebouncedValidation();
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+
+                      _buildFieldLabel('Remarks / Intentions / Directions (Optional)'),
+                      TextFormField(
+                        controller: _remarksController,
+                        maxLines: 2,
+                        maxLength: 150,
+                        buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                        style: const TextStyle(fontSize: 13),
+                        onChanged: (_) => _saveDraft(),
+                        decoration: _inputDecoration(hint: 'Special requests, intentions, or directions'),
                       ),
 
-                      if (isTuesday) ...[
+                      if (_duplicateRequesterWarning != null) ...[
                         const SizedBox(height: 8),
                         Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: ParishColors.goldLight,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: ParishColors.goldAccent),
-                          ),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: ParishColors.goldLight, borderRadius: BorderRadius.circular(8)),
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 20),
-                              const SizedBox(width: 10),
+                              const Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 16),
+                              const SizedBox(width: 6),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Tuesday Parish Priest Approval Notice',
-                                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Tuesdays may be scheduled, but Rev. Fr. Roy will approve the appointment first before it is finalized. This booking will be filed as PENDING.',
-                                      style: TextStyle(fontSize: 11.5, color: textDarkColor, height: 1.3),
-                                    ),
-                                  ],
-                                ),
+                                child: Text(_duplicateRequesterWarning!, style: TextStyle(fontSize: 11, color: textDark, fontWeight: FontWeight.w600)),
                               ),
                             ],
                           ),
                         ),
                       ],
-                      const SizedBox(height: 14),
 
-                      // Time Pickers
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildFieldLabel(currentPreset?.isCommunityBaptism == true ? 'Start Time (Locked)' : 'Start Time (9AM–5PM) *'),
-                                InkWell(
-                                  onTap: () => _pickTime(true),
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-                                    decoration: BoxDecoration(
-                                      color: currentPreset?.isCommunityBaptism == true
-                                          ? ParishColors.borderGrey.withValues(alpha: 0.15)
-                                          : ParishColors.backgroundLight,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: hasConflict ? ParishColors.mercyRed : borderGreyColor),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(_formatTime12Hour(_startTime), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor)),
-                                        Icon(
-                                          currentPreset?.isCommunityBaptism == true ? Icons.lock_outline : Icons.access_time,
-                                          size: 18,
-                                          color: ParishColors.marianBlueAdaptive,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildFieldLabel('End Time (Auto) *'),
-                                InkWell(
-                                  onTap: () => _pickTime(false),
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.backgroundLight,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: hasConflict ? ParishColors.mercyRed : borderGreyColor),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(_formatTime12Hour(_endTime), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDarkColor)),
-                                        Icon(Icons.access_time, size: 18, color: ParishColors.marianBlueAdaptive),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      // Live Conflict Banner
-                      const SizedBox(height: 10),
-                      if (_isLiveChecking)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: Row(
-                            children: [
-                              const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                              const SizedBox(width: 8),
-                              Text('Checking slot availability...', style: TextStyle(fontSize: 12, color: textMutedColor)),
-                            ],
-                          ),
-                        )
-                      else if (_liveConflictWarning != null) ...[
+                      if (_liveConflictWarning != null) ...[
+                        const SizedBox(height: 8),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: ParishColors.mercyRed),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 20),
+                                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 18),
                                   const SizedBox(width: 8),
                                   Expanded(
-                                    child: Text(
-                                      _liveConflictWarning!,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: ParishColors.mercyRed,
-                                      ),
-                                    ),
+                                    child: Text(_liveConflictWarning!, style: const TextStyle(fontSize: 11.5, color: ParishColors.mercyRed, fontWeight: FontWeight.bold)),
                                   ),
                                 ],
                               ),
                               if (_suggestedSlot != null) ...[
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 8),
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: ParishColors.goldAccent,
-                                      foregroundColor: Colors.white,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
+                                    style: ElevatedButton.styleFrom(backgroundColor: ParishColors.goldAccent, foregroundColor: Colors.white),
                                     onPressed: _applySuggestedSlot,
-                                    icon: const Icon(Icons.bolt, size: 18),
-                                    label: Text(
-                                      'Auto-Set Next Open Slot: ${_formatTime12Hour(_suggestedSlot!['start']!)} – ${_formatTime12Hour(_suggestedSlot!['end']!)}',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    ),
+                                    icon: const Icon(Icons.bolt, size: 16),
+                                    label: Text('Auto-Set Open Slot: ${_formatTime12Hour(_suggestedSlot!['start']!)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                                   ),
                                 ),
                               ],
                             ],
                           ),
                         ),
-                      ] else ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: ParishColors.oliveGreenSurface,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.oliveGreen.withValues(alpha: 0.3)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 16),
-                              const SizedBox(width: 6),
-                              Text(
-                                currentPreset?.isCommunityBaptism == true
-                                    ? 'Community Baptism 11:00 AM slot is open.'
-                                    : 'Time slot is available on the parish schedule.',
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
-                      const SizedBox(height: 14),
-
-                      _buildFieldLabel('Parish Venue *'),
-                      DropdownButtonFormField<String>(
-                        value: _selectedVenue,
-                        isExpanded: true,
-                        items: _venues
-                            .map((v) => DropdownMenuItem(
-                          value: v,
-                          child: Text(v, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-                        ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _selectedVenue = val);
-                            _saveDraft();
-                            _runLiveConflictCheck();
-                          }
-                        },
-                        decoration: _inputDecoration(),
-                      ),
-                      const SizedBox(height: 14),
-
-                      _buildFieldLabel(_isParishioner
-                          ? 'Presiding Clergy (Parish Assigned: Rev. Fr. Roy)'
-                          : 'Presiding Clergy *'),
-                      _isParishioner
-                          ? TextFormField(
-                        initialValue: 'Rev. Fr. Roy (Parish Priest)',
-                        enabled: false,
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDarkColor),
-                        decoration: _inputDecoration(
-                          prefixIcon: Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive),
-                        ).copyWith(
-                          fillColor: ParishColors.borderGrey.withValues(alpha: 0.15),
-                        ),
-                      )
-                          : DropdownButtonFormField<String>(
-                        value: _selectedOfficiant,
-                        isExpanded: true,
-                        items: _officiants
-                            .map((o) => DropdownMenuItem(
-                          value: o,
-                          child: Text(o, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-                        ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _selectedOfficiant = val);
-                            _saveDraft();
-                            _runLiveConflictCheck();
-                          }
-                        },
-                        decoration: _inputDecoration(),
-                      ),
-                      const SizedBox(height: 14),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildFieldLabel('Remarks / Intentions (Optional)'),
-                          Text(
-                            '${_remarksController.text.length}/250',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: _remarksController.text.length > 250
-                                  ? ParishColors.mercyRed
-                                  : textMutedColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                      TextFormField(
-                        controller: _remarksController,
-                        maxLength: 250,
-                        maxLines: 2,
-                        buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                        onChanged: (_) {
-                          setState(() {});
-                          _saveDraft();
-                        },
-                        style: const TextStyle(fontSize: 13),
-                        decoration: _inputDecoration(hint: 'Special requests, intentions, or notes'),
-                      ),
                     ],
                   ),
                 ),
@@ -1974,45 +1520,36 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
             // Modal Actions
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               decoration: BoxDecoration(
-                color: cardWhiteColor,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-                border: Border(top: BorderSide(color: borderGreyColor)),
+                color: cardWhite,
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+                border: Border(top: BorderSide(color: borderGrey)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
                     onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(fontSize: 15, color: textMutedColor)),
+                    child: Text('Cancel', style: TextStyle(color: textMuted, fontSize: 13.5)),
                   ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: hasConflict
-                            ? ParishColors.borderGrey
-                            : (isTuesday || _isParishioner
-                            ? ParishColors.goldAccent
-                            : ParishColors.marianBlue),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                      ),
-                      onPressed: _isSubmitting ? null : _submitAppointment,
-                      icon: _isSubmitting
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.check, size: 20),
-                      label: Text(
-                        _isSubmitting
-                            ? 'Validating & Uploading...'
-                            : (_isParishioner
-                            ? 'Submit for Office Approval'
-                            : (isTuesday ? 'Submit for Priest Approval' : 'Confirm Schedule')),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.marianBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                    onPressed: _isSubmitting ? null : _submitAppointment,
+                    icon: _isSubmitting
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.check, size: 16),
+                    label: Text(
+                      _isSubmitting
+                          ? 'Plotting...'
+                          : (_isParishioner ? 'Submit Request' : 'Plot on Calendar'),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                   ),
                 ],
@@ -2026,26 +1563,25 @@ class _ScheduleAppointmentDialogState extends State<_ScheduleAppointmentDialog> 
 
   Widget _buildFieldLabel(String label) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 5.0),
+      padding: const EdgeInsets.only(bottom: 4.0),
       child: Text(
         label,
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
       ),
     );
   }
 
-  InputDecoration _inputDecoration({String? hint, Widget? prefixIcon, Widget? suffixIcon}) {
+  InputDecoration _inputDecoration({String? hint, Widget? suffixIcon}) {
     return InputDecoration(
       hintText: hint,
-      prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: ParishColors.backgroundLight,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.marianBlueAdaptive, width: 1.8)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: ParishColors.borderGrey)),
+      focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8)), borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.6)),
     );
   }
 }

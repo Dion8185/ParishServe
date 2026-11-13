@@ -42,12 +42,14 @@ class _RescheduleAppointmentDialogState
     extends State<_RescheduleAppointmentDialog> {
   final _formKey = GlobalKey<FormState>();
   final _reasonController = TextEditingController();
+  final _outsideLocationController = TextEditingController();
 
   late DateTime _newDate;
-  late TimeOfDay _newStartTime;
-  late TimeOfDay _newEndTime;
-  late String _venue;
+  late TimeOfDay _newServiceTime;
+  late int _durationMinutes;
   late String _officiant;
+  bool _isOnParishGrounds = true;
+  bool _allowMondayException = false;
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -63,21 +65,16 @@ class _RescheduleAppointmentDialogState
   bool get _isCommunityBaptism =>
       widget.appointment.serviceType.toLowerCase().contains('community baptism');
 
+  bool get _isAnytimeService =>
+      AppointmentService.isAnytimeService(widget.appointment.serviceType);
+
   final List<String> _quickReasons = [
     'Parishioner Request',
     'Inclement Weather / Typhoon',
-    'Late Document Submissions',
+    'Document Processing Delay',
     'Family Emergency / Medical',
     'Work / Travel Conflict',
-  ];
-
-  final List<String> _venues = [
-    'Main Church Altar',
-    'Baptistery & Main Altar',
-    'Parish Hall',
-    'Mortuary Chapel',
-    'Sanctuary / Sacristy',
-    'Off-site / Home Visit',
+    'Priest Liturgical Reassignment',
   ];
 
   final List<String> _officiants = [
@@ -91,7 +88,20 @@ class _RescheduleAppointmentDialogState
     final a = widget.appointment;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final minDuration = AppointmentService.getMinimumDurationMinutes(a.serviceType);
+
+    _durationMinutes = AppointmentService.getMinimumDurationMinutes(a.serviceType);
+
+    // Initial venue extraction
+    final currentVenue = a.venue.trim();
+    if (currentVenue.toLowerCase().contains('outside')) {
+      _isOnParishGrounds = false;
+      _outsideLocationController.text = currentVenue
+          .replaceAll(RegExp(r'^Outside Parish\s*(\((.*)\))?', caseSensitive: false), r'$2')
+          .trim();
+    } else {
+      _isOnParishGrounds = true;
+      _outsideLocationController.clear();
+    }
 
     var target = a.requestedDate.add(const Duration(days: 7));
     if (target.isBefore(today)) {
@@ -99,7 +109,7 @@ class _RescheduleAppointmentDialogState
     }
 
     while (target.isBefore(today) ||
-        target.weekday == DateTime.monday ||
+        (!_isAnytimeService && target.weekday == DateTime.monday && _isParishioner) ||
         LiturgicalCalendarService.isDateBlockedSync(target) ||
         (_isCommunityBaptism &&
             target.weekday != DateTime.saturday &&
@@ -109,25 +119,11 @@ class _RescheduleAppointmentDialogState
     _newDate = target;
 
     if (_isCommunityBaptism) {
-      _newStartTime = const TimeOfDay(hour: 11, minute: 0); // Strictly locked at 11:00 AM
-      _newEndTime = const TimeOfDay(hour: 12, minute: 0);
+      _newServiceTime = const TimeOfDay(hour: 11, minute: 0);
     } else {
-      _newStartTime = _parseTimeOfDay(a.requestedTime);
-      final startMin = _newStartTime.hour * 60 + _newStartTime.minute;
-
-      if (startMin < AppointmentService.operatingDayStartMin) {
-        _newStartTime = const TimeOfDay(hour: 10, minute: 0);
-      } else if (startMin + minDuration > AppointmentService.operatingDayEndMin) {
-        final maxStart = AppointmentService.operatingDayEndMin - minDuration;
-        _newStartTime = AppointmentService.minutesToTimeOfDay(maxStart);
-      }
-
-      _newEndTime = _addMinutes(_newStartTime, minDuration);
+      _newServiceTime = _parseTimeOfDay(a.requestedTime);
     }
 
-    _venue = a.venue;
-
-    // Normalize officiant string to prevent dropdown assertion failures
     final rawOfficiant = a.officiantName.trim();
     if (_officiants.contains(rawOfficiant)) {
       _officiant = rawOfficiant;
@@ -146,6 +142,7 @@ class _RescheduleAppointmentDialogState
   @override
   void dispose() {
     _reasonController.dispose();
+    _outsideLocationController.dispose();
     super.dispose();
   }
 
@@ -158,17 +155,11 @@ class _RescheduleAppointmentDialogState
     }
   }
 
-  TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
-    final totalMinutes = (time.hour * 60) + time.minute + minutesToAdd;
+  TimeOfDay _calculateEndTime(TimeOfDay start, int durationMinutes) {
+    final totalMinutes = (start.hour * 60) + start.minute + durationMinutes;
     final newHour = (totalMinutes ~/ 60) % 24;
     final newMinute = totalMinutes % 60;
     return TimeOfDay(hour: newHour, minute: newMinute);
-  }
-
-  int _getDurationMinutes(TimeOfDay start, TimeOfDay end) {
-    final startTotal = start.hour * 60 + start.minute;
-    final endTotal = end.hour * 60 + end.minute;
-    return endTotal - startTotal;
   }
 
   String _formatTimeOfDay(TimeOfDay time) {
@@ -192,36 +183,43 @@ class _RescheduleAppointmentDialogState
       _suggestedSlot = null;
     });
 
+    if (_isAnytimeService) {
+      setState(() => _isLiveChecking = false);
+      return;
+    }
+
     final dateStr =
         '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}';
-    final startStr = _formatTimeOfDay(_newStartTime);
-    final endStr = _formatTimeOfDay(_newEndTime);
+    final startStr = _formatTimeOfDay(_newServiceTime);
+    final computedEnd = _calculateEndTime(_newServiceTime, _durationMinutes);
+    final endStr = _formatTimeOfDay(computedEnd);
+    final venueStr = _isOnParishGrounds
+        ? 'Parish Grounds'
+        : 'Outside Parish (${_outsideLocationController.text.trim()})';
 
     final warning = await AppointmentService.checkScheduleConflictSilent(
       date: dateStr,
       startTime: startStr,
       endTime: endStr,
-      venue: _venue,
+      venue: venueStr,
       officiant: _officiant,
       serviceType: widget.appointment.serviceType,
       excludeAppointmentId: widget.appointment.appointmentId,
+      allowMondayException: _allowMondayException,
     );
 
     if (!mounted) return;
 
     if (warning != null) {
-      final duration = _getDurationMinutes(_newStartTime, _newEndTime);
-      final minDuration =
-      AppointmentService.getMinimumDurationMinutes(widget.appointment.serviceType);
-
       final nextSlot = await AppointmentService.findNextAvailableSlot(
         date: dateStr,
-        durationMinutes: duration >= minDuration ? duration : minDuration,
-        venue: _venue,
+        durationMinutes: _durationMinutes,
+        venue: venueStr,
         officiant: _officiant,
-        preferredStartTime: _newStartTime,
+        preferredStartTime: _newServiceTime,
         serviceType: widget.appointment.serviceType,
         excludeAppointmentId: widget.appointment.appointmentId,
+        allowMondayException: _allowMondayException,
       );
 
       setState(() {
@@ -241,8 +239,7 @@ class _RescheduleAppointmentDialogState
   void _applySuggestedSlot() {
     if (_suggestedSlot != null) {
       setState(() {
-        _newStartTime = _suggestedSlot!['start']!;
-        _newEndTime = _suggestedSlot!['end']!;
+        _newServiceTime = _suggestedSlot!['start']!;
       });
       _runLiveConflictCheck();
     }
@@ -250,18 +247,17 @@ class _RescheduleAppointmentDialogState
 
   Future<void> _pickDate() async {
     await LiturgicalCalendarService.getCalendarForYear(_newDate.year);
-
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
     final picked = await showDatePicker(
       context: context,
       initialDate: _newDate.isBefore(today) ? today : _newDate,
-      firstDate: today, // STRICTLY blocks picking past dates
-      lastDate: today.add(const Duration(days: 365)),
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 730)),
       selectableDayPredicate: (DateTime day) {
         if (day.isBefore(today)) return false;
-        if (day.weekday == DateTime.monday) return false;
+        if (!_isAnytimeService && day.weekday == DateTime.monday && _isParishioner) return false;
         if (LiturgicalCalendarService.isDateBlockedSync(day)) return false;
         if (_isCommunityBaptism &&
             day.weekday != DateTime.saturday &&
@@ -271,106 +267,78 @@ class _RescheduleAppointmentDialogState
         return true;
       },
     );
+
     if (picked != null) {
+      if (picked.weekday == DateTime.monday && !_isAnytimeService) {
+        final allowed = await _confirmMondayExceptionDialog(picked);
+        if (!allowed) return;
+        _allowMondayException = true;
+      } else {
+        _allowMondayException = false;
+      }
+
       setState(() => _newDate = picked);
       _runLiveConflictCheck();
     }
   }
 
-  Future<void> _pickTime(bool isStart) async {
-    final minDuration =
-    AppointmentService.getMinimumDurationMinutes(widget.appointment.serviceType);
+  Future<bool> _confirmMondayExceptionDialog(DateTime date) async {
+    final dateStr =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 24),
+            SizedBox(width: 8),
+            Text('Monday Schedule Exception', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Text(
+          'Mondays ($dateStr) are designated Clergy Rest Days and the parish office is closed.\n\n'
+              'Do you want to reschedule this appointment to Monday as an administrative exception?',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Allow Monday Exception'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _pickServiceTime() async {
     if (_isCommunityBaptism) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Community Baptism ceremony strictly takes place at 11:00 AM on Weekends.'),
           backgroundColor: ParishColors.goldAccent,
-          duration: Duration(seconds: 3),
         ),
       );
       return;
     }
 
-    final initial = isStart ? _newStartTime : _newEndTime;
     final picked = await showTimePicker(
       context: context,
-      initialTime: initial,
+      initialTime: _newServiceTime,
     );
 
     if (picked != null) {
-      final pickedMinutes = picked.hour * 60 + picked.minute;
-
-      if (isStart) {
-        if (pickedMinutes < AppointmentService.operatingDayStartMin) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Parish appointments must be scheduled between 9:00 AM and 5:00 PM.'),
-              backgroundColor: ParishColors.mercyRed,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-
-        // Start time + duration cannot exceed 5:00 PM closing
-        if (pickedMinutes + minDuration > AppointmentService.operatingDayEndMin) {
-          final maxStart = AppointmentService.operatingDayEndMin - minDuration;
-          final maxStartTod = AppointmentService.minutesToTimeOfDay(maxStart);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${widget.appointment.serviceType} ($minDuration mins) must conclude by 5:00 PM. Latest start time is ${_formatTime12Hour(maxStartTod)}.',
-              ),
-              backgroundColor: ParishColors.mercyRed,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
-        }
-
-        setState(() {
-          _newStartTime = picked;
-          _newEndTime = _addMinutes(picked, minDuration); // Automatically keeps end time aligned
-        });
-      } else {
-        final startMinutes = _newStartTime.hour * 60 + _newStartTime.minute;
-
-        if (pickedMinutes > AppointmentService.operatingDayEndMin) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('End time cannot exceed parish operating hours (5:00 PM).'),
-              backgroundColor: ParishColors.mercyRed,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-
-        // Prohibit manual end time adjustments shorter than sacrament threshold
-        if (pickedMinutes - startMinutes < minDuration) {
-          final requiredEndTod = _addMinutes(_newStartTime, minDuration);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${widget.appointment.serviceType} requires at least $minDuration minutes. End time cannot be earlier than ${_formatTime12Hour(requiredEndTod)}.',
-              ),
-              backgroundColor: ParishColors.mercyRed,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
-        }
-
-        setState(() {
-          _newEndTime = picked;
-        });
-      }
-
+      setState(() {
+        _newServiceTime = picked;
+      });
       _runLiveConflictCheck();
     }
   }
@@ -379,36 +347,27 @@ class _RescheduleAppointmentDialogState
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: ParishColors.cardWhite,
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 28),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Schedule Conflict Detected',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 17,
-                    color: ParishColors.mercyRed),
-              ),
-            ),
+            Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 24),
+            SizedBox(width: 8),
+            Text('Schedule Collision Notice', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
         content: Text(
           message,
-          style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
+          style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.4),
         ),
         actions: [
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ParishColors.marianBlue,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Adjust Schedule'),
+            child: const Text('Adjust Slot'),
           ),
         ],
       ),
@@ -431,67 +390,67 @@ class _RescheduleAppointmentDialogState
       return;
     }
 
-    final minDuration =
-    AppointmentService.getMinimumDurationMinutes(widget.appointment.serviceType);
-    final startMin = _newStartTime.hour * 60 + _newStartTime.minute;
-    final endMin = _newEndTime.hour * 60 + _newEndTime.minute;
-
-    if (endMin - startMin < minDuration) {
-      final msg =
-          '${widget.appointment.serviceType} requires at least $minDuration minutes duration.';
-      setState(() => _errorMessage = msg);
-      _showConflictPromptDialog(msg);
-      return;
+    // Resolve Venue cleanly
+    String resolvedVenue;
+    if (_isOnParishGrounds) {
+      resolvedVenue = 'Parish Grounds';
+    } else {
+      final loc = _outsideLocationController.text.trim();
+      if (loc.isEmpty) {
+        setState(() => _errorMessage = 'Please specify the location outside the parish.');
+        return;
+      }
+      resolvedVenue = 'Outside Parish ($loc)';
     }
 
-    final startStr = _formatTimeOfDay(_newStartTime);
-    final endStr = _formatTimeOfDay(_newEndTime);
+    final startStr = _formatTimeOfDay(_newServiceTime);
+    final computedEnd = _calculateEndTime(_newServiceTime, _durationMinutes);
+    final endStr = _formatTimeOfDay(computedEnd);
+    final dateStr =
+        '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}';
 
-    if (startStr.compareTo(endStr) >= 0) {
-      setState(() => _errorMessage = 'End Time must be later than Start Time.');
-      _showConflictPromptDialog('End Time must be later than Start Time.');
-      return;
-    }
+    final a = widget.appointment;
+    final isStaff = !_isParishioner;
+    final existingStatus = a.appointmentStatus.toLowerCase();
+
+    // Staff edits strictly preserve confirmed status
+    final String targetStatus = (isStaff && existingStatus == 'confirmed')
+        ? 'confirmed'
+        : (isStaff ? existingStatus : 'pending');
 
     setState(() => _isSubmitting = true);
 
     try {
-      final dateStr =
-          '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}';
-      final a = widget.appointment;
-
       await AppointmentService.rescheduleAppointment(
         appointmentId: a.appointmentId,
         newDate: dateStr,
         newStartTime: startStr,
         newEndTime: endStr,
-        venue: _venue,
+        venue: resolvedVenue,
         officiant: _isParishioner ? 'Rev. Fr. Roy' : _officiant,
         reason: _reasonController.text.trim(),
         serviceType: a.serviceType,
         previousRemarks: a.appointmentRemarks,
         previousDate: a.formattedDate,
         previousTimeRange: a.formattedTimeRange,
+        targetStatus: targetStatus,
+        allowMondayException: _allowMondayException,
       );
 
       if (!mounted) return;
 
-      Navigator.pop(context); // Close reschedule dialog
-      Navigator.pop(context); // Close parent detail dialog
-
-      final isTuesday = _newDate.weekday == DateTime.tuesday;
-      final isParishioner = _isParishioner;
+      Navigator.pop(context); // Close reschedule modal
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isParishioner
-              ? 'Reschedule request submitted! Marked as PENDING for Parish Office re-approval.'
-              : (isTuesday
-              ? 'Appointment rescheduled to Tuesday! Marked as PENDING for Rev. Fr. Roy approval.'
-              : 'Appointment successfully rescheduled!')),
-          backgroundColor: (isParishioner || isTuesday)
-              ? ParishColors.goldAccent
-              : ParishColors.oliveGreen,
+          content: Text(
+            isStaff
+                ? 'Appointment rescheduled to $dateStr at ${_formatTime12Hour(_newServiceTime)}.'
+                : 'Reschedule request submitted for parish review.',
+          ),
+          backgroundColor: targetStatus == 'confirmed'
+              ? ParishColors.oliveGreen
+              : ParishColors.goldAccent,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -499,9 +458,7 @@ class _RescheduleAppointmentDialogState
       widget.onRescheduled?.call();
     } catch (e) {
       final cleanError = e.toString().replaceFirst('Exception: ', '');
-      setState(() {
-        _errorMessage = cleanError;
-      });
+      setState(() => _errorMessage = cleanError);
       _showConflictPromptDialog(cleanError);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -516,47 +473,48 @@ class _RescheduleAppointmentDialogState
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
     final isTuesday = _newDate.weekday == DateTime.tuesday;
+    final isMonday = _newDate.weekday == DateTime.monday;
     final hasConflict = _liveConflictWarning != null;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       backgroundColor: cardWhite,
       child: Container(
         width: double.maxFinite,
-        constraints: const BoxConstraints(maxHeight: 740),
+        constraints: const BoxConstraints(maxWidth: 580, maxHeight: 720),
         child: Column(
           children: [
-            // Header
+            // Modal Header
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFFF3E8FF),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                 border: Border(bottom: BorderSide(color: borderGrey)),
               ),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(7),
                     decoration: const BoxDecoration(
                       color: Color(0xFF7C3AED),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.update, color: Colors.white, size: 20),
+                    child: const Icon(Icons.edit_calendar, color: Colors.white, size: 18),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isParishioner ? 'Request Reschedule' : 'Reschedule Service',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+                          _isParishioner ? 'Request Reschedule' : 'Reschedule Ceremony Slot',
+                          style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: textDark),
                         ),
                         Text(
                           '${a.appointmentId} • ${a.serviceType}',
-                          style: TextStyle(fontSize: 12, color: textMuted),
+                          style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
                     ),
@@ -569,10 +527,10 @@ class _RescheduleAppointmentDialogState
               ),
             ),
 
-            // Form
+            // Form Content
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(18),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -581,25 +539,21 @@ class _RescheduleAppointmentDialogState
                       if (_errorMessage != null) ...[
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(bottom: 14),
                           decoration: BoxDecoration(
                             color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: ParishColors.mercyRed),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
-                              const SizedBox(width: 10),
+                              const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 20),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   _errorMessage!,
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: ParishColors.mercyRed,
-                                  ),
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
                                 ),
                               ),
                             ],
@@ -607,131 +561,56 @@ class _RescheduleAppointmentDialogState
                         ),
                       ],
 
-                      // Current Schedule Summary
+                      // Current Schedule Summary Box
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: ParishColors.backgroundLight,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: borderGrey),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'CURRENT SCHEDULE:',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
-                            ),
+                            Text('CURRENT SCHEDULE ON RECORD:', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: textMuted)),
                             const SizedBox(height: 2),
-                            Text(
-                              '${a.formattedDate} • ${a.formattedTimeRange}',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
-                            ),
-                            Text(
-                              'Venue: ${a.venue} • Presider: ${a.officiantName}',
-                              style: TextStyle(fontSize: 12, color: textMuted),
-                            ),
+                            Text('${a.formattedDate} at ${AppointmentService.formatTime12Hour(a.requestedTime)}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                            Text('Venue: ${a.venue}', style: TextStyle(fontSize: 11.5, color: textMuted)),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 18),
-
-                      // New Date
-                      Text(
-                        _isCommunityBaptism
-                            ? 'Select New Date * (Weekends Only for Baptism)'
-                            : 'Select New Date * (Mondays & Solemnities Restricted)',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
-                      ),
-                      const SizedBox(height: 6),
-                      InkWell(
-                        onTap: _pickDate,
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: ParishColors.backgroundLight,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: borderGrey),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}',
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
-                              ),
-                              Icon(Icons.calendar_month, color: ParishColors.marianBlueAdaptive, size: 20),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      if (isTuesday || _isParishioner) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: ParishColors.goldLight,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: ParishColors.goldAccent),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(Icons.info_outline, color: ParishColors.goldAccent, size: 20),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _isParishioner
-                                      ? 'Reschedule Notice: Submitting a new schedule will change this appointment to PENDING status until verified and re-approved by Parish Staff.'
-                                      : 'Tuesday Notice: Rescheduling to a Tuesday requires approval from Rev. Fr. Roy before finalization. The status will update to PENDING.',
-                                  style: TextStyle(fontSize: 11.5, color: textDark, height: 1.3),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 14),
 
-                      // New Times
+                      // New Date & Single Service Time
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
+                            flex: 5,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  _isCommunityBaptism ? 'New Start Time (Locked)' : 'New Start Time (9AM–5PM) *',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
-                                ),
-                                const SizedBox(height: 6),
+                                _buildFieldLabel('New Date *'),
                                 InkWell(
-                                  onTap: () => _pickTime(true),
+                                  onTap: _pickDate,
                                   borderRadius: BorderRadius.circular(10),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    height: 46,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
                                     decoration: BoxDecoration(
-                                      color: _isCommunityBaptism
-                                          ? ParishColors.borderGrey.withOpacity(0.15)
-                                          : ParishColors.backgroundLight,
+                                      color: ParishColors.backgroundLight,
                                       borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: hasConflict ? ParishColors.mercyRed : borderGrey),
+                                      border: Border.all(color: borderGrey),
                                     ),
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(
-                                          _formatTime12Hour(_newStartTime),
+                                          '${_newDate.year}-${_newDate.month.toString().padLeft(2, '0')}-${_newDate.day.toString().padLeft(2, '0')}',
                                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
                                         ),
-                                        Icon(
-                                          _isCommunityBaptism ? Icons.lock_outline : Icons.access_time,
-                                          size: 18,
-                                          color: ParishColors.marianBlueAdaptive,
-                                        ),
+                                        const Icon(Icons.calendar_month, size: 18, color: ParishColors.marianBlue),
                                       ],
                                     ),
                                   ),
@@ -739,34 +618,46 @@ class _RescheduleAppointmentDialogState
                               ],
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
                           Expanded(
+                            flex: 5,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'New End Time *',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
-                                ),
-                                const SizedBox(height: 6),
+                                _buildFieldLabel('New Service Time *'),
                                 InkWell(
-                                  onTap: () => _pickTime(false),
+                                  onTap: _pickServiceTime,
                                   borderRadius: BorderRadius.circular(10),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    height: 46,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
                                     decoration: BoxDecoration(
-                                      color: ParishColors.backgroundLight,
+                                      color: _isCommunityBaptism ? ParishColors.borderGrey.withOpacity(0.15) : ParishColors.backgroundLight,
                                       borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: hasConflict ? ParishColors.mercyRed : borderGrey),
+                                      border: Border.all(color: borderGrey),
                                     ),
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(
-                                          _formatTime12Hour(_newEndTime),
+                                          _formatTime12Hour(_newServiceTime),
                                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
                                         ),
-                                        Icon(Icons.access_time, size: 18, color: ParishColors.marianBlueAdaptive),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                              decoration: BoxDecoration(
+                                                color: ParishColors.marianBlueSurface,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text('~${_durationMinutes}m', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            const Icon(Icons.access_time, size: 16, color: ParishColors.marianBlue),
+                                          ],
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -777,201 +668,119 @@ class _RescheduleAppointmentDialogState
                         ],
                       ),
 
-                      // Live Conflict Checker
-                      const SizedBox(height: 10),
-                      if (_isLiveChecking)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: Row(
-                            children: [
-                              const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                              const SizedBox(width: 8),
-                              Text('Checking slot availability...', style: TextStyle(fontSize: 12, color: textMuted)),
-                            ],
-                          ),
-                        )
-                      else if (_liveConflictWarning != null) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: ParishColors.mercyRed),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _liveConflictWarning!,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: ParishColors.mercyRed,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (_suggestedSlot != null) ...[
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF7C3AED),
-                                      foregroundColor: Colors.white,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                    onPressed: _applySuggestedSlot,
-                                    icon: const Icon(Icons.bolt, size: 18),
-                                    label: Text(
-                                      'Auto-Set Next Open Slot: ${_formatTime12Hour(_suggestedSlot!['start']!)} – ${_formatTime12Hour(_suggestedSlot!['end']!)}',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
+                      if (isMonday && !_isAnytimeService) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          _allowMondayException
+                              ? 'Monday Exception Granted: Will be scheduled on Monday.'
+                              : 'Monday Notice: Secretariat is closed for Clergy Rest Day. Slot filed as Pending.',
+                          style: TextStyle(fontSize: 11, color: _allowMondayException ? ParishColors.oliveGreen : textMuted),
                         ),
-                      ] else ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: ParishColors.oliveGreenSurface,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 16),
-                              const SizedBox(width: 6),
-                              Text(
-                                _isCommunityBaptism
-                                    ? 'Community Baptism 11:00 AM slot is open.'
-                                    : 'Reschedule slot is open and available (9AM–5PM).',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: ParishColors.oliveGreen,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      ],
+                      if (isTuesday) ...[
+                        const SizedBox(height: 6),
+                        Text('Tuesday Notice: Requires Rev. Fr. Roy confirmation before finalization.', style: TextStyle(fontSize: 11, color: textMuted)),
                       ],
                       const SizedBox(height: 14),
 
-                      // Venue Selector
-                      Text(
-                        _isParishioner ? 'Parish Venue (Staff Assigned)' : 'Parish Venue *',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
-                      ),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<String>(
-                        value: _venue,
-                        isExpanded: true,
-                        items: _venues
-                            .map((v) => DropdownMenuItem(
-                          value: v,
-                          child: Text(v, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-                        ))
-                            .toList(),
-                        onChanged: _isParishioner
-                            ? null
-                            : (val) {
-                          if (val != null) {
-                            setState(() => _venue = val);
-                            _runLiveConflictCheck();
-                          }
-                        },
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: _isParishioner
-                              ? ParishColors.borderGrey.withOpacity(0.15)
-                              : ParishColors.backgroundLight,
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: borderGrey),
-                          ),
+                      // Venue: Parish Grounds (As Is) vs. Outside Parish (Custom Free-Text)
+                      _buildFieldLabel('Venue Location *'),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: ParishColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: borderGrey),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: const Center(child: Text('Parish Grounds', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                                    selected: _isOnParishGrounds,
+                                    onSelected: (_) {
+                                      setState(() {
+                                        _isOnParishGrounds = true;
+                                        _outsideLocationController.clear();
+                                      });
+                                      _runLiveConflictCheck();
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: const Center(child: Text('Outside Parish', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                                    selected: !_isOnParishGrounds,
+                                    onSelected: (_) {
+                                      setState(() => _isOnParishGrounds = false);
+                                      _runLiveConflictCheck();
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // If Outside Parish: presents empty text field for custom entry
+                            if (!_isOnParishGrounds) ...[
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _outsideLocationController,
+                                style: const TextStyle(fontSize: 12.5),
+                                onChanged: (_) => _runLiveConflictCheck(),
+                                decoration: InputDecoration(
+                                  hintText: 'Type location (e.g. Sitio Ilaya, Brgy. Labuin / San Pedro Hospital)',
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       const SizedBox(height: 14),
 
-                      // Presiding Clergy
-                      Text(
-                        _isParishioner
-                            ? 'Presiding Clergy (Parish Assigned: Rev. Fr. Roy)'
-                            : 'Presiding Clergy *',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
-                      ),
-                      const SizedBox(height: 6),
-                      _isParishioner
-                          ? TextFormField(
-                        initialValue: 'Rev. Fr. Roy (Parish Priest)',
-                        enabled: false,
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: textDark),
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: ParishColors.borderGrey.withOpacity(0.15),
-                          prefixIcon: Icon(Icons.lock_outline, size: 18, color: ParishColors.marianBlueAdaptive),
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: borderGrey),
+                      // Presider (if staff)
+                      if (!_isParishioner) ...[
+                        _buildFieldLabel('Presiding Clergy *'),
+                        DropdownButtonFormField<String>(
+                          value: _officiants.contains(_officiant) ? _officiant : 'Rev. Fr. Roy',
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: ParishColors.backgroundLight,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           ),
+                          items: _officiants.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13)))).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _officiant = val);
+                              _runLiveConflictCheck();
+                            }
+                          },
                         ),
-                      )
-                          : DropdownButtonFormField<String>(
-                        value: _officiants.contains(_officiant) ? _officiant : 'Rev. Fr. Roy',
-                        isExpanded: true,
-                        items: _officiants
-                            .map((o) => DropdownMenuItem(
-                          value: o,
-                          child: Text(o, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-                        ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _officiant = val);
-                            _runLiveConflictCheck();
-                          }
-                        },
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: ParishColors.backgroundLight,
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: borderGrey),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 14),
+                      ],
 
-                      Text(
-                        'Reason for Rescheduling *',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
-                      ),
-                      const SizedBox(height: 6),
+                      // Reason for Rescheduling
+                      _buildFieldLabel('Reason for Rescheduling *'),
                       Wrap(
                         spacing: 6,
-                        runSpacing: 6,
+                        runSpacing: 4,
                         children: _quickReasons.map((reason) {
                           return ActionChip(
-                            label: Text(reason, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                            label: Text(reason, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600)),
                             backgroundColor: ParishColors.marianBlueSurface,
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
                             onPressed: () {
                               setState(() {
                                 _reasonController.text = reason;
@@ -985,31 +794,68 @@ class _RescheduleAppointmentDialogState
                       TextFormField(
                         controller: _reasonController,
                         maxLines: 2,
-                        maxLength: 250,
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Please specify a reason' : null,
+                        maxLength: 200,
+                        validator: (v) => v == null || v.trim().isEmpty ? 'Please provide a reason' : null,
                         style: const TextStyle(fontSize: 13),
                         decoration: InputDecoration(
-                          hintText: 'Tap a chip above or type custom reason...',
+                          hintText: 'Tap a reason above or type specific explanation...',
                           filled: true,
                           fillColor: ParishColors.backgroundLight,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: borderGrey),
-                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
+
+                      if (_liveConflictWarning != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: ParishColors.mercyRedSurface,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: ParishColors.mercyRed),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(_liveConflictWarning!, style: const TextStyle(fontSize: 11.5, color: ParishColors.mercyRed, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              if (_suggestedSlot != null) ...[
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C3AED), foregroundColor: Colors.white),
+                                    onPressed: _applySuggestedSlot,
+                                    icon: const Icon(Icons.bolt, size: 16),
+                                    label: Text('Auto-Set Open Slot: ${_formatTime12Hour(_suggestedSlot!['start']!)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
             ),
 
-            // Actions
+            // Modal Actions
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               decoration: BoxDecoration(
                 color: cardWhite,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
                 border: Border(top: BorderSide(color: borderGrey)),
               ),
               child: Row(
@@ -1017,33 +863,25 @@ class _RescheduleAppointmentDialogState
                 children: [
                   TextButton(
                     onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(fontSize: 15, color: textMuted)),
+                    child: Text('Cancel', style: TextStyle(color: textMuted, fontSize: 13.5)),
                   ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: hasConflict
-                            ? ParishColors.borderGrey
-                            : const Color(0xFF7C3AED),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                      ),
-                      onPressed: _isSubmitting ? null : _confirmReschedule,
-                      icon: _isSubmitting
-                          ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.check, size: 20),
-                      label: Text(
-                        _isSubmitting
-                            ? 'Checking Conflicts...'
-                            : (_isParishioner ? 'Submit Reschedule Request' : 'Confirm Reschedule'),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: hasConflict ? ParishColors.borderGrey : const Color(0xFF7C3AED),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                    onPressed: _isSubmitting ? null : _confirmReschedule,
+                    icon: _isSubmitting
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.check, size: 16),
+                    label: Text(
+                      _isSubmitting
+                          ? 'Checking...'
+                          : (_isParishioner ? 'Submit Reschedule Request' : 'Confirm Reschedule'),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                   ),
                 ],
@@ -1051,6 +889,16 @@ class _RescheduleAppointmentDialogState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFieldLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5.0),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.textDark),
       ),
     );
   }

@@ -45,7 +45,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
   }
 
   Future<void> _handleItemTap(NotificationModel item) async {
-    // 1. Mark as read in Supabase and deduct from the bell counter
+    // 1. Mark as read in Supabase and deduct from the notification counter
     if (!item.isRead) {
       await InAppNotificationService.markAsRead(item.notificationId);
       setState(() {
@@ -70,17 +70,20 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
     if (!mounted) return;
     Navigator.pop(context); // Close notification modal before deep-linking
 
-    // 2. Route to respective screen or modal
+    // 2. Route directly to the corresponding appointment, IoT sensor, or request modal
     final type = item.notificationType.toLowerCase();
+    final refId = item.referenceId ?? 'APT-RECORD';
 
-    if (type.contains('appointment') || type.contains('tuesday') || type.contains('reminder')) {
-      // Deep-link to the specific appointment approval / details modal
+    if (type.contains('appointment') ||
+        type.contains('tuesday') ||
+        type.contains('reminder') ||
+        type.contains('reschedule') ||
+        type.contains('booking')) {
       showAppointmentDetailModal(
         context,
-        refNo: item.referenceId ?? 'APT-RECORD',
+        refNo: refId,
       );
     } else if (type.contains('iot') || type.contains('humidity') || type.contains('temperature')) {
-      // Extract real numbers from message (e.g., "Humidity is 78.4% RH (Temp: 32.8 C)...")
       final humMatch = RegExp(r'(\d+\.?\d*)\s*%').firstMatch(item.message);
       final tempMatch = RegExp(r'(\d+\.?\d*)\s*C').firstMatch(item.message);
 
@@ -96,7 +99,6 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
         isWarning: true,
       );
     } else if (type.contains('pabuklat') || type.contains('request')) {
-      // Deep-link to Secretary's Pabuklat review modal
       showPabuklatRequestsModal(context);
     }
   }
@@ -145,7 +147,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
     final unreadCount = _notifications.where((n) => !n.isRead).length;
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       backgroundColor: cardWhite,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Container(
@@ -158,7 +160,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
                 color: ParishColors.marianBlueSurface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                 border: Border(bottom: BorderSide(color: borderGrey)),
               ),
               child: Row(
@@ -179,8 +181,8 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
                         Row(
                           children: [
                             Text(
-                              'Parish Alerts & History',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: textDark),
+                              'Parish Alerts & Ledger Activity',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5, color: textDark),
                             ),
                             if (unreadCount > 0) ...[
                               const SizedBox(width: 8),
@@ -199,7 +201,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
                           ],
                         ),
                         Text(
-                          'Recent push dispatches and operational notices',
+                          'Recent appointment updates and operational notices',
                           style: TextStyle(fontSize: 11.5, color: textMuted),
                         ),
                       ],
@@ -228,7 +230,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
                       style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                       onPressed: unreadCount > 0 ? _handleMarkAllRead : null,
                       icon: const Icon(Icons.done_all, size: 16),
-                      label: const Text('Mark All as Read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      label: const Text('Mark All Read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
                     TextButton.icon(
                       style: TextButton.styleFrom(
@@ -267,7 +269,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
                 ),
               )
                   : ListView.separated(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 itemCount: _notifications.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
@@ -282,7 +284,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
                 color: cardWhite,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
                 border: Border(top: BorderSide(color: borderGrey)),
               ),
               child: SizedBox(
@@ -322,18 +324,16 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Icon Badge
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: item.accentColor.withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(item.iconData, color: item.accentColor, size: 20),
+              child: Icon(item.iconData, color: item.accentColor, size: 18),
             ),
             const SizedBox(width: 12),
 
-            // Content
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,7 +346,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
                           item.title,
                           style: TextStyle(
                             fontWeight: item.isRead ? FontWeight.w600 : FontWeight.bold,
-                            fontSize: 13.5,
+                            fontSize: 13,
                             color: textDark,
                           ),
                           maxLines: 1,
@@ -363,7 +363,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
                   const SizedBox(height: 3),
                   Text(
                     item.message,
-                    style: TextStyle(fontSize: 12, color: textMuted, height: 1.35),
+                    style: TextStyle(fontSize: 11.5, color: textMuted, height: 1.35),
                   ),
                   if (item.referenceId != null) ...[
                     const SizedBox(height: 6),
@@ -382,7 +382,7 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          'Tap to view details',
+                          'Tap to inspect',
                           style: TextStyle(fontSize: 10, color: ParishColors.marianBlueAdaptive, fontWeight: FontWeight.w600),
                         ),
                       ],
@@ -392,7 +392,6 @@ class _NotificationCenterDialogState extends State<_NotificationCenterDialog> {
               ),
             ),
 
-            // Unread Indicator Dot
             if (!item.isRead) ...[
               const SizedBox(width: 8),
               Container(
