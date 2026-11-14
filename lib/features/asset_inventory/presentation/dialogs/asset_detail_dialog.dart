@@ -78,7 +78,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
   late TextEditingController _modelController;
   late TextEditingController _othersController;
   late TextEditingController _remarksController;
-  late TextEditingController _rfidController;
 
   List<AssetLocationModel> _locations = [];
   List<AssetClassificationModel> _classifications = [];
@@ -169,7 +168,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     _modelController = TextEditingController(text: _asset.model ?? '');
     _othersController = TextEditingController(text: _asset.others ?? '');
     _remarksController = TextEditingController(text: _asset.remarks ?? '');
-    _rfidController = TextEditingController(text: _asset.rfidTag ?? '');
 
     _quantityController.addListener(() => setState(() {}));
     _unitPriceController.addListener(() => setState(() {}));
@@ -189,7 +187,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     _modelController.text = _asset.model ?? '';
     _othersController.text = _asset.others ?? '';
     _remarksController.text = _asset.remarks ?? '';
-    _rfidController.text = _asset.rfidTag ?? '';
     _conditionStatus = AssetModel.normalizeCondition(_asset.conditionStatus);
     _operationalStatus = AssetModel.normalizeStatus(_asset.operationalStatus);
     _modeOfAcquisition = _asset.modeOfAcquisition;
@@ -207,7 +204,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
     _modelController.dispose();
     _othersController.dispose();
     _remarksController.dispose();
-    _rfidController.dispose();
     super.dispose();
   }
 
@@ -391,7 +387,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
         modeOfAcquisition: _modeOfAcquisition,
         quantity: _editQuantity,
         unitPrice: _editUnitPrice,
-        rfidTag: _rfidController.text.trim(),
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
       );
@@ -731,7 +726,6 @@ class _AssetDetailDialogState extends State<_AssetDetailDialog> {
 
   Widget _buildViewDetails(bool isMobile) {
     final textDark = ParishColors.textDark;
-    final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
 
     return Column(

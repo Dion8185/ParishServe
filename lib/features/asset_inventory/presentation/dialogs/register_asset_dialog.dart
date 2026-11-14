@@ -81,7 +81,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
   final _modelController = TextEditingController();
   final _othersController = TextEditingController();
   final _remarksController = TextEditingController();
-  final _rfidTagController = TextEditingController();
   final _sequenceNumberController = TextEditingController(text: '001');
 
   List<AssetLocationModel> _locations = [];
@@ -138,7 +137,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
     _modelController.dispose();
     _othersController.dispose();
     _remarksController.dispose();
-    _rfidTagController.dispose();
     _sequenceNumberController.dispose();
     super.dispose();
   }
@@ -421,7 +419,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
         photoUrl: uploadedPhotoUrl,
         dateOfAcquisition: _dateOfAcquisition,
         modeOfAcquisition: _modeOfAcquisition,
-        rfidTag: _rfidTagController.text.trim(),
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
         customControlNumber: fullControlNo,
@@ -908,26 +905,6 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 14),
-
-                          // RFID Tag (Optional)
-                          _buildLabel(
-                              'Wireless RFID / NFC Tag (Optional)'),
-                          TextFormField(
-                            controller: _rfidTagController,
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              color: textDark,
-                            ),
-                            decoration: _inputDecoration(
-                              hint: 'e.g. 04:A2:4B:9C',
-                              prefixIcon: const Icon(
-                                Icons.nfc,
-                                size: 16,
-                                color: ParishColors.marianBlue,
-                              ),
-                            ),
                           ),
                           const SizedBox(height: 14),
 
@@ -1518,7 +1495,7 @@ class _RegisterAssetDialogState extends State<_RegisterAssetDialog> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                     Icon(
+                    Icon(
                       Icons.lock_outline,
                       size: 13,
                       color: ParishColors.textMuted,

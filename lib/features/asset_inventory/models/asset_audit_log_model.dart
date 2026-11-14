@@ -73,7 +73,7 @@ class AssetAuditLogModel {
   final String? newStatus;
   final String? previousLocation;
   final String? newLocation;
-  final String auditMethod; // 'QR_SCAN', 'RFID_NFC', 'MANUAL'
+  final String auditMethod; // 'QR_SCAN', 'MANUAL'
   final String? auditNotes;
   final DateTime auditedAt;
 

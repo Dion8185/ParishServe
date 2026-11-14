@@ -237,7 +237,6 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
             a.itemName.toLowerCase().contains(q) ||
             (a.model ?? '').toLowerCase().contains(q) ||
             (a.color ?? '').toLowerCase().contains(q) ||
-            (a.rfidTag ?? '').toLowerCase().contains(q) ||
             a.displayLocation.toLowerCase().contains(q) ||
             a.displayClassification.toLowerCase().contains(q);
       }).toList();
@@ -1059,8 +1058,8 @@ class _AssetInventoryViewState extends State<AssetInventoryView>
     final scannerCard = _buildDashboardActionCard(
       title: 'Audit Scanner',
       subtitle: isMobile
-          ? 'Scan QR / RFID tags'
-          : 'Scan QR/RFID tags to verify items',
+          ? 'Scan QR tags'
+          : 'Scan QR tags to verify items',
       icon: Icons.qr_code_scanner,
       isSolidBlue: false,
       borderColor: ParishColors.borderGrey,

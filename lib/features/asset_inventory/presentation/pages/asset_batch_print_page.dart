@@ -220,7 +220,6 @@ class _AssetBatchPrintPageState extends State<AssetBatchPrintPage>
             a.itemName.toLowerCase().contains(q) ||
             (a.model ?? '').toLowerCase().contains(q) ||
             (a.color ?? '').toLowerCase().contains(q) ||
-            (a.rfidTag ?? '').toLowerCase().contains(q) ||
             a.displayLocation.toLowerCase().contains(q) ||
             a.displayClassification.toLowerCase().contains(q);
       }).toList();

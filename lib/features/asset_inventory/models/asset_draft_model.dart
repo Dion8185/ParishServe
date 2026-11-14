@@ -27,7 +27,6 @@ class AssetDraftModel {
   final String? model;
   final String? others;
   final String? remarks;
-  final String? rfidTag;
   final String? photoUrl;
   final Uint8List? localPhotoBytes;
   final String? photoFileName;
@@ -57,7 +56,6 @@ class AssetDraftModel {
     this.model,
     this.others,
     this.remarks,
-    this.rfidTag,
     this.photoUrl,
     this.localPhotoBytes,
     this.photoFileName,
@@ -120,7 +118,6 @@ class AssetDraftModel {
       'model': model?.trim().isEmpty ?? true ? null : model!.trim(),
       'others': others?.trim().isEmpty ?? true ? null : others!.trim(),
       'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
-      'rfid_tag': rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
       'photo_url': photoUrl?.trim().isEmpty ?? true ? null : photoUrl!.trim(),
       'created_by': createdBy,
       'created_at': createdAt.toIso8601String(),
@@ -163,7 +160,6 @@ class AssetDraftModel {
       model: map['model']?.toString(),
       others: map['others']?.toString(),
       remarks: map['remarks']?.toString(),
-      rfidTag: map['rfid_tag']?.toString(),
       photoUrl: map['photo_url']?.toString(),
       createdBy: map['created_by']?.toString(),
       createdAt: parseDate(map['created_at']),
@@ -193,7 +189,6 @@ class AssetDraftModel {
     String? model,
     String? others,
     String? remarks,
-    String? rfidTag,
     String? photoUrl,
     Uint8List? localPhotoBytes,
     String? photoFileName,
@@ -227,7 +222,6 @@ class AssetDraftModel {
       model: model ?? this.model,
       others: others ?? this.others,
       remarks: remarks ?? this.remarks,
-      rfidTag: rfidTag ?? this.rfidTag,
       photoUrl: photoUrl ?? this.photoUrl,
       localPhotoBytes: localPhotoBytes ?? this.localPhotoBytes,
       photoFileName: photoFileName ?? this.photoFileName,

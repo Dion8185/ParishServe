@@ -30,7 +30,6 @@ class AssetModel {
   final double unitPrice;
   final double totalCost;
 
-  final String? rfidTag;
   final String qrCodeToken;
 
   /// Standardized Physical Condition:
@@ -114,7 +113,6 @@ class AssetModel {
     this.quantity = 1,
     this.unitPrice = 0.0,
     double? totalCost,
-    this.rfidTag,
     required this.qrCodeToken,
     this.conditionStatus = 'Good',
     this.operationalStatus = 'In Storage',
@@ -401,7 +399,6 @@ class AssetModel {
       quantity: qty > 0 ? qty : 1,
       unitPrice: uPrice >= 0 ? uPrice : 0.0,
       totalCost: totCost >= 0 ? totCost : 0.0,
-      rfidTag: map['rfid_tag']?.toString(),
       qrCodeToken: map['qr_code_token']?.toString() ??
           map['control_number']?.toString() ??
           '',
@@ -451,7 +448,6 @@ class AssetModel {
       'unit_price': unitPrice,
       'total_cost': totalCost,
       'cost': totalCost,
-      'rfid_tag': rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
       'qr_code_token': qrCodeToken,
       'condition_status': conditionStatus,
       'operational_status': operationalStatus,

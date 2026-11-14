@@ -16,7 +16,7 @@ import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
 import '../../utils/web_camera_helper.dart';
 
-enum AuditScanMode { selectMode, liveCamera, nfcListening, manualEntry }
+enum AuditScanMode { selectMode, liveCamera, manualEntry }
 
 class AssetAuditScannerPage extends StatefulWidget {
   final VoidCallback? onScanCompleted;
@@ -32,7 +32,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   AuditScanMode _lastActiveMode = AuditScanMode.liveCamera;
 
   final TextEditingController _manualInputController = TextEditingController();
-  final TextEditingController _nfcInputController = TextEditingController();
   final TextEditingController _auditNotesController = TextEditingController();
 
   MobileScannerController? _scannerController;
@@ -142,7 +141,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     _debounceTimer?.cancel();
     _manualInputController.removeListener(_onManualInputChanged);
     _manualInputController.dispose();
-    _nfcInputController.dispose();
     _auditNotesController.dispose();
     _clearDistributionEntries();
 
@@ -236,19 +234,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     await _safeStartCamera();
   }
 
-  Future<void> _startNfcListener() async {
-    setState(() {
-      _searchError = null;
-      _hasProcessedScan = false;
-      _scannedAsset = null;
-      _liveSuggestions = [];
-      _currentScanMode = AuditScanMode.nfcListening;
-      _lastActiveMode = AuditScanMode.nfcListening;
-    });
-
-    await _safeStopCamera();
-  }
-
   Future<void> _startManualLookup() async {
     setState(() {
       _searchError = null;
@@ -274,7 +259,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       _liveSuggestions = [];
       _auditNotesController.clear();
       _manualInputController.clear();
-      _nfcInputController.clear();
       _previousDistribution = null;
       _previousAuditDate = null;
       _clearDistributionEntries();
@@ -601,7 +585,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
         _liveSuggestions = [];
         _auditNotesController.clear();
         _manualInputController.clear();
-        _nfcInputController.clear();
         _previousDistribution = null;
         _previousAuditDate = null;
         _clearDistributionEntries();
@@ -611,8 +594,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
 
       if (_lastActiveMode == AuditScanMode.liveCamera) {
         await _startCameraScanner();
-      } else if (_lastActiveMode == AuditScanMode.nfcListening) {
-        await _startNfcListener();
       } else {
         await _startManualLookup();
       }
@@ -801,12 +782,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                                   isMobile,
                                 ),
                                 _buildModeTab(
-                                  AuditScanMode.nfcListening,
-                                  isMobile ? 'Wireless' : 'Wireless Tag',
-                                  Icons.nfc,
-                                  isMobile,
-                                ),
-                                _buildModeTab(
                                   AuditScanMode.manualEntry,
                                   isMobile ? 'Search' : 'Search Number',
                                   Icons.keyboard_outlined,
@@ -821,11 +796,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                           else if (_currentScanMode == AuditScanMode.liveCamera)
                             _buildLiveCameraScannerView()
                           else if (_currentScanMode ==
-                                AuditScanMode.nfcListening)
-                              _buildNfcReaderView()
-                            else if (_currentScanMode ==
-                                  AuditScanMode.manualEntry)
-                                _buildManualLookupView(),
+                                AuditScanMode.manualEntry)
+                              _buildManualLookupView(),
                         ],
 
                         if (_isSearching)
@@ -865,7 +837,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
       child: InkWell(
         onTap: () {
           if (mode == AuditScanMode.liveCamera) _startCameraScanner();
-          if (mode == AuditScanMode.nfcListening) _startNfcListener();
           if (mode == AuditScanMode.manualEntry) _startManualLookup();
         },
         child: Container(
@@ -909,14 +880,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
           Icons.camera_alt,
           ParishColors.marianBlue,
           _startCameraScanner,
-        ),
-        const SizedBox(height: 10),
-        _buildMethodCard(
-          'Wireless Tag Reader',
-          'Detect RFID or NFC tags on metal vessels and furnishings.',
-          Icons.nfc,
-          ParishColors.goldAccent,
-          _startNfcListener,
         ),
         const SizedBox(height: 10),
         _buildMethodCard(
@@ -1113,76 +1076,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
     );
   }
 
-  Widget _buildNfcReaderView() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: ParishColors.goldLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ParishColors.goldAccent.withOpacity(0.5)),
-      ),
-      child: Column(
-        children: [
-          const Icon(Icons.sensors, size: 54, color: ParishColors.goldAccent),
-          const SizedBox(height: 12),
-          Text(
-            'Hold Device Near Wireless Tag',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: ParishColors.textDark,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'For sacred vessels and items with attached tags.',
-            style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _nfcInputController,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: ParishColors.textDark,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. 04:A2:4B:9C',
-                    hintStyle: TextStyle(
-                      fontSize: 12.5,
-                      color: ParishColors.textMuted,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: const OutlineInputBorder(),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: ParishColors.borderGrey),
-                    ),
-                    isDense: true,
-                  ),
-                  onSubmitted: _searchAndLoadAsset,
-                ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ParishColors.goldAccent,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () => _searchAndLoadAsset(_nfcInputController.text),
-                child: const Text('Find Tag'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildManualLookupView() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1271,7 +1164,7 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
   }
 
   // ===========================================================================
-  // REDESIGNED VERIFICATION INTERFACE: Quantity-Based Distribution
+  // VERIFICATION INTERFACE: Quantity-Based Distribution
   // ===========================================================================
 
   Widget _buildAssetAuditVerificationForm(bool isMobile) {
@@ -1450,11 +1343,6 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                   const SizedBox(height: 8),
                   _buildSpecItem('Other Descriptions', asset.others!.trim()),
                 ],
-                if (asset.rfidTag != null &&
-                    asset.rfidTag!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  _buildSpecItem('Wireless RFID / NFC', asset.rfidTag!.trim()),
-                ],
               ],
             ),
           ),
@@ -1523,9 +1411,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                   ),
                   onPressed: (_isReconciled && !_isRecordingAudit)
                       ? () => _commitAuditInspection(
-                    _currentScanMode ==
-                        AuditScanMode.nfcListening
-                        ? 'RFID_NFC'
+                    _currentScanMode == AuditScanMode.manualEntry
+                        ? 'MANUAL'
                         : 'QR_SCAN',
                   )
                       : null,
@@ -1585,9 +1472,8 @@ class _AssetAuditScannerPageState extends State<AssetAuditScannerPage> {
                 ),
                 onPressed: (_isReconciled && !_isRecordingAudit)
                     ? () => _commitAuditInspection(
-                  _currentScanMode ==
-                      AuditScanMode.nfcListening
-                      ? 'RFID_NFC'
+                  _currentScanMode == AuditScanMode.manualEntry
+                      ? 'MANUAL'
                       : 'QR_SCAN',
                 )
                     : null,

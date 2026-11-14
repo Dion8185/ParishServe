@@ -96,7 +96,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   late TextEditingController _modelController;
   late TextEditingController _othersController;
   late TextEditingController _remarksController;
-  late TextEditingController _rfidController;
 
   List<AssetLocationModel> _locations = [];
   List<AssetClassificationModel> _classifications = [];
@@ -254,7 +253,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     _modelController = TextEditingController(text: asset.model ?? '');
     _othersController = TextEditingController(text: asset.others ?? '');
     _remarksController = TextEditingController(text: asset.remarks ?? '');
-    _rfidController = TextEditingController(text: asset.rfidTag ?? '');
 
     _quantityController.addListener(() => setState(() {}));
     _unitPriceController.addListener(() => setState(() {}));
@@ -275,7 +273,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     _modelController.dispose();
     _othersController.dispose();
     _remarksController.dispose();
-    _rfidController.dispose();
   }
 
   @override
@@ -522,7 +519,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         modeOfAcquisition: _modeOfAcquisition,
         quantity: _editQuantity,
         unitPrice: _editUnitPrice,
-        rfidTag: _rfidController.text.trim(),
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
       );
@@ -860,8 +856,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
     final bool hasOtherDescriptions =
         asset.others != null && asset.others!.trim().isNotEmpty;
-    final bool hasRfid =
-        asset.rfidTag != null && asset.rfidTag!.trim().isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1345,46 +1339,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                                     ),
                                   ),
                                 ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    if (hasRfid) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 9),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: ParishColors.borderGrey.withOpacity(0.8)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.nfc,
-                                size: 16, color: ParishColors.marianBlue),
-                            const SizedBox(width: 8),
-                            Text(
-                              'WIRELESS RFID / NFC: ',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.4,
-                                color: ParishColors.textMuted,
-                              ),
-                            ),
-                            Text(
-                              asset.rfidTag!.trim(),
-                              style: const TextStyle(
-                                fontFamily: 'Courier',
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.bold,
-                                color: ParishColors.marianBlue,
                               ),
                             ),
                           ],
@@ -2268,22 +2222,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ),
           const SizedBox(height: 18),
 
-          // General Header: Wireless Identification
-          _buildGeneralHeader('Wireless Identification'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _rfidController,
-            style: TextStyle(
-              fontSize: 13.5,
-              color: textDark,
-              fontWeight: FontWeight.bold,
-            ),
-            decoration: _floatingInputDecoration(
-              labelText: 'Wireless RFID / NFC Tag (Optional)',
-            ),
-          ),
-          const SizedBox(height: 18),
-
           // General Header: Dimensions & Make
           _buildGeneralHeader('Dimensions & Make'),
           const SizedBox(height: 8),
@@ -2728,8 +2666,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                log.auditMethod == 'RFID_NFC'
-                    ? Icons.nfc
+                log.auditMethod == 'MANUAL'
+                    ? Icons.fact_check_outlined
                     : Icons.qr_code_scanner,
                 size: 16,
                 color: ParishColors.marianBlue,

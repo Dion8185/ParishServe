@@ -99,7 +99,6 @@ class AssetService {
         'control_number.eq.$clean',
         'asset_id.eq.$clean',
         'qr_code_token.eq.$clean',
-        'rfid_tag.eq.$clean',
         if (baseIdentifier != clean) ...[
           'control_number.eq.$baseIdentifier',
           'asset_id.eq.$baseIdentifier',
@@ -160,7 +159,7 @@ class AssetService {
               location_name
             )
           ''')
-          .or('control_number.ilike.%$searchBase%,item_name.ilike.%$searchBase%,rfid_tag.ilike.%$searchBase%,model.ilike.%$searchBase%')
+          .or('control_number.ilike.%$searchBase%,item_name.ilike.%$searchBase%,model.ilike.%$searchBase%')
           .order('control_number', ascending: true)
           .limit(limit);
 
@@ -381,7 +380,6 @@ class AssetService {
     DateTime? dateOfAcquisition,
     int? acquisitionYear,
     String modeOfAcquisition = 'Purchase',
-    String? rfidTag,
     String conditionStatus = 'Good',
     String operationalStatus = 'In Storage',
     String? customControlNumber,
@@ -448,9 +446,6 @@ class AssetService {
       'unit_price': safeUnitPrice,
       'total_cost': calculatedTotalCost,
       'cost': calculatedTotalCost,
-      'rfid_tag': (rfidTag != null && rfidTag.trim().isNotEmpty)
-          ? rfidTag.trim()
-          : null,
       'qr_code_token': qrCodeToken,
       'condition_status': AssetModel.normalizeCondition(conditionStatus),
       'operational_status': normalizedStatus,
@@ -522,7 +517,6 @@ class AssetService {
     required String modeOfAcquisition,
     int quantity = 1,
     required double unitPrice,
-    String? rfidTag,
     required String conditionStatus,
     required String operationalStatus,
   }) async {
@@ -561,8 +555,6 @@ class AssetService {
       'unit_price': safeUnitPrice,
       'total_cost': safeTotalCost,
       'cost': safeTotalCost,
-      'rfid_tag':
-      rfidTag?.trim().isEmpty ?? true ? null : rfidTag!.trim(),
       'condition_status': AssetModel.normalizeCondition(conditionStatus),
       'operational_status': normalizedStatus,
       'is_archived': isDecommissioned,

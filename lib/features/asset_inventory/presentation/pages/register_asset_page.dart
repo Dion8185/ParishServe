@@ -80,7 +80,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   late final TextEditingController _modelController;
   late final TextEditingController _othersController;
   late final TextEditingController _remarksController;
-  late final TextEditingController _rfidTagController;
   late final TextEditingController _sequenceNumberController;
 
   List<AssetLocationModel> _locations = [];
@@ -152,7 +151,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     _modelController = TextEditingController(text: d?.model ?? '');
     _othersController = TextEditingController(text: d?.others ?? '');
     _remarksController = TextEditingController(text: d?.remarks ?? '');
-    _rfidTagController = TextEditingController(text: d?.rfidTag ?? '');
     _sequenceNumberController =
         TextEditingController(text: d?.sequenceNumber ?? '001');
 
@@ -207,7 +205,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     _modelController.dispose();
     _othersController.dispose();
     _remarksController.dispose();
-    _rfidTagController.dispose();
     _sequenceNumberController.dispose();
     super.dispose();
   }
@@ -516,9 +513,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         remarks: _remarksController.text.trim().isNotEmpty
             ? _remarksController.text.trim()
             : null,
-        rfidTag: _rfidTagController.text.trim().isNotEmpty
-            ? _rfidTagController.text.trim()
-            : null,
         photoUrl: uploadedDraftUrl,
         localPhotoBytes: _watermarkedPhotoBytes,
         photoFileName: _photoFileName,
@@ -626,7 +620,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         dateOfAcquisition: _effectiveDateOfAcquisition,
         acquisitionYear: _selectedYear,
         modeOfAcquisition: _modeOfAcquisition,
-        rfidTag: _rfidTagController.text.trim(),
         conditionStatus: _conditionStatus,
         operationalStatus: _operationalStatus,
         customControlNumber: fullControlNo,
@@ -1050,25 +1043,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                   _buildOperationalStatusDropdown(),
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 18),
-
-                            // General Header: Wireless Identification
-                            _buildGeneralHeader('Wireless Identification'),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _rfidTagController,
-                              style: TextStyle(
-                                  fontSize: 13.5,
-                                  color: textDark,
-                                  fontWeight: FontWeight.bold),
-                              decoration: _floatingInputDecoration(
-                                labelText:
-                                'Wireless RFID / NFC Tag (Optional)',
-                                prefixIcon: const Icon(Icons.nfc,
-                                    size: 16,
-                                    color: ParishColors.marianBlue),
-                              ),
                             ),
                             const SizedBox(height: 18),
 
