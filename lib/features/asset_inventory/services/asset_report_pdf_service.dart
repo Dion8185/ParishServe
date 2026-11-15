@@ -2,8 +2,10 @@
 // FILE: lib/features/asset_inventory/services/asset_report_pdf_service.dart
 // =============================================================================
 
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -12,8 +14,10 @@ import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/asset_model.dart';
+import '../utils/web_camera_helper.dart';
 
 // =============================================================================
 // REPORT PROGRESS MONITORING
@@ -34,6 +38,8 @@ class AssetReportProgress {
   final int failed;
   final int currentPage;
   final int totalPages;
+  final double progress;
+  final String? detailLabel;
 
   const AssetReportProgress({
     required this.stage,
@@ -42,23 +48,26 @@ class AssetReportProgress {
     this.failed = 0,
     this.currentPage = 0,
     this.totalPages = 0,
+    this.progress = 0.0,
+    this.detailLabel,
   });
 
   double get percentage {
-    if (total <= 0) return 0;
-    return (completed / total).clamp(0.0, 1.0);
+    if (progress > 0.0) return progress.clamp(0.0, 1.0).toDouble();
+    if (total <= 0) return 0.0;
+    return (completed / total).clamp(0.0, 1.0).toDouble();
   }
 
   String get stageLabel {
     switch (stage) {
       case AssetReportProgressStage.preparing:
-        return 'Preparing report...';
+        return 'Preparing report data & fonts...';
       case AssetReportProgressStage.downloadingImages:
         return 'Downloading asset photographs...';
       case AssetReportProgressStage.optimizingImages:
-        return 'Optimizing asset photographs...';
+        return 'Preparing photographs for PDF...';
       case AssetReportProgressStage.generatingPdf:
-        return 'Generating PDF document...';
+        return 'Compiling PDF document...';
       case AssetReportProgressStage.completed:
         return 'Report generation completed';
     }
@@ -68,6 +77,41 @@ class AssetReportProgress {
 typedef AssetReportProgressCallback = void Function(
     AssetReportProgress progress,
     );
+
+// =============================================================================
+// PREPARED IMAGE DESCRIPTOR
+// =============================================================================
+
+class _PreparedPdfImage {
+  final Uint8List bytes;
+  final bool isDirectEncoded;
+  final int width;
+  final int height;
+
+  const _PreparedPdfImage.direct(this.bytes)
+      : isDirectEncoded = true,
+        width = 0,
+        height = 0;
+
+  const _PreparedPdfImage.rgba({
+    required this.bytes,
+    required this.width,
+    required this.height,
+  }) : isDirectEncoded = false;
+
+  int get byteSize => bytes.lengthInBytes;
+
+  pw.ImageProvider toPdfImage() {
+    if (isDirectEncoded) {
+      return pw.MemoryImage(bytes);
+    }
+    return pw.RawImage(
+      bytes: bytes,
+      width: width,
+      height: height,
+    );
+  }
+}
 
 // =============================================================================
 // PDF SERVICE
@@ -90,14 +134,17 @@ class AssetReportPdfService {
   // PERFORMANCE CONFIGURATION
   // ---------------------------------------------------------------------------
 
-  static const int maxImageDimension = 460;
-  static const int maxConcurrentDownloads = 4;
-  static const int maxConcurrentDownloadsWeb = 4;
-  static const int maxConcurrentDownloadsDesktop = 6;
+  static const int maxPdfImageWidth = 360;
+  static const int maxDirectJpegBytes = 180 * 1024;
+  static const int maxConcurrentDownloads = 3;
+  static const int maxConcurrentDownloadsWeb = 3;
+  static const int maxConcurrentDownloadsDesktop = 4;
   static const int maxConcurrentDownloadsMobile = 3;
-  static const int maxImageCacheBytes = 50 * 1024 * 1024;
-  static const Duration imageDownloadTimeout = Duration(seconds: 12);
-  static const Duration imageConnectionTimeout = Duration(seconds: 6);
+  static const int maxImageCacheBytes = 60 * 1024 * 1024;
+  static const Duration imageDownloadTimeout = Duration(seconds: 25);
+
+  // Tracks failed image count from the most recent photographic report build
+  static int lastFailedPhotoCount = 0;
 
   // ---------------------------------------------------------------------------
   // CACHED RESOURCES
@@ -108,30 +155,32 @@ class AssetReportPdfService {
   static pw.Font? _cachedFontItalic;
   static pw.Font? _cachedFontBoldItalic;
 
-  // LRU image cache.
-  static final LinkedHashMap<String, Uint8List> _globalImageCache =
-  LinkedHashMap<String, Uint8List>();
+  // LRU cache of already-prepared PDF image payloads.
+  static final LinkedHashMap<String, _PreparedPdfImage> _globalImageCache =
+  LinkedHashMap<String, _PreparedPdfImage>();
 
   static int _currentImageCacheBytes = 0;
 
-  // Prevents multiple simultaneous downloads of the same URL.
-  static final Map<String, Future<Uint8List?>> _inFlightImages = {};
+  // Deduplicates concurrent downloads/preparations for identical URLs.
+  static final Map<String, Future<_PreparedPdfImage?>> _inFlightImages = {};
 
   // Reusable HTTP client.
   static final http.Client _httpClient = http.Client();
 
   // ---------------------------------------------------------------------------
-  // PROGRESS HELPERS
+  // PROGRESS HELPER
   // ---------------------------------------------------------------------------
 
   static void _notify(
       AssetReportProgressCallback? callback, {
         required AssetReportProgressStage stage,
+        required double progress,
         int completed = 0,
         int total = 0,
         int failed = 0,
         int currentPage = 0,
         int totalPages = 0,
+        String? detailLabel,
       }) {
     callback?.call(
       AssetReportProgress(
@@ -141,12 +190,14 @@ class AssetReportPdfService {
         failed: failed,
         currentPage: currentPage,
         totalPages: totalPages,
+        progress: progress.clamp(0.0, 1.0).toDouble(),
+        detailLabel: detailLabel,
       ),
     );
   }
 
   // ---------------------------------------------------------------------------
-  // FONT LOADING
+  // FONT LOADING (Cached after first call)
   // ---------------------------------------------------------------------------
 
   static Future<List<pw.Font>> _loadFontsConcurrently() async {
@@ -203,165 +254,323 @@ class AssetReportPdfService {
   // LRU IMAGE CACHE
   // ---------------------------------------------------------------------------
 
-  static Uint8List? _getCachedImage(String url) {
+  static _PreparedPdfImage? _getCachedImage(String url) {
     final image = _globalImageCache.remove(url);
     if (image == null) return null;
-
-    // Reinsert to mark as recently used.
     _globalImageCache[url] = image;
     return image;
   }
 
-  static void _cacheImage(String url, Uint8List bytes) {
+  static void _cacheImage(String url, _PreparedPdfImage prepared) {
     final previous = _globalImageCache.remove(url);
     if (previous != null) {
-      _currentImageCacheBytes -= previous.lengthInBytes;
+      _currentImageCacheBytes -= previous.byteSize;
     }
 
-    if (bytes.lengthInBytes > maxImageCacheBytes) return;
+    if (prepared.byteSize > maxImageCacheBytes) return;
 
-    // Remove least recently used entries when memory limit is reached.
-    while (_currentImageCacheBytes + bytes.lengthInBytes > maxImageCacheBytes) {
+    while (_currentImageCacheBytes + prepared.byteSize > maxImageCacheBytes) {
       if (_globalImageCache.isEmpty) break;
-
       final oldestKey = _globalImageCache.keys.first;
       final removed = _globalImageCache.remove(oldestKey);
-
       if (removed != null) {
-        _currentImageCacheBytes -= removed.lengthInBytes;
+        _currentImageCacheBytes -= removed.byteSize;
       }
     }
 
-    _globalImageCache[url] = bytes;
-    _currentImageCacheBytes += bytes.lengthInBytes;
+    _globalImageCache[url] = prepared;
+    _currentImageCacheBytes += prepared.byteSize;
   }
 
   // ---------------------------------------------------------------------------
-  // IMAGE OPTIMIZATION
+  // IMAGE DECODING & PDF PREPARATION
   // ---------------------------------------------------------------------------
 
-  /// Decodes and downsamples images while preserving their aspect ratio.
-  /// Bypasses ImageDescriptor for full cross-platform compatibility.
-  static Future<Uint8List> _optimizeImageForPdf(
+  static bool _isJpegBytes(Uint8List bytes) {
+    return bytes.length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+  }
+
+  static bool _isPngBytes(Uint8List bytes) {
+    return bytes.length > 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47;
+  }
+
+  /// Decodes and downscales via Flutter's native codec, composites onto a white
+  /// background, and exports a clean PNG for pw.MemoryImage (avoids RawImage
+  /// premultiplied-alpha and /SMask quirks across PDF viewers).
+  static Future<_PreparedPdfImage?> _extractPngFromCodec(
       Uint8List rawBytes, {
-        int maxDimension = maxImageDimension,
+        int? targetWidth,
       }) async {
     ui.Codec? codec;
     ui.Image? image;
-
+    ui.Image? renderedImage;
     try {
       codec = await ui.instantiateImageCodec(
         rawBytes,
-        targetWidth: maxDimension,
+        targetWidth: targetWidth,
         allowUpscaling: false,
       );
-
       final frameInfo = await codec.getNextFrame();
       image = frameInfo.image;
 
-      final byteData = await image.toByteData(
+      int outW = image.width;
+      int outH = image.height;
+      final int longEdge = max(outW, outH);
+
+      if (longEdge > maxPdfImageWidth) {
+        final double scale = maxPdfImageWidth / longEdge;
+        outW = max(1, (outW * scale).round());
+        outH = max(1, (outH * scale).round());
+      }
+
+      // Composite onto opaque white canvas and encode as clean PNG
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(
+        recorder,
+        ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+      );
+      canvas.drawRect(
+        ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+        ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+      );
+      canvas.drawImageRect(
+        image,
+        ui.Rect.fromLTWH(
+          0,
+          0,
+          image.width.toDouble(),
+          image.height.toDouble(),
+        ),
+        ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+        ui.Paint()..filterQuality = ui.FilterQuality.medium,
+      );
+
+      final picture = recorder.endRecording();
+      renderedImage = await picture.toImage(outW, outH);
+      try {
+        picture.dispose();
+      } catch (_) {}
+
+      final pngData = await renderedImage.toByteData(
         format: ui.ImageByteFormat.png,
       );
 
-      if (byteData != null) {
-        return byteData.buffer.asUint8List(
-          byteData.offsetInBytes,
-          byteData.lengthInBytes,
+      if (pngData != null && pngData.lengthInBytes > 0) {
+        final pngBytes = pngData.buffer.asUint8List(
+          pngData.offsetInBytes,
+          pngData.lengthInBytes,
+        );
+        return _PreparedPdfImage.direct(pngBytes);
+      }
+
+      // Fallback to rawRgba if PNG byteData is unavailable
+      final rawData = await renderedImage.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      if (rawData != null &&
+          rawData.lengthInBytes == outW * outH * 4) {
+        final rgbaBytes = rawData.buffer.asUint8List(
+          rawData.offsetInBytes,
+          rawData.lengthInBytes,
+        );
+        return _PreparedPdfImage.rgba(
+          bytes: rgbaBytes,
+          width: outW,
+          height: outH,
         );
       }
-    } catch (e) {
-      debugPrint('Asset PDF image optimization failed: $e');
     } finally {
-      image?.dispose();
-      codec?.dispose();
+      try {
+        renderedImage?.dispose();
+      } catch (_) {}
+      try {
+        image?.dispose();
+      } catch (_) {}
+      try {
+        codec?.dispose();
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static Future<_PreparedPdfImage?> _prepareImageForPdf(
+      Uint8List rawBytes,
+      ) async {
+    if (rawBytes.isEmpty) return null;
+
+    if (_isJpegBytes(rawBytes) && rawBytes.lengthInBytes <= maxDirectJpegBytes) {
+      return _PreparedPdfImage.direct(rawBytes);
     }
 
-    return rawBytes;
+    if (kIsWeb) {
+      final webJpeg = await WebCameraHelper.downscaleImageToJpegForPdf(
+        rawBytes,
+        maxWidth: maxPdfImageWidth,
+        quality: 0.82,
+      );
+      if (webJpeg != null && webJpeg.isNotEmpty) {
+        return _PreparedPdfImage.direct(webJpeg);
+      }
+    }
+
+    try {
+      final result = await _extractPngFromCodec(
+        rawBytes,
+        targetWidth: maxPdfImageWidth,
+      );
+      if (result != null) return result;
+    } catch (_) {
+      try {
+        final fallback = await _extractPngFromCodec(rawBytes);
+        if (fallback != null) return fallback;
+      } catch (e) {
+        debugPrint('Asset PDF image preparation error: $e');
+      }
+    }
+
+    if (_isJpegBytes(rawBytes) || _isPngBytes(rawBytes)) {
+      return _PreparedPdfImage.direct(rawBytes);
+    }
+
+    return null;
   }
 
   // ---------------------------------------------------------------------------
-  // IMAGE DOWNLOADING
+  // IMAGE DOWNLOADING (With Web CORS Cache-Bypass & Supabase Storage Fallback)
   // ---------------------------------------------------------------------------
+
+  static Future<Uint8List?> _downloadFromSupabaseStorage(
+      String urlOrPath,
+      ) async {
+    try {
+      final storage = Supabase.instance.client.storage;
+      final trimmed = urlOrPath.trim();
+      if (trimmed.isEmpty) return null;
+
+      final uri =
+          Uri.tryParse(trimmed) ?? Uri.tryParse(Uri.encodeFull(trimmed));
+
+      if (uri != null && uri.hasScheme) {
+        final segments = uri.pathSegments;
+        final objIdx = segments.indexOf('object');
+        if (objIdx != -1 && objIdx + 3 < segments.length) {
+          final bucket = segments[objIdx + 2];
+          final objectPath = Uri.decodeComponent(
+            segments.sublist(objIdx + 3).join('/'),
+          );
+          if (bucket.isNotEmpty && objectPath.isNotEmpty) {
+            final bytes = await storage
+                .from(bucket)
+                .download(objectPath)
+                .timeout(imageDownloadTimeout);
+            if (bytes.isNotEmpty) return bytes;
+          }
+        }
+      } else {
+        final cleanPath =
+        trimmed.startsWith('/') ? trimmed.substring(1) : trimmed;
+        final bytes = await storage
+            .from('certificate-assets')
+            .download(cleanPath)
+            .timeout(imageDownloadTimeout);
+        if (bytes.isNotEmpty) return bytes;
+      }
+    } catch (e) {
+      debugPrint('Asset PDF Supabase storage download fallback failed: $e');
+    }
+    return null;
+  }
 
   static Future<Uint8List?> _downloadImage(String url) async {
-    try {
-      if (url.startsWith('data:image')) {
-        final commaIndex = url.indexOf(',');
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) return null;
+
+    if (cleanUrl.startsWith('data:image')) {
+      try {
+        final commaIndex = cleanUrl.indexOf(',');
         if (commaIndex == -1) return null;
-        return base64Decode(url.substring(commaIndex + 1));
-      }
-
-      final uri = Uri.tryParse(url);
-      if (uri == null || !uri.hasScheme) return null;
-
-      final response = await _httpClient
-          .get(uri)
-          .timeout(imageDownloadTimeout);
-
-      if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
-        debugPrint('Asset PDF image request failed: ${response.statusCode}');
+        return base64Decode(cleanUrl.substring(commaIndex + 1));
+      } catch (_) {
         return null;
       }
-
-      return response.bodyBytes;
-    } catch (e) {
-      debugPrint('Asset PDF image download failed: $e');
-      return null;
     }
+
+    Uri? uri = Uri.tryParse(cleanUrl);
+    if (uri == null || !uri.hasScheme) {
+      final encoded = Uri.encodeFull(cleanUrl);
+      uri = Uri.tryParse(encoded);
+    }
+
+    // Relative storage path (no http/https scheme)
+    if (uri == null || !uri.hasScheme) {
+      return _downloadFromSupabaseStorage(cleanUrl);
+    }
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response =
+        await _httpClient.get(uri).timeout(imageDownloadTimeout);
+
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          return response.bodyBytes;
+        }
+        debugPrint(
+          'Asset PDF image request failed (${response.statusCode}): $uri',
+        );
+        if (attempt == 0 &&
+            (response.statusCode == 429 || response.statusCode >= 500)) {
+          await Future.delayed(const Duration(milliseconds: 350));
+          continue;
+        }
+        break;
+      } on TimeoutException catch (e) {
+        if (attempt == 0) {
+          debugPrint('Asset PDF image download timed out, retrying: $uri');
+          continue;
+        }
+        debugPrint('Asset PDF image download timed out: $e');
+      } catch (e) {
+        debugPrint('Asset PDF HTTP image download error ($uri): $e');
+        break;
+      }
+    }
+
+    // Web fallback: bypass non-CORS <img> disk cache using Fetch cache:'reload'
+    if (kIsWeb) {
+      final webBytes = await WebCameraHelper.fetchImageBytes(uri.toString());
+      if (webBytes != null && webBytes.isNotEmpty) {
+        return webBytes;
+      }
+    }
+
+    // Authenticated Supabase Storage SDK fallback
+    final storageBytes = await _downloadFromSupabaseStorage(cleanUrl);
+    if (storageBytes != null && storageBytes.isNotEmpty) {
+      return storageBytes;
+    }
+
+    return null;
   }
 
   // ---------------------------------------------------------------------------
-  // DEDUPLICATED IMAGE PROCESSING
+  // BOUNDED CONCURRENT IMAGE PRELOADING (Strictly Monotonic Progress)
   // ---------------------------------------------------------------------------
 
-  static Future<Uint8List?> _getOrProcessImage(String url) async {
-    final cached = _getCachedImage(url);
-    if (cached != null) return cached;
-
-    final existing = _inFlightImages[url];
-    if (existing != null) {
-      return existing;
-    }
-
-    final future = _processImage(url);
-    _inFlightImages[url] = future;
-
-    try {
-      return await future;
-    } finally {
-      _inFlightImages.remove(url);
-    }
-  }
-
-  static Future<Uint8List?> _processImage(String url) async {
-    try {
-      final rawBytes = await _downloadImage(url);
-      if (rawBytes == null || rawBytes.isEmpty) return null;
-
-      final optimized = await _optimizeImageForPdf(rawBytes);
-      _cacheImage(url, optimized);
-      return optimized;
-    } catch (e) {
-      debugPrint('Asset PDF image processing error: $e');
-      return null;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // BOUNDED CONCURRENT IMAGE PRELOADING
-  // ---------------------------------------------------------------------------
-
-  static Future<Map<String, Uint8List?>> _preloadAndOptimizePhotos(
+  static Future<Map<String, _PreparedPdfImage?>> _preloadAndPreparePhotos(
       List<AssetModel> assets, {
         AssetReportProgressCallback? onProgress,
       }) async {
-    final Map<String, Uint8List?> cache = {};
+    final Map<String, _PreparedPdfImage?> cache = {};
+    lastFailedPhotoCount = 0;
 
     final targets = assets
         .where(
           (asset) =>
-      asset.photoUrl != null &&
-          asset.photoUrl!.trim().isNotEmpty,
+      asset.photoUrl != null && asset.photoUrl!.trim().isNotEmpty,
     )
         .toList();
 
@@ -369,64 +578,126 @@ class AssetReportPdfService {
       _notify(
         onProgress,
         stage: AssetReportProgressStage.optimizingImages,
+        progress: 0.72,
         completed: 0,
         total: 0,
+        detailLabel: 'No photographs attached — ready to build PDF',
       );
       return cache;
     }
 
+    final int totalCount = targets.length;
+    final int totalSteps = totalCount * 2;
     final int concurrency = _getDownloadConcurrency();
 
     int nextIndex = 0;
-    int completed = 0;
-    int failed = 0;
+    int downloadedCount = 0;
+    int preparedCount = 0;
+    int failedCount = 0;
+    double highestProgress = 0.10;
+
+    void emitMonotonicProgress(AssetReportProgressStage stage, String detail) {
+      final double fraction =
+      ((downloadedCount + preparedCount) / totalSteps).clamp(0.0, 1.0);
+      final double nextProgress = 0.10 + (0.62 * fraction);
+      highestProgress = max(highestProgress, nextProgress);
+
+      _notify(
+        onProgress,
+        stage: stage,
+        progress: highestProgress,
+        completed: stage == AssetReportProgressStage.downloadingImages
+            ? downloadedCount
+            : preparedCount,
+        total: totalCount,
+        failed: failedCount,
+        detailLabel: detail,
+      );
+    }
+
+    Future<_PreparedPdfImage?> fetchAndPrepareUrl(String url) async {
+      final cached = _getCachedImage(url);
+      if (cached != null) {
+        downloadedCount++;
+        emitMonotonicProgress(
+          AssetReportProgressStage.downloadingImages,
+          'Loaded $downloadedCount of $totalCount photo(s) (cached)',
+        );
+        preparedCount++;
+        emitMonotonicProgress(
+          AssetReportProgressStage.optimizingImages,
+          'Prepared $preparedCount of $totalCount photo(s)',
+        );
+        return cached;
+      }
+
+      final existing = _inFlightImages[url];
+      if (existing != null) {
+        final result = await existing;
+        downloadedCount++;
+        preparedCount++;
+        if (result == null) failedCount++;
+        emitMonotonicProgress(
+          AssetReportProgressStage.optimizingImages,
+          'Prepared $preparedCount of $totalCount photo(s)',
+        );
+        return result;
+      }
+
+      final completerFuture = () async {
+        final rawBytes = await _downloadImage(url);
+        downloadedCount++;
+        emitMonotonicProgress(
+          AssetReportProgressStage.downloadingImages,
+          'Downloaded $downloadedCount of $totalCount photo(s)',
+        );
+
+        if (rawBytes == null || rawBytes.isEmpty) {
+          failedCount++;
+          preparedCount++;
+          emitMonotonicProgress(
+            AssetReportProgressStage.optimizingImages,
+            'Prepared $preparedCount of $totalCount photo(s)',
+          );
+          return null;
+        }
+
+        final prepared = await _prepareImageForPdf(rawBytes);
+        if (prepared != null) {
+          _cacheImage(url, prepared);
+        } else {
+          failedCount++;
+        }
+
+        preparedCount++;
+        emitMonotonicProgress(
+          AssetReportProgressStage.optimizingImages,
+          'Prepared $preparedCount of $totalCount photo(s)',
+        );
+        return prepared;
+      }();
+
+      _inFlightImages[url] = completerFuture;
+      try {
+        return await completerFuture;
+      } finally {
+        _inFlightImages.remove(url);
+      }
+    }
 
     Future<void> worker() async {
       while (true) {
         if (nextIndex >= targets.length) return;
-
         final index = nextIndex++;
         final asset = targets[index];
         final url = asset.photoUrl!.trim();
 
         try {
-          final cachedImage = _getCachedImage(url);
-
-          Uint8List? imageBytes;
-
-          if (cachedImage != null) {
-            imageBytes = cachedImage;
-          } else {
-            _notify(
-              onProgress,
-              stage: AssetReportProgressStage.downloadingImages,
-              completed: completed,
-              total: targets.length,
-              failed: failed,
-            );
-
-            imageBytes = await _getOrProcessImage(url);
-          }
-
-          if (imageBytes != null) {
-            cache[asset.assetId] = imageBytes;
-          } else {
-            cache[asset.assetId] = null;
-            failed++;
-          }
+          cache[asset.assetId] = await fetchAndPrepareUrl(url);
         } catch (e) {
           cache[asset.assetId] = null;
-          failed++;
-          debugPrint('Failed processing asset ${asset.assetId}: $e');
-        } finally {
-          completed++;
-          _notify(
-            onProgress,
-            stage: AssetReportProgressStage.optimizingImages,
-            completed: completed,
-            total: targets.length,
-            failed: failed,
-          );
+          failedCount++;
+          debugPrint('Failed preparing photo for ${asset.assetId}: $e');
         }
       }
     }
@@ -438,6 +709,7 @@ class AssetReportPdfService {
       ),
     );
 
+    lastFailedPhotoCount = failedCount;
     return cache;
   }
 
@@ -449,9 +721,7 @@ class AssetReportPdfService {
     if (controlNumber.isEmpty) return 0;
 
     final clean = controlNumber.trim();
-    final base = clean.contains('/')
-        ? clean.split('/').first.trim()
-        : clean;
+    final base = clean.contains('/') ? clean.split('/').first.trim() : clean;
 
     final lastDash = base.lastIndexOf('-');
 
@@ -493,8 +763,6 @@ class AssetReportPdfService {
   // MULTI-LINE TEXT WRAPPER FOR RULED NOTEBOOK LINES
   // ===========================================================================
 
-  /// Splits long text across lined spaces so text never clips on line 1,
-  /// continuing seamlessly onto line 2, line 3, etc.
   static List<String> _wrapTextToLines(
       String text, {
         required int firstLineLimit,
@@ -572,13 +840,15 @@ class AssetReportPdfService {
     _notify(
       onProgress,
       stage: AssetReportProgressStage.preparing,
+      progress: 0.03,
       completed: 0,
       total: sortedAssets.length,
+      detailLabel: 'Sorting ${sortedAssets.length} item(s) & loading fonts...',
     );
 
     final results = await Future.wait([
       _loadFontsConcurrently(),
-      _preloadAndOptimizePhotos(
+      _preloadAndPreparePhotos(
         sortedAssets,
         onProgress: onProgress,
       ),
@@ -590,7 +860,7 @@ class AssetReportPdfService {
     final fontItalic = fonts[2];
     final fontBoldItalic = fonts[3];
 
-    final photoCache = results[1] as Map<String, Uint8List?>;
+    final photoCache = results[1] as Map<String, _PreparedPdfImage?>;
 
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
@@ -602,7 +872,7 @@ class AssetReportPdfService {
     );
 
     const int itemsPerPage = 2;
-    final int totalPages = (sortedAssets.length / itemsPerPage).ceil();
+    final int totalPages = max(1, (sortedAssets.length / itemsPerPage).ceil());
 
     for (int i = 0; i < sortedAssets.length; i += itemsPerPage) {
       final pageAssets = sortedAssets.sublist(
@@ -613,15 +883,22 @@ class AssetReportPdfService {
       );
 
       final int currentPage = (i ~/ itemsPerPage) + 1;
+      final double pageProgress = 0.72 + (0.13 * (currentPage / totalPages));
 
       _notify(
         onProgress,
         stage: AssetReportProgressStage.generatingPdf,
+        progress: pageProgress,
         completed: currentPage,
         total: totalPages,
         currentPage: currentPage,
         totalPages: totalPages,
+        detailLabel: 'Assembling page $currentPage of $totalPages...',
       );
+
+      if (currentPage % 5 == 0) {
+        await Future.delayed(Duration.zero);
+      }
 
       pdf.addPage(
         pw.Page(
@@ -635,8 +912,7 @@ class AssetReportPdfService {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 _buildReportHeader(
-                  title:
-                  'PARISH BOOK OF INVENTORY — PHOTOGRAPHIC INVENTORY',
+                  title: 'PARISH BOOK OF INVENTORY — PHOTOGRAPHIC INVENTORY',
                   dateRangeLabel: dateRangeLabel,
                   sectionLabel: sectionLabel,
                   fontRegular: fontRegular,
@@ -644,10 +920,9 @@ class AssetReportPdfService {
                 ),
                 pw.SizedBox(height: 5),
                 ...pageAssets.map((asset) {
-                  final imageBytes = photoCache[asset.assetId];
+                  final preparedImage = photoCache[asset.assetId];
                   final isLastOnPage =
-                      pageAssets.indexOf(asset) ==
-                          pageAssets.length - 1;
+                      pageAssets.indexOf(asset) == pageAssets.length - 1;
 
                   return pw.Padding(
                     padding: pw.EdgeInsets.only(
@@ -657,7 +932,7 @@ class AssetReportPdfService {
                       height: cardHeight,
                       child: _buildPhotographicCard(
                         asset,
-                        imageBytes,
+                        preparedImage,
                         fontRegular,
                         fontBold,
                         fontItalic,
@@ -684,15 +959,29 @@ class AssetReportPdfService {
       );
     }
 
+    _notify(
+      onProgress,
+      stage: AssetReportProgressStage.generatingPdf,
+      progress: 0.88,
+      completed: totalPages,
+      total: totalPages,
+      currentPage: totalPages,
+      totalPages: totalPages,
+      detailLabel: 'Writing & compressing $totalPages PDF page(s)...',
+    );
+    await Future.delayed(const Duration(milliseconds: 24));
+
     final bytes = await pdf.save();
 
     _notify(
       onProgress,
       stage: AssetReportProgressStage.completed,
+      progress: 1.0,
       completed: totalPages,
       total: totalPages,
       currentPage: totalPages,
       totalPages: totalPages,
+      detailLabel: 'PDF ready ($totalPages page(s))',
     );
 
     return bytes;
@@ -704,7 +993,7 @@ class AssetReportPdfService {
 
   static pw.Widget _buildPhotographicCard(
       AssetModel asset,
-      Uint8List? imageBytes,
+      _PreparedPdfImage? preparedImage,
       pw.Font fontRegular,
       pw.Font fontBold,
       pw.Font fontItalic,
@@ -723,8 +1012,7 @@ class AssetReportPdfService {
     final String remarksLead =
     asset.quantity > 1 ? 'Quantity: ${asset.quantity} units. ' : '';
 
-    final String baseRemarks =
-    asset.remarks != null && asset.remarks!.isNotEmpty
+    final String baseRemarks = asset.remarks != null && asset.remarks!.isNotEmpty
         ? asset.remarks!
         : 'Condition: ${asset.conditionStatus.toUpperCase()} • Availability: ${asset.operationalStatus}';
 
@@ -741,17 +1029,17 @@ class AssetReportPdfService {
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          // Left side: Item Photograph (vertically & horizontally centered)
+          // Left side: Item Photograph (vertically & horizontally centered in the frame)
           pw.Expanded(
             flex: 10,
             child: pw.Container(
               alignment: pw.Alignment.center,
               padding: const pw.EdgeInsets.all(6),
               color: PdfColors.grey100,
-              child: imageBytes != null
+              child: preparedImage != null
                   ? pw.Center(
                 child: pw.Image(
-                  pw.MemoryImage(imageBytes),
+                  preparedImage.toPdfImage(),
                   fit: pw.BoxFit.contain,
                   alignment: pw.Alignment.center,
                 ),
@@ -934,7 +1222,6 @@ class AssetReportPdfService {
                           fontItalic,
                           fontBold,
                         ),
-                        // Multi-line continuation for Others (fills all 3 lines without clipping)
                         ..._buildOthersBlock(
                           asset.others ?? '',
                           fontItalic,
@@ -955,7 +1242,6 @@ class AssetReportPdfService {
                     padding: const pw.EdgeInsets.only(left: 16),
                     child: pw.Column(
                       children: [
-                        // Multi-line continuation for Remarks (fills up to 5 lines)
                         ..._buildRemarksBlock(
                           fullRemarksText,
                           fontBold,
@@ -977,8 +1263,6 @@ class AssetReportPdfService {
   // MULTI-LINE SECTIONS FOR OTHERS AND REMARKS
   // ===========================================================================
 
-  /// Renders exactly 3 full-width ruled lines for "Others:".
-  /// If the text is long, it wraps naturally onto lines 2 and 3 instead of cutting off.
   static List<pw.Widget> _buildOthersBlock(
       String othersText,
       pw.Font labelFont,
@@ -1006,8 +1290,6 @@ class AssetReportPdfService {
     ];
   }
 
-  /// Renders exactly 5 full-width ruled lines for "Remarks:".
-  /// Text continues onto lines 2, 3, 4, 5 without being clipped.
   static List<pw.Widget> _buildRemarksBlock(
       String remarksText,
       pw.Font valueFont,
@@ -1147,8 +1429,11 @@ class AssetReportPdfService {
     _notify(
       onProgress,
       stage: AssetReportProgressStage.preparing,
+      progress: 0.08,
       completed: 0,
       total: sortedAssets.length,
+      detailLabel:
+      'Sorting ${sortedAssets.length} ledger row(s) & loading fonts...',
     );
 
     final fonts = await _loadFontsConcurrently();
@@ -1169,9 +1454,7 @@ class AssetReportPdfService {
     sortedAssets.fold<double>(0.0, (sum, a) => sum + a.totalCost);
 
     const int rowsPerPage = 20;
-
-    final int totalPages =
-    (sortedAssets.length / rowsPerPage).ceil();
+    final int totalPages = max(1, (sortedAssets.length / rowsPerPage).ceil());
 
     for (int i = 0; i < sortedAssets.length; i += rowsPerPage) {
       final pageAssets = sortedAssets.sublist(
@@ -1183,15 +1466,22 @@ class AssetReportPdfService {
 
       final isLastPage = (i + rowsPerPage) >= sortedAssets.length;
       final int currentPage = (i ~/ rowsPerPage) + 1;
+      final double pageProgress = 0.20 + (0.50 * (currentPage / totalPages));
 
       _notify(
         onProgress,
         stage: AssetReportProgressStage.generatingPdf,
+        progress: pageProgress,
         completed: currentPage,
         total: totalPages,
         currentPage: currentPage,
         totalPages: totalPages,
+        detailLabel: 'Assembling ledger page $currentPage of $totalPages...',
       );
+
+      if (currentPage % 4 == 0) {
+        await Future.delayed(Duration.zero);
+      }
 
       pdf.addPage(
         pw.Page(
@@ -1256,8 +1546,7 @@ class AssetReportPdfService {
                         ],
                       ),
                       ...pageAssets.map((asset) {
-                        final inventoryDateStr =
-                        asset.lastAuditedAt != null
+                        final inventoryDateStr = asset.lastAuditedAt != null
                             ? asset.formattedLastAuditedDate
                             : asset.formattedRegistrationDate;
 
@@ -1392,15 +1681,29 @@ class AssetReportPdfService {
       );
     }
 
+    _notify(
+      onProgress,
+      stage: AssetReportProgressStage.generatingPdf,
+      progress: 0.78,
+      completed: totalPages,
+      total: totalPages,
+      currentPage: totalPages,
+      totalPages: totalPages,
+      detailLabel: 'Writing & compressing $totalPages ledger page(s)...',
+    );
+    await Future.delayed(const Duration(milliseconds: 24));
+
     final bytes = await pdf.save();
 
     _notify(
       onProgress,
       stage: AssetReportProgressStage.completed,
+      progress: 1.0,
       completed: totalPages,
       total: totalPages,
       currentPage: totalPages,
       totalPages: totalPages,
+      detailLabel: 'PDF ready ($totalPages page(s))',
     );
 
     return bytes;

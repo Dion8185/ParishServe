@@ -2,6 +2,7 @@
 // FILE: lib/features/asset_inventory/presentation/dialogs/asset_report_filter_dialog.dart
 // =============================================================================
 
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
@@ -49,6 +50,8 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
   // Progress Monitor State
   String _progressMessage = 'Preparing your report...';
   AssetReportProgress? _reportProgress;
+  double _maxProgressSeen = 0.0;
+  DateTime _lastProgressUiUpdate = DateTime.fromMillisecondsSinceEpoch(0);
 
   // Individual item inclusion / exclusion state
   final Set<String> _selectedAssetIds = {};
@@ -196,29 +199,14 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
   }
 
   // ===========================================================================
-  // PROGRESS MONITOR
+  // ACCURATE MONOTONIC PROGRESS MONITOR
   // ===========================================================================
 
-  double _overallProgress(AssetReportProgress progress) {
-    final stageProgress = progress.total <= 0
-        ? 0.0
-        : (progress.completed / progress.total).clamp(0.0, 1.0).toDouble();
-
-    switch (progress.stage) {
-      case AssetReportProgressStage.preparing:
-        return 0.05 * stageProgress;
-      case AssetReportProgressStage.downloadingImages:
-        return 0.05 + (0.20 * stageProgress);
-      case AssetReportProgressStage.optimizingImages:
-        return 0.25 + (0.25 * stageProgress);
-      case AssetReportProgressStage.generatingPdf:
-        return 0.50 + (0.45 * stageProgress);
-      case AssetReportProgressStage.completed:
-        return 1.0;
-    }
-  }
-
   String _progressDetail(AssetReportProgress progress) {
+    if (progress.detailLabel != null && progress.detailLabel!.isNotEmpty) {
+      return progress.detailLabel!;
+    }
+
     if (progress.stage == AssetReportProgressStage.generatingPdf &&
         progress.totalPages > 0) {
       return 'Page ${progress.currentPage} of ${progress.totalPages}';
@@ -234,7 +222,23 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
   void _handleReportProgress(AssetReportProgress progress) {
     if (!mounted) return;
 
+    final double nextProgress = max(_maxProgressSeen, progress.percentage);
+    final now = DateTime.now();
+    final bool stageChanged = _reportProgress?.stage != progress.stage;
+    final bool significantDelta = (nextProgress - _maxProgressSeen) >= 0.01;
+    final bool intervalElapsed =
+        now.difference(_lastProgressUiUpdate).inMilliseconds >= 50;
+
+    if (!stageChanged &&
+        !significantDelta &&
+        !intervalElapsed &&
+        nextProgress < 1.0) {
+      return;
+    }
+
+    _lastProgressUiUpdate = now;
     setState(() {
+      _maxProgressSeen = nextProgress;
       _reportProgress = progress;
       _progressMessage = progress.stageLabel;
     });
@@ -253,11 +257,10 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
 
     final selectedCount = _selectedAssetsForReport.length;
     final progress = _reportProgress;
-    final overallProgress =
-    progress == null ? null : _overallProgress(progress);
-    final percentage = overallProgress == null
-        ? null
-        : (overallProgress * 100).round();
+    final double? overallProgress =
+    progress == null ? null : _maxProgressSeen.clamp(0.0, 1.0).toDouble();
+    final int? percentage =
+    overallProgress == null ? null : (overallProgress * 100).round();
 
     return Container(
       width: double.infinity,
@@ -339,11 +342,9 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            progress?.stage == AssetReportProgressStage.generatingPdf &&
-                progress!.currentPage >= progress.totalPages &&
-                progress.totalPages > 0
-                ? 'Finalizing the PDF document. Please wait...'
-                : 'Processing documents and images. Please avoid closing this page.',
+            progress?.stage == AssetReportProgressStage.completed
+                ? 'PDF compiled successfully. Opening viewer...'
+                : 'Processing documents and images. Please keep this page open.',
             style: TextStyle(
               fontSize: isMobile ? 10 : 11,
               color: ParishColors.textMuted,
@@ -359,6 +360,8 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
       _isGenerating = true;
       _activeOperation = operation;
       _reportProgress = null;
+      _maxProgressSeen = 0.0;
+      _lastProgressUiUpdate = DateTime.fromMillisecondsSinceEpoch(0);
 
       switch (operation) {
         case 'printing':
@@ -384,6 +387,7 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
       _activeOperation = '';
       _progressMessage = '';
       _reportProgress = null;
+      _maxProgressSeen = 0.0;
     });
   }
 
@@ -462,6 +466,10 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
         '${sortedIds.join(",")}';
   }
 
+  // ===========================================================================
+  // PDF Generation with Conditional Cache Protection
+  // ===========================================================================
+
   Future<Uint8List?> _buildPdfBytes() async {
     final targets = _selectedAssetsForReport;
 
@@ -470,6 +478,13 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
     final currentKey = _computeCacheKey(targets);
 
     if (_cachedPdfBytes != null && _cachedPdfKey == currentKey) {
+      _handleReportProgress(
+        const AssetReportProgress(
+          stage: AssetReportProgressStage.completed,
+          progress: 1.0,
+          detailLabel: 'Loaded instantly from cache',
+        ),
+      );
       return _cachedPdfBytes;
     }
 
@@ -496,8 +511,16 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
       );
     }
 
-    _cachedPdfBytes = result;
-    _cachedPdfKey = currentKey;
+    // Only cache if table mode OR all photographs downloaded successfully.
+    // If any photo failed, invalidate cache so the user can retry without
+    // serving the cached placeholder version.
+    if (_selectedFormat == AssetReportFormat.ledgerTable ||
+        AssetReportPdfService.lastFailedPhotoCount == 0) {
+      _cachedPdfBytes = result;
+      _cachedPdfKey = currentKey;
+    } else {
+      _invalidatePdfCache();
+    }
 
     return result;
   }
@@ -526,6 +549,13 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
       if (pdfBytes == null) {
         _showEmptySnackBar();
         return;
+      }
+
+      if (_selectedFormat == AssetReportFormat.photographicCards &&
+          AssetReportPdfService.lastFailedPhotoCount > 0) {
+        _showWarningSnackBar(
+          'Notice: ${AssetReportPdfService.lastFailedPhotoCount} photo(s) could not be retrieved and will display fallback placeholders.',
+        );
       }
 
       await Printing.layoutPdf(
@@ -564,6 +594,13 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
       if (pdfBytes == null) {
         _showEmptySnackBar();
         return;
+      }
+
+      if (_selectedFormat == AssetReportFormat.photographicCards &&
+          AssetReportPdfService.lastFailedPhotoCount > 0) {
+        _showWarningSnackBar(
+          'Notice: ${AssetReportPdfService.lastFailedPhotoCount} photo(s) could not be retrieved and will display fallback placeholders.',
+        );
       }
 
       final fileName = _generateFileName();
@@ -651,7 +688,7 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
                     canDebug: false,
                     dynamicLayout: false,
                     enableScrollToPage: true,
-                    dpi: 140,
+                    dpi: 105,
                     maxPageWidth: 720,
                     pdfFileName: fileName,
                     loadingWidget: const Center(
@@ -691,14 +728,17 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
 
       if (!mounted) return;
 
-      _finishProgress();
-
       if (pdfBytes == null) {
+        _finishProgress();
         _showEmptySnackBar();
         return;
       }
 
       final fileName = _generateFileName();
+
+      setState(() {
+        _progressMessage = 'Saving PDF file...';
+      });
 
       await Printing.sharePdf(
         bytes: pdfBytes,
@@ -706,6 +746,15 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
       );
 
       if (!mounted) return;
+
+      _finishProgress();
+
+      if (_selectedFormat == AssetReportFormat.photographicCards &&
+          AssetReportPdfService.lastFailedPhotoCount > 0) {
+        _showWarningSnackBar(
+          'Notice: ${AssetReportPdfService.lastFailedPhotoCount} photo(s) could not be retrieved and will display fallback placeholders.',
+        );
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -728,6 +777,16 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
           'Please select at least 1 item to include in the report.',
         ),
         backgroundColor: ParishColors.goldAccent,
+      ),
+    );
+  }
+
+  void _showWarningSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: ParishColors.goldAccent,
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -800,8 +859,9 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
             backgroundColor: cardWhite,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
-              onPressed: () => Navigator.pop(context),
+              icon:
+              const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
+              onPressed: _isGenerating ? null : () => Navigator.pop(context),
             ),
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -903,195 +963,197 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
                         textDark: textDark,
                       ),
                       const SizedBox(height: 8),
-                      Container(
-                        padding: EdgeInsets.all(isMobile ? 14 : 18),
-                        decoration: BoxDecoration(
-                          color: cardWhite,
+                      Material(
+                        color: cardWhite,
+                        shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: borderGrey),
+                          side: BorderSide(color: borderGrey),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Book of Inventory Section',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: textDark,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            DropdownButtonFormField<String>(
-                              value: _selectedSection,
-                              isExpanded: true,
-                              decoration: InputDecoration(
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 12,
-                                ),
-                                filled: true,
-                                fillColor: ParishColors.backgroundLight,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: BorderSide(color: borderGrey),
-                                ),
-                              ),
-                              items: _sectionOptions.map((sec) {
-                                return DropdownMenuItem(
-                                  value: sec,
-                                  child: Text(
-                                    sec,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: textDark,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: _isGenerating
-                                  ? null
-                                  : (val) {
-                                if (val != null) {
-                                  setState(() {
-                                    _selectedSection = val;
-                                    _syncSelectedIdsWithScope();
-                                  });
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Date Scope',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: textDark,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                ChoiceChip(
-                                  label: const Text('All Registered Items'),
-                                  selected: _dateScope == 'All Dates',
-                                  selectedColor: ParishColors.marianBlue,
-                                  labelStyle: TextStyle(
-                                    color: _dateScope == 'All Dates'
-                                        ? Colors.white
-                                        : textDark,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                  onSelected: _isGenerating
-                                      ? null
-                                      : (_) => setState(() {
-                                    _dateScope = 'All Dates';
-                                    _syncSelectedIdsWithScope();
-                                  }),
-                                ),
-                                ChoiceChip(
-                                  label: Text(
-                                    _selectedDateRange == null
-                                        ? 'Pick Custom Date Range'
-                                        : '${_selectedDateRange!.start.month}/${_selectedDateRange!.start.day}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.month}/${_selectedDateRange!.end.day}/${_selectedDateRange!.end.year}',
-                                  ),
-                                  selected: _dateScope == 'Custom Range',
-                                  selectedColor: ParishColors.marianBlue,
-                                  labelStyle: TextStyle(
-                                    color: _dateScope == 'Custom Range'
-                                        ? Colors.white
-                                        : textDark,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                  onSelected: _isGenerating
-                                      ? null
-                                      : (_) => _pickCustomDateRange(),
-                                ),
-                              ],
-                            ),
-
-                            if (_dateScope == 'Custom Range') ...[
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Text(
-                                    'Filter by: ',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: textMuted,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  DropdownButton<String>(
-                                    value: _dateFieldToFilter,
-                                    isDense: true,
-                                    underline: const SizedBox.shrink(),
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.marianBlue,
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(
-                                        value: 'Acquisition Date',
-                                        child: Text('Acquisition Date'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'Registration Date',
-                                        child: Text('Registration Date'),
-                                      ),
-                                    ],
-                                    onChanged: _isGenerating
-                                        ? null
-                                        : (val) {
-                                      if (val != null) {
-                                        setState(() {
-                                          _dateFieldToFilter = val;
-                                          _syncSelectedIdsWithScope();
-                                        });
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ],
-                            const SizedBox(height: 12),
-                            const Divider(height: 18),
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: ParishColors.oliveGreen,
-                              title: Text(
-                                'Include Decommissioned / Retired Items',
+                        clipBehavior: Clip.antiAlias,
+                        child: Padding(
+                          padding: EdgeInsets.all(isMobile ? 14 : 18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Book of Inventory Section',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.bold,
                                   color: textDark,
                                 ),
                               ),
-                              subtitle: Text(
-                                'Append assets that have been officially retired or disposed',
+                              const SizedBox(height: 6),
+                              DropdownButtonFormField<String>(
+                                value: _selectedSection,
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                  filled: true,
+                                  fillColor: ParishColors.backgroundLight,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(color: borderGrey),
+                                  ),
+                                ),
+                                items: _sectionOptions.map((sec) {
+                                  return DropdownMenuItem(
+                                    value: sec,
+                                    child: Text(
+                                      sec,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: textDark,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: _isGenerating
+                                    ? null
+                                    : (val) {
+                                  if (val != null) {
+                                    setState(() {
+                                      _selectedSection = val;
+                                      _syncSelectedIdsWithScope();
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Date Scope',
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  color: textMuted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: textDark,
                                 ),
                               ),
-                              value: _includeArchived,
-                              onChanged: _isGenerating
-                                  ? null
-                                  : (val) => setState(() {
-                                _includeArchived = val;
-                                _syncSelectedIdsWithScope();
-                              }),
-                            ),
-                          ],
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  ChoiceChip(
+                                    label: const Text('All Registered Items'),
+                                    selected: _dateScope == 'All Dates',
+                                    selectedColor: ParishColors.marianBlue,
+                                    labelStyle: TextStyle(
+                                      color: _dateScope == 'All Dates'
+                                          ? Colors.white
+                                          : textDark,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                    onSelected: _isGenerating
+                                        ? null
+                                        : (_) => setState(() {
+                                      _dateScope = 'All Dates';
+                                      _syncSelectedIdsWithScope();
+                                    }),
+                                  ),
+                                  ChoiceChip(
+                                    label: Text(
+                                      _selectedDateRange == null
+                                          ? 'Pick Custom Date Range'
+                                          : '${_selectedDateRange!.start.month}/${_selectedDateRange!.start.day}/${_selectedDateRange!.start.year} - ${_selectedDateRange!.end.month}/${_selectedDateRange!.end.day}/${_selectedDateRange!.end.year}',
+                                    ),
+                                    selected: _dateScope == 'Custom Range',
+                                    selectedColor: ParishColors.marianBlue,
+                                    labelStyle: TextStyle(
+                                      color: _dateScope == 'Custom Range'
+                                          ? Colors.white
+                                          : textDark,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                    onSelected: _isGenerating
+                                        ? null
+                                        : (_) => _pickCustomDateRange(),
+                                  ),
+                                ],
+                              ),
+                              if (_dateScope == 'Custom Range') ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Filter by: ',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    DropdownButton<String>(
+                                      value: _dateFieldToFilter,
+                                      isDense: true,
+                                      underline: const SizedBox.shrink(),
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: ParishColors.marianBlue,
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'Acquisition Date',
+                                          child: Text('Acquisition Date'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'Registration Date',
+                                          child: Text('Registration Date'),
+                                        ),
+                                      ],
+                                      onChanged: _isGenerating
+                                          ? null
+                                          : (val) {
+                                        if (val != null) {
+                                          setState(() {
+                                            _dateFieldToFilter = val;
+                                            _syncSelectedIdsWithScope();
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 12),
+                              const Divider(height: 18),
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                activeColor: ParishColors.oliveGreen,
+                                title: Text(
+                                  'Include Decommissioned / Retired Items',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: textDark,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Append assets that have been officially retired or disposed',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: textMuted,
+                                  ),
+                                ),
+                                value: _includeArchived,
+                                onChanged: _isGenerating
+                                    ? null
+                                    : (val) => setState(() {
+                                  _includeArchived = val;
+                                  _syncSelectedIdsWithScope();
+                                }),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -1431,7 +1493,7 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
           ),
           const Divider(height: 10),
 
-          // Selectable Items Checklist (Expanded to 300px height for comfortable page view)
+          // Selectable Items Checklist
           Container(
             height: isMobile ? 260 : 300,
             decoration: BoxDecoration(
@@ -1456,8 +1518,7 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
                 : ListView.separated(
               padding: const EdgeInsets.all(8),
               itemCount: displayed.length,
-              separatorBuilder: (_, __) =>
-              const SizedBox(height: 6),
+              separatorBuilder: (_, __) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 final asset = displayed[index];
                 final isSelected =
@@ -1501,8 +1562,7 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Wrap(
                                 crossAxisAlignment:
@@ -1520,8 +1580,7 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
                                     ),
                                   ),
                                   Container(
-                                    padding:
-                                    const EdgeInsets.symmetric(
+                                    padding: const EdgeInsets.symmetric(
                                       horizontal: 5,
                                       vertical: 1.5,
                                     ),
@@ -1538,11 +1597,9 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
                                       style: TextStyle(
                                         fontSize: 9,
                                         fontWeight: FontWeight.bold,
-                                        color:
-                                        asset.unitPrice >= 10000.0
+                                        color: asset.unitPrice >= 10000.0
                                             ? ParishColors.goldAccent
-                                            : ParishColors
-                                            .marianBlue,
+                                            : ParishColors.marianBlue,
                                       ),
                                     ),
                                   ),
@@ -1630,8 +1687,7 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,
-              fontWeight:
-              isSelected ? FontWeight.bold : FontWeight.w600,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
               color: isSelected
                   ? ParishColors.marianBlue
                   : ParishColors.textMuted,
@@ -1657,7 +1713,8 @@ class _AssetReportFilterPageState extends State<AssetReportFilterPage> {
         OutlinedButton(
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
           onPressed: _isGenerating ? null : () => Navigator.pop(context),
           child: Text(
