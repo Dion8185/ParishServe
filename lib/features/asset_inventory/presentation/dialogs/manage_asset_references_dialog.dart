@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_reference_models.dart';
 import '../../services/asset_reference_service.dart';
+import '../widgets/asset_confirmation_dialog.dart';
+import '../widgets/asset_loading_overlay.dart';
 
 void showManageAssetReferencesModal(
-  BuildContext context, {
-  VoidCallback? onReferencesUpdated,
-}) {
+    BuildContext context, {
+      VoidCallback? onReferencesUpdated,
+    }) {
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -23,7 +25,7 @@ void showManageAssetReferencesModal(
 class _ManageAssetReferencesDialog extends StatefulWidget {
   final VoidCallback? onReferencesUpdated;
 
-  const _ManageAssetReferencesDialog({super.key, this.onReferencesUpdated});
+  const _ManageAssetReferencesDialog({this.onReferencesUpdated});
 
   @override
   State<_ManageAssetReferencesDialog> createState() =>
@@ -38,6 +40,8 @@ class _ManageAssetReferencesDialogState
   List<AssetLocationModel> _locations = [];
   List<AssetClassificationModel> _classifications = [];
   bool _isLoading = true;
+  bool _isBusy = false;
+  String _busyMessage = 'Please wait...';
   String? _errorMessage;
 
   @override
@@ -94,196 +98,283 @@ class _ManageAssetReferencesDialogState
     final bool isEdit = itemToEdit != null;
     final formKey = GlobalKey<FormState>();
 
+    bool isFormDirty() {
+      if (isEdit) {
+        if (nameController.text.trim() != itemToEdit.locationName) return true;
+        if (descController.text.trim() != (itemToEdit.description ?? '')) {
+          return true;
+        }
+        if (isActive != itemToEdit.isActive) return true;
+        return false;
+      } else {
+        return acronymController.text.trim().isNotEmpty ||
+            nameController.text.trim().isNotEmpty ||
+            descController.text.trim().isNotEmpty;
+      }
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
         final screenWidth = MediaQuery.of(ctx).size.width;
 
-        return StatefulBuilder(
-          builder: (context, setModalState) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Text(
-              isEdit ? 'Edit Diocesan Location' : 'Add New Parish Location',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: ParishColors.textDark,
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            if (isFormDirty()) {
+              final discard =
+              await showUnsavedChangesConfirmationDialog(ctx);
+              if (discard && ctx.mounted) {
+                Navigator.pop(ctx);
+              }
+            } else {
+              Navigator.pop(ctx);
+            }
+          },
+          child: StatefulBuilder(
+            builder: (context, setModalState) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-            ),
-            content: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: min(screenWidth - 48, 460)),
-              child: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: acronymController,
-                        enabled: !isEdit,
-                        textCapitalization: TextCapitalization.characters,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.textDark,
+              backgroundColor: ParishColors.cardWhite,
+              title: Text(
+                isEdit ? 'Edit Diocesan Location' : 'Add New Parish Location',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: ParishColors.textDark,
+                ),
+              ),
+              content: ConstrainedBox(
+                constraints:
+                BoxConstraints(maxWidth: min(screenWidth - 48, 460)),
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextFormField(
+                          controller: acronymController,
+                          enabled: !isEdit,
+                          textCapitalization: TextCapitalization.characters,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.textDark,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Location Acronym *',
+                            labelStyle:
+                            TextStyle(color: ParishColors.textDark),
+                            hintText: 'e.g. C, S, O, PEAC',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: ParishColors.textMuted,
+                            ),
+                            helperText: isEdit
+                                ? 'Acronym is locked to protect control numbers.'
+                                : 'Short uppercase code used in Control #',
+                            helperStyle: TextStyle(
+                              fontSize: 11,
+                              color: ParishColors.textMuted,
+                            ),
+                            border: const OutlineInputBorder(),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: ParishColors.borderGrey,
+                              ),
+                            ),
+                          ),
+                          validator: (v) {
+                            final text = v?.trim() ?? '';
+                            if (text.isEmpty) return 'Acronym is required.';
+                            if (text.length > 8) return 'Max 8 characters.';
+                            return null;
+                          },
                         ),
-                        decoration: InputDecoration(
-                          labelText: 'Location Acronym *',
-                          labelStyle: TextStyle(color: ParishColors.textDark),
-                          hintText: 'e.g. C, S, O, PEAC',
-                          hintStyle: TextStyle(
-                            fontSize: 12.5,
-                            color: ParishColors.textMuted,
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: nameController,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: ParishColors.textDark,
                           ),
-                          helperText: isEdit
-                              ? 'Acronym is locked to protect control numbers.'
-                              : 'Short uppercase code used in Control #',
-                          helperStyle: TextStyle(
-                            fontSize: 11,
-                            color: ParishColors.textMuted,
+                          decoration: InputDecoration(
+                            labelText: 'Location Name *',
+                            labelStyle:
+                            TextStyle(color: ParishColors.textDark),
+                            hintText: 'e.g. Sacred Heart Chapel',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: ParishColors.textMuted,
+                            ),
+                            border: const OutlineInputBorder(),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: ParishColors.borderGrey,
+                              ),
+                            ),
                           ),
-                          border: const OutlineInputBorder(),
-                          enabledBorder: OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: ParishColors.borderGrey,
+                          validator: (v) => (v?.trim().isEmpty ?? true)
+                              ? 'Location name is required.'
+                              : null,
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: descController,
+                          maxLines: 2,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: ParishColors.textDark,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Description (Optional)',
+                            labelStyle:
+                            TextStyle(color: ParishColors.textDark),
+                            hintText:
+                            'e.g. Main church nave and altar area',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: ParishColors.textMuted,
+                            ),
+                            border: const OutlineInputBorder(),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: ParishColors.borderGrey,
+                              ),
                             ),
                           ),
                         ),
-                        validator: (v) {
-                          final text = v?.trim() ?? '';
-                          if (text.isEmpty) return 'Acronym is required.';
-                          if (text.length > 8) return 'Max 8 characters.';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: nameController,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: ParishColors.textDark,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Location Name *',
-                          labelStyle: TextStyle(color: ParishColors.textDark),
-                          hintText: 'e.g. Sacred Heart Chapel',
-                          hintStyle: TextStyle(
-                            fontSize: 12.5,
-                            color: ParishColors.textMuted,
-                          ),
-                          border: const OutlineInputBorder(),
-                          enabledBorder: OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: ParishColors.borderGrey,
+                        if (isEdit) ...[
+                          const SizedBox(height: 10),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            activeColor: ParishColors.oliveGreen,
+                            title: const Text(
+                              'Active Status',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
+                            value: isActive,
+                            onChanged: (val) =>
+                                setModalState(() => isActive = val),
                           ),
-                        ),
-                        validator: (v) => (v?.trim().isEmpty ?? true)
-                            ? 'Location name is required.'
-                            : null,
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: descController,
-                        maxLines: 2,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: ParishColors.textDark,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Description (Optional)',
-                          labelStyle: TextStyle(color: ParishColors.textDark),
-                          hintText: 'e.g. Main church nave and altar area',
-                          hintStyle: TextStyle(
-                            fontSize: 12.5,
-                            color: ParishColors.textMuted,
-                          ),
-                          border: const OutlineInputBorder(),
-                          enabledBorder: OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: ParishColors.borderGrey,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (isEdit) ...[
-                        const SizedBox(height: 10),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: ParishColors.oliveGreen,
-                          title: const Text(
-                            'Active Status',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          value: isActive,
-                          onChanged: (val) =>
-                              setModalState(() => isActive = val),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(color: ParishColors.textMuted),
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ParishColors.marianBlue,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () async {
-                  if (!formKey.currentState!.validate()) return;
-                  try {
-                    if (isEdit) {
-                      await AssetReferenceService.updateLocation(
-                        locationId: itemToEdit.locationId,
-                        locationName: nameController.text.trim(),
-                        description: descController.text.trim(),
-                        isActive: isActive,
-                      );
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    if (isFormDirty()) {
+                      final discard =
+                      await showUnsavedChangesConfirmationDialog(ctx);
+                      if (discard && ctx.mounted) {
+                        Navigator.pop(ctx);
+                      }
                     } else {
-                      await AssetReferenceService.createLocation(
-                        acronym: acronymController.text.trim(),
-                        locationName: nameController.text.trim(),
-                        description: descController.text.trim(),
-                      );
+                      Navigator.pop(ctx);
                     }
-                    if (!mounted) return;
-                    Navigator.pop(ctx);
-                    _loadReferences();
-                    widget.onReferencesUpdated?.call();
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: ParishColors.mercyRed,
-                      ),
+                  },
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: ParishColors.textMuted,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+
+                    final confirmed =
+                    await showAssetActionConfirmationDialog(
+                      ctx,
+                      title: isEdit ? 'Update Location?' : 'Add New Location?',
+                      message: isEdit
+                          ? 'Commit updates to "${nameController.text.trim()}" (${itemToEdit.acronym})?'
+                          : 'Register "${nameController.text.trim()}" (${acronymController.text.trim().toUpperCase()}) as an official parish storage location?',
+                      confirmLabel: isEdit ? 'Update' : 'Save Location',
+                      icon: isEdit
+                          ? Icons.edit_outlined
+                          : Icons.add_location_alt_outlined,
+                      accentColor: ParishColors.marianBlue,
                     );
-                  }
-                },
-                child: Text(isEdit ? 'Update' : 'Save Location'),
-              ),
-            ],
+
+                    if (!confirmed) return;
+
+                    Navigator.pop(ctx);
+
+                    setState(() {
+                      _isBusy = true;
+                      _busyMessage = isEdit
+                          ? 'Updating location record...'
+                          : 'Saving new location...';
+                    });
+
+                    try {
+                      if (isEdit) {
+                        await AssetReferenceService.updateLocation(
+                          locationId: itemToEdit.locationId,
+                          locationName: nameController.text.trim(),
+                          description: descController.text.trim(),
+                          isActive: isActive,
+                        );
+                      } else {
+                        await AssetReferenceService.createLocation(
+                          acronym: acronymController.text.trim(),
+                          locationName: nameController.text.trim(),
+                          description: descController.text.trim(),
+                        );
+                      }
+                      if (!mounted) return;
+                      await _loadReferences();
+                      widget.onReferencesUpdated?.call();
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(isEdit
+                              ? 'Location updated successfully.'
+                              : 'Location registered successfully.'),
+                          backgroundColor: ParishColors.oliveGreen,
+                        ),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: $e'),
+                          backgroundColor: ParishColors.mercyRed,
+                        ),
+                      );
+                    } finally {
+                      if (mounted) setState(() => _isBusy = false);
+                    }
+                  },
+                  child: Text(isEdit ? 'Update' : 'Save Location'),
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  void _openClassificationFormDialog([AssetClassificationModel? itemToEdit]) {
+  void _openClassificationFormDialog(
+      [AssetClassificationModel? itemToEdit]) {
     final nameController = TextEditingController(
       text: itemToEdit?.classificationName ?? '',
     );
@@ -297,192 +388,282 @@ class _ManageAssetReferencesDialogState
     final bool isEdit = itemToEdit != null;
     final formKey = GlobalKey<FormState>();
 
+    bool isFormDirty() {
+      if (isEdit) {
+        if (nameController.text.trim() != itemToEdit.classificationName) {
+          return true;
+        }
+        if (descController.text.trim() != (itemToEdit.description ?? '')) {
+          return true;
+        }
+        if (isActive != itemToEdit.isActive) return true;
+        return false;
+      } else {
+        return acronymController.text.trim().isNotEmpty ||
+            nameController.text.trim().isNotEmpty ||
+            descController.text.trim().isNotEmpty;
+      }
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
         final screenWidth = MediaQuery.of(ctx).size.width;
 
-        return StatefulBuilder(
-          builder: (context, setModalState) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Text(
-              isEdit
-                  ? 'Edit Asset Classification'
-                  : 'Add New Asset Classification',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: ParishColors.textDark,
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            if (isFormDirty()) {
+              final discard =
+              await showUnsavedChangesConfirmationDialog(ctx);
+              if (discard && ctx.mounted) {
+                Navigator.pop(ctx);
+              }
+            } else {
+              Navigator.pop(ctx);
+            }
+          },
+          child: StatefulBuilder(
+            builder: (context, setModalState) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-            ),
-            content: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: min(screenWidth - 48, 460)),
-              child: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: acronymController,
-                        enabled: !isEdit,
-                        textCapitalization: TextCapitalization.characters,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.textDark,
+              backgroundColor: ParishColors.cardWhite,
+              title: Text(
+                isEdit
+                    ? 'Edit Asset Classification'
+                    : 'Add New Asset Classification',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: ParishColors.textDark,
+                ),
+              ),
+              content: ConstrainedBox(
+                constraints:
+                BoxConstraints(maxWidth: min(screenWidth - 48, 460)),
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextFormField(
+                          controller: acronymController,
+                          enabled: !isEdit,
+                          textCapitalization: TextCapitalization.characters,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.textDark,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Classification Acronym *',
+                            labelStyle:
+                            TextStyle(color: ParishColors.textDark),
+                            hintText: 'e.g. SI, SV, MI, LB, FF',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: ParishColors.textMuted,
+                            ),
+                            helperText: isEdit
+                                ? 'Acronym is locked to protect control numbers.'
+                                : 'Short uppercase code used in Control #',
+                            helperStyle: TextStyle(
+                              fontSize: 11,
+                              color: ParishColors.textMuted,
+                            ),
+                            border: const OutlineInputBorder(),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: ParishColors.borderGrey,
+                              ),
+                            ),
+                          ),
+                          validator: (v) {
+                            final text = v?.trim() ?? '';
+                            if (text.isEmpty) return 'Acronym is required.';
+                            if (text.length > 8) return 'Max 8 characters.';
+                            return null;
+                          },
                         ),
-                        decoration: InputDecoration(
-                          labelText: 'Classification Acronym *',
-                          labelStyle: TextStyle(color: ParishColors.textDark),
-                          hintText: 'e.g. SI, SV, MI, LB, FF',
-                          hintStyle: TextStyle(
-                            fontSize: 12.5,
-                            color: ParishColors.textMuted,
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: nameController,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: ParishColors.textDark,
                           ),
-                          helperText: isEdit
-                              ? 'Acronym is locked to protect control numbers.'
-                              : 'Short uppercase code used in Control #',
-                          helperStyle: TextStyle(
-                            fontSize: 11,
-                            color: ParishColors.textMuted,
+                          decoration: InputDecoration(
+                            labelText: 'Classification Name *',
+                            labelStyle:
+                            TextStyle(color: ParishColors.textDark),
+                            hintText: 'e.g. Audio-Visual Equipment',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: ParishColors.textMuted,
+                            ),
+                            border: const OutlineInputBorder(),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: ParishColors.borderGrey,
+                              ),
+                            ),
                           ),
-                          border: const OutlineInputBorder(),
-                          enabledBorder: OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: ParishColors.borderGrey,
+                          validator: (v) => (v?.trim().isEmpty ?? true)
+                              ? 'Classification name is required.'
+                              : null,
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: descController,
+                          maxLines: 2,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: ParishColors.textDark,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Description (Optional)',
+                            labelStyle:
+                            TextStyle(color: ParishColors.textDark),
+                            hintText:
+                            'e.g. Microphones, projectors, sound mixers',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: ParishColors.textMuted,
+                            ),
+                            border: const OutlineInputBorder(),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: ParishColors.borderGrey,
+                              ),
                             ),
                           ),
                         ),
-                        validator: (v) {
-                          final text = v?.trim() ?? '';
-                          if (text.isEmpty) return 'Acronym is required.';
-                          if (text.length > 8) return 'Max 8 characters.';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: nameController,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: ParishColors.textDark,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Classification Name *',
-                          labelStyle: TextStyle(color: ParishColors.textDark),
-                          hintText: 'e.g. Audio-Visual Equipment',
-                          hintStyle: TextStyle(
-                            fontSize: 12.5,
-                            color: ParishColors.textMuted,
-                          ),
-                          border: const OutlineInputBorder(),
-                          enabledBorder: OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: ParishColors.borderGrey,
+                        if (isEdit) ...[
+                          const SizedBox(height: 10),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            activeColor: ParishColors.oliveGreen,
+                            title: const Text(
+                              'Active Status',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
+                            value: isActive,
+                            onChanged: (val) =>
+                                setModalState(() => isActive = val),
                           ),
-                        ),
-                        validator: (v) => (v?.trim().isEmpty ?? true)
-                            ? 'Classification name is required.'
-                            : null,
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: descController,
-                        maxLines: 2,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: ParishColors.textDark,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Description (Optional)',
-                          labelStyle: TextStyle(color: ParishColors.textDark),
-                          hintText:
-                              'e.g. Microphones, projectors, sound mixers',
-                          hintStyle: TextStyle(
-                            fontSize: 12.5,
-                            color: ParishColors.textMuted,
-                          ),
-                          border: const OutlineInputBorder(),
-                          enabledBorder: OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: ParishColors.borderGrey,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (isEdit) ...[
-                        const SizedBox(height: 10),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: ParishColors.oliveGreen,
-                          title: const Text(
-                            'Active Status',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          value: isActive,
-                          onChanged: (val) =>
-                              setModalState(() => isActive = val),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(color: ParishColors.textMuted),
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ParishColors.marianBlue,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () async {
-                  if (!formKey.currentState!.validate()) return;
-                  try {
-                    if (isEdit) {
-                      await AssetReferenceService.updateClassification(
-                        classificationId: itemToEdit.classificationId,
-                        classificationName: nameController.text.trim(),
-                        description: descController.text.trim(),
-                        isActive: isActive,
-                      );
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    if (isFormDirty()) {
+                      final discard =
+                      await showUnsavedChangesConfirmationDialog(ctx);
+                      if (discard && ctx.mounted) {
+                        Navigator.pop(ctx);
+                      }
                     } else {
-                      await AssetReferenceService.createClassification(
-                        acronym: acronymController.text.trim(),
-                        classificationName: nameController.text.trim(),
-                        description: descController.text.trim(),
-                      );
+                      Navigator.pop(ctx);
                     }
-                    if (!mounted) return;
-                    Navigator.pop(ctx);
-                    _loadReferences();
-                    widget.onReferencesUpdated?.call();
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: ParishColors.mercyRed,
-                      ),
+                  },
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: ParishColors.textMuted,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ParishColors.marianBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+
+                    final confirmed =
+                    await showAssetActionConfirmationDialog(
+                      ctx,
+                      title: isEdit
+                          ? 'Update Classification?'
+                          : 'Add New Classification?',
+                      message: isEdit
+                          ? 'Commit updates to "${nameController.text.trim()}" (${itemToEdit.acronym})?'
+                          : 'Register "${nameController.text.trim()}" (${acronymController.text.trim().toUpperCase()}) as an official classification?',
+                      confirmLabel:
+                      isEdit ? 'Update' : 'Save Classification',
+                      icon: isEdit
+                          ? Icons.edit_outlined
+                          : Icons.category_outlined,
+                      accentColor: ParishColors.marianBlue,
                     );
-                  }
-                },
-                child: Text(isEdit ? 'Update' : 'Save Classification'),
-              ),
-            ],
+
+                    if (!confirmed) return;
+
+                    Navigator.pop(ctx);
+
+                    setState(() {
+                      _isBusy = true;
+                      _busyMessage = isEdit
+                          ? 'Updating classification record...'
+                          : 'Saving new classification...';
+                    });
+
+                    try {
+                      if (isEdit) {
+                        await AssetReferenceService.updateClassification(
+                          classificationId: itemToEdit.classificationId,
+                          classificationName: nameController.text.trim(),
+                          description: descController.text.trim(),
+                          isActive: isActive,
+                        );
+                      } else {
+                        await AssetReferenceService.createClassification(
+                          acronym: acronymController.text.trim(),
+                          classificationName: nameController.text.trim(),
+                          description: descController.text.trim(),
+                        );
+                      }
+                      if (!mounted) return;
+                      await _loadReferences();
+                      widget.onReferencesUpdated?.call();
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(isEdit
+                              ? 'Classification updated successfully.'
+                              : 'Classification registered successfully.'),
+                          backgroundColor: ParishColors.oliveGreen,
+                        ),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: $e'),
+                          backgroundColor: ParishColors.mercyRed,
+                        ),
+                      );
+                    } finally {
+                      if (mounted) setState(() => _isBusy = false);
+                    }
+                  },
+                  child: Text(isEdit ? 'Update' : 'Save Classification'),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -490,103 +671,90 @@ class _ManageAssetReferencesDialogState
   }
 
   Future<void> _confirmDeleteLocation(AssetLocationModel loc) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Delete Location?',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          'Are you sure you want to remove "${loc.locationName}" (${loc.acronym})? '
-          'Deletion will be blocked if any registered parish assets are assigned to this location.',
-          style: const TextStyle(fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: ParishColors.textMuted),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.mercyRed,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showAssetActionConfirmationDialog(
+      context,
+      title: 'Delete Location?',
+      message:
+      'Are you sure you want to remove "${loc.locationName}" (${loc.acronym})? Deletion will be blocked if any registered parish assets are assigned to this location.',
+      itemIdentifier: '${loc.acronym} • ${loc.locationName}',
+      confirmLabel: 'Delete Location',
+      icon: Icons.delete_forever_outlined,
+      isDestructive: true,
     );
 
-    if (confirmed == true) {
-      try {
-        await AssetReferenceService.deleteLocation(loc.locationId, loc.acronym);
-        _loadReferences();
-        widget.onReferencesUpdated?.call();
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: ParishColors.mercyRed),
-        );
-      }
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _isBusy = true;
+      _busyMessage = 'Deleting location...';
+    });
+
+    try {
+      await AssetReferenceService.deleteLocation(
+          loc.locationId, loc.acronym);
+      if (!mounted) return;
+      await _loadReferences();
+      widget.onReferencesUpdated?.call();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location deleted successfully.'),
+          backgroundColor: ParishColors.oliveGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: ParishColors.mercyRed),
+      );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
   Future<void> _confirmDeleteClassification(
-    AssetClassificationModel cls,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Delete Classification?',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          'Are you sure you want to remove "${cls.classificationName}" (${cls.acronym})? '
-          'Deletion will be blocked if any registered parish assets belong to this category.',
-          style: const TextStyle(fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: ParishColors.textMuted),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.mercyRed,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      AssetClassificationModel cls,
+      ) async {
+    final confirmed = await showAssetActionConfirmationDialog(
+      context,
+      title: 'Delete Classification?',
+      message:
+      'Are you sure you want to remove "${cls.classificationName}" (${cls.acronym})? Deletion will be blocked if any registered parish assets belong to this category.',
+      itemIdentifier: '${cls.acronym} • ${cls.classificationName}',
+      confirmLabel: 'Delete Classification',
+      icon: Icons.delete_forever_outlined,
+      isDestructive: true,
     );
 
-    if (confirmed == true) {
-      try {
-        await AssetReferenceService.deleteClassification(
-          cls.classificationId,
-          cls.acronym,
-        );
-        _loadReferences();
-        widget.onReferencesUpdated?.call();
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: ParishColors.mercyRed),
-        );
-      }
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _isBusy = true;
+      _busyMessage = 'Deleting classification...';
+    });
+
+    try {
+      await AssetReferenceService.deleteClassification(
+        cls.classificationId,
+        cls.acronym,
+      );
+      if (!mounted) return;
+      await _loadReferences();
+      widget.onReferencesUpdated?.call();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Classification deleted successfully.'),
+          backgroundColor: ParishColors.oliveGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: ParishColors.mercyRed),
+      );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
@@ -610,148 +778,146 @@ class _ManageAssetReferencesDialogState
             horizontal: isMobile ? 12 : 16,
             vertical: isMobile ? 14 : 20,
           ),
-          child: Container(
-            width: 760,
-            constraints: const BoxConstraints(maxHeight: 740),
-            child: Column(
-              children: [
-                // Header Banner
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 14 : 20,
-                    vertical: isMobile ? 12 : 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: ParishColors.marianBlueSurface,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(20),
+          child: AssetLoadingOverlay(
+            isLoading: _isBusy,
+            message: _busyMessage,
+            child: Container(
+              width: 760,
+              constraints: const BoxConstraints(maxHeight: 740),
+              child: Column(
+                children: [
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? 14 : 20,
+                      vertical: isMobile ? 12 : 16,
                     ),
-                    border: Border(bottom: BorderSide(color: borderGrey)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          color: ParishColors.marianBlue,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.settings_suggest,
-                          color: Colors.white,
-                          size: 22,
-                        ),
+                    decoration: BoxDecoration(
+                      color: ParishColors.marianBlueSurface,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(20),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Diocesan Locations & Classifications',
-                              style: TextStyle(
-                                fontSize: isMobile ? 15 : 17,
-                                fontWeight: FontWeight.bold,
-                                color: textDark,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              'Configure reference data for automatic control number generation and inventory sorting',
-                              style: TextStyle(
-                                fontSize: isMobile ? 10.5 : 11.5,
-                                color: textMuted,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Tab Bar
-                Container(
-                  color: cardWhite,
-                  child: TabBar(
-                    controller: _tabController,
-                    labelColor: ParishColors.marianBlue,
-                    unselectedLabelColor: textMuted,
-                    indicatorColor: ParishColors.marianBlue,
-                    indicatorWeight: 3,
-                    tabs: [
-                      Tab(
-                        icon: const Icon(Icons.location_on_outlined, size: 18),
-                        text: 'Locations (${_locations.length})',
-                      ),
-                      Tab(
-                        icon: const Icon(Icons.category_outlined, size: 18),
-                        text: 'Classifications (${_classifications.length})',
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-
-                // Tab Views
-                Expanded(
-                  child: _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _errorMessage != null
-                      ? Center(
-                          child: Text(
-                            _errorMessage!,
-                            style: TextStyle(color: ParishColors.mercyRed),
+                      border: Border(bottom: BorderSide(color: borderGrey)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: ParishColors.marianBlue,
+                            shape: BoxShape.circle,
                           ),
-                        )
-                      : TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildLocationsTab(isMobile),
-                            _buildClassificationsTab(isMobile),
-                          ],
+                          child: const Icon(
+                            Icons.settings_suggest,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                         ),
-                ),
-
-                // Footer
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 16 : 20,
-                    vertical: 12,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Diocesan Locations & Classifications',
+                                style: TextStyle(
+                                  fontSize: isMobile ? 15 : 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: textDark,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                'Configure reference data for automatic control number generation and inventory sorting',
+                                style: TextStyle(
+                                  fontSize: isMobile ? 10.5 : 11.5,
+                                  color: textMuted,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
                   ),
-                  decoration: BoxDecoration(
+                  Container(
                     color: cardWhite,
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(20),
+                    child: TabBar(
+                      controller: _tabController,
+                      labelColor: ParishColors.marianBlue,
+                      unselectedLabelColor: textMuted,
+                      indicatorColor: ParishColors.marianBlue,
+                      indicatorWeight: 3,
+                      tabs: [
+                        Tab(
+                          icon: const Icon(Icons.location_on_outlined, size: 18),
+                          text: 'Locations (${_locations.length})',
+                        ),
+                        Tab(
+                          icon: const Icon(Icons.category_outlined, size: 18),
+                          text: 'Classifications (${_classifications.length})',
+                        ),
+                      ],
                     ),
-                    border: Border(top: BorderSide(color: borderGrey)),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(
-                          'Close',
-                          style: TextStyle(
-                            color: textMuted,
-                            fontWeight: FontWeight.bold,
+                  const Divider(height: 1),
+                  Expanded(
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _errorMessage != null
+                        ? Center(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                            color: ParishColors.mercyRed),
+                      ),
+                    )
+                        : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildLocationsTab(isMobile),
+                        _buildClassificationsTab(isMobile),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? 16 : 20,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cardWhite,
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(20),
+                      ),
+                      border: Border(top: BorderSide(color: borderGrey)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(
+                            'Close',
+                            style: TextStyle(
+                              color: textMuted,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -909,19 +1075,21 @@ class _ManageAssetReferencesDialogState
                       ),
                     ),
                     IconButton(
-                      icon: Icon(
+                      icon: const Icon(
                         Icons.edit_outlined,
                         size: 18,
                         color: ParishColors.marianBlue,
                       ),
+                      tooltip: 'Edit Location',
                       onPressed: () => _openLocationFormDialog(loc),
                     ),
                     IconButton(
-                      icon: Icon(
+                      icon: const Icon(
                         Icons.delete_outline,
                         size: 18,
                         color: ParishColors.mercyRed,
                       ),
+                      tooltip: 'Delete Location',
                       onPressed: () => _confirmDeleteLocation(loc),
                     ),
                   ],
@@ -1084,19 +1252,21 @@ class _ManageAssetReferencesDialogState
                       ),
                     ),
                     IconButton(
-                      icon: Icon(
+                      icon: const Icon(
                         Icons.edit_outlined,
                         size: 18,
                         color: ParishColors.marianBlue,
                       ),
+                      tooltip: 'Edit Classification',
                       onPressed: () => _openClassificationFormDialog(cls),
                     ),
                     IconButton(
-                      icon: Icon(
+                      icon: const Icon(
                         Icons.delete_outline,
                         size: 18,
                         color: ParishColors.mercyRed,
                       ),
+                      tooltip: 'Delete Classification',
                       onPressed: () => _confirmDeleteClassification(cls),
                     ),
                   ],

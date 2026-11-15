@@ -15,6 +15,8 @@ import '../../services/asset_label_pdf_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
+import '../widgets/asset_confirmation_dialog.dart';
+import '../widgets/asset_loading_overlay.dart';
 import 'asset_camera_page.dart';
 
 class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
@@ -82,10 +84,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   List<AssetAuditLogModel> _auditHistory = [];
 
   bool _isEditing = false;
-  bool _isUpdating = false;
+  bool _isBusy = false;
+  String _loadingMessage = 'Processing...';
   bool _isProcessingImage = false;
 
-  Uint8List? _newWatermarkedPhotoBytes;
+  Uint8List? _newConvertedPhotoBytes;
   String? _newPhotoFileName;
 
   late TextEditingController _nameController;
@@ -102,10 +105,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   AssetLocationModel? _selectedLocation;
   AssetClassificationModel? _selectedClassification;
 
-  // Separated inline date mechanism (Month & Day are optional, no future dates allowed)
   late int _selectedYear;
-  int? _selectedMonth; // null = optional/unspecified, NEVER forced to January
-  int? _selectedDay; // null = optional/unspecified, NEVER forced to 1st
+  int? _selectedMonth;
+  int? _selectedDay;
 
   late String _conditionStatus;
   late String _operationalStatus;
@@ -190,12 +192,30 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         : 'Section 2 — Below ₱10,000.00';
   }
 
-  /// Returns null if month or day was left optional, completely preventing false "January 1" outputs
   DateTime? get _effectiveDateOfAcquisition {
     if (_selectedMonth != null && _selectedDay != null) {
       return DateTime(_selectedYear, _selectedMonth!, _selectedDay!);
     }
     return null;
+  }
+
+  bool get _isEditDirty {
+    if (!_isEditing) return false;
+    final a = _currentAsset;
+    if (_nameController.text.trim() != a.itemName) return true;
+    if (_editQuantity != a.quantity) return true;
+    if (_editUnitPrice != a.unitPrice) return true;
+    if (_dimensionsController.text.trim() != (a.dimensions ?? '')) return true;
+    if (_colorController.text.trim() != (a.color ?? '')) return true;
+    if (_modelController.text.trim() != (a.model ?? '')) return true;
+    if (_othersController.text.trim() != (a.others ?? '')) return true;
+    if (_remarksController.text.trim() != (a.remarks ?? '')) return true;
+    if (_conditionStatus != AssetModel.normalizeCondition(a.conditionStatus)) return true;
+    if (_operationalStatus != AssetModel.normalizeStatus(a.operationalStatus)) return true;
+    if (_modeOfAcquisition != a.modeOfAcquisition) return true;
+    if (_selectedYear != a.acquisitionYear) return true;
+    if (_newConvertedPhotoBytes != null) return true;
+    return false;
   }
 
   @override
@@ -222,7 +242,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         : (asset.acquisitionYear > now.year ? now.year : asset.acquisitionYear);
     _selectedYear = cappedYear;
 
-    // Only populate month/day if explicitly recorded; otherwise keep null
     if (initialDate != null) {
       if (_selectedYear == now.year && initialDate.month > now.month) {
         _selectedMonth = now.month;
@@ -257,7 +276,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     _quantityController.addListener(() => setState(() {}));
     _unitPriceController.addListener(() => setState(() {}));
 
-    _newWatermarkedPhotoBytes = null;
+    _newConvertedPhotoBytes = null;
     _newPhotoFileName = null;
     _isEditing = false;
 
@@ -281,8 +300,35 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     super.dispose();
   }
 
-  void _navigateToPrevious() {
-    if (!_hasPrevious) return;
+  Future<void> _handleBackNavigation() async {
+    if (_isBusy) return;
+
+    if (_isEditing && _isEditDirty) {
+      final discard = await showUnsavedChangesConfirmationDialog(context);
+      if (discard && mounted) {
+        Navigator.pop(context);
+      }
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _cancelEditing() async {
+    if (_isEditDirty) {
+      final discard = await showUnsavedChangesConfirmationDialog(context);
+      if (!discard || !mounted) return;
+    }
+    _initializeCurrentAsset();
+  }
+
+  Future<void> _navigateToPrevious() async {
+    if (!_hasPrevious || _isBusy) return;
+
+    if (_isEditing && _isEditDirty) {
+      final discard = await showUnsavedChangesConfirmationDialog(context);
+      if (!discard || !mounted) return;
+    }
+
     _disposeControllers();
     setState(() {
       _currentIndex--;
@@ -290,8 +336,14 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     });
   }
 
-  void _navigateToNext() {
-    if (!_hasNext) return;
+  Future<void> _navigateToNext() async {
+    if (!_hasNext || _isBusy) return;
+
+    if (_isEditing && _isEditDirty) {
+      final discard = await showUnsavedChangesConfirmationDialog(context);
+      if (!discard || !mounted) return;
+    }
+
     _disposeControllers();
     setState(() {
       _currentIndex++;
@@ -339,41 +391,36 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     }
   }
 
-  // ===========================================================================
-  // Dedicated 3R Camera Launch (Landscape & Portrait Framing)
-  // ===========================================================================
-
   Future<void> _openDedicated3RCameraPage() async {
     final idLabel =
         '${_currentAsset.controlNumber} • ${_nameController.text.trim()}';
 
-    final Uint8List? capturedWatermarkedBytes =
-    await Navigator.push<Uint8List>(
+    final Uint8List? capturedBytes = await Navigator.push<Uint8List>(
       context,
       MaterialPageRoute(
         builder: (_) => AssetCameraPage(assetIdentifier: idLabel),
       ),
     );
 
-    if (capturedWatermarkedBytes != null &&
-        capturedWatermarkedBytes.isNotEmpty) {
+    if (capturedBytes != null && capturedBytes.isNotEmpty) {
+      setState(() => _isProcessingImage = true);
+      // Fast conversion to clean JPG
+      final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(capturedBytes);
+      if (!mounted) return;
       setState(() {
-        _newWatermarkedPhotoBytes = capturedWatermarkedBytes;
+        _newConvertedPhotoBytes = jpegBytes;
         _newPhotoFileName =
-        'photo_3R_${DateTime.now().millisecondsSinceEpoch}.png';
+        'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        _isProcessingImage = false;
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '3R photographic evidence captured and security watermark applied successfully.',
-            ),
-            backgroundColor: ParishColors.oliveGreen,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('3R photo captured and optimized to JPG.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -381,7 +428,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     try {
       final dynamic result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'avif', 'gif'],
       );
 
       if (result != null) {
@@ -407,53 +454,31 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             } catch (_) {}
           }
 
-          String? name;
-          try {
-            name = (file as dynamic).name;
-          } catch (_) {}
-
           if (rawBytes != null) {
-            await _processAndWatermarkNewImage(
-              rawBytes,
-              name ?? 'asset_photo.jpg',
+            setState(() => _isProcessingImage = true);
+            // Automatic instant conversion of any format to clean JPG
+            final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(rawBytes);
+            if (!mounted) return;
+            setState(() {
+              _newConvertedPhotoBytes = jpegBytes;
+              _newPhotoFileName =
+              'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+              _isProcessingImage = false;
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Photo converted to optimized JPG format.'),
+                backgroundColor: ParishColors.oliveGreen,
+                duration: Duration(seconds: 2),
+              ),
             );
           }
         }
       }
     } catch (e) {
+      if (mounted) setState(() => _isProcessingImage = false);
       debugPrint('Error uploading image: $e');
-    }
-  }
-
-  Future<void> _processAndWatermarkNewImage(
-      Uint8List rawBytes,
-      String filename,
-      ) async {
-    setState(() => _isProcessingImage = true);
-
-    try {
-      final idLabel =
-          '${_currentAsset.controlNumber} • ${_nameController.text.trim()}';
-
-      final watermarked = await AssetImageWatermarkUtil.applySecurityWatermark(
-        rawImageBytes: rawBytes,
-        assetIdentifier: idLabel,
-        captureTime: DateTime.now(),
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _newWatermarkedPhotoBytes = watermarked;
-        _newPhotoFileName = filename;
-        _isProcessingImage = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _newWatermarkedPhotoBytes = rawBytes;
-        _newPhotoFileName = filename;
-        _isProcessingImage = false;
-      });
     }
   }
 
@@ -467,7 +492,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   }
 
   Future<void> _saveAssetUpdates() async {
-    // Strict validation: verify date cannot be in the future
     final now = DateTime.now();
     if (_selectedYear > now.year ||
         (_selectedYear == now.year &&
@@ -487,14 +511,32 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       return;
     }
 
-    setState(() => _isUpdating = true);
+    final confirmed = await showAssetActionConfirmationDialog(
+      context,
+      title: 'Save Record Changes?',
+      message: 'Are you sure you want to commit changes to "${_nameController.text.trim()}" in the diocesan ledger?',
+      itemIdentifier: '${_currentAsset.controlNumber} • ${_nameController.text.trim()}',
+      confirmLabel: 'Save Changes',
+      icon: Icons.save_outlined,
+      accentColor: ParishColors.oliveGreen,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _isBusy = true;
+      _loadingMessage = 'Updating asset details in ledger...';
+    });
+
     try {
       String? photoUrlToSave = _currentAsset.photoUrl;
 
-      if (_newWatermarkedPhotoBytes != null && _newPhotoFileName != null) {
+      // 1. Upload initial photo if changed
+      if (_newConvertedPhotoBytes != null && _newPhotoFileName != null) {
+        setState(() => _loadingMessage = 'Uploading new photo to storage...');
         final uploaded = await AssetService.uploadAssetPhoto(
           assetId: _currentAsset.assetId,
-          fileBytes: _newWatermarkedPhotoBytes!,
+          fileBytes: _newConvertedPhotoBytes!,
           fileName: _newPhotoFileName!,
         );
         if (uploaded != null) {
@@ -502,6 +544,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         }
       }
 
+      // 2. Save database updates
+      setState(() => _loadingMessage = 'Saving updates to database...');
       final updated = await AssetService.updateAsset(
         assetId: _currentAsset.assetId,
         itemName: _nameController.text.trim(),
@@ -523,13 +567,32 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         operationalStatus: _operationalStatus,
       );
 
+      // 3. Post-save fast watermarking if new photo was uploaded
+      if (_newConvertedPhotoBytes != null) {
+        setState(() => _loadingMessage = 'Applying security watermark to photo...');
+        final watermarkedUrl = await AssetService.applyAndSavePostWatermark(
+          assetId: updated.assetId,
+          controlNumber: updated.controlNumber,
+          itemName: updated.itemName,
+          originalBytes: _newConvertedPhotoBytes!,
+        );
+        if (watermarkedUrl != null) {
+          _assetList[_currentIndex] = AssetModel.fromMap({
+            ...updated.toMap(),
+            'photo_url': watermarkedUrl,
+          });
+        } else {
+          _assetList[_currentIndex] = updated;
+        }
+      } else {
+        _assetList[_currentIndex] = updated;
+      }
+
       if (!mounted) return;
       setState(() {
-        _assetList[_currentIndex] = updated;
-        _newWatermarkedPhotoBytes = null;
+        _newConvertedPhotoBytes = null;
         _newPhotoFileName = null;
         _isEditing = false;
-        _isUpdating = false;
       });
 
       widget.onAssetUpdated?.call();
@@ -547,45 +610,70 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isUpdating = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Update failed: $e'),
           backgroundColor: ParishColors.mercyRed,
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
   Future<void> _confirmArchiveAsset() async {
     final reasonController = TextEditingController();
+
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'Archive Parish Item?',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            color: ParishColors.textDark,
-          ),
+        backgroundColor: ParishColors.cardWhite,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.mercyRed.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.archive_outlined, color: ParishColors.mercyRed, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Archive Parish Item?',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16.5,
+                  color: ParishColors.textDark,
+                ),
+              ),
+            ),
+          ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Are you sure you want to archive "${_currentAsset.itemName}" (${_currentAsset.controlNumber})?',
-              style: TextStyle(fontSize: 13, color: ParishColors.textDark),
+              'Are you sure you want to archive "${_currentAsset.itemName}" (${_currentAsset.controlNumber})? Archived items are officially classified as decommissioned/disposed.',
+              style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.4),
             ),
             const SizedBox(height: 14),
             TextField(
               controller: reasonController,
+              autofocus: true,
               style: TextStyle(fontSize: 13, color: ParishColors.textDark),
               decoration: InputDecoration(
                 labelText: 'Reason for Archiving *',
                 labelStyle: TextStyle(color: ParishColors.textDark),
+                hintText: 'e.g. Broken beyond repair, replaced by newer unit',
+                hintStyle: TextStyle(
+                  fontSize: 12.5,
+                  color: ParishColors.textMuted,
+                ),
                 border: const OutlineInputBorder(),
                 enabledBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -599,41 +687,82 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
               'Cancel',
-              style: TextStyle(color: ParishColors.textMuted),
+              style: TextStyle(color: ParishColors.textMuted, fontWeight: FontWeight.bold),
             ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ParishColors.mercyRed,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
               if (reasonController.text.trim().isNotEmpty) {
                 Navigator.pop(ctx, true);
               }
             },
-            child: const Text('Archive'),
+            child: const Text('Archive Item', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
 
-    if (confirmed == true && reasonController.text.trim().isNotEmpty) {
-      await AssetService.archiveAsset(
-        assetId: _currentAsset.assetId,
-        reason: reasonController.text.trim(),
-      );
-      if (!mounted) return;
-      widget.onAssetUpdated?.call();
-      Navigator.pop(context);
+    if (confirmed == true && reasonController.text.trim().isNotEmpty && mounted) {
+      setState(() {
+        _isBusy = true;
+        _loadingMessage = 'Archiving parish property...';
+      });
+
+      try {
+        await AssetService.archiveAsset(
+          assetId: _currentAsset.assetId,
+          reason: reasonController.text.trim(),
+        );
+        if (!mounted) return;
+        widget.onAssetUpdated?.call();
+        Navigator.pop(context);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Archive failed: $e'), backgroundColor: ParishColors.mercyRed),
+        );
+      } finally {
+        if (mounted) setState(() => _isBusy = false);
+      }
     }
   }
 
   Future<void> _restoreAsset() async {
-    await AssetService.restoreAsset(_currentAsset.assetId);
-    if (!mounted) return;
-    widget.onAssetUpdated?.call();
-    Navigator.pop(context);
+    final confirmed = await showAssetActionConfirmationDialog(
+      context,
+      title: 'Restore Parish Asset?',
+      message: 'Restore "${_currentAsset.itemName}" (${_currentAsset.controlNumber}) back to active parish storage?',
+      itemIdentifier: '${_currentAsset.controlNumber} • ${_currentAsset.itemName}',
+      confirmLabel: 'Restore Asset',
+      icon: Icons.restore,
+      accentColor: ParishColors.oliveGreen,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _isBusy = true;
+      _loadingMessage = 'Restoring item to active ledger...';
+    });
+
+    try {
+      await AssetService.restoreAsset(_currentAsset.assetId);
+      if (!mounted) return;
+      widget.onAssetUpdated?.call();
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Restore failed: $e'), backgroundColor: ParishColors.mercyRed),
+      );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
   }
 
   Future<void> _printLabelSticker() async {
@@ -652,181 +781,191 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         final screenWidth = constraints.maxWidth;
         final bool isMobile = screenWidth < 700;
 
-        return Scaffold(
-          backgroundColor: ParishColors.backgroundLight,
-          appBar: AppBar(
-            backgroundColor: ParishColors.cardWhite,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
-              onPressed: () => Navigator.pop(context),
-            ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            await _handleBackNavigation();
+          },
+          child: AssetLoadingOverlay(
+            isLoading: _isBusy,
+            message: _loadingMessage,
+            child: Scaffold(
+              backgroundColor: ParishColors.backgroundLight,
+              appBar: AppBar(
+                backgroundColor: ParishColors.cardWhite,
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
+                  onPressed: _handleBackNavigation,
+                ),
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        asset.controlNumber,
-                        style: TextStyle(
-                          fontSize: isMobile ? 15 : 18,
-                          fontWeight: FontWeight.bold,
-                          color: isArchived
-                              ? ParishColors.mercyRed
-                              : ParishColors.marianBlue,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: asset.conditionSurfaceColor,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: asset.conditionColor.withOpacity(0.4),
-                        ),
-                      ),
-                      child: Text(
-                        asset.conditionStatus.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: asset.conditionColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Text(
-                  asset.itemName,
-                  style: TextStyle(
-                    fontSize: isMobile ? 11 : 12.5,
-                    color: ParishColors.textMuted,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-            actions: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  color: ParishColors.marianBlueSurface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: ParishColors.marianBlue.withOpacity(0.25),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left, size: 22),
-                      padding: EdgeInsets.zero,
-                      constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                      color: _hasPrevious
-                          ? ParishColors.marianBlue
-                          : ParishColors.borderGrey,
-                      tooltip: 'Previous Item',
-                      onPressed: _hasPrevious ? _navigateToPrevious : null,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        '$currentPos / $totalCount',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.marianBlue,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right, size: 22),
-                      padding: EdgeInsets.zero,
-                      constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                      color: _hasNext
-                          ? ParishColors.marianBlue
-                          : ParishColors.borderGrey,
-                      tooltip: 'Next Item',
-                      onPressed: _hasNext ? _navigateToNext : null,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-            ],
-          ),
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 14 : 24,
-                vertical: isMobile ? 14 : 22,
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 960),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (isMobile) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
-                                side: BorderSide(color: ParishColors.borderGrey),
-                              ),
-                              onPressed:
-                              _hasPrevious ? _navigateToPrevious : null,
-                              icon: const Icon(Icons.arrow_back, size: 14),
-                              label: const Text('Previous',
-                                  style: TextStyle(fontSize: 11)),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            asset.controlNumber,
+                            style: TextStyle(
+                              fontSize: isMobile ? 15 : 18,
+                              fontWeight: FontWeight.bold,
+                              color: isArchived
+                                  ? ParishColors.mercyRed
+                                  : ParishColors.marianBlue,
                             ),
-                            Text(
-                              'Item $currentPos of $totalCount',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: ParishColors.textMuted,
-                              ),
-                            ),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
-                                side: BorderSide(color: ParishColors.borderGrey),
-                              ),
-                              onPressed: _hasNext ? _navigateToNext : null,
-                              icon: const Icon(Icons.arrow_forward, size: 14),
-                              label: const Text('Next',
-                                  style: TextStyle(fontSize: 11)),
-                            ),
-                          ],
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: asset.conditionSurfaceColor,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: asset.conditionColor.withOpacity(0.4),
+                            ),
+                          ),
+                          child: Text(
+                            asset.conditionStatus.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: asset.conditionColor,
+                            ),
+                          ),
+                        ),
                       ],
-
-                      if (_isEditing)
-                        _buildEditFormCard(isMobile)
-                      else
-                        _buildViewDetails(isMobile),
-
-                      const SizedBox(height: 18),
-
-                      _buildBottomActionBar(isMobile, isArchived),
-                      const SizedBox(height: 36),
-                    ],
+                    ),
+                    Text(
+                      asset.itemName,
+                      style: TextStyle(
+                        fontSize: isMobile ? 11 : 12.5,
+                        color: ParishColors.textMuted,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+                actions: [
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: ParishColors.marianBlueSurface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: ParishColors.marianBlue.withOpacity(0.25),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, size: 22),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                          color: _hasPrevious
+                              ? ParishColors.marianBlue
+                              : ParishColors.borderGrey,
+                          tooltip: 'Previous Item',
+                          onPressed: _hasPrevious ? _navigateToPrevious : null,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            '$currentPos / $totalCount',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: ParishColors.marianBlue,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, size: 22),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                          color: _hasNext
+                              ? ParishColors.marianBlue
+                              : ParishColors.borderGrey,
+                          tooltip: 'Next Item',
+                          onPressed: _hasNext ? _navigateToNext : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+              ),
+              body: SafeArea(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isMobile ? 14 : 24,
+                    vertical: isMobile ? 14 : 22,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 960),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (isMobile) ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 8),
+                                    side: BorderSide(
+                                        color: ParishColors.borderGrey),
+                                  ),
+                                  onPressed:
+                                  _hasPrevious ? _navigateToPrevious : null,
+                                  icon: const Icon(Icons.arrow_back, size: 14),
+                                  label: const Text('Previous',
+                                      style: TextStyle(fontSize: 11)),
+                                ),
+                                Text(
+                                  'Item $currentPos of $totalCount',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: ParishColors.textMuted,
+                                  ),
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 8),
+                                    side: BorderSide(
+                                        color: ParishColors.borderGrey),
+                                  ),
+                                  onPressed: _hasNext ? _navigateToNext : null,
+                                  icon: const Icon(Icons.arrow_forward, size: 14),
+                                  label: const Text('Next',
+                                      style: TextStyle(fontSize: 11)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (_isEditing)
+                            _buildEditFormCard(isMobile)
+                          else
+                            _buildViewDetails(isMobile),
+                          const SizedBox(height: 18),
+                          _buildBottomActionBar(isMobile, isArchived),
+                          const SizedBox(height: 36),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -836,10 +975,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       },
     );
   }
-
-  // ===========================================================================
-  // View Details Mode: Executive Card UI for Diocesan Inventory Records
-  // ===========================================================================
 
   Widget _buildViewDetails(bool isMobile) {
     final asset = _currentAsset;
@@ -908,7 +1043,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ),
         ],
 
-        // 1. HERO HEADER: Watermarked Photo + Canonical Identity & Badges
+        // Hero Header: Thumbnail + Badges
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -987,7 +1122,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-
                     Text(
                       asset.itemName,
                       style: TextStyle(
@@ -998,7 +1132,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-
                     Wrap(
                       spacing: 6,
                       runSpacing: 4,
@@ -1055,10 +1188,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
         ),
-
         const SizedBox(height: 16),
 
-        // 2. PARISH BOOK OF INVENTORY RECORD CARD
+        // Canonical Book of Inventory Record Card
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -1117,7 +1249,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 ],
               ),
               const Divider(height: 22),
-
               isMobile
                   ? Column(
                 children: [
@@ -1146,7 +1277,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 ],
               ),
               const SizedBox(height: 10),
-
               isMobile
                   ? Column(
                 children: [
@@ -1210,10 +1340,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       isPrice: true),
                 ],
               ),
-
               const SizedBox(height: 16),
-
-              // Physical Specifications
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -1243,7 +1370,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       ],
                     ),
                     const Divider(height: 16),
-
                     isMobile
                         ? Column(
                       children: [
@@ -1293,7 +1419,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         ),
                       ],
                     ),
-
                     if (hasOtherDescriptions) ...[
                       const SizedBox(height: 10),
                       Container(
@@ -1348,10 +1473,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 14),
-
-              // Remarks
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -1400,10 +1522,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
         ),
-
         const SizedBox(height: 16),
 
-        // 3. AVAILABILITY & LIVE VALUATION METRICS DECK
+        // Availability & Metrics Deck
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1464,10 +1585,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
         ),
-
         const SizedBox(height: 16),
 
-        // 4. AUDIT & ADJUSTMENT HISTORY
+        // Audit History
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1525,380 +1645,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     );
   }
 
-  // ===========================================================================
-  // Modular Tile & Spec Card Helpers
-  // ===========================================================================
-
-  Widget _buildSpecCard({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
-    final bool isEmpty = value.trim().isEmpty || value.trim() == '—';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.7)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: ParishColors.marianBlue),
-              const SizedBox(width: 6),
-              Text(
-                label.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.4,
-                  color: ParishColors.textMuted,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: isEmpty
-                  ? ParishColors.textMuted.withOpacity(0.6)
-                  : ParishColors.textDark,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoTile(String label, String value, IconData icon,
-      {bool isMono = false, bool isPrice = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: ParishColors.backgroundLight,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.6)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(icon, size: 16, color: ParishColors.marianBlue),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.3,
-                    color: ParishColors.textMuted,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontFamily: isMono ? 'Courier' : null,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: isPrice ? ParishColors.oliveGreen : ParishColors.textDark,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMetricCell(String title, String value, Color color) {
-    return Column(
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-              fontSize: 11,
-              color: ParishColors.textMuted,
-              fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          style: TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.bold,
-              color: color),
-        ),
-      ],
-    );
-  }
-
-  // ===========================================================================
-  // UI Helpers: General Headers & Floating Label Input Decoration (No Hint Text)
-  // ===========================================================================
-
-  Widget _buildGeneralHeader(String title) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w800,
-        color: ParishColors.textDark,
-        letterSpacing: 0.2,
-      ),
-    );
-  }
-
-  InputDecoration _floatingInputDecoration({
-    required String labelText,
-    Widget? prefixIcon,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      labelText: labelText,
-      labelStyle: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: ParishColors.textMuted,
-      ),
-      floatingLabelStyle: const TextStyle(
-        fontSize: 12.5,
-        fontWeight: FontWeight.bold,
-        color: ParishColors.marianBlue,
-      ),
-      prefixIcon: prefixIcon,
-      suffixIcon: suffixIcon,
-      filled: true,
-      fillColor: ParishColors.backgroundLight,
-      isDense: true,
-      contentPadding:
-      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide:
-        const BorderSide(color: ParishColors.marianBlue, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.5),
-      ),
-    );
-  }
-
-  // ===========================================================================
-  // Separated Inline Date Selector (Month, Day, Year with Year Capped at Now)
-  // ===========================================================================
-
-  Widget _buildSeparatedDateSelectors(bool isMobile) {
-    final now = DateTime.now();
-
-    // Strict validation: do not allow future years
-    final years = List<int>.generate(
-      now.year - 1940 + 1,
-          (i) => now.year - i,
-    );
-
-    // Calculate maximum days in selected month
-    int maxDays = 31;
-    if (_selectedMonth != null) {
-      if ([4, 6, 9, 11].contains(_selectedMonth)) {
-        maxDays = 30;
-      } else if (_selectedMonth == 2) {
-        final isLeap = (_selectedYear % 4 == 0 &&
-            (_selectedYear % 100 != 0 || _selectedYear % 400 == 0));
-        maxDays = isLeap ? 29 : 28;
-      }
-    }
-
-    // If current year and current month are selected, cap maxDays at today
-    if (_selectedYear == now.year &&
-        _selectedMonth != null &&
-        _selectedMonth == now.month) {
-      if (now.day < maxDays) {
-        maxDays = now.day;
-      }
-    }
-
-    final days = List<int>.generate(maxDays, (i) => i + 1);
-
-    // Max selectable months for current year
-    final int maxMonthIndex =
-    _selectedYear == now.year ? now.month : 12;
-
-    return Row(
-      children: [
-        // Month Dropdown (Optional, starts null, never forced to January)
-        Expanded(
-          flex: isMobile ? 4 : 5,
-          child: DropdownButtonFormField<int?>(
-            value: _selectedMonth,
-            isExpanded: true,
-            decoration: _floatingInputDecoration(
-              labelText: 'Month',
-            ),
-            items: [
-              DropdownMenuItem<int?>(
-                value: null,
-                child: Text(
-                  'Month (Optional)',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: ParishColors.textMuted,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              ...List.generate(maxMonthIndex, (index) {
-                final monthNum = index + 1;
-                return DropdownMenuItem<int?>(
-                  value: monthNum,
-                  child: Text(
-                    _monthNames[index],
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textDark,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                );
-              }),
-            ],
-            onChanged: (val) {
-              setState(() {
-                _selectedMonth = val;
-                if (_selectedDay != null && _selectedDay! > maxDays) {
-                  _selectedDay = maxDays;
-                }
-              });
-            },
-          ),
-        ),
-        const SizedBox(width: 8),
-
-        // Day Dropdown (Optional, starts null, never forced to 1st)
-        Expanded(
-          flex: isMobile ? 3 : 3,
-          child: DropdownButtonFormField<int?>(
-            value: (_selectedDay != null && _selectedDay! <= maxDays)
-                ? _selectedDay
-                : null,
-            isExpanded: true,
-            decoration: _floatingInputDecoration(
-              labelText: 'Day',
-            ),
-            items: [
-              DropdownMenuItem<int?>(
-                value: null,
-                child: Text(
-                  'Day',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: ParishColors.textMuted,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              ...days.map(
-                    (d) => DropdownMenuItem<int?>(
-                  value: d,
-                  child: Text(
-                    '$d',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.textDark,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            onChanged: (val) => setState(() => _selectedDay = val),
-          ),
-        ),
-        const SizedBox(width: 8),
-
-        // Year Dropdown (Required, strictly no future years)
-        Expanded(
-          flex: isMobile ? 4 : 4,
-          child: DropdownButtonFormField<int>(
-            value: _selectedYear,
-            isExpanded: true,
-            decoration: _floatingInputDecoration(
-              labelText: 'Year *',
-            ),
-            items: years.map((y) {
-              return DropdownMenuItem<int>(
-                value: y,
-                child: Text(
-                  '$y',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: ParishColors.textDark,
-                  ),
-                ),
-              );
-            }).toList(),
-            onChanged: (val) {
-              if (val != null) {
-                setState(() {
-                  _selectedYear = val;
-                  if (_selectedYear == now.year &&
-                      _selectedMonth != null &&
-                      _selectedMonth! > now.month) {
-                    _selectedMonth = now.month;
-                  }
-                  if (_selectedYear == now.year &&
-                      _selectedMonth != null &&
-                      _selectedMonth == now.month &&
-                      _selectedDay != null &&
-                      _selectedDay! > now.day) {
-                    _selectedDay = now.day;
-                  }
-                });
-              }
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ===========================================================================
-  // Responsive Edit Form Card Mode (General Headers & Floating Labels)
-  // ===========================================================================
-
   Widget _buildEditFormCard(bool isMobile) {
     final asset = _currentAsset;
     final textDark = ParishColors.textDark;
@@ -1940,8 +1686,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ],
             ),
           ),
-
-          // Photo Upload / Camera Strip
           _buildGeneralHeader('Photographic Evidence'),
           const SizedBox(height: 8),
           Container(
@@ -1955,9 +1699,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               children: [
                 InkWell(
                   onTap: () {
-                    if (_newWatermarkedPhotoBytes != null) {
+                    if (_newConvertedPhotoBytes != null) {
                       _openInteractivePreview(
-                          MemoryImage(_newWatermarkedPhotoBytes!));
+                          MemoryImage(_newConvertedPhotoBytes!));
                     } else if (asset.photoUrl != null &&
                         asset.photoUrl!.isNotEmpty) {
                       _openInteractivePreview(NetworkImage(asset.photoUrl!));
@@ -1975,11 +1719,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     child: _isProcessingImage
                         ? const Center(
                         child: CircularProgressIndicator(strokeWidth: 2))
-                        : _newWatermarkedPhotoBytes != null
+                        : _newConvertedPhotoBytes != null
                         ? ClipRRect(
                       borderRadius: BorderRadius.circular(7),
                       child: Image.memory(
-                        _newWatermarkedPhotoBytes!,
+                        _newConvertedPhotoBytes!,
                         fit: BoxFit.cover,
                       ),
                     )
@@ -2002,15 +1746,15 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _newWatermarkedPhotoBytes != null
-                            ? 'New 3R Photo Attached'
+                        _newConvertedPhotoBytes != null
+                            ? 'New Photo Converted to JPG'
                             : (asset.photoUrl != null
                             ? 'Current Photo Registered'
                             : 'No photo uploaded'),
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: _newWatermarkedPhotoBytes != null
+                          color: _newConvertedPhotoBytes != null
                               ? ParishColors.oliveGreen
                               : textDark,
                         ),
@@ -2020,7 +1764,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         spacing: 8,
                         runSpacing: 6,
                         children: [
-                          // Dedicated 3R Camera Launch Button
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: ParishColors.marianBlue,
@@ -2038,13 +1781,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                                   fontSize: 11.5, fontWeight: FontWeight.bold),
                             ),
                           ),
-
-                          // File Picker Upload Button
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
                               foregroundColor: ParishColors.marianBlue,
-                              side:
-                              const BorderSide(color: ParishColors.marianBlue),
+                              side: const BorderSide(
+                                  color: ParishColors.marianBlue),
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 6),
                             ),
@@ -2057,15 +1798,14 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.bold)),
                           ),
-
-                          if (_newWatermarkedPhotoBytes != null ||
+                          if (_newConvertedPhotoBytes != null ||
                               (asset.photoUrl != null &&
                                   asset.photoUrl!.isNotEmpty)) ...[
                             TextButton.icon(
                               onPressed: () {
-                                if (_newWatermarkedPhotoBytes != null) {
+                                if (_newConvertedPhotoBytes != null) {
                                   _openInteractivePreview(
-                                      MemoryImage(_newWatermarkedPhotoBytes!));
+                                      MemoryImage(_newConvertedPhotoBytes!));
                                 } else if (asset.photoUrl != null) {
                                   _openInteractivePreview(
                                       NetworkImage(asset.photoUrl!));
@@ -2085,8 +1825,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ),
           ),
           const SizedBox(height: 18),
-
-          // General Header: Name
           _buildGeneralHeader('Name'),
           const SizedBox(height: 8),
           TextFormField(
@@ -2101,20 +1839,14 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ),
           ),
           const SizedBox(height: 18),
-
-          // General Header: Date of Acquisition (Separated Inline Dropdowns, No Future Dates)
           _buildGeneralHeader('Date of Acquisition'),
           const SizedBox(height: 8),
           _buildSeparatedDateSelectors(isMobile),
           const SizedBox(height: 18),
-
-          // General Header: Acquisition Method
           _buildGeneralHeader('Acquisition Method'),
           const SizedBox(height: 8),
           _buildAcquisitionModeDropdown(),
           const SizedBox(height: 18),
-
-          // General Header: Quantity & Valuation
           _buildGeneralHeader('Quantity & Valuation'),
           const SizedBox(height: 8),
           Row(
@@ -2164,7 +1896,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
           const SizedBox(height: 10),
-
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -2197,8 +1928,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ),
           ),
           const SizedBox(height: 18),
-
-          // General Header: Condition & Availability
           _buildGeneralHeader('Condition & Availability'),
           const SizedBox(height: 8),
           isMobile
@@ -2221,8 +1950,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
           const SizedBox(height: 18),
-
-          // General Header: Dimensions & Make
           _buildGeneralHeader('Dimensions & Make'),
           const SizedBox(height: 8),
           isMobile
@@ -2319,8 +2046,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ],
           ),
           const SizedBox(height: 18),
-
-          // General Header: Additional Details
           _buildGeneralHeader('Additional Details & Inscriptions'),
           const SizedBox(height: 8),
           TextFormField(
@@ -2352,10 +2077,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       ),
     );
   }
-
-  // ===========================================================================
-  // Bottom Action Bar
-  // ===========================================================================
 
   Widget _buildBottomActionBar(bool isMobile, bool isArchived) {
     return Container(
@@ -2415,8 +2136,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       const EdgeInsets.symmetric(vertical: 10),
                     ),
                     onPressed: _confirmArchiveAsset,
-                    icon:
-                    const Icon(Icons.archive_outlined, size: 16),
+                    icon: const Icon(Icons.archive_outlined,
+                        size: 16),
                     label: const Text('Archive',
                         style: TextStyle(
                             fontSize: 12,
@@ -2433,9 +2154,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               if (_canModify) ...[
                 if (_isEditing) ...[
                   TextButton(
-                    onPressed: _isUpdating
-                        ? null
-                        : () => setState(() => _isEditing = false),
+                    onPressed: _cancelEditing,
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 6),
@@ -2444,16 +2163,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       backgroundColor: ParishColors.oliveGreen,
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: _isUpdating ? null : _saveAssetUpdates,
-                    icon: _isUpdating
-                        ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
-                    )
-                        : const Icon(Icons.save, size: 16),
-                    label: Text(_isUpdating ? 'Saving...' : 'Save Changes'),
+                    onPressed: _isBusy ? null : _saveAssetUpdates,
+                    icon: const Icon(Icons.save, size: 16),
+                    label: const Text('Save Changes'),
                   ),
                 ] else ...[
                   OutlinedButton.icon(
@@ -2502,8 +2214,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         color: ParishColors.mercyRed),
                   ),
                   onPressed: _confirmArchiveAsset,
-                  icon:
-                  const Icon(Icons.archive_outlined, size: 16),
+                  icon: const Icon(Icons.archive_outlined, size: 16),
                   label: const Text('Archive Item'),
                 ),
             ],
@@ -2513,9 +2224,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               if (_canModify) ...[
                 if (_isEditing) ...[
                   TextButton(
-                    onPressed: _isUpdating
-                        ? null
-                        : () => setState(() => _isEditing = false),
+                    onPressed: _cancelEditing,
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 8),
@@ -2524,16 +2233,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       backgroundColor: ParishColors.oliveGreen,
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: _isUpdating ? null : _saveAssetUpdates,
-                    icon: _isUpdating
-                        ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
-                    )
-                        : const Icon(Icons.save, size: 16),
-                    label: Text(_isUpdating ? 'Saving...' : 'Save Changes'),
+                    onPressed: _isBusy ? null : _saveAssetUpdates,
+                    icon: const Icon(Icons.save, size: 16),
+                    label: const Text('Save Changes'),
                   ),
                 ] else ...[
                   OutlinedButton.icon(
@@ -2559,10 +2261,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     );
   }
 
-  // ===========================================================================
-  // Helper Widgets
-  // ===========================================================================
-
   Widget _buildPhotoThumbnail({required double size}) {
     final asset = _currentAsset;
     final borderGrey = ParishColors.borderGrey;
@@ -2583,8 +2281,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             color: ParishColors.backgroundLight,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color:
-              asset.photoUrl != null ? ParishColors.goldAccent : borderGrey,
+              color: asset.photoUrl != null
+                  ? ParishColors.goldAccent
+                  : borderGrey,
               width: asset.photoUrl != null ? 1.5 : 1.0,
             ),
           ),
@@ -2639,7 +2338,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     final int totalDistQty = log.quantityDistribution != null
         ? log.quantityDistribution!.fold<int>(0, (sum, d) => sum + d.quantity)
         : 0;
-    final bool showDistributionCard = log.hasQuantityDistribution && totalDistQty > 1;
+    final bool showDistributionCard =
+        log.hasQuantityDistribution && totalDistQty > 1;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -2709,7 +2409,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ),
             ],
           ),
-
           if (showDistributionCard) ...[
             const SizedBox(height: 8),
             Container(
@@ -2835,7 +2534,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ),
             ),
           ],
-
           if (log.hasQuantityAdjustment) ...[
             const SizedBox(height: 8),
             Container(
@@ -2888,7 +2586,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ),
             ),
           ],
-
           if (log.cleanNotes.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Notes: ${log.cleanNotes}',
@@ -2984,6 +2681,353 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           .map((m) => DropdownMenuItem(value: m, child: Text(m)))
           .toList(),
       onChanged: (val) => setState(() => _modeOfAcquisition = val!),
+    );
+  }
+
+  Widget _buildSpecCard({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    final bool isEmpty = value.trim().isEmpty || value.trim() == '—';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: ParishColors.marianBlue),
+              const SizedBox(width: 6),
+              Text(
+                label.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.4,
+                  color: ParishColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: isEmpty
+                  ? ParishColors.textMuted.withOpacity(0.6)
+                  : ParishColors.textDark,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoTile(String label, String value, IconData icon,
+      {bool isMono = false, bool isPrice = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: ParishColors.backgroundLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.6)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: ParishColors.marianBlue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.3,
+                    color: ParishColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontFamily: isMono ? 'Courier' : null,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isPrice ? ParishColors.oliveGreen : ParishColors.textDark,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricCell(String title, String value, Color color) {
+    return Column(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+              fontSize: 11,
+              color: ParishColors.textMuted,
+              fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.bold,
+              color: color),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGeneralHeader(String title) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        color: ParishColors.textDark,
+        letterSpacing: 0.2,
+      ),
+    );
+  }
+
+  InputDecoration _floatingInputDecoration({
+    required String labelText,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      labelStyle: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: ParishColors.textMuted,
+      ),
+      floatingLabelStyle: const TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.bold,
+        color: ParishColors.marianBlue,
+      ),
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: ParishColors.backgroundLight,
+      isDense: true,
+      contentPadding:
+      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide:
+        const BorderSide(color: ParishColors.marianBlue, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.5),
+      ),
+    );
+  }
+
+  Widget _buildSeparatedDateSelectors(bool isMobile) {
+    final now = DateTime.now();
+    final years = List<int>.generate(
+      now.year - 1940 + 1,
+          (i) => now.year - i,
+    );
+
+    int maxDays = 31;
+    if (_selectedMonth != null) {
+      if ([4, 6, 9, 11].contains(_selectedMonth)) {
+        maxDays = 30;
+      } else if (_selectedMonth == 2) {
+        final isLeap = (_selectedYear % 4 == 0 &&
+            (_selectedYear % 100 != 0 || _selectedYear % 400 == 0));
+        maxDays = isLeap ? 29 : 28;
+      }
+    }
+
+    if (_selectedYear == now.year &&
+        _selectedMonth != null &&
+        _selectedMonth == now.month) {
+      if (now.day < maxDays) {
+        maxDays = now.day;
+      }
+    }
+
+    final days = List<int>.generate(maxDays, (i) => i + 1);
+    final int maxMonthIndex =
+    _selectedYear == now.year ? now.month : 12;
+
+    return Row(
+      children: [
+        Expanded(
+          flex: isMobile ? 4 : 5,
+          child: DropdownButtonFormField<int?>(
+            value: _selectedMonth,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Month',
+            ),
+            items: [
+              DropdownMenuItem<int?>(
+                value: null,
+                child: Text(
+                  'Month (Optional)',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: ParishColors.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ...List.generate(maxMonthIndex, (index) {
+                final monthNum = index + 1;
+                return DropdownMenuItem<int?>(
+                  value: monthNum,
+                  child: Text(
+                    _monthNames[index],
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }),
+            ],
+            onChanged: (val) {
+              setState(() {
+                _selectedMonth = val;
+                if (_selectedDay != null && _selectedDay! > maxDays) {
+                  _selectedDay = maxDays;
+                }
+              });
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: isMobile ? 3 : 3,
+          child: DropdownButtonFormField<int?>(
+            value: (_selectedDay != null && _selectedDay! <= maxDays)
+                ? _selectedDay
+                : null,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Day',
+            ),
+            items: [
+              DropdownMenuItem<int?>(
+                value: null,
+                child: Text(
+                  'Day',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: ParishColors.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ...days.map(
+                    (d) => DropdownMenuItem<int?>(
+                  value: d,
+                  child: Text(
+                    '$d',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: ParishColors.textDark,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            onChanged: (val) => setState(() => _selectedDay = val),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: isMobile ? 4 : 4,
+          child: DropdownButtonFormField<int>(
+            value: _selectedYear,
+            isExpanded: true,
+            decoration: _floatingInputDecoration(
+              labelText: 'Year *',
+            ),
+            items: years.map((y) {
+              return DropdownMenuItem<int>(
+                value: y,
+                child: Text(
+                  '$y',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark,
+                  ),
+                ),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _selectedYear = val;
+                  if (_selectedYear == now.year &&
+                      _selectedMonth != null &&
+                      _selectedMonth! > now.month) {
+                    _selectedMonth = now.month;
+                  }
+                  if (_selectedYear == now.year &&
+                      _selectedMonth != null &&
+                      _selectedMonth == now.month &&
+                      _selectedDay != null &&
+                      _selectedDay! > now.day) {
+                    _selectedDay = now.day;
+                  }
+                });
+              }
+            },
+          ),
+        ),
+      ],
     );
   }
 }

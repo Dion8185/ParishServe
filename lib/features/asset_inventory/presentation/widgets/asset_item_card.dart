@@ -5,7 +5,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/asset_model.dart';
-import '../dialogs/asset_detail_dialog.dart';
+import '../pages/asset_detail_page.dart';
 
 class AssetItemCard extends StatelessWidget {
   final AssetModel asset;
@@ -51,10 +51,15 @@ class AssetItemCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap ??
-                () => showAssetDetailModal(
+                () => Navigator.push(
               context,
-              asset: asset,
-              onAssetUpdated: onRefresh,
+              MaterialPageRoute(
+                builder: (_) => AssetDetailPage(
+                  assets: [asset],
+                  initialIndex: 0,
+                  onAssetUpdated: onRefresh,
+                ),
+              ),
             ),
         borderRadius: BorderRadius.circular(14),
         child: Padding(

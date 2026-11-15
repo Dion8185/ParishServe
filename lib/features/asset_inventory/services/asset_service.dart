@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/auth_service.dart';
 import '../models/asset_audit_log_model.dart';
 import '../models/asset_model.dart';
+import '../utils/asset_image_watermark_util.dart';
 
 class AssetService {
   static final SupabaseClient _client = Supabase.instance.client;
@@ -172,23 +173,23 @@ class AssetService {
     }
   }
 
+  /// Uploads a JPEG photo to Supabase storage with standardized .jpg naming
   static Future<String?> uploadAssetPhoto({
     required String assetId,
     required Uint8List fileBytes,
     required String fileName,
   }) async {
     try {
-      final cleanExt = fileName.contains('.')
-          ? fileName.split('.').last.toLowerCase()
-          : 'jpg';
+      // Ensure file is clean JPEG before saving to bucket
+      final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(fileBytes);
       final storagePath =
-          'asset_photos/$assetId/photo_${DateTime.now().millisecondsSinceEpoch}.$cleanExt';
+          'asset_photos/$assetId/photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
       await _client.storage.from('certificate-assets').uploadBinary(
         storagePath,
-        fileBytes,
-        fileOptions: FileOptions(
-          contentType: 'image/$cleanExt',
+        jpegBytes,
+        fileOptions: const FileOptions(
+          contentType: 'image/jpeg',
           upsert: true,
         ),
       );
@@ -198,6 +199,43 @@ class AssetService {
           .getPublicUrl(storagePath);
     } catch (e) {
       debugPrint('Error uploading asset photo: $e');
+      return null;
+    }
+  }
+
+  /// Fast post-save watermarking routine: stamps the security watermark
+  /// containing the finalized control number, uploads the watermarked JPEG,
+  /// and updates the database record.
+  static Future<String?> applyAndSavePostWatermark({
+    required String assetId,
+    required String controlNumber,
+    required String itemName,
+    required Uint8List originalBytes,
+  }) async {
+    try {
+      final assetLabel = '$controlNumber • $itemName';
+      final watermarkedBytes = await AssetImageWatermarkUtil.applySecurityWatermark(
+        rawImageBytes: originalBytes,
+        assetIdentifier: assetLabel,
+        captureTime: DateTime.now(),
+      );
+
+      final publicUrl = await uploadAssetPhoto(
+        assetId: assetId,
+        fileBytes: watermarkedBytes,
+        fileName: 'photo_watermarked.jpg',
+      );
+
+      if (publicUrl != null) {
+        await _client.from('parish_assets').update({
+          'photo_url': publicUrl,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('asset_id', assetId);
+      }
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Post-save watermarking notice: $e');
       return null;
     }
   }
@@ -359,8 +397,6 @@ class AssetService {
     }
   }
 
-  /// Registers an asset. If month & day are optional, dateOfAcquisition is null
-  /// and only acquisitionYear is recorded—never defaulting to January 1!
   static Future<AssetModel> registerAsset({
     required String itemName,
     required int quantity,
@@ -416,7 +452,6 @@ class AssetService {
     final double safeUnitPrice = unitPrice >= 0.0 ? unitPrice : 0.0;
     final double calculatedTotalCost = quantity * safeUnitPrice;
 
-    // Only format YYYY-MM-DD if date is specified; if optional, keep null
     final String? dateString = dateOfAcquisition != null
         ? '${dateOfAcquisition.year}-${dateOfAcquisition.month.toString().padLeft(2, '0')}-${dateOfAcquisition.day.toString().padLeft(2, '0')}'
         : null;

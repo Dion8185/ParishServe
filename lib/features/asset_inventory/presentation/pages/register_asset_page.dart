@@ -14,6 +14,8 @@ import '../../services/asset_draft_service.dart';
 import '../../services/asset_reference_service.dart';
 import '../../services/asset_service.dart';
 import '../../utils/asset_image_watermark_util.dart';
+import '../widgets/asset_confirmation_dialog.dart';
+import '../widgets/asset_loading_overlay.dart';
 import 'asset_camera_page.dart';
 
 class ThousandsSeparatorCurrencyFormatter extends TextInputFormatter {
@@ -89,21 +91,23 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   bool _isLoadingReferences = true;
   bool _isLoadingSequence = false;
 
-  // Separated inline date mechanism (Month & Day are optional, no future dates allowed)
   late int _selectedYear;
-  int? _selectedMonth; // null = optional/unspecified, NEVER forced to January
-  int? _selectedDay; // null = optional/unspecified, NEVER forced to 1st
+  int? _selectedMonth;
+  int? _selectedDay;
 
   late String _modeOfAcquisition;
   late String _conditionStatus;
   late String _operationalStatus;
 
   String? _existingPhotoUrl;
-  Uint8List? _watermarkedPhotoBytes;
+  Uint8List? _convertedPhotoBytes;
   String? _photoFileName;
   bool _isProcessingImage = false;
+
+  // Global blocking overlay state
   bool _isSaving = false;
   bool _isSavingDraft = false;
+  String _loadingMessage = 'Processing...';
   String? _errorMessage;
 
   final List<String> _acquisitionModes = [
@@ -155,14 +159,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         TextEditingController(text: d?.sequenceNumber ?? '001');
 
     final initialDate = d?.dateOfAcquisition;
-
-    // Strict validation: cap at current year to prevent future dates
     final cappedYear = (initialDate != null && initialDate.year > now.year)
         ? now.year
         : (initialDate?.year ?? now.year);
     _selectedYear = cappedYear;
 
-    // Month and day are strictly optional: null by default unless explicitly saved in draft
     if (initialDate != null) {
       if (_selectedYear == now.year && initialDate.month > now.month) {
         _selectedMonth = now.month;
@@ -186,7 +187,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     _conditionStatus = AssetModel.normalizeCondition(d?.conditionStatus);
     _operationalStatus = AssetModel.normalizeStatus(d?.operationalStatus);
     _existingPhotoUrl = d?.photoUrl;
-    _watermarkedPhotoBytes = d?.localPhotoBytes;
+    _convertedPhotoBytes = d?.localPhotoBytes;
     _photoFileName = d?.photoFileName;
 
     _loadReferences();
@@ -209,7 +210,31 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     super.dispose();
   }
 
-  /// Returns null if month or day was left optional, completely preventing false "January 1" outputs
+  bool get _isFormDirty {
+    if (_itemNameController.text.trim().isNotEmpty) return true;
+    if (_unitPriceController.text.trim().isNotEmpty) return true;
+    if (_dimensionsController.text.trim().isNotEmpty) return true;
+    if (_colorController.text.trim().isNotEmpty) return true;
+    if (_modelController.text.trim().isNotEmpty) return true;
+    if (_othersController.text.trim().isNotEmpty) return true;
+    if (_remarksController.text.trim().isNotEmpty) return true;
+    if (_convertedPhotoBytes != null) return true;
+    return false;
+  }
+
+  Future<void> _handleBackNavigation() async {
+    if (_isSaving || _isSavingDraft) return;
+
+    if (_isFormDirty) {
+      final shouldDiscard = await showUnsavedChangesConfirmationDialog(context);
+      if (shouldDiscard && mounted) {
+        Navigator.pop(context);
+      }
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
   DateTime? get _effectiveDateOfAcquisition {
     if (_selectedMonth != null && _selectedDay != null) {
       return DateTime(_selectedYear, _selectedMonth!, _selectedDay!);
@@ -314,34 +339,32 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         ? '$_fullControlNumber • ${_itemNameController.text.trim()}'
         : _fullControlNumber;
 
-    final Uint8List? capturedWatermarkedBytes =
-    await Navigator.push<Uint8List>(
+    final Uint8List? capturedBytes = await Navigator.push<Uint8List>(
       context,
       MaterialPageRoute(
         builder: (_) => AssetCameraPage(assetIdentifier: idLabel),
       ),
     );
 
-    if (capturedWatermarkedBytes != null &&
-        capturedWatermarkedBytes.isNotEmpty) {
+    if (capturedBytes != null && capturedBytes.isNotEmpty) {
+      setState(() => _isProcessingImage = true);
+      // Ensure converted to clean JPEG
+      final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(capturedBytes);
+      if (!mounted) return;
       setState(() {
-        _watermarkedPhotoBytes = capturedWatermarkedBytes;
-        _photoFileName =
-        'photo_3R_${DateTime.now().millisecondsSinceEpoch}.png';
+        _convertedPhotoBytes = jpegBytes;
+        _photoFileName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
         _existingPhotoUrl = null;
+        _isProcessingImage = false;
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '3R photographic evidence captured and security watermark applied successfully.',
-            ),
-            backgroundColor: ParishColors.oliveGreen,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('3R photo captured and optimized to JPG successfully.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -349,7 +372,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     try {
       final dynamic result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'avif', 'gif'],
       );
       if (result != null) {
         dynamic file;
@@ -374,72 +397,38 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             } catch (_) {}
           }
 
-          String? name;
-          try {
-            name = (file as dynamic).name;
-          } catch (_) {}
-
           if (rawBytes != null) {
-            await _processAndWatermarkImage(
-              rawBytes,
-              name ?? 'asset_photo.jpg',
+            setState(() => _isProcessingImage = true);
+            // Automatic instant conversion of any format to JPG
+            final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(rawBytes);
+            if (!mounted) return;
+            setState(() {
+              _convertedPhotoBytes = jpegBytes;
+              _photoFileName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+              _existingPhotoUrl = null;
+              _isProcessingImage = false;
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Photo converted to optimized JPG format.'),
+                backgroundColor: ParishColors.oliveGreen,
+                duration: Duration(seconds: 2),
+              ),
             );
           }
         }
       }
     } catch (e) {
+      if (mounted) setState(() => _isProcessingImage = false);
       debugPrint('Error selecting image: $e');
-    }
-  }
-
-  Future<void> _processAndWatermarkImage(
-      Uint8List rawBytes,
-      String filename,
-      ) async {
-    setState(() => _isProcessingImage = true);
-    try {
-      final label = _itemNameController.text.trim().isNotEmpty
-          ? '$_fullControlNumber • ${_itemNameController.text.trim()}'
-          : _fullControlNumber;
-
-      final watermarked = await AssetImageWatermarkUtil.applySecurityWatermark(
-        rawImageBytes: rawBytes,
-        assetIdentifier: label,
-        captureTime: DateTime.now(),
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _watermarkedPhotoBytes = watermarked;
-        _photoFileName = filename;
-        _existingPhotoUrl = null;
-        _isProcessingImage = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Security watermark embedded. Tap thumbnail to inspect full preview.',
-          ),
-          backgroundColor: ParishColors.oliveGreen,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _watermarkedPhotoBytes = rawBytes;
-        _photoFileName = filename;
-        _existingPhotoUrl = null;
-        _isProcessingImage = false;
-      });
     }
   }
 
   void _openInteractiveImagePreview() {
     ImageProvider? provider;
-    if (_watermarkedPhotoBytes != null) {
-      provider = MemoryImage(_watermarkedPhotoBytes!);
+    if (_convertedPhotoBytes != null) {
+      provider = MemoryImage(_convertedPhotoBytes!);
     } else if (_existingPhotoUrl != null && _existingPhotoUrl!.isNotEmpty) {
       provider = NetworkImage(_existingPhotoUrl!);
     }
@@ -457,8 +446,23 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
   }
 
   Future<void> _saveAsDraft() async {
+    final confirmed = await showAssetActionConfirmationDialog(
+      context,
+      title: 'Save Cloud Draft?',
+      message: 'Save current progress to cloud drafts? You will be able to resume registration anytime across devices.',
+      itemIdentifier: _itemNameController.text.trim().isNotEmpty
+          ? '${_itemNameController.text.trim()} ($_fullControlNumber)'
+          : _fullControlNumber,
+      confirmLabel: 'Save Cloud Draft',
+      icon: Icons.cloud_upload_outlined,
+      accentColor: ParishColors.goldAccent,
+    );
+
+    if (!confirmed || !mounted) return;
+
     setState(() {
       _isSavingDraft = true;
+      _loadingMessage = 'Saving cloud draft...';
       _errorMessage = null;
     });
 
@@ -468,10 +472,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
       String? uploadedDraftUrl = _existingPhotoUrl;
 
-      if (_watermarkedPhotoBytes != null && _photoFileName != null) {
+      if (_convertedPhotoBytes != null && _photoFileName != null) {
+        setState(() => _loadingMessage = 'Uploading draft photo...');
         final uploaded = await AssetDraftService.uploadDraftPhoto(
           draftId: draftId,
-          fileBytes: _watermarkedPhotoBytes!,
+          fileBytes: _convertedPhotoBytes!,
           fileName: _photoFileName!,
         );
         if (uploaded != null) {
@@ -514,7 +519,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             ? _remarksController.text.trim()
             : null,
         photoUrl: uploadedDraftUrl,
-        localPhotoBytes: _watermarkedPhotoBytes,
+        localPhotoBytes: _convertedPhotoBytes,
         photoFileName: _photoFileName,
         updatedAt: DateTime.now(),
       );
@@ -524,9 +529,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Draft saved to cloud. You can resume editing anytime across your devices.',
-          ),
+          content: Text('Draft saved to cloud successfully.'),
           backgroundColor: ParishColors.oliveGreen,
           duration: Duration(seconds: 3),
         ),
@@ -537,8 +540,9 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to save cloud draft: $e';
-        _isSavingDraft = false;
       });
+    } finally {
+      if (mounted) setState(() => _isSavingDraft = false);
     }
   }
 
@@ -557,8 +561,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
 
     final seq = _sequenceNumberController.text.trim();
     if (seq.isEmpty) {
-      setState(
-              () => _errorMessage = 'Please specify the sequence number suffix.');
+      setState(() => _errorMessage = 'Please specify the sequence number suffix.');
       return;
     }
 
@@ -568,7 +571,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       return;
     }
 
-    // Strict validation: verify date cannot be in the future
     final now = DateTime.now();
     if (_selectedYear > now.year ||
         (_selectedYear == now.year &&
@@ -579,28 +581,45 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             _selectedMonth == now.month &&
             _selectedDay != null &&
             _selectedDay! > now.day)) {
-      setState(() =>
-      _errorMessage = 'Date of acquisition cannot be set to a future date.');
+      setState(() => _errorMessage = 'Date of acquisition cannot be set to a future date.');
       return;
     }
 
-    setState(() => _isSaving = true);
+    final confirmed = await showAssetActionConfirmationDialog(
+      context,
+      title: 'Register Parish Property?',
+      message: 'Are you sure you want to register "${_itemNameController.text.trim()}" to the parish property ledger under control number $_fullControlNumber?',
+      itemIdentifier: '$_fullControlNumber • ${_itemNameController.text.trim()} ($qty units)',
+      confirmLabel: 'Register Item',
+      icon: Icons.check_circle_outline,
+      accentColor: ParishColors.marianBlue,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _isSaving = true;
+      _loadingMessage = 'Recording asset in parish ledger...';
+    });
 
     try {
       String? uploadedPhotoUrl = _existingPhotoUrl;
-      if (_watermarkedPhotoBytes != null && _photoFileName != null) {
-        final tempId =
-            'AST-${DateTime.now().millisecondsSinceEpoch % 100000}';
+
+      // 1. Initial photo upload
+      if (_convertedPhotoBytes != null && _photoFileName != null) {
+        setState(() => _loadingMessage = 'Uploading photo to cloud storage...');
+        final tempId = 'AST-${DateTime.now().millisecondsSinceEpoch % 100000}';
         uploadedPhotoUrl = await AssetService.uploadAssetPhoto(
           assetId: tempId,
-          fileBytes: _watermarkedPhotoBytes!,
+          fileBytes: _convertedPhotoBytes!,
           fileName: _photoFileName!,
         );
       }
 
       final fullControlNo = _fullControlNumber;
 
-      // Passes null dateOfAcquisition if month and day are optional, preserving only acquisitionYear
+      // 2. Register asset in DB
+      setState(() => _loadingMessage = 'Registering record in database...');
       final createdAsset = await AssetService.registerAsset(
         itemName: _itemNameController.text.trim(),
         quantity: qty,
@@ -625,6 +644,17 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         customControlNumber: fullControlNo,
       );
 
+      // 3. Post-save fast watermarking
+      if (_convertedPhotoBytes != null) {
+        setState(() => _loadingMessage = 'Applying security watermark to photo...');
+        await AssetService.applyAndSavePostWatermark(
+          assetId: createdAsset.assetId,
+          controlNumber: createdAsset.controlNumber,
+          itemName: createdAsset.itemName,
+          originalBytes: _convertedPhotoBytes!,
+        );
+      }
+
       if (widget.initialDraft != null) {
         await AssetDraftService.deleteDraft(widget.initialDraft!.draftId);
       }
@@ -634,8 +664,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       widget.onAssetSaved?.call();
 
       final summaryText = qty > 1
-          ? 'Registered successfully: ${createdAsset.itemName} ($qty units) • Control #: ${createdAsset.controlNumber}'
-          : 'Registered successfully: ${createdAsset.itemName} • Control #: ${createdAsset.controlNumber}';
+          ? 'Registered: ${createdAsset.itemName} ($qty units) • Control #: ${createdAsset.controlNumber}'
+          : 'Registered: ${createdAsset.itemName} • Control #: ${createdAsset.controlNumber}';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -644,10 +674,12 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
         ),
       );
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _isSaving = false;
       });
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -662,397 +694,458 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       builder: (context, constraints) {
         final bool isMobile = constraints.maxWidth < 650;
 
-        return Scaffold(
-          backgroundColor: ParishColors.backgroundLight,
-          appBar: AppBar(
-            backgroundColor: cardWhite,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back,
-                color: ParishColors.marianBlue,
-              ),
-              onPressed: () => Navigator.pop(context),
-            ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            await _handleBackNavigation();
+          },
+          child: AssetLoadingOverlay(
+            isLoading: _isSaving || _isSavingDraft,
+            message: _loadingMessage,
+            child: Scaffold(
+              backgroundColor: ParishColors.backgroundLight,
+              appBar: AppBar(
+                backgroundColor: cardWhite,
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: ParishColors.marianBlue,
+                  ),
+                  onPressed: _handleBackNavigation,
+                ),
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        widget.initialDraft != null
-                            ? 'Resume Registration'
-                            : 'Register New Item',
-                        style: TextStyle(
-                          fontSize: isMobile ? 16 : 18,
-                          fontWeight: FontWeight.bold,
-                          color: textDark,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (widget.initialDraft != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: ParishColors.goldLight,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                              color:
-                              ParishColors.goldAccent.withOpacity(0.5)),
-                        ),
-                        child: const Text(
-                          'CLOUD DRAFT',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: ParishColors.goldAccent,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.initialDraft != null
+                                ? 'Resume Registration'
+                                : 'Register New Item',
+                            style: TextStyle(
+                              fontSize: isMobile ? 16 : 18,
+                              fontWeight: FontWeight.bold,
+                              color: textDark,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (widget.initialDraft != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: ParishColors.goldLight,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                  color:
+                                  ParishColors.goldAccent.withOpacity(0.5)),
+                            ),
+                            child: const Text(
+                              'CLOUD DRAFT',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: ParishColors.goldAccent,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      'Record parish property with automated control number and quantity count',
+                      style: TextStyle(
+                        fontSize: isMobile ? 10.5 : 12,
+                        color: textMuted,
                       ),
-                    ],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
-                Text(
-                  'Record parish property with automated control number and quantity count',
-                  style: TextStyle(
-                    fontSize: isMobile ? 10.5 : 12,
-                    color: textMuted,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              ),
+              body: _isLoadingReferences
+                  ? const Center(child: CircularProgressIndicator())
+                  : SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 14 : 24,
+                  vertical: isMobile ? 14 : 24,
                 ),
-              ],
-            ),
-          ),
-          body: _isLoadingReferences
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 14 : 24,
-              vertical: isMobile ? 14 : 24,
-            ),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_errorMessage != null) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: ParishColors.mercyRed),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.error_outline,
-                                  color: ParishColors.mercyRed,
-                                  size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(
-                                    color: ParishColors.mercyRed,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12.5,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      // 1. Photographic Evidence Section
-                      _buildFormSectionCard(
-                        title: 'Photographic Evidence',
-                        subtitle:
-                        'Capture 3R photo (10:7 Landscape or 7:10 Portrait) or upload image',
-                        icon: Icons.camera_alt_outlined,
-                        iconColor: ParishColors.marianBlue,
-                        child: _buildPhotoUploadBox(isMobile, borderGrey,
-                            cardWhite, textDark, textMuted),
-                      ),
-                      const SizedBox(height: 18),
-
-                      // 2. Item Identification & Control Number Section
-                      _buildFormSectionCard(
-                        title: 'Item Identification & Control Number',
-                        subtitle:
-                        'Canonical control coding, naming, and diocesan classifications',
-                        icon: Icons.qr_code_2,
-                        iconColor: ParishColors.goldAccent,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildControlNumberCard(isMobile),
-                            const SizedBox(height: 18),
-
-                            // General Header: Name
-                            _buildGeneralHeader('Name'),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _itemNameController,
-                              validator: (v) =>
-                              (v?.trim().isEmpty ?? true)
-                                  ? 'Please enter the item name.'
-                                  : null,
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: textDark,
-                                  fontWeight: FontWeight.bold),
-                              decoration: _floatingInputDecoration(
-                                labelText: 'Item Name *',
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-
-                            // General Header: Location & Classification
-                            _buildGeneralHeader('Location & Classification'),
-                            const SizedBox(height: 8),
-                            isMobile
-                                ? Column(
-                              children: [
-                                _buildClassificationDropdown(),
-                                const SizedBox(height: 12),
-                                _buildLocationDropdown(),
-                              ],
-                            )
-                                : Row(
-                              children: [
-                                Expanded(
-                                  child:
-                                  _buildClassificationDropdown(),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildLocationDropdown(),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-
-                      // 3. Acquisition Date, Valuation & Method Section
-                      _buildFormSectionCard(
-                        title: 'Acquisition & Valuation',
-                        subtitle:
-                        'Acquisition date (separated inline), value tiering, and quantity count',
-                        icon: Icons.payments_outlined,
-                        iconColor: ParishColors.oliveGreen,
-                        headerTrailing: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _parsedUnitPrice >= 10000.0
-                                ? ParishColors.goldLight
-                                : ParishColors.marianBlueSurface,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: _parsedUnitPrice >= 10000.0
-                                  ? ParishColors.goldAccent
-                                  : ParishColors.marianBlue,
-                              width: 1.2,
-                            ),
-                          ),
-                          child: Text(
-                            _determinedInventorySection.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: _parsedUnitPrice >= 10000.0
-                                  ? ParishColors.goldAccent
-                                  : ParishColors.marianBlue,
-                            ),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // General Header: Date of Acquisition
-                            _buildGeneralHeader('Date of Acquisition'),
-                            const SizedBox(height: 8),
-
-                            // Separated Inline Date Dropdowns (Month, Day, Year) - No future dates, Month & Day optional
-                            _buildSeparatedDateSelectors(isMobile),
-                            const SizedBox(height: 18),
-
-                            // General Header: Acquisition Method
-                            _buildGeneralHeader('Acquisition Method'),
-                            const SizedBox(height: 8),
-                            _buildAcquisitionModeDropdown(),
-                            const SizedBox(height: 18),
-
-                            // General Header: Quantity & Valuation
-                            _buildGeneralHeader('Quantity & Valuation'),
-                            const SizedBox(height: 8),
-                            Row(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: TextFormField(
-                                    controller: _quantityController,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter
-                                          .digitsOnly,
-                                    ],
-                                    validator: (v) {
-                                      final num = int.tryParse(
-                                          v?.trim() ?? '');
-                                      if (num == null || num <= 0) {
-                                        return 'Min 1';
-                                      }
-                                      return null;
-                                    },
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: textDark,
-                                    ),
-                                    decoration: _floatingInputDecoration(
-                                      labelText: 'Quantity *',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  flex: 3,
-                                  child: TextFormField(
-                                    controller: _unitPriceController,
-                                    keyboardType: const TextInputType
-                                        .numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                    inputFormatters: [
-                                      ThousandsSeparatorCurrencyFormatter(),
-                                    ],
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: textDark,
-                                    ),
-                                    decoration: _floatingInputDecoration(
-                                      labelText: 'Price per Unit (₱)',
-                                      prefixIcon: Padding(
-                                        padding:
-                                        const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 12,
-                                        ),
-                                        child: Text(
-                                          '₱',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 15,
-                                            color: textDark,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 900),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_errorMessage != null) ...[
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 10),
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 16),
                               decoration: BoxDecoration(
-                                color: ParishColors.backgroundLight,
+                                color: ParishColors.mercyRedSurface,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                    color: ParishColors.oliveGreen
-                                        .withOpacity(0.4)),
+                                    color: ParishColors.mercyRed),
                               ),
                               child: Row(
-                                mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    'Calculated Total Cost:',
-                                    style: TextStyle(
-                                      color: textMuted,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  Text(
-                                    '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
-                                    style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.oliveGreen,
+                                  const Icon(Icons.error_outline,
+                                      color: ParishColors.mercyRed,
+                                      size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _errorMessage!,
+                                      style: const TextStyle(
+                                        color: ParishColors.mercyRed,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12.5,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                           ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
 
-                      // 4. Physical Specifications & Descriptions Section
-                      _buildFormSectionCard(
-                        title: 'Physical Specifications & Status',
-                        subtitle:
-                        'Dimensions, color, model, condition, availability, and notes',
-                        icon: Icons.tune,
-                        iconColor: ParishColors.goldAccent,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // General Header: Condition & Availability
-                            _buildGeneralHeader('Condition & Availability'),
-                            const SizedBox(height: 8),
-                            isMobile
-                                ? Column(
+                          // 1. Photographic Evidence Section
+                          _buildFormSectionCard(
+                            title: 'Photographic Evidence',
+                            subtitle:
+                            'Capture 3R photo (10:7 Landscape or 7:10 Portrait) or upload image (auto-converted to JPG)',
+                            icon: Icons.camera_alt_outlined,
+                            iconColor: ParishColors.marianBlue,
+                            child: _buildPhotoUploadBox(isMobile,
+                                borderGrey, cardWhite, textDark, textMuted),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // 2. Item Identification & Control Number Section
+                          _buildFormSectionCard(
+                            title: 'Item Identification & Control Number',
+                            subtitle:
+                            'Canonical control coding, naming, and diocesan classifications',
+                            icon: Icons.qr_code_2,
+                            iconColor: ParishColors.goldAccent,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildConditionDropdown(),
-                                const SizedBox(height: 12),
-                                _buildOperationalStatusDropdown(),
-                              ],
-                            )
-                                : Row(
-                              children: [
-                                Expanded(
-                                  child: _buildConditionDropdown(),
+                                _buildControlNumberCard(isMobile),
+                                const SizedBox(height: 18),
+                                _buildGeneralHeader('Name'),
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  controller: _itemNameController,
+                                  validator: (v) =>
+                                  (v?.trim().isEmpty ?? true)
+                                      ? 'Please enter the item name.'
+                                      : null,
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: textDark,
+                                      fontWeight: FontWeight.bold),
+                                  decoration: _floatingInputDecoration(
+                                    labelText: 'Item Name *',
+                                  ),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child:
-                                  _buildOperationalStatusDropdown(),
+                                const SizedBox(height: 18),
+                                _buildGeneralHeader(
+                                    'Location & Classification'),
+                                const SizedBox(height: 8),
+                                isMobile
+                                    ? Column(
+                                  children: [
+                                    _buildClassificationDropdown(),
+                                    const SizedBox(height: 12),
+                                    _buildLocationDropdown(),
+                                  ],
+                                )
+                                    : Row(
+                                  children: [
+                                    Expanded(
+                                      child:
+                                      _buildClassificationDropdown(),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _buildLocationDropdown(),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 18),
+                          ),
+                          const SizedBox(height: 18),
 
-                            // General Header: Dimensions & Make
-                            _buildGeneralHeader('Dimensions & Make'),
-                            const SizedBox(height: 8),
-                            isMobile
-                                ? Column(
+                          // 3. Acquisition Date, Valuation & Method Section
+                          _buildFormSectionCard(
+                            title: 'Acquisition & Valuation',
+                            subtitle:
+                            'Acquisition date (separated inline), value tiering, and quantity count',
+                            icon: Icons.payments_outlined,
+                            iconColor: ParishColors.oliveGreen,
+                            headerTrailing: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: _parsedUnitPrice >= 10000.0
+                                    ? ParishColors.goldLight
+                                    : ParishColors.marianBlueSurface,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: _parsedUnitPrice >= 10000.0
+                                      ? ParishColors.goldAccent
+                                      : ParishColors.marianBlue,
+                                  width: 1.2,
+                                ),
+                              ),
+                              child: Text(
+                                _determinedInventorySection.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: _parsedUnitPrice >= 10000.0
+                                      ? ParishColors.goldAccent
+                                      : ParishColors.marianBlue,
+                                ),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                _buildGeneralHeader('Date of Acquisition'),
+                                const SizedBox(height: 8),
+                                _buildSeparatedDateSelectors(isMobile),
+                                const SizedBox(height: 18),
+                                _buildGeneralHeader('Acquisition Method'),
+                                const SizedBox(height: 8),
+                                _buildAcquisitionModeDropdown(),
+                                const SizedBox(height: 18),
+                                _buildGeneralHeader(
+                                    'Quantity & Valuation'),
+                                const SizedBox(height: 8),
                                 Row(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      flex: 2,
+                                      child: TextFormField(
+                                        controller: _quantityController,
+                                        keyboardType:
+                                        TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
+                                        ],
+                                        validator: (v) {
+                                          final num = int.tryParse(
+                                              v?.trim() ?? '');
+                                          if (num == null || num <= 0) {
+                                            return 'Min 1';
+                                          }
+                                          return null;
+                                        },
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: textDark,
+                                        ),
+                                        decoration:
+                                        _floatingInputDecoration(
+                                          labelText: 'Quantity *',
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      flex: 3,
+                                      child: TextFormField(
+                                        controller: _unitPriceController,
+                                        keyboardType:
+                                        const TextInputType
+                                            .numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                        inputFormatters: [
+                                          ThousandsSeparatorCurrencyFormatter(),
+                                        ],
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: textDark,
+                                        ),
+                                        decoration:
+                                        _floatingInputDecoration(
+                                          labelText:
+                                          'Price per Unit (₱)',
+                                          prefixIcon: Padding(
+                                            padding: const EdgeInsets
+                                                .symmetric(
+                                              horizontal: 10,
+                                              vertical: 12,
+                                            ),
+                                            child: Text(
+                                              '₱',
+                                              style: TextStyle(
+                                                fontWeight:
+                                                FontWeight.bold,
+                                                fontSize: 15,
+                                                color: textDark,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: ParishColors.backgroundLight,
+                                    borderRadius:
+                                    BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: ParishColors.oliveGreen
+                                            .withOpacity(0.4)),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Calculated Total Cost:',
+                                        style: TextStyle(
+                                          color: textMuted,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        '₱ ${AssetModel.formatCurrency(_calculatedTotalCost)}',
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.oliveGreen,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // 4. Physical Specifications & Descriptions Section
+                          _buildFormSectionCard(
+                            title: 'Physical Specifications & Status',
+                            subtitle:
+                            'Dimensions, color, model, condition, availability, and notes',
+                            icon: Icons.tune,
+                            iconColor: ParishColors.goldAccent,
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                _buildGeneralHeader(
+                                    'Condition & Availability'),
+                                const SizedBox(height: 8),
+                                isMobile
+                                    ? Column(
+                                  children: [
+                                    _buildConditionDropdown(),
+                                    const SizedBox(height: 12),
+                                    _buildOperationalStatusDropdown(),
+                                  ],
+                                )
+                                    : Row(
+                                  children: [
+                                    Expanded(
+                                      child:
+                                      _buildConditionDropdown(),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child:
+                                      _buildOperationalStatusDropdown(),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 18),
+                                _buildGeneralHeader('Dimensions & Make'),
+                                const SizedBox(height: 8),
+                                isMobile
+                                    ? Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller:
+                                            _dimensionsController,
+                                            style: TextStyle(
+                                                fontSize: 13,
+                                                color: textDark,
+                                                fontWeight:
+                                                FontWeight
+                                                    .bold),
+                                            decoration:
+                                            _floatingInputDecoration(
+                                              labelText:
+                                              'Dimensions',
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller:
+                                            _colorController,
+                                            style: TextStyle(
+                                                fontSize: 13,
+                                                color: textDark,
+                                                fontWeight:
+                                                FontWeight
+                                                    .bold),
+                                            decoration:
+                                            _floatingInputDecoration(
+                                              labelText: 'Color',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextFormField(
+                                      controller:
+                                      _modelController,
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          color: textDark,
+                                          fontWeight:
+                                          FontWeight.bold),
+                                      decoration:
+                                      _floatingInputDecoration(
+                                        labelText: 'Model / Maker',
+                                      ),
+                                    ),
+                                  ],
+                                )
+                                    : Row(
                                   children: [
                                     Expanded(
                                       child: TextFormField(
@@ -1065,7 +1158,8 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                             FontWeight.bold),
                                         decoration:
                                         _floatingInputDecoration(
-                                          labelText: 'Dimensions',
+                                          labelText:
+                                          'Size / Dimensions',
                                         ),
                                       ),
                                     ),
@@ -1085,112 +1179,66 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller:
+                                        _modelController,
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: textDark,
+                                            fontWeight:
+                                            FontWeight.bold),
+                                        decoration:
+                                        _floatingInputDecoration(
+                                          labelText:
+                                          'Model / Brand',
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 18),
+                                _buildGeneralHeader(
+                                    'Additional Details & Inscriptions'),
+                                const SizedBox(height: 8),
                                 TextFormField(
-                                  controller: _modelController,
+                                  controller: _othersController,
+                                  maxLines: 2,
                                   style: TextStyle(
                                       fontSize: 13,
                                       color: textDark,
                                       fontWeight: FontWeight.bold),
-                                  decoration:
-                                  _floatingInputDecoration(
-                                    labelText: 'Model / Maker',
+                                  decoration: _floatingInputDecoration(
+                                    labelText:
+                                    'Other Descriptions / Inscriptions',
                                   ),
                                 ),
-                              ],
-                            )
-                                : Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller:
-                                    _dimensionsController,
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: textDark,
-                                        fontWeight:
-                                        FontWeight.bold),
-                                    decoration:
-                                    _floatingInputDecoration(
-                                      labelText:
-                                      'Size / Dimensions',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _colorController,
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: textDark,
-                                        fontWeight:
-                                        FontWeight.bold),
-                                    decoration:
-                                    _floatingInputDecoration(
-                                      labelText: 'Color',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _modelController,
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: textDark,
-                                        fontWeight:
-                                        FontWeight.bold),
-                                    decoration:
-                                    _floatingInputDecoration(
-                                      labelText: 'Model / Brand',
-                                    ),
+                                const SizedBox(height: 14),
+                                TextFormField(
+                                  controller: _remarksController,
+                                  maxLines: 2,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: textDark,
+                                      fontWeight: FontWeight.bold),
+                                  decoration: _floatingInputDecoration(
+                                    labelText:
+                                    'Remarks & Maintenance Observations',
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 18),
+                          ),
+                          const SizedBox(height: 24),
 
-                            // General Header: Additional Details
-                            _buildGeneralHeader('Additional Details & Inscriptions'),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _othersController,
-                              maxLines: 2,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: textDark,
-                                  fontWeight: FontWeight.bold),
-                              decoration: _floatingInputDecoration(
-                                labelText:
-                                'Other Descriptions / Inscriptions',
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _remarksController,
-                              maxLines: 2,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: textDark,
-                                  fontWeight: FontWeight.bold),
-                              decoration: _floatingInputDecoration(
-                                labelText:
-                                'Remarks & Maintenance Observations',
-                              ),
-                            ),
-                          ],
-                        ),
+                          // 5. Form Actions Section Card
+                          _buildFormActionSection(
+                              isMobile, cardWhite, borderGrey, textMuted),
+                          const SizedBox(height: 48),
+                        ],
                       ),
-                      const SizedBox(height: 24),
-
-                      // 5. Form Actions Section Card
-                      _buildFormActionSection(
-                          isMobile, cardWhite, borderGrey, textMuted),
-                      const SizedBox(height: 48),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1200,10 +1248,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       },
     );
   }
-
-  // ===========================================================================
-  // UI Helpers: General Headers & Floating Label Input Decoration (No Hint Text)
-  // ===========================================================================
 
   Widget _buildGeneralHeader(String title) {
     return Text(
@@ -1265,20 +1309,13 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     );
   }
 
-  // ===========================================================================
-  // Separated Inline Date Selector (Month, Day, Year with Year Capped at Now)
-  // ===========================================================================
-
   Widget _buildSeparatedDateSelectors(bool isMobile) {
     final now = DateTime.now();
-
-    // Strict validation: do not allow future years
     final years = List<int>.generate(
       now.year - 1940 + 1,
           (i) => now.year - i,
     );
 
-    // Calculate maximum days in selected month
     int maxDays = 31;
     if (_selectedMonth != null) {
       if ([4, 6, 9, 11].contains(_selectedMonth)) {
@@ -1290,7 +1327,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       }
     }
 
-    // If current year and current month are selected, cap maxDays at today
     if (_selectedYear == now.year &&
         _selectedMonth != null &&
         _selectedMonth == now.month) {
@@ -1300,14 +1336,11 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
     }
 
     final days = List<int>.generate(maxDays, (i) => i + 1);
-
-    // Max selectable months for current year
     final int maxMonthIndex =
     _selectedYear == now.year ? now.month : 12;
 
     return Row(
       children: [
-        // Month Dropdown (Optional, starts null, never forced to January)
         Expanded(
           flex: isMobile ? 4 : 5,
           child: DropdownButtonFormField<int?>(
@@ -1355,8 +1388,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
           ),
         ),
         const SizedBox(width: 8),
-
-        // Day Dropdown (Optional, starts null, never forced to 1st)
         Expanded(
           flex: isMobile ? 3 : 3,
           child: DropdownButtonFormField<int?>(
@@ -1397,8 +1428,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
           ),
         ),
         const SizedBox(width: 8),
-
-        // Year Dropdown (Required, strictly no future years)
         Expanded(
           flex: isMobile ? 4 : 4,
           child: DropdownButtonFormField<int>(
@@ -1445,10 +1474,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       ],
     );
   }
-
-  // ===========================================================================
-  // Section Cards & Form Fields
-  // ===========================================================================
 
   Widget _buildFormSectionCard({
     required String title,
@@ -1710,7 +1735,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       Color textDark,
       Color textMuted,
       ) {
-    final bool hasNewPhoto = _watermarkedPhotoBytes != null;
+    final bool hasNewPhoto = _convertedPhotoBytes != null;
     final bool hasExistingPhoto =
         _existingPhotoUrl != null && _existingPhotoUrl!.isNotEmpty;
     final bool hasAnyPhoto = hasNewPhoto || hasExistingPhoto;
@@ -1729,7 +1754,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Photo Thumbnail Box
           InkWell(
             onTap: hasAnyPhoto ? _openInteractiveImagePreview : null,
             borderRadius: BorderRadius.circular(10),
@@ -1750,7 +1774,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                   ? ClipRRect(
                 borderRadius: BorderRadius.circular(9),
                 child: Image.memory(
-                  _watermarkedPhotoBytes!,
+                  _convertedPhotoBytes!,
                   fit: BoxFit.cover,
                 ),
               )
@@ -1770,8 +1794,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             ),
           ),
           const SizedBox(width: 16),
-
-          // Labels and Buttons Strip
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1779,7 +1801,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 Text(
                   hasAnyPhoto
                       ? (hasNewPhoto
-                      ? '3R Watermarked Photo Embedded'
+                      ? 'Optimized JPG Photo Ready'
                       : 'Cloud Photo Attached')
                       : 'Capture 3R Photo or Upload File',
                   style: TextStyle(
@@ -1789,7 +1811,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '3R standard framing (5×3.5 Landscape or 3.5×5 Portrait) calibrated for official inventory cards.',
+                  'Automatically converted to JPG. Diocesan security watermark will be applied upon saving.',
                   style: TextStyle(fontSize: 11.5, color: textMuted),
                 ),
                 const SizedBox(height: 10),
@@ -1797,7 +1819,6 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    // Dedicated 3R Camera Launch Button
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ParishColors.marianBlue,
@@ -1811,24 +1832,18 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       icon: const Icon(Icons.camera_alt, size: 16),
                       label: const Text('3R Camera'),
                     ),
-
-                    // Upload Image from Files
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: ParishColors.marianBlue,
-                        side:
-                        const BorderSide(color: ParishColors.marianBlue),
+                        side: const BorderSide(color: ParishColors.marianBlue),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                       ),
-                      onPressed: _isProcessingImage
-                          ? null
-                          : _pickImageFromDevice,
+                      onPressed:
+                      _isProcessingImage ? null : _pickImageFromDevice,
                       icon: const Icon(Icons.upload_file, size: 16),
                       label: const Text('Upload Image'),
                     ),
-
-                    // Inspect Full Watermarked Preview
                     if (hasAnyPhoto) ...[
                       TextButton.icon(
                         onPressed: _openInteractiveImagePreview,
@@ -1838,7 +1853,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       TextButton.icon(
                         onPressed: () {
                           setState(() {
-                            _watermarkedPhotoBytes = null;
+                            _convertedPhotoBytes = null;
                             _existingPhotoUrl = null;
                             _photoFileName = null;
                           });
@@ -1895,17 +1910,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                 elevation: 1,
               ),
               onPressed: isBusy ? null : _submitAsset,
-              icon: _isSaving
-                  ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2),
-              )
-                  : const Icon(Icons.check, size: 18),
-              label: Text(
-                _isSaving ? 'Registering...' : 'Save & Register Item',
-                style: const TextStyle(
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text(
+                'Save & Register Item',
+                style: TextStyle(
                     fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ),
@@ -1922,20 +1930,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                     borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: isBusy ? null : _saveAsDraft,
-              icon: _isSavingDraft
-                  ? const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: ParishColors.goldAccent),
-              )
-                  : const Icon(Icons.cloud_upload_outlined, size: 16),
-              label: Text(
-                _isSavingDraft
-                    ? 'Saving Cloud Draft...'
-                    : 'Save as Cloud Draft',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+              icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+              label: const Text(
+                'Save as Cloud Draft',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -1944,7 +1942,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
             width: double.infinity,
             height: 40,
             child: TextButton(
-              onPressed: isBusy ? null : () => Navigator.pop(context),
+              onPressed: isBusy ? null : _handleBackNavigation,
               child: Text('Cancel', style: TextStyle(color: textMuted)),
             ),
           ),
@@ -1962,7 +1960,7 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
             ),
-            onPressed: isBusy ? null : () => Navigator.pop(context),
+            onPressed: isBusy ? null : _handleBackNavigation,
             child: const Text('Cancel',
                 style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -1980,20 +1978,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                       borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: isBusy ? null : _saveAsDraft,
-                icon: _isSavingDraft
-                    ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: ParishColors.goldAccent),
-                )
-                    : const Icon(Icons.cloud_upload_outlined, size: 16),
-                label: Text(
-                  _isSavingDraft
-                      ? 'Saving Cloud Draft...'
-                      : 'Save as Cloud Draft',
-                  style: const TextStyle(
+                icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                label: const Text(
+                  'Save as Cloud Draft',
+                  style: TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 13.5),
                 ),
               ),
@@ -2009,17 +1997,10 @@ class _RegisterAssetPageState extends State<RegisterAssetPage> {
                   elevation: 1,
                 ),
                 onPressed: isBusy ? null : _submitAsset,
-                icon: _isSaving
-                    ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2),
-                )
-                    : const Icon(Icons.check, size: 18),
-                label: Text(
-                  _isSaving ? 'Registering...' : 'Save & Register Item',
-                  style: const TextStyle(
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text(
+                  'Save & Register Item',
+                  style: TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 14),
                 ),
               ),
