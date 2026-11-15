@@ -9,6 +9,7 @@ import '../../services/receipt_pdf_generator.dart';
 import '../../services/receipt_template_service.dart';
 import '../../services/secretary_service.dart';
 import '../pages/receipt_template_management_page.dart';
+import '../../../asset_inventory/presentation/widgets/asset_loading_overlay.dart';
 
 void showReceiptDetailModal(
     BuildContext context, {
@@ -286,45 +287,59 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
   Future<void> _openPdfPreviewModal({bool isThermal = false}) async {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              isThermal ? '80mm Thermal Receipt Preview' : 'Official Receipt Voucher Preview',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            IconButton(
-              onPressed: () => Navigator.pop(ctx),
-              icon: const Icon(Icons.close),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: 680,
-          height: 560,
-          child: PdfPreview(
-            build: (format) => ReceiptPdfGenerator.generateReceiptPdf(
-              receiptNumber: widget.receiptNo,
-              payorName: widget.payer,
-              payorContact: widget.payorContact,
-              relatedService: widget.purpose,
-              transactionDetails: _currentTransactionDetails ?? widget.purpose,
-              amount: _numericAmount,
-              paymentMode: _displayPaymentMode,
-              dateString: widget.date,
-              template: _selectedTemplate,
-              isThermalRoll: isThermal,
-              isVoided: _isVoided,
-              voidReason: _voidAuditNotice,
-            ),
-            allowPrinting: _isStaff,
-            allowSharing: false,
-            canChangePageFormat: false,
+      builder: (ctx) {
+        final screenSize = MediaQuery.of(ctx).size;
+        return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  isThermal ? '80mm Thermal Receipt Preview' : 'Official Receipt Voucher Preview',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close),
+              ),
+            ],
           ),
-        ),
-      ),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 680,
+              maxHeight: screenSize.height * 0.72,
+            ),
+            child: SizedBox(
+              width: 680,
+              height: 560,
+              child: PdfPreview(
+                useActions: false,
+                build: (format) => ReceiptPdfGenerator.generateReceiptPdf(
+                  receiptNumber: widget.receiptNo,
+                  payorName: widget.payer,
+                  payorContact: widget.payorContact,
+                  relatedService: widget.purpose,
+                  transactionDetails: _currentTransactionDetails ?? widget.purpose,
+                  amount: _numericAmount,
+                  paymentMode: _displayPaymentMode,
+                  dateString: widget.date,
+                  template: _selectedTemplate,
+                  isThermalRoll: isThermal,
+                  isVoided: _isVoided,
+                  voidReason: _voidAuditNotice,
+                ),
+                allowPrinting: _isStaff,
+                allowSharing: false,
+                canChangePageFormat: false,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -345,16 +360,23 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Row(
             children: [
               Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 26),
               SizedBox(width: 8),
-              Text('Void Ecclesiastical Receipt', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+              Expanded(
+                child: Text(
+                  'Void Ecclesiastical Receipt',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
-          content: SizedBox(
-            width: 460,
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -362,10 +384,10 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                 children: [
                   Text(
                     'Are you sure you want to void receipt "${widget.receiptNo}"? This action permanently nullifies the receipt in the canonical ledger and excludes it from total parish collections.',
-                    style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.4),
+                    style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
                   ),
                   const SizedBox(height: 14),
-                  Text('Reason for Voiding *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+                  Text('Quick Reasons', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.textMuted)),
                   const SizedBox(height: 6),
                   Wrap(
                     spacing: 6,
@@ -373,7 +395,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                     children: quickReasons.map((r) {
                       final isSelected = selectedQuickReason == r;
                       return ChoiceChip(
-                        label: Text(r, style: TextStyle(fontSize: 11, color: isSelected ? Colors.white : ParishColors.textDark)),
+                        label: Text(r, style: TextStyle(fontSize: 11.5, color: isSelected ? Colors.white : ParishColors.textDark)),
                         selected: isSelected,
                         selectedColor: ParishColors.mercyRed,
                         backgroundColor: ParishColors.backgroundLight,
@@ -386,14 +408,28 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                       );
                     }).toList(),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
                   TextFormField(
                     controller: reasonController,
-                    maxLines: 2,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: const InputDecoration(
-                      labelText: 'Specific Justification / Note *',
-                      border: OutlineInputBorder(),
+                    minLines: 3,
+                    maxLines: 4,
+                    style: const TextStyle(fontSize: 14, height: 1.4),
+                    decoration: InputDecoration(
+                      labelText: 'Specific Justification / Remarks *',
+                      floatingLabelBehavior: FloatingLabelBehavior.auto,
+                      alignLabelWithHint: true,
+                      filled: true,
+                      fillColor: ParishColors.backgroundLight,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: ParishColors.borderGrey),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: ParishColors.mercyRed, width: 1.6),
+                      ),
                     ),
                   ),
                 ],
@@ -409,6 +445,8 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: ParishColors.mercyRed,
                 foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size(140, 44),
               ),
               onPressed: () {
                 final reason = reasonController.text.trim().isNotEmpty
@@ -418,7 +456,7 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
                   Navigator.pop(ctx, true);
                 }
               },
-              child: const Text('Confirm Void Receipt'),
+              child: const Text('Confirm Void Receipt', style: TextStyle(fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -491,421 +529,475 @@ class _ReceiptDetailDialogState extends State<_ReceiptDetailDialog> {
     final notes = parsed.$2;
     final tenderColor = _tenderBadgeColor;
     final voidNotice = _voidAuditNotice;
+    final screenSize = MediaQuery.of(context).size;
+    final isNarrow = screenSize.width < 520;
 
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: ParishColors.cardWhite,
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _isVoided ? ParishColors.mercyRedSurface : tenderColor.withOpacity(0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _isVoided ? Icons.block : Icons.receipt_long,
-                  color: _isVoided ? ParishColors.mercyRed : tenderColor,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                _isVoided ? 'Voided Receipt' : 'Parish Receipt Slip',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-              ),
-            ],
-          ),
-          InkWell(
-            onTap: _copyReceiptNumber,
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-              decoration: BoxDecoration(
-                color: ParishColors.marianBlueSurface,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
-              ),
+    return AssetLoadingOverlay(
+      isLoading: _isPrinting || _isPrintingThermal || _isVoiding,
+      message: _isVoiding ? 'Void receipt...' : 'Printing...',
+      child: AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    widget.receiptNo,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _isVoided ? ParishColors.mercyRedSurface : tenderColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      _isVoided ? Icons.block : Icons.receipt_long,
+                      color: _isVoided ? ParishColors.mercyRed : tenderColor,
+                      size: 20,
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.copy, size: 13, color: ParishColors.marianBlue),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      _isVoided ? 'Voided Receipt' : 'Parish Receipt Slip',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: isNarrow ? 15.5 : 17),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
             ),
+            const SizedBox(width: 8),
+            InkWell(
+              onTap: _copyReceiptNumber,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: ParishColors.marianBlueSurface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.receiptNo,
+                      style: TextStyle(
+                        fontSize: isNarrow ? 11 : 12,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.marianBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.copy, size: 13, color: ParishColors.marianBlue),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 580,
+            maxHeight: screenSize.height * 0.72,
           ),
-        ],
-      ),
-      content: SizedBox(
-        width: 580,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // High-Visibility Voided Alert Banner
-              if (_isVoided) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: ParishColors.mercyRedSurface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: ParishColors.mercyRed, width: 1.5),
-                  ),
-                  child: Row(
+          child: SizedBox(
+            width: 580,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // High-Visibility Voided Alert Banner
+                  if (_isVoided) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: ParishColors.mercyRedSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: ParishColors.mercyRed, width: 1.4),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.cancel, color: ParishColors.mercyRed, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'RECEIPT HAS BEEN VOIDED / CANCELLED',
+                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
+                                ),
+                                if (voidNotice != null && voidNotice.isNotEmpty) ...[
+                                  const SizedBox(height: 3),
+                                  Text(voidNotice, style: TextStyle(fontSize: 11.5, color: textDark, height: 1.35)),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Payor & Details Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.cancel, color: ParishColors.mercyRed, size: 20),
-                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'RECEIPT HAS BEEN VOIDED / CANCELLED',
-                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.mercyRed),
-                            ),
-                            if (voidNotice != null && voidNotice.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(voidNotice, style: TextStyle(fontSize: 11.5, color: textDark, height: 1.3)),
+                            Text('PAYOR / RECIPIENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textColorMuted)),
+                            const SizedBox(height: 2),
+                            Text(widget.payer, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
+                            if (widget.payorContact != null && widget.payorContact!.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(Icons.phone_outlined, size: 12, color: textColorMuted),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      widget.payorContact!,
+                                      style: TextStyle(fontSize: 12, color: textColorMuted),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _isVoided ? ParishColors.mercyRedSurface : tenderColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _isVoided ? ParishColors.mercyRed : tenderColor.withOpacity(0.4)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isVoided)
+                              const Icon(Icons.block, size: 14, color: ParishColors.mercyRed)
+                            else if (_displayPaymentMode == 'Cash')
+                              Icon(Icons.payments_outlined, size: 14, color: tenderColor)
+                            else if (_displayPaymentMode == 'GCash')
+                                Icon(Icons.qr_code_2, size: 14, color: tenderColor)
+                              else if (_displayPaymentMode == 'Cheque')
+                                  Icon(Icons.fact_check_outlined, size: 14, color: tenderColor)
+                                else if (_displayPaymentMode == 'Gratis')
+                                    Icon(Icons.volunteer_activism, size: 14, color: tenderColor),
+                            const SizedBox(width: 5),
+                            Text(
+                              _isVoided ? 'VOIDED' : _displayPaymentMode.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: _isVoided ? ParishColors.mercyRed : tenderColor,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
 
-              // Payor & Details Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Transaction Date', style: TextStyle(fontSize: 12.5, color: textColorMuted)),
+                      Text(widget.date, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
+                    ],
+                  ),
+                  const Divider(height: 20),
+
+                  // Itemized Particulars Box
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'ITEMIZED PARTICULARS & OFFERINGS',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: textColorMuted,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_isStaff)
+                        TextButton.icon(
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () => _openPdfPreviewModal(isThermal: false),
+                          icon: const Icon(
+                            Icons.picture_as_pdf,
+                            size: 15,
+                            color: ParishColors.marianBlue,
+                          ),
+                          label: const Text(
+                            'View PDF Layout',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: ParishColors.marianBlue,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: ParishColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: ParishColors.borderGrey),
+                    ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('PAYOR / RECIPIENT:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColorMuted)),
-                        const SizedBox(height: 2),
-                        Text(widget.payer, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
-                        if (widget.payorContact != null && widget.payorContact!.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Icon(Icons.phone_outlined, size: 12, color: textColorMuted),
-                              const SizedBox(width: 4),
-                              Text(widget.payorContact!, style: TextStyle(fontSize: 12, color: textColorMuted)),
-                            ],
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text('OFFERING DESCRIPTION', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: textColorMuted)),
+                            ),
+                            Text('LINE TOTAL', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: textColorMuted)),
+                          ],
+                        ),
+                        const Divider(height: 14),
+                        ...itemizedList.map((item) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3.5),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.title,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: textDark,
+                                          decoration: _isVoided ? TextDecoration.lineThrough : null,
+                                        ),
+                                      ),
+                                      if (item.rateInfo.isNotEmpty)
+                                        Text(
+                                          item.rateInfo,
+                                          style: TextStyle(fontSize: 11, color: textColorMuted),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  item.itemAmount,
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _isVoided ? textColorMuted : textDark,
+                                    decoration: _isVoided ? TextDecoration.lineThrough : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        if (notes != null) ...[
+                          const Divider(height: 14),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              notes,
+                              style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: textColorMuted, height: 1.35),
+                            ),
                           ),
                         ],
                       ],
                     ),
                   ),
+                  const SizedBox(height: 14),
+
+                  // Total Amount Paid Card
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: _isVoided ? ParishColors.mercyRedSurface : tenderColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: _isVoided ? ParishColors.mercyRed : tenderColor.withOpacity(0.4)),
+                      color: _isVoided ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isVoided ? ParishColors.mercyRed.withOpacity(0.4) : ParishColors.oliveGreen.withOpacity(0.4),
+                      ),
                     ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        if (_isVoided)
-                          const Icon(Icons.block, size: 14, color: ParishColors.mercyRed)
-                        else if (_displayPaymentMode == 'Cash')
-                          Icon(Icons.payments_outlined, size: 14, color: tenderColor)
-                        else if (_displayPaymentMode == 'GCash')
-                            Icon(Icons.qr_code_2, size: 14, color: tenderColor)
-                          else if (_displayPaymentMode == 'Cheque')
-                              Icon(Icons.fact_check_outlined, size: 14, color: tenderColor)
-                            else if (_displayPaymentMode == 'Gratis')
-                                Icon(Icons.volunteer_activism, size: 14, color: tenderColor),
-                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            _isVoided ? 'Amount Nullified (Voided)' : 'Total Amount Paid',
+                            style: TextStyle(
+                              fontSize: isNarrow ? 13 : 14,
+                              fontWeight: FontWeight.w700,
+                              color: _isVoided ? ParishColors.mercyRed : textDark,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
-                          _isVoided ? 'VOIDED' : _displayPaymentMode.toUpperCase(),
+                          '₱ ${_numericAmount.toStringAsFixed(2)}',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: isNarrow ? 18 : 20,
                             fontWeight: FontWeight.bold,
-                            color: _isVoided ? ParishColors.mercyRed : tenderColor,
+                            color: _isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen,
+                            decoration: _isVoided ? TextDecoration.lineThrough : null,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 10),
+                  const SizedBox(height: 14),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Transaction Date:', style: TextStyle(fontSize: 12.5, color: textColorMuted)),
-                  Text(widget.date, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
-                ],
-              ),
-              const Divider(height: 20),
-
-              // Itemized Particulars Box
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'ITEMIZED PARTICULARS & OFFERINGS:',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: textColorMuted,
-                    ),
-                  ),
-                  if (_isStaff)
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: () => _openPdfPreviewModal(isThermal: false),
-                      icon: const Icon(
-                        Icons.picture_as_pdf,
-                        size: 15,
-                        color: ParishColors.marianBlue,
-                      ),
-                      label: const Text(
-                        'View PDF Layout',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                          color: ParishColors.marianBlue,
+                  // Staff-Only Template Management (Floating Label Dropdown)
+                  if (_isStaff) ...[
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
+                          ).then((_) => _loadTemplates());
+                        },
+                        child: const Text(
+                          'Manage Templates',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.marianBlue),
                         ),
                       ),
                     ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: ParishColors.backgroundLight,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: ParishColors.borderGrey),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('OFFERING DESCRIPTION', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: textColorMuted)),
-                        Text('LINE TOTAL', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: textColorMuted)),
-                      ],
-                    ),
-                    const Divider(height: 14),
-                    ...itemizedList.map((item) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3.5),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.title,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: textDark,
-                                      decoration: _isVoided ? TextDecoration.lineThrough : null,
-                                    ),
-                                  ),
-                                  if (item.rateInfo.isNotEmpty)
-                                    Text(
-                                      item.rateInfo,
-                                      style: TextStyle(fontSize: 11, color: textColorMuted),
-                                    ),
-                                ],
-                              ),
+                    if (_templates.isNotEmpty)
+                      DropdownButtonFormField<ReceiptTemplateModel>(
+                        value: _selectedTemplate,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Print Template Configuration',
+                          floatingLabelBehavior: FloatingLabelBehavior.auto,
+                          filled: true,
+                          fillColor: ParishColors.backgroundLight,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: ParishColors.borderGrey),
+                          ),
+                        ),
+                        items: _templates.map((tpl) {
+                          return DropdownMenuItem(
+                            value: tpl,
+                            child: Text(
+                              '${tpl.templateName} (${tpl.paperSize})',
+                              style: const TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            Text(
-                              item.itemAmount,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: _isVoided ? textColorMuted : textDark,
-                                decoration: _isVoided ? TextDecoration.lineThrough : null,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    if (notes != null) ...[
-                      const Divider(height: 14),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          notes,
-                          style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: textColorMuted),
-                        ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedTemplate = val);
+                        },
                       ),
-                    ],
                   ],
-                ),
+                ],
               ),
-              const SizedBox(height: 14),
-
-              // Total Amount Paid Card
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _isVoided ? ParishColors.mercyRedSurface : ParishColors.oliveGreenSurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _isVoided ? ParishColors.mercyRed.withOpacity(0.4) : ParishColors.oliveGreen.withOpacity(0.4),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _isVoided ? 'Amount Nullified (Voided):' : 'Total Amount Paid:',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _isVoided ? ParishColors.mercyRed : textDark),
-                    ),
-                    Text(
-                      '₱ ${_numericAmount.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: _isVoided ? ParishColors.mercyRed : ParishColors.oliveGreen,
-                        decoration: _isVoided ? TextDecoration.lineThrough : null,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // Staff-Only Template Management
-              if (_isStaff) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Print Template Configuration:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textDark)),
-                    TextButton(
-                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const ReceiptTemplateManagementPage()),
-                        ).then((_) => _loadTemplates());
-                      },
-                      child: const Text('Manage Templates', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
-                    ),
-                  ],
-                ),
-                if (_templates.isNotEmpty)
-                  DropdownButtonFormField<ReceiptTemplateModel>(
-                    value: _selectedTemplate,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _templates.map((tpl) {
-                      return DropdownMenuItem(
-                        value: tpl,
-                        child: Text(
-                          '${tpl.templateName} (${tpl.paperSize})',
-                          style: const TextStyle(fontSize: 12.5),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedTemplate = val);
-                    },
-                  ),
-              ],
-            ],
+            ),
           ),
         ),
-      ),
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      actions: [
-        if (_isStaff) ...[
-          if (!_isVoided)
+        actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        actionsOverflowButtonSpacing: 8,
+        actions: [
+          if (_isStaff) ...[
+            if (!_isVoided)
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: ParishColors.mercyRed),
+                  foregroundColor: ParishColors.mercyRed,
+                  minimumSize: const Size(100, 42),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                onPressed: _isVoiding ? null : _handleVoidReceipt,
+                icon: const Icon(Icons.block, size: 16),
+                label: Text(_isVoiding ? 'Voiding...' : 'Void Receipt', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Close', style: TextStyle(color: textColorMuted, fontWeight: FontWeight.w600)),
+            ),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: ParishColors.mercyRed),
-                foregroundColor: ParishColors.mercyRed,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
+                foregroundColor: ParishColors.goldAccent,
+                minimumSize: const Size(100, 42),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
-              onPressed: _isVoiding ? null : _handleVoidReceipt,
-              icon: _isVoiding
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.mercyRed, strokeWidth: 2))
-                  : const Icon(Icons.block, size: 16),
-              label: Text(_isVoiding ? 'Voiding...' : 'Void Receipt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+              onPressed: _isPrintingThermal || _isPrinting ? null : () => _handlePrint(isThermal: true),
+              icon: const Icon(Icons.receipt, size: 16),
+              label: Text(_isVoided ? 'Print Void Slip' : '80mm Slip', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
             ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Close', style: TextStyle(color: textColorMuted)),
-          ),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: ParishColors.goldAccent, width: 1.2),
-              foregroundColor: ParishColors.goldAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                minimumSize: const Size(120, 42),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onPressed: _isPrinting || _isPrintingThermal ? null : () => _handlePrint(isThermal: false),
+              icon: const Icon(Icons.print, size: 17),
+              label: Text(
+                _isPrinting
+                    ? 'Printing...'
+                    : (_isVoided ? 'Print Void Voucher' : 'Print Voucher'),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
             ),
-            onPressed: _isPrintingThermal || _isPrinting ? null : () => _handlePrint(isThermal: true),
-            icon: _isPrintingThermal
-                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: ParishColors.goldAccent, strokeWidth: 2))
-                : const Icon(Icons.receipt, size: 16),
-            label: Text(_isVoided ? 'Print Void Slip' : '80mm Slip', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _isVoided ? ParishColors.mercyRed : ParishColors.marianBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ] else ...[
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ParishColors.marianBlue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                minimumSize: const Size(100, 44),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
             ),
-            onPressed: _isPrinting || _isPrintingThermal ? null : () => _handlePrint(isThermal: false),
-            icon: _isPrinting
-                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.print, size: 17),
-            label: Text(
-              _isPrinting
-                  ? 'Printing...'
-                  : (_isVoided ? 'Print Void Voucher' : 'Print Voucher'),
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-          ),
-        ] else ...[
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.marianBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-            ),
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

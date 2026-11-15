@@ -7,6 +7,7 @@ import '../../services/particulars_service.dart';
 import '../../services/secretary_service.dart';
 import '../dialogs/receipt_detail_dialog.dart';
 import 'particulars_catalog_page.dart';
+import '../../../asset_inventory/presentation/widgets/asset_loading_overlay.dart';
 
 class _PhilippinePhoneInputFormatter extends TextInputFormatter {
   @override
@@ -151,7 +152,10 @@ class _PosCashierPageState extends State<PosCashierPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Enter Amount for ${item.title}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Enter Amount for ${item.title}',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,27 +316,32 @@ class _PosCashierPageState extends State<PosCashierPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.shopping_bag_outlined, color: ParishColors.marianBlue, size: 22),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Current Order Slip',
-                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: ParishColors.oliveGreenSurface,
-                              borderRadius: BorderRadius.circular(10),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(Icons.shopping_bag_outlined, color: ParishColors.marianBlue, size: 22),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Current Order Slip',
+                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            child: Text(
-                              '$_totalItemCount items',
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: ParishColors.oliveGreenSurface,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$_totalItemCount items',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       TextButton.icon(
                         style: TextButton.styleFrom(foregroundColor: ParishColors.mercyRed),
@@ -460,87 +469,98 @@ class _PosCashierPageState extends State<PosCashierPage> {
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: cardWhite,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Parish Cashier Desk (POS)',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+    return AssetLoadingOverlay(
+      isLoading: _isLoadingCatalog,
+      message: 'Loading catalog...',
+      child: Scaffold(
+        backgroundColor: ParishColors.backgroundLight,
+        appBar: AppBar(
+          backgroundColor: cardWhite,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Parish Cashier Desk (POS)',
+                style: TextStyle(
+                  fontSize: isMobile ? 16 : 18,
+                  fontWeight: FontWeight.bold,
+                  color: textDark,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                'St. John Paul II Parish • On-site Transaction Terminal',
+                style: TextStyle(fontSize: 12, color: textMuted),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.tune, color: ParishColors.marianBlue),
+              tooltip: 'Offerings & Particulars Catalog',
+              onPressed: _openManageParticularsPage,
             ),
-            Text(
-              'St. John Paul II Parish • On-site Transaction Terminal',
-              style: TextStyle(fontSize: 12, color: textMuted),
+            IconButton(
+              icon: const Icon(Icons.refresh, color: ParishColors.marianBlue),
+              tooltip: 'Reload Catalog',
+              onPressed: _loadCatalog,
             ),
+            if (_cart.isNotEmpty && !isMobile)
+              TextButton.icon(
+                onPressed: _clearCart,
+                icon: const Icon(Icons.delete_sweep, color: ParishColors.mercyRed, size: 18),
+                label: const Text('Clear', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold)),
+              ),
+            const SizedBox(width: 8),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.tune, color: ParishColors.marianBlue),
-            tooltip: 'Offerings & Particulars Catalog',
-            onPressed: _openManageParticularsPage,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: ParishColors.marianBlue),
-            tooltip: 'Reload Catalog',
-            onPressed: _loadCatalog,
-          ),
-          if (_cart.isNotEmpty)
-            TextButton.icon(
-              onPressed: _clearCart,
-              icon: const Icon(Icons.delete_sweep, color: ParishColors.mercyRed, size: 18),
-              label: const Text('Clear', style: TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold)),
-            ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 960;
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 960;
 
-          if (isWide) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            if (isWide) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 65,
+                    child: _buildCatalogSection(isWide: true),
+                  ),
+                  VerticalDivider(width: 1, color: borderGrey),
+                  Expanded(
+                    flex: 35,
+                    child: _buildOrderCartPanel(isWide: true),
+                  ),
+                ],
+              );
+            }
+
+            return Stack(
               children: [
-                Expanded(
-                  flex: 65,
-                  child: _buildCatalogSection(isWide: true),
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 84),
+                    child: _buildCatalogSection(isWide: false),
+                  ),
                 ),
-                VerticalDivider(width: 1, color: borderGrey),
-                Expanded(
-                  flex: 35,
-                  child: _buildOrderCartPanel(isWide: true),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildMobileCheckoutBottomBar(),
                 ),
               ],
             );
-          }
-
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 84),
-                  child: _buildCatalogSection(isWide: false),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _buildMobileCheckoutBottomBar(),
-              ),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -551,10 +571,6 @@ class _PosCashierPageState extends State<PosCashierPage> {
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
 
-    if (_isLoadingCatalog) {
-      return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()));
-    }
-
     if (_catalogError != null) {
       return Center(
         child: Padding(
@@ -564,7 +580,11 @@ class _PosCashierPageState extends State<PosCashierPage> {
             children: [
               const Icon(Icons.error_outline, size: 40, color: ParishColors.mercyRed),
               const SizedBox(height: 10),
-              Text('Failed to load particulars: $_catalogError', textAlign: TextAlign.center, style: const TextStyle(color: ParishColors.mercyRed)),
+              Text(
+                'Failed to load particulars: $_catalogError',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: ParishColors.mercyRed),
+              ),
               const SizedBox(height: 14),
               ElevatedButton.icon(
                 onPressed: _loadCatalog,
@@ -615,41 +635,50 @@ class _PosCashierPageState extends State<PosCashierPage> {
             ),
           ),
           const SizedBox(height: 14),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _categories.map((cat) {
-                final isSelected = _selectedCategory == cat;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: ChoiceChip(
-                    label: Text(cat),
-                    selected: isSelected,
-                    selectedColor: ParishColors.marianBlue,
-                    backgroundColor: cardWhite,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : textDark,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      fontSize: 12.5,
+          SizedBox(
+            width: double.infinity,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _categories.map((cat) {
+                  final isSelected = _selectedCategory == cat;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: ChoiceChip(
+                      label: Text(cat),
+                      selected: isSelected,
+                      selectedColor: ParishColors.marianBlue,
+                      backgroundColor: cardWhite,
+                      labelStyle: TextStyle(
+                        color: isSelected ? Colors.white : textDark,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        fontSize: 12.5,
+                      ),
+                      onSelected: (_) => setState(() => _selectedCategory = cat),
                     ),
-                    onSelected: (_) => setState(() => _selectedCategory = cat),
-                  ),
-                );
-              }).toList(),
+                  );
+                }).toList(),
+              ),
             ),
           ),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '$_selectedCategory Catalog (${_filteredCatalog.length})',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
+              Expanded(
+                child: Text(
+                  '$_selectedCategory Catalog (${_filteredCatalog.length})',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               TextButton.icon(
                 onPressed: _openManageParticularsPage,
                 icon: const Icon(Icons.edit_note, size: 16, color: ParishColors.marianBlue),
-                label: const Text('Manage Catalog', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue)),
+                label: const Text(
+                  'Manage Catalog',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                ),
               ),
             ],
           ),
@@ -677,11 +706,11 @@ class _PosCashierPageState extends State<PosCashierPage> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: _filteredCatalog.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: isWide ? 3 : 2,
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: isWide ? 280 : 240,
+              mainAxisExtent: 182,
               crossAxisSpacing: 14,
               mainAxisSpacing: 14,
-              childAspectRatio: isWide ? 1.35 : 1.1,
             ),
             itemBuilder: (context, index) {
               final item = _filteredCatalog[index];
@@ -724,25 +753,29 @@ class _PosCashierPageState extends State<PosCashierPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
                     color: ParishColors.marianBlueSurface,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(item.icon, color: ParishColors.marianBlue, size: 22),
+                  child: Icon(item.icon, color: ParishColors.marianBlue, size: 20),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: ParishColors.goldLight,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    item.allowsCustomPrice ? 'Custom / Tithe' : '₱ ${item.defaultPrice.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.bold,
-                      color: ParishColors.goldAccent,
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: ParishColors.goldLight,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      item.allowsCustomPrice ? 'Custom / Tithe' : '₱ ${item.defaultPrice.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.goldAccent,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
@@ -754,7 +787,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                 Text(
                   item.title,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.bold,
                     color: textDark,
                   ),
@@ -807,15 +840,20 @@ class _PosCashierPageState extends State<PosCashierPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.shopping_bag_outlined, color: ParishColors.marianBlue, size: 22),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Current Order Slip',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
-                  ),
-                ],
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.shopping_bag_outlined, color: ParishColors.marianBlue, size: 22),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Current Order Slip',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               if (_cart.isNotEmpty)
                 Container(
@@ -852,6 +890,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                   Text(
                     'Tap items on the catalog to add to order slip',
                     style: TextStyle(fontSize: 12, color: textMuted),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -999,7 +1038,13 @@ class _PosCashierPageState extends State<PosCashierPage> {
                             style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
                           ),
                           const SizedBox(width: 4),
-                          const Text('• Tap to view', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          const Flexible(
+                            child: Text(
+                              '• Tap to view',
+                              style: TextStyle(fontSize: 11, color: Colors.grey),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                       Text(
@@ -1009,6 +1054,7 @@ class _PosCashierPageState extends State<PosCashierPage> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _cart.isEmpty ? ParishColors.borderGrey : ParishColors.marianBlue,
@@ -1197,422 +1243,457 @@ class _CheckoutModalState extends State<_CheckoutModal> {
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
+    final screenSize = MediaQuery.of(context).size;
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: cardWhite,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      child: Container(
-        width: 540,
-        constraints: const BoxConstraints(maxHeight: 740),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: ParishColors.marianBlueSurface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                border: Border(bottom: BorderSide(color: borderGrey)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: ParishColors.marianBlue,
-                      shape: BoxShape.circle,
+    return AssetLoadingOverlay(
+      isLoading: _isProcessing,
+      message: 'Processing checkout...',
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 540,
+            maxHeight: screenSize.height * 0.88,
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: BoxDecoration(
+                  color: ParishColors.marianBlueSurface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  border: Border(bottom: BorderSide(color: borderGrey)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: ParishColors.marianBlue,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.point_of_sale, color: Colors.white, size: 20),
                     ),
-                    child: const Icon(Icons.point_of_sale, color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Complete Cashier Payment',
+                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'Issue official ecclesiastical transaction receipt',
+                            style: TextStyle(fontSize: 11.5, color: textMuted),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Form(
+                    key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Complete Cashier Payment', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark)),
-                        Text('Issue official ecclesiastical transaction receipt', style: TextStyle(fontSize: 11.5, color: textMuted)),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: _isProcessing ? null : () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_errorMessage != null) ...[
+                        if (_errorMessage != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: ParishColors.mercyRedSurface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: ParishColors.mercyRed),
+                            ),
+                            child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed, fontSize: 12.5, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: ParishColors.mercyRed),
+                            color: const Color(0xFFF0FDF4),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
                           ),
-                          child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed, fontSize: 12.5, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF0FDF4),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.4)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Total Amount Payable:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark)),
-                            Text('₱ ${widget.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen)),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text('Payor / Parishioner Full Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _payorNameController,
-                        inputFormatters: [_TitleCaseInputFormatter()],
-                        validator: (v) => (v?.trim().isEmpty ?? true) ? 'Payor name is required' : null,
-                        style: TextStyle(fontSize: 14, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Maria Clara Santos'),
-                      ),
-                      const SizedBox(height: 14),
-                      Text('Contact Number (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _payorContactController,
-                        keyboardType: TextInputType.phone,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          _PhilippinePhoneInputFormatter(),
-                        ],
-                        style: TextStyle(fontSize: 14, color: textDark),
-                        decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Payment Type Selector (Cash vs Cheque)
-                      Text('Payment Type *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                      const SizedBox(height: 6),
-                      Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: ParishColors.backgroundLight,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: borderGrey),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => setState(() => _paymentCategory = 'Cash'),
-                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: _paymentCategory == 'Cash' ? ParishColors.marianBlue : Colors.transparent,
-                                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.payments_outlined, size: 16, color: _paymentCategory == 'Cash' ? Colors.white : textDark),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Cash (Cash / Online)',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: _paymentCategory == 'Cash' ? Colors.white : textDark,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => setState(() => _paymentCategory = 'Cheque'),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: _paymentCategory == 'Cheque' ? const Color(0xFF6D28D9) : Colors.transparent,
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.fact_check_outlined, size: 16, color: _paymentCategory == 'Cheque' ? Colors.white : textDark),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Cheque',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: _paymentCategory == 'Cheque' ? Colors.white : textDark,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => setState(() => _paymentCategory = 'Gratis'),
-                                borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: _paymentCategory == 'Gratis' ? ParishColors.goldAccent : Colors.transparent,
-                                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.volunteer_activism_outlined, size: 16, color: _paymentCategory == 'Gratis' ? Colors.white : textDark),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Gratis',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: _paymentCategory == 'Gratis' ? Colors.white : textDark,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // If CASH: Sub-mode selection (Physical vs Online)
-                      if (_paymentCategory == 'Cash') ...[
-                        Row(
-                          children: [
-                            ChoiceChip(
-                              label: const Text('Physical Cash (Secretariat Desk)'),
-                              selected: _cashSubtype == 'Physical',
-                              selectedColor: ParishColors.oliveGreen,
-                              labelStyle: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: _cashSubtype == 'Physical' ? Colors.white : textDark,
-                              ),
-                              onSelected: (_) => setState(() => _cashSubtype = 'Physical'),
-                            ),
-                            const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('Online (GCash Transfer)'),
-                              selected: _cashSubtype == 'Online',
-                              selectedColor: const Color(0xFF005CEE),
-                              labelStyle: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: _cashSubtype == 'Online' ? Colors.white : textDark,
-                              ),
-                              onSelected: (_) => setState(() => _cashSubtype = 'Online'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        if (_cashSubtype == 'Physical') ...[
-                          Row(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                                    const SizedBox(height: 6),
-                                    TextFormField(
-                                      controller: _tenderedController,
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
-                                      decoration: _inputDecoration(hint: '0.00'),
-                                    ),
-                                  ],
+                              Flexible(
+                                child: Text(
+                                  'Total Amount Payable:',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                                    const SizedBox(height: 6),
-                                    Container(
-                                      height: 48,
-                                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                                      alignment: Alignment.centerLeft,
-                                      decoration: BoxDecoration(
-                                        color: ParishColors.backgroundLight,
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(color: borderGrey),
-                                      ),
-                                      child: Text(
-                                        '₱ ${_changeAmount.toStringAsFixed(2)}',
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.bold,
-                                          color: _changeAmount >= 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '₱ ${widget.totalAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 14),
-                        ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Payor / Parishioner Full Name *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _payorNameController,
+                          inputFormatters: [_TitleCaseInputFormatter()],
+                          validator: (v) => (v?.trim().isEmpty ?? true) ? 'Payor name is required' : null,
+                          style: TextStyle(fontSize: 14, color: textDark),
+                          decoration: _inputDecoration(hint: 'e.g. Maria Clara Santos'),
+                        ),
+                        const SizedBox(height: 14),
+                        Text('Contact Number (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _payorContactController,
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            _PhilippinePhoneInputFormatter(),
+                          ],
+                          style: TextStyle(fontSize: 14, color: textDark),
+                          decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
+                        ),
+                        const SizedBox(height: 16),
 
-                        if (_cashSubtype == 'Online') ...[
-                          Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _gcashRefController,
-                            validator: (v) => _cashSubtype == 'Online' && (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
-                            style: TextStyle(fontSize: 14, color: textDark),
-                            decoration: _inputDecoration(hint: 'e.g. 1002 9847 1120'),
-                          ),
-                          const SizedBox(height: 14),
-                        ],
-                      ],
-
-                      // If CHEQUE: Bank Name and Cheque Number Inputs
-                      if (_paymentCategory == 'Cheque') ...[
+                        // Payment Type Selector (Cash vs Cheque vs Gratis)
+                        Text('Payment Type *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                        const SizedBox(height: 6),
                         Container(
-                          padding: const EdgeInsets.all(14),
+                          width: double.infinity,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF5F3FF),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFDDD6FE)),
+                            color: ParishColors.backgroundLight,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: borderGrey),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              const Row(
-                                children: [
-                                  Icon(Icons.fact_check, size: 18, color: Color(0xFF6D28D9)),
-                                  SizedBox(width: 8),
-                                  Text('Cheque Payment Details', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF6D28D9))),
-                                ],
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _paymentCategory = 'Cash'),
+                                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                                    decoration: BoxDecoration(
+                                      color: _paymentCategory == 'Cash' ? ParishColors.marianBlue : Colors.transparent,
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.payments_outlined, size: 16, color: _paymentCategory == 'Cash' ? Colors.white : textDark),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            'Cash / Online',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: _paymentCategory == 'Cash' ? Colors.white : textDark,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                              const SizedBox(height: 12),
-
-                              Text('Issuing Bank Name *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
-                              const SizedBox(height: 6),
-                              Autocomplete<String>(
-                                optionsBuilder: (TextEditingValue textEditingValue) {
-                                  if (textEditingValue.text.isEmpty) return _commonBanks;
-                                  return _commonBanks.where((b) => b.toLowerCase().contains(textEditingValue.text.toLowerCase()));
-                                },
-                                onSelected: (String selection) {
-                                  _bankNameController.text = selection;
-                                },
-                                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                                  if (_bankNameController.text.isNotEmpty && controller.text.isEmpty) {
-                                    controller.text = _bankNameController.text;
-                                  }
-                                  return TextFormField(
-                                    controller: controller,
-                                    focusNode: focusNode,
-                                    validator: (v) => _paymentCategory == 'Cheque' && (v?.trim().isEmpty ?? true)
-                                        ? 'Bank name is required'
-                                        : null,
-                                    onChanged: (val) => _bankNameController.text = val,
-                                    style: TextStyle(fontSize: 14, color: textDark),
-                                    decoration: _inputDecoration(hint: 'e.g. BDO Unibank, BPI, Landbank'),
-                                  );
-                                },
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _paymentCategory = 'Cheque'),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                                    decoration: BoxDecoration(
+                                      color: _paymentCategory == 'Cheque' ? const Color(0xFF6D28D9) : Colors.transparent,
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.fact_check_outlined, size: 16, color: _paymentCategory == 'Cheque' ? Colors.white : textDark),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            'Cheque',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: _paymentCategory == 'Cheque' ? Colors.white : textDark,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                              const SizedBox(height: 12),
-
-                              Text('Cheque Number *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
-                              const SizedBox(height: 6),
-                              TextFormField(
-                                controller: _chequeNumberController,
-                                validator: (v) => _paymentCategory == 'Cheque' && (v?.trim().isEmpty ?? true)
-                                    ? 'Cheque number is required'
-                                    : null,
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
-                                decoration: _inputDecoration(hint: 'e.g. 0001234567'),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _paymentCategory = 'Gratis'),
+                                  borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                                    decoration: BoxDecoration(
+                                      color: _paymentCategory == 'Gratis' ? ParishColors.goldAccent : Colors.transparent,
+                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.volunteer_activism_outlined, size: 16, color: _paymentCategory == 'Gratis' ? Colors.white : textDark),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            'Gratis',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: _paymentCategory == 'Gratis' ? Colors.white : textDark,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 14),
-                      ],
 
-                      Text('Internal Remarks / Specific Purpose', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _remarksController,
-                        maxLines: 2,
-                        style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(hint: 'Optional notes, batch intentions, or special clearances'),
-                      ),
-                    ],
+                        // If CASH: Sub-mode selection (Physical vs Online)
+                        if (_paymentCategory == 'Cash') ...[
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('Physical Cash (Secretariat Desk)'),
+                                selected: _cashSubtype == 'Physical',
+                                selectedColor: ParishColors.oliveGreen,
+                                labelStyle: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: _cashSubtype == 'Physical' ? Colors.white : textDark,
+                                ),
+                                onSelected: (_) => setState(() => _cashSubtype = 'Physical'),
+                              ),
+                              ChoiceChip(
+                                label: const Text('Online (GCash Transfer)'),
+                                selected: _cashSubtype == 'Online',
+                                selectedColor: const Color(0xFF005CEE),
+                                labelStyle: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: _cashSubtype == 'Online' ? Colors.white : textDark,
+                                ),
+                                onSelected: (_) => setState(() => _cashSubtype = 'Online'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          if (_cashSubtype == 'Physical') ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Cash Tendered (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                      const SizedBox(height: 6),
+                                      TextFormField(
+                                        controller: _tenderedController,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+                                        decoration: _inputDecoration(hint: '0.00'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Change Due (₱)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        height: 48,
+                                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                                        alignment: Alignment.centerLeft,
+                                        decoration: BoxDecoration(
+                                          color: ParishColors.backgroundLight,
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: borderGrey),
+                                        ),
+                                        child: Text(
+                                          '₱ ${_changeAmount.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                            color: _changeAmount >= 0 ? ParishColors.oliveGreen : ParishColors.mercyRed,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+
+                          if (_cashSubtype == 'Online') ...[
+                            Text('GCash Reference Number *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                            const SizedBox(height: 6),
+                            TextFormField(
+                              controller: _gcashRefController,
+                              validator: (v) => _cashSubtype == 'Online' && (v?.trim().isEmpty ?? true) ? 'GCash Reference number is required' : null,
+                              style: TextStyle(fontSize: 14, color: textDark),
+                              decoration: _inputDecoration(hint: 'e.g. 1002 9847 1120'),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                        ],
+
+                        // If CHEQUE: Bank Name and Cheque Number Inputs
+                        if (_paymentCategory == 'Cheque') ...[
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF5F3FF),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFDDD6FE)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Icon(Icons.fact_check, size: 18, color: Color(0xFF6D28D9)),
+                                    SizedBox(width: 8),
+                                    Text('Cheque Payment Details', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF6D28D9))),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+
+                                Text('Issuing Bank Name *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
+                                const SizedBox(height: 6),
+                                Autocomplete<String>(
+                                  optionsBuilder: (TextEditingValue textEditingValue) {
+                                    if (textEditingValue.text.isEmpty) return _commonBanks;
+                                    return _commonBanks.where((b) => b.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                                  },
+                                  onSelected: (String selection) {
+                                    _bankNameController.text = selection;
+                                  },
+                                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                                    if (_bankNameController.text.isNotEmpty && controller.text.isEmpty) {
+                                      controller.text = _bankNameController.text;
+                                    }
+                                    return TextFormField(
+                                      controller: controller,
+                                      focusNode: focusNode,
+                                      validator: (v) => _paymentCategory == 'Cheque' && (v?.trim().isEmpty ?? true)
+                                          ? 'Bank name is required'
+                                          : null,
+                                      onChanged: (val) => _bankNameController.text = val,
+                                      style: TextStyle(fontSize: 14, color: textDark),
+                                      decoration: _inputDecoration(hint: 'e.g. BDO Unibank, BPI, Landbank'),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+
+                                Text('Cheque Number *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark)),
+                                const SizedBox(height: 6),
+                                TextFormField(
+                                  controller: _chequeNumberController,
+                                  validator: (v) => _paymentCategory == 'Cheque' && (v?.trim().isEmpty ?? true)
+                                      ? 'Cheque number is required'
+                                      : null,
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
+                                  decoration: _inputDecoration(hint: 'e.g. 0001234567'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+
+                        Text('Internal Remarks / Specific Purpose', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _remarksController,
+                          maxLines: 2,
+                          style: TextStyle(fontSize: 13, color: textDark),
+                          decoration: _inputDecoration(hint: 'Optional notes, batch intentions, or special clearances'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: cardWhite,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-                border: Border(top: BorderSide(color: borderGrey)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _isProcessing ? null : () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(fontSize: 14, color: textMuted)),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: ParishColors.oliveGreen,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                      ),
-                      onPressed: _isProcessing ? null : _submitTransaction,
-                      icon: _isProcessing
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.receipt_long, size: 20),
-                      label: Text(
-                        _isProcessing ? 'Generating...' : 'Confirm & Issue Receipt',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(
+                  color: cardWhite,
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                  border: Border(top: BorderSide(color: borderGrey)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                      child: Text('Cancel', style: TextStyle(fontSize: 14, color: textMuted)),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ParishColors.oliveGreen,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                          ),
+                          onPressed: _isProcessing ? null : _submitTransaction,
+                          icon: const Icon(Icons.receipt_long, size: 20),
+                          label: Text(
+                            _isProcessing ? 'Generating...' : 'Confirm & Issue Receipt',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

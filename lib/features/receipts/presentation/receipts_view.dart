@@ -32,7 +32,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
   late Animation<double> _skeletonOpacityAnimation;
 
   List<Map<String, dynamic>> _transactions = [];
-  bool _isLoading = true;
   String? _errorMessage;
 
   ReceiptViewMode _viewMode = ReceiptViewMode.cards;
@@ -99,7 +98,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
 
   Future<void> _loadTransactions() async {
     setState(() {
-      _isLoading = true;
       _errorMessage = null;
     });
 
@@ -108,13 +106,11 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
       if (!mounted) return;
       setState(() {
         _transactions = data;
-        _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
       });
     }
   }
@@ -789,7 +785,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
       builder: (context, constraints) {
         final double width = constraints.maxWidth;
         final int crossAxisCount = width > 1050 ? 5 : (width > 600 ? 3 : 2);
-        final double itemWidth = (width - ((crossAxisCount - 1) * 12)) / crossAxisCount;
+        final double itemWidth = max(120.0, (width - ((crossAxisCount - 1) * 12)) / crossAxisCount);
 
         final items = [
           _buildKpiCard(
@@ -901,12 +897,15 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: ParishColors.textMuted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+                const SizedBox(width: 4),
                 Container(
                   padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
@@ -1114,51 +1113,55 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
         ),
         const SizedBox(height: 12),
 
-        // Tabs + View Toggle Row
+        // Tabs + View Toggle Row (Responsive without overflow)
         Row(
           children: [
-            Container(
-              height: 38,
-              decoration: BoxDecoration(
-                color: ParishColors.cardWhite,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: ParishColors.borderGrey),
-              ),
-              child: TabBar(
-                controller: _mainTabController,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                labelColor: Colors.white,
-                unselectedLabelColor: ParishColors.textMuted,
-                indicatorSize: TabBarIndicatorSize.tab,
-                indicator: BoxDecoration(
-                  color: _mainTabController.index == 1 ? ParishColors.mercyRed : ParishColors.marianBlue,
-                  borderRadius: BorderRadius.circular(8),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: ParishColors.cardWhite,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ParishColors.borderGrey),
+                  ),
+                  child: TabBar(
+                    controller: _mainTabController,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: ParishColors.textMuted,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicator: BoxDecoration(
+                      color: _mainTabController.index == 1 ? ParishColors.mercyRed : ParishColors.marianBlue,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    tabs: [
+                      Tab(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            'Active Receipts ($_activeCount)',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+                      ),
+                      Tab(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            'Voided Archive ($_voidedCount)',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                tabs: [
-                  Tab(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        'Active Receipts ($_activeCount)',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                      ),
-                    ),
-                  ),
-                  Tab(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        'Voided Archive ($_voidedCount)',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
-            const Spacer(),
-
+            const SizedBox(width: 10),
             Container(
               height: 36,
               decoration: BoxDecoration(
@@ -1457,72 +1460,6 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
   }
 
   // ===========================================================================
-  // Skeleton Loader
-  // ===========================================================================
-
-  Widget _buildSkeletonLoading() {
-    return AnimatedBuilder(
-      animation: _skeletonOpacityAnimation,
-      builder: (context, child) => Opacity(
-        opacity: _skeletonOpacityAnimation.value,
-        child: Column(
-          children: List.generate(
-            4,
-                (index) => Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              height: 88,
-              decoration: BoxDecoration(
-                color: ParishColors.cardWhite,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
-              ),
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: ParishColors.borderGrey.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          height: 14,
-                          width: 150,
-                          decoration: BoxDecoration(
-                            color: ParishColors.borderGrey.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 16,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: ParishColors.borderGrey.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ===========================================================================
   // Build Main Dashboard Shell
   // ===========================================================================
 
@@ -1574,12 +1511,10 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                     const SizedBox(height: 14),
 
                     // 6. Transactions List / Table
-                    if (_isLoading)
-                      _buildSkeletonLoading()
-                    else if (_mainTabController.index == 0)
-                      _buildReceiptsListSection(constraints.maxWidth, isVoidTab: false)
-                    else
-                      _buildReceiptsListSection(constraints.maxWidth, isVoidTab: true),
+                    _buildReceiptsListSection(
+                      constraints.maxWidth,
+                      isVoidTab: _mainTabController.index != 0,
+                    ),
 
                     const SizedBox(height: 40),
                   ],
@@ -1774,9 +1709,13 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                           ),
                         ),
                       ),
-                      Text(
-                        rNo,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          rNo,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
@@ -1785,6 +1724,8 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                   Text(
                     payor,
                     style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
 
@@ -1799,16 +1740,21 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '₱ ${amountVal.toStringAsFixed(2)} • $date',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: themeColor,
-                          decoration: isVoided ? TextDecoration.lineThrough : null,
+                      Expanded(
+                        child: Text(
+                          '₱ ${amountVal.toStringAsFixed(2)} • $date',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: themeColor,
+                            decoration: isVoided ? TextDecoration.lineThrough : null,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text('Inspect', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: themeColor)),
                           const SizedBox(width: 2),
@@ -1975,10 +1921,14 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: ParishColors.borderGrey),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
         children: [
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text('Show: ', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
               DropdownButton<int>(
@@ -2003,6 +1953,7 @@ class _ReceiptManagementViewState extends State<ReceiptManagementView>
             ],
           ),
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
                 icon: const Icon(Icons.chevron_left, size: 22),

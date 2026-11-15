@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../../../core/constants/colors.dart';
 import '../../models/pos_item_model.dart';
 import '../../services/particulars_service.dart';
+import '../../../asset_inventory/presentation/widgets/asset_loading_overlay.dart';
 
 void showManageParticularsModal(BuildContext context, {VoidCallback? onParticularsUpdated}) {
   showDialog(
@@ -112,17 +112,24 @@ class _ManageParticularsDialogState extends State<ManageParticularsDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Row(
           children: [
             Icon(Icons.delete_outline, color: ParishColors.mercyRed, size: 24),
             SizedBox(width: 8),
-            Text('Remove from Catalog?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Expanded(
+              child: Text(
+                'Remove from Catalog?',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: Text(
           'Are you sure you want to permanently delete "${item.title}" from the parish offering particulars? Past receipts will remain intact.',
-          style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.4),
+          style: TextStyle(fontSize: 13.5, color: ParishColors.textDark, height: 1.4),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -130,6 +137,7 @@ class _ManageParticularsDialogState extends State<ManageParticularsDialog> {
             style: ElevatedButton.styleFrom(
               backgroundColor: ParishColors.mercyRed,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
@@ -165,202 +173,238 @@ class _ManageParticularsDialogState extends State<ManageParticularsDialog> {
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
+    final screenSize = MediaQuery.of(context).size;
+    final isMobile = screenSize.width < 600;
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: cardWhite,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      child: Container(
-        width: 780,
-        constraints: const BoxConstraints(maxHeight: 740),
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: ParishColors.marianBlueSurface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                border: Border(bottom: BorderSide(color: borderGrey)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: ParishColors.marianBlue,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.inventory_2_outlined, color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Manage Offerings & Particulars',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
-                        ),
-                        Text(
-                          'Configure sacraments, certificates, stipends, and offerings in POS & Receipts',
-                          style: TextStyle(fontSize: 11.5, color: textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.oliveGreen,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    ),
-                    onPressed: () => _openCreateOrEditDialog(),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('New Offering', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-
-            // Controls: Search & Category Chips
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-              child: Column(
-                children: [
-                  Container(
-                    height: 44,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: ParishColors.backgroundLight,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: borderGrey),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.search, size: 18, color: ParishColors.marianBlue),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            onChanged: (val) => setState(() => _searchQuery = val),
-                            style: TextStyle(fontSize: 13, color: textDark),
-                            decoration: InputDecoration(
-                              hintText: 'Search offerings by title or description...',
-                              hintStyle: TextStyle(fontSize: 12.5, color: textMuted),
-                              border: InputBorder.none,
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                        if (_searchQuery.isNotEmpty)
-                          IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () => setState(() => _searchQuery = ''),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _categories.map((cat) {
-                        final isSelected = _selectedCategory == cat;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 6.0),
-                          child: ChoiceChip(
-                            label: Text(cat),
-                            selected: isSelected,
-                            selectedColor: ParishColors.marianBlue,
-                            backgroundColor: ParishColors.backgroundLight,
-                            labelStyle: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              color: isSelected ? Colors.white : textDark,
-                            ),
-                            onSelected: (_) => setState(() => _selectedCategory = cat),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-
-            // List of Items
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _errorMessage != null
-                  ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text('Error: $_errorMessage', style: const TextStyle(color: ParishColors.mercyRed)),
+    return AssetLoadingOverlay(
+      isLoading: _isLoading,
+      message: 'Loading...',
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 780,
+            maxHeight: screenSize.height * 0.85,
+          ),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 20, vertical: 14),
+                decoration: BoxDecoration(
+                  color: ParishColors.marianBlueSurface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  border: Border(bottom: BorderSide(color: borderGrey)),
                 ),
-              )
-                  : _filteredList.isEmpty
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Row(
                   children: [
-                    Icon(Icons.inventory_2_outlined, size: 48, color: borderGrey),
-                    const SizedBox(height: 8),
-                    Text('No offerings found.', style: TextStyle(color: textDark, fontWeight: FontWeight.bold)),
-                    Text('Tap "+ New Offering" to register a custom service.', style: TextStyle(color: textMuted, fontSize: 12)),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: ParishColors.marianBlue,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.inventory_2_outlined, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Manage Offerings & Particulars',
+                            style: TextStyle(fontSize: isMobile ? 15.5 : 17, fontWeight: FontWeight.w700, color: textDark),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'Configure sacraments, certificates, and stipends',
+                            style: TextStyle(fontSize: 11.5, color: textMuted),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.oliveGreen,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: 10),
+                      ),
+                      onPressed: () => _openCreateOrEditDialog(),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: Text(
+                        isMobile ? 'New' : 'New Offering',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 22),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ],
                 ),
-              )
-                  : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: _filteredList.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final item = _filteredList[index];
-                  return _buildParticularTile(item);
-                },
               ),
-            ),
 
-            // Footer
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: cardWhite,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-                border: Border(top: BorderSide(color: borderGrey)),
+              // Controls: Search (Floating Label) & Category Chips
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+                child: Column(
+                  children: [
+                    TextField(
+                      onChanged: (val) => setState(() => _searchQuery = val),
+                      style: TextStyle(fontSize: 14, color: textDark),
+                      decoration: InputDecoration(
+                        labelText: 'Search offerings by title or description',
+                        floatingLabelBehavior: FloatingLabelBehavior.auto,
+                        prefixIcon: const Icon(Icons.search, size: 19, color: ParishColors.marianBlue),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                          icon: const Icon(Icons.clear, size: 17),
+                          onPressed: () => setState(() => _searchQuery = ''),
+                        )
+                            : null,
+                        filled: true,
+                        fillColor: ParishColors.backgroundLight,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: borderGrey),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: borderGrey),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: _categories.map((cat) {
+                            final isSelected = _selectedCategory == cat;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6.0),
+                              child: ChoiceChip(
+                                label: Text(cat),
+                                selected: isSelected,
+                                selectedColor: ParishColors.marianBlue,
+                                backgroundColor: ParishColors.backgroundLight,
+                                labelStyle: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                  color: isSelected ? Colors.white : textDark,
+                                ),
+                                onSelected: (_) => setState(() => _selectedCategory = cat),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${_filteredList.length} items in catalog',
-                    style: TextStyle(fontSize: 12, color: textMuted, fontWeight: FontWeight.w600),
+              const Divider(height: 1),
+
+              // List of Items
+              Expanded(
+                child: _errorMessage != null
+                    ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      'Error: $_errorMessage',
+                      style: const TextStyle(color: ParishColors.mercyRed),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('Close', style: TextStyle(color: textMuted, fontWeight: FontWeight.bold)),
+                )
+                    : _filteredList.isEmpty
+                    ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.inventory_2_outlined, size: 48, color: borderGrey),
+                      const SizedBox(height: 8),
+                      Text('No offerings found.', style: TextStyle(color: textDark, fontWeight: FontWeight.bold)),
+                      Text('Tap "+ New Offering" to register a custom service.', style: TextStyle(color: textMuted, fontSize: 12)),
+                    ],
                   ),
-                ],
+                )
+                    : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _filteredList.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final item = _filteredList[index];
+                    return _buildParticularTile(item, isMobile);
+                  },
+                ),
               ),
-            ),
-          ],
+
+              // Footer
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: cardWhite,
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                  border: Border(top: BorderSide(color: borderGrey)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_filteredList.length} items in catalog',
+                      style: TextStyle(fontSize: 12, color: textMuted, fontWeight: FontWeight.w600),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Close', style: TextStyle(color: textMuted, fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildParticularTile(PosItemModel item) {
+  Widget _buildParticularTile(PosItemModel item, bool isMobile) {
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final borderGrey = ParishColors.borderGrey;
+
+    final actionControls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.edit_outlined, size: 19, color: ParishColors.marianBlue),
+          tooltip: 'Edit Offering Details',
+          onPressed: () => _openCreateOrEditDialog(item),
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, size: 19, color: ParishColors.mercyRed),
+          tooltip: 'Delete Offering',
+          onPressed: () => _confirmDelete(item),
+        ),
+        Switch(
+          value: item.isActive,
+          activeColor: ParishColors.oliveGreen,
+          onChanged: (val) => _toggleStatus(item, val),
+        ),
+      ],
+    );
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -368,105 +412,106 @@ class _ManageParticularsDialogState extends State<ManageParticularsDialog> {
         color: item.isActive ? ParishColors.cardWhite : ParishColors.backgroundLight,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: item.isActive ? borderGrey : borderGrey.withValues(alpha: 0.5),
+          color: item.isActive ? borderGrey : borderGrey.withOpacity(0.5),
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: item.isActive ? ParishColors.marianBlueSurface : Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              item.icon,
-              color: item.isActive ? ParishColors.marianBlue : Colors.grey,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.bold,
-                          color: item.isActive ? textDark : textMuted,
-                          decoration: item.isActive ? null : TextDecoration.lineThrough,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: ParishColors.goldLight,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        item.category,
-                        style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  item.description.isNotEmpty ? item.description : 'Standard offering entry',
-                  style: TextStyle(fontSize: 11.5, color: textMuted),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      '₱ ${item.defaultPrice.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: item.isActive ? ParishColors.oliveGreen : textMuted,
-                      ),
-                    ),
-                    if (item.allowsCustomPrice) ...[
-                      const SizedBox(width: 8),
-                      const Text('(Allows Custom Amount)', style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: ParishColors.marianBlue)),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(width: 10),
           Row(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 19, color: ParishColors.marianBlue),
-                tooltip: 'Edit Offering Details',
-                onPressed: () => _openCreateOrEditDialog(item),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: item.isActive ? ParishColors.marianBlueSurface : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  item.icon,
+                  color: item.isActive ? ParishColors.marianBlue : Colors.grey,
+                  size: 22,
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 19, color: ParishColors.mercyRed),
-                tooltip: 'Delete Offering',
-                onPressed: () => _confirmDelete(item),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.title,
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.bold,
+                              color: item.isActive ? textDark : textMuted,
+                              decoration: item.isActive ? null : TextDecoration.lineThrough,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: ParishColors.goldLight,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.category,
+                            style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: ParishColors.goldAccent),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      item.description.isNotEmpty ? item.description : 'Standard offering entry',
+                      style: TextStyle(fontSize: 11.5, color: textMuted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '₱ ${item.defaultPrice.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: item.isActive ? ParishColors.oliveGreen : textMuted,
+                          ),
+                        ),
+                        if (item.allowsCustomPrice)
+                          const Text(
+                            '(Allows Custom Amount)',
+                            style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: ParishColors.marianBlue),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              Switch(
-                value: item.isActive,
-                activeColor: ParishColors.oliveGreen,
-                onChanged: (val) => _toggleStatus(item, val),
-              ),
+              if (!isMobile) ...[
+                const SizedBox(width: 10),
+                actionControls,
+              ],
             ],
           ),
+          if (isMobile) ...[
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: actionControls,
+            ),
+          ],
         ],
       ),
     );
@@ -474,7 +519,7 @@ class _ManageParticularsDialogState extends State<ManageParticularsDialog> {
 }
 
 // =============================================================================
-// Particular Create / Edit Form Modal
+// Particular Create / Edit Form Modal (Floating Labels + Taller Remarks)
 // =============================================================================
 class _ParticularFormDialog extends StatefulWidget {
   final PosItemModel? itemToEdit;
@@ -603,269 +648,301 @@ class _ParticularFormDialogState extends State<_ParticularFormDialog> {
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
+    final screenSize = MediaQuery.of(context).size;
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      backgroundColor: cardWhite,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      child: Container(
-        width: 520,
-        constraints: const BoxConstraints(maxHeight: 700),
-        child: Column(
-          children: [
-            // Modal Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: ParishColors.marianBlueSurface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                border: Border(bottom: BorderSide(color: borderGrey)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: ParishColors.marianBlue,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(isEditMode ? Icons.edit_note : Icons.add_business, color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isEditMode ? 'Edit Offering Particular' : 'Create Offering Particular',
-                          style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: textDark),
-                        ),
-                        Text(
-                          'Configure item wording and default stipend amount',
-                          style: TextStyle(fontSize: 11.5, color: textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: _isSaving ? null : () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-
-            // Form
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_errorMessage != null) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(10),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: ParishColors.mercyRedSurface,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ParishColors.mercyRed),
-                          ),
-                          child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-
-                      Text('Offering / Service Title *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _titleController,
-                        validator: (v) => (v?.trim().isEmpty ?? true) ? 'Title is required' : null,
-                        style: TextStyle(fontSize: 14, color: textDark),
-                        decoration: _inputDecoration(hint: 'e.g. Special Intention Mass, Altar Flowers'),
+    return AssetLoadingOverlay(
+      isLoading: _isSaving,
+      message: 'Saving...',
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: cardWhite,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 520,
+            maxHeight: screenSize.height * 0.88,
+          ),
+          child: Column(
+            children: [
+              // Modal Header
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: BoxDecoration(
+                  color: ParishColors.marianBlueSurface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  border: Border(bottom: BorderSide(color: borderGrey)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: ParishColors.marianBlue,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      const SizedBox(height: 14),
-
-                      Row(
+                      child: Icon(isEditMode ? Icons.edit_note : Icons.add_business, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            flex: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Category *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                                const SizedBox(height: 6),
-                                DropdownButtonFormField<String>(
-                                  value: _category,
-                                  isExpanded: true,
-                                  items: _categoryOptions.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 13.5)))).toList(),
-                                  onChanged: (val) => setState(() => _category = val!),
-                                  decoration: _inputDecoration(),
-                                ),
-                              ],
-                            ),
+                          Text(
+                            isEditMode ? 'Edit Offering Particular' : 'Create Offering Particular',
+                            style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, color: textDark),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Default Price (₱) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                                const SizedBox(height: 6),
-                                TextFormField(
-                                  controller: _priceController,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return 'Price required';
-                                    if (double.tryParse(v.trim()) == null) return 'Invalid amount';
-                                    return null;
-                                  },
-                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textDark),
-                                  decoration: _inputDecoration(hint: '0.00'),
-                                ),
-                              ],
-                            ),
+                          Text(
+                            'Configure item wording and default stipend amount',
+                            style: TextStyle(fontSize: 11.5, color: textMuted),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 22),
+                      onPressed: _isSaving ? null : () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
 
-                      Text('Short Description (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _descriptionController,
-                        maxLines: 2,
-                        style: TextStyle(fontSize: 13, color: textDark),
-                        decoration: _inputDecoration(hint: 'Brief summary of what this stipend or offering covers'),
-                      ),
-                      const SizedBox(height: 14),
+              // Form
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_errorMessage != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            margin: const EdgeInsets.only(bottom: 14),
+                            decoration: BoxDecoration(
+                              color: ParishColors.mercyRedSurface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: ParishColors.mercyRed),
+                            ),
+                            child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
 
-                      // Icon Selector Chips
-                      Text('Offering Emblem / Icon', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark)),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: ParishColors.backgroundLight,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: borderGrey),
+                        TextFormField(
+                          controller: _titleController,
+                          validator: (v) => (v?.trim().isEmpty ?? true) ? 'Title is required' : null,
+                          style: TextStyle(fontSize: 14.5, color: textDark),
+                          decoration: _inputDecoration(labelText: 'Offering / Service Title *'),
                         ),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _iconPresets.map((preset) {
-                            final name = preset['name'] as String;
-                            final icon = preset['icon'] as IconData;
-                            final label = preset['label'] as String;
-                            final isSelected = _iconName == name;
+                        const SizedBox(height: 14),
 
-                            return Tooltip(
-                              message: label,
-                              child: InkWell(
-                                onTap: () => setState(() => _iconName = name),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? ParishColors.marianBlue : cardWhite,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: isSelected ? ParishColors.marianBlue : borderGrey,
-                                      width: isSelected ? 1.8 : 1.0,
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final categoryField = DropdownButtonFormField<String>(
+                              value: _category,
+                              isExpanded: true,
+                              items: _categoryOptions
+                                  .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 13.5))))
+                                  .toList(),
+                              onChanged: (val) => setState(() => _category = val!),
+                              decoration: _inputDecoration(labelText: 'Category *'),
+                            );
+
+                            final priceField = TextFormField(
+                              controller: _priceController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Price required';
+                                if (double.tryParse(v.trim()) == null) return 'Invalid amount';
+                                return null;
+                              },
+                              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
+                              decoration: _inputDecoration(labelText: 'Default Price (₱) *', prefixText: '₱ '),
+                            );
+
+                            if (constraints.maxWidth < 380) {
+                              return Column(
+                                children: [
+                                  categoryField,
+                                  const SizedBox(height: 14),
+                                  priceField,
+                                ],
+                              );
+                            }
+
+                            return Row(
+                              children: [
+                                Expanded(flex: 3, child: categoryField),
+                                const SizedBox(width: 12),
+                                Expanded(flex: 2, child: priceField),
+                              ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Taller Remarks / Description Field (Floating Label Only)
+                        TextFormField(
+                          controller: _descriptionController,
+                          minLines: 3,
+                          maxLines: 5,
+                          style: TextStyle(fontSize: 14, color: textDark, height: 1.4),
+                          decoration: _inputDecoration(
+                            labelText: 'Description / Remarks (Optional)',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Icon Selector Chips
+                        Text('Offering Emblem / Icon', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: textMuted)),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: ParishColors.backgroundLight,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: borderGrey),
+                          ),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _iconPresets.map((preset) {
+                              final name = preset['name'] as String;
+                              final icon = preset['icon'] as IconData;
+                              final label = preset['label'] as String;
+                              final isSelected = _iconName == name;
+
+                              return Tooltip(
+                                message: label,
+                                child: InkWell(
+                                  onTap: () => setState(() => _iconName = name),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? ParishColors.marianBlue : cardWhite,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isSelected ? ParishColors.marianBlue : borderGrey,
+                                        width: isSelected ? 1.8 : 1.0,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(icon, size: 18, color: isSelected ? Colors.white : ParishColors.marianBlue),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          label,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                            color: isSelected ? Colors.white : textDark,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(icon, size: 18, color: isSelected ? Colors.white : ParishColors.marianBlue),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        label,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                          color: isSelected ? Colors.white : textDark,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                                 ),
-                              ),
-                            );
-                          }).toList(),
+                              );
+                            }).toList(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 14),
+                        const SizedBox(height: 14),
 
-                      // Allow custom price toggle
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        activeColor: ParishColors.marianBlue,
-                        title: const Text('Allow Custom Amount at Checkout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: const Text('Useful for discretionary donations and tithes', style: TextStyle(fontSize: 11)),
-                        value: _allowsCustomPrice,
-                        onChanged: (val) => setState(() => _allowsCustomPrice = val),
-                      ),
-                    ],
+                        // Allow custom price toggle
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          activeColor: ParishColors.marianBlue,
+                          title: const Text('Allow Custom Amount at Checkout', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                          subtitle: const Text('Useful for discretionary donations and tithes', style: TextStyle(fontSize: 11.5)),
+                          value: _allowsCustomPrice,
+                          onChanged: (val) => setState(() => _allowsCustomPrice = val),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
 
-            // Modal Actions
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: cardWhite,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
-                border: Border(top: BorderSide(color: borderGrey)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _isSaving ? null : () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(color: textMuted)),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ParishColors.marianBlue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              // Modal Actions
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(
+                  color: cardWhite,
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                  border: Border(top: BorderSide(color: borderGrey)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _isSaving ? null : () => Navigator.pop(context),
+                      child: Text('Cancel', style: TextStyle(color: textMuted, fontWeight: FontWeight.w600)),
                     ),
-                    onPressed: _isSaving ? null : _save,
-                    icon: _isSaving
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.check, size: 18),
-                    label: Text(
-                      _isSaving ? 'Saving...' : (isEditMode ? 'Update Offering' : 'Register Offering'),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.marianBlue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        minimumSize: const Size(120, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _isSaving ? null : _save,
+                      icon: const Icon(Icons.check, size: 18),
+                      label: Text(
+                        _isSaving ? 'Saving...' : (isEditMode ? 'Update Offering' : 'Register Offering'),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  InputDecoration _inputDecoration({String? hint}) {
+  InputDecoration _inputDecoration({
+    required String labelText,
+    String? prefixText,
+    bool alignLabelWithHint = false,
+  }) {
     return InputDecoration(
-      hintText: hint,
+      labelText: labelText,
+      floatingLabelBehavior: FloatingLabelBehavior.auto,
+      alignLabelWithHint: alignLabelWithHint,
+      labelStyle: TextStyle(fontSize: 13.5, color: ParishColors.textMuted),
+      floatingLabelStyle: const TextStyle(
+        fontSize: 13.5,
+        fontWeight: FontWeight.w600,
+        color: ParishColors.marianBlue,
+      ),
+      prefixText: prefixText,
       filled: true,
       fillColor: ParishColors.backgroundLight,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: ParishColors.borderGrey),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: ParishColors.marianBlue, width: 1.6),
       ),
     );
   }

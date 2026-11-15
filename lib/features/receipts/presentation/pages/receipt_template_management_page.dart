@@ -9,6 +9,7 @@ import '../../models/receipt_template_model.dart';
 import '../../services/receipt_pdf_generator.dart';
 import '../../services/receipt_template_service.dart';
 import 'receipt_canvas_designer_page.dart';
+import '../../../asset_inventory/presentation/widgets/asset_loading_overlay.dart';
 
 class ReceiptTemplateManagementPage extends StatefulWidget {
   const ReceiptTemplateManagementPage({super.key});
@@ -57,6 +58,7 @@ class _ReceiptTemplateManagementPageState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Duplicate Receipt Template'),
         content: TextField(
           controller: controller,
@@ -98,36 +100,53 @@ class _ReceiptTemplateManagementPageState
   Future<void> _previewTemplate(ReceiptTemplateModel template) async {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Preview: ${template.templateName}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-          ],
-        ),
-        content: SizedBox(
-          width: 720,
-          height: 520,
-          child: PdfPreview(
-            build: (format) => ReceiptPdfGenerator.generateReceiptPdf(
-              receiptNumber: 'REC-2026-00891',
-              payorName: 'Justin Dion Salaveria',
-              payorContact: '0917-882-9912',
-              relatedService: 'Baptism Registration & Mass Intention',
-              transactionDetails: '• Baptism Registration Stipend @ ₱300.00\n• Thanksgiving Mass Intention @ ₱100.00\n• Sanctuary Lamp Offering @ ₱150.00',
-              amount: 550.00,
-              paymentMode: 'Cash',
-              template: template,
-            ),
-            allowPrinting: true,
-            allowSharing: false,
-            canChangePageFormat: false,
+      builder: (ctx) {
+        final screenSize = MediaQuery.of(ctx).size;
+        return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Preview: ${template.templateName}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+            ],
           ),
-        ),
-      ),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 720,
+              maxHeight: screenSize.height * 0.72,
+            ),
+            child: SizedBox(
+              width: 720,
+              height: 520,
+              child: PdfPreview(
+                useActions: false,
+                build: (format) => ReceiptPdfGenerator.generateReceiptPdf(
+                  receiptNumber: 'REC-2026-00891',
+                  payorName: 'Justin Dion Salaveria',
+                  payorContact: '0917-882-9912',
+                  relatedService: 'Baptism Registration & Mass Intention',
+                  transactionDetails:
+                  '• Baptism Registration Stipend @ ₱300.00\n• Thanksgiving Mass Intention @ ₱100.00\n• Sanctuary Lamp Offering @ ₱150.00',
+                  amount: 550.00,
+                  paymentMode: 'Cash',
+                  template: template,
+                ),
+                allowPrinting: true,
+                allowSharing: false,
+                canChangePageFormat: false,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -149,207 +168,238 @@ class _ReceiptTemplateManagementPageState
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool isMobile = constraints.maxWidth < 600;
+    return AssetLoadingOverlay(
+      isLoading: _isLoading,
+      message: 'Loading templates...',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isMobile = constraints.maxWidth < 650;
 
-        return Scaffold(
-          backgroundColor: ParishColors.backgroundLight,
-          appBar: AppBar(
-            backgroundColor: cardWhite,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
-              onPressed: () => Navigator.pop(context),
-            ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Receipt Template & Canvas Management',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+          return Scaffold(
+            backgroundColor: ParishColors.backgroundLight,
+            appBar: AppBar(
+              backgroundColor: cardWhite,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Receipt Template & Canvas Management',
+                    style: TextStyle(
+                      fontSize: isMobile ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Configure layouts for Ecclesiastical (8.5×4.125 in), A4, Letter, and Legal (8.5×13 in)',
+                    style: TextStyle(fontSize: 12, color: textMuted),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: ParishColors.marianBlue),
+                  tooltip: 'Reload Templates',
+                  onPressed: _loadTemplates,
                 ),
-                Text(
-                  'Configure layouts for Ecclesiastical (8.5×4.125 in), A4, Letter, and Legal (8.5×13 in)',
-                  style: TextStyle(fontSize: 12, color: textMuted),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.oliveGreen,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(44, 44),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => _openTemplateEditor(),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(
+                      isMobile ? 'New' : 'New Receipt Template',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
                 ),
               ],
             ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh, color: ParishColors.marianBlue),
-                tooltip: 'Reload Templates',
-                onPressed: _loadTemplates,
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ParishColors.oliveGreen,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(44, 44),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: () => _openTemplateEditor(),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: Text(
-                    isMobile ? 'New' : 'New Receipt Template',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            body: SafeArea(
+              child: _errorMessage != null
+                  ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: ParishColors.mercyRed),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              ),
-            ],
-          ),
-          body: SafeArea(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                ? Center(child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed)))
-                : _allTemplates.isEmpty
-                ? Center(
-              child: Text('No receipt templates configured.', style: TextStyle(color: textMuted)),
-            )
-                : ListView.builder(
-              padding: EdgeInsets.all(isMobile ? 12 : 20),
-              itemCount: _allTemplates.length,
-              itemBuilder: (context, index) {
-                final item = _allTemplates[index];
-                final isCanvaMode = item.styleConfig.useVisualCanvas;
-                final isPlain = item.backgroundMode == 'None';
+              )
+                  : _allTemplates.isEmpty
+                  ? Center(
+                child: Text('No receipt templates configured.', style: TextStyle(color: textMuted)),
+              )
+                  : ListView.builder(
+                padding: EdgeInsets.all(isMobile ? 12 : 20),
+                itemCount: _allTemplates.length,
+                itemBuilder: (context, index) {
+                  final item = _allTemplates[index];
+                  final isCanvaMode = item.styleConfig.useVisualCanvas;
+                  final isPlain = item.backgroundMode == 'None';
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: EdgeInsets.all(isMobile ? 14 : 18),
-                  decoration: BoxDecoration(
-                    color: cardWhite,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: borderGrey),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.02),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                  final actionButtons = Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        icon: const Icon(Icons.picture_as_pdf, color: ParishColors.marianBlue),
+                        tooltip: 'Preview PDF Layout',
+                        onPressed: () => _previewTemplate(item),
+                      ),
+                      IconButton(
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        icon: Icon(Icons.copy, color: textDark),
+                        tooltip: 'Duplicate Template',
+                        onPressed: () => _duplicateTemplate(item),
+                      ),
+                      IconButton(
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        icon: Icon(Icons.edit, color: textDark),
+                        tooltip: 'Edit Template',
+                        onPressed: () => _openTemplateEditor(item),
+                      ),
+                      Switch(
+                        value: item.isActive,
+                        activeColor: ParishColors.oliveGreen,
+                        onChanged: (val) async {
+                          await ReceiptTemplateService.toggleTemplateStatus(item.templateId, val);
+                          _loadTemplates();
+                        },
                       ),
                     ],
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: ParishColors.oliveGreenSurface,
-                          borderRadius: BorderRadius.circular(10),
+                  );
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: EdgeInsets.all(isMobile ? 14 : 18),
+                    decoration: BoxDecoration(
+                      color: cardWhite,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: borderGrey),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
                         ),
-                        child: const Icon(Icons.receipt_long, color: ParishColors.oliveGreen, size: 24),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    item.templateName,
-                                    style: TextStyle(
-                                      fontSize: isMobile ? 14.5 : 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: textDark,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                if (item.isDefault)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: ParishColors.goldLight,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: ParishColors.goldAccent),
-                                    ),
-                                    child: Text(
-                                      'DEFAULT',
-                                      style: TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: textDark,
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: ParishColors.oliveGreenSurface,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.receipt_long, color: ParishColors.oliveGreen, size: 24),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        item.templateName,
+                                        style: TextStyle(
+                                          fontSize: isMobile ? 14.5 : 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: textDark,
+                                        ),
                                       ),
-                                    ),
+                                      if (item.isDefault)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: ParishColors.goldLight,
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: ParishColors.goldAccent),
+                                          ),
+                                          child: Text(
+                                            'DEFAULT',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: textDark,
+                                            ),
+                                          ),
+                                        ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isCanvaMode ? const Color(0xFF0F172A) : ParishColors.marianBlueSurface,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          isCanvaMode ? 'Visual MODE' : 'SIMPLE MODE',
+                                          style: TextStyle(
+                                            fontSize: 9.0,
+                                            fontWeight: FontWeight.bold,
+                                            color: isCanvaMode ? Colors.cyanAccent : ParishColors.marianBlue,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: isCanvaMode ? const Color(0xFF0F172A) : ParishColors.marianBlueSurface,
-                                    borderRadius: BorderRadius.circular(4),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Paper: ${item.paperSize} (${item.orientation}) • ${isPlain ? "Plain (No Border)" : item.backgroundMode} • Font: ${item.styleConfig.fontFamily.toUpperCase()} • Version ${item.version}',
+                                    style: TextStyle(fontSize: 12.0, color: textMuted),
                                   ),
-                                  child: Text(
-                                    isCanvaMode ? 'Visual MODE' : 'SIMPLE MODE',
-                                    style: TextStyle(
-                                      fontSize: 9.0,
-                                      fontWeight: FontWeight.bold,
-                                      color: isCanvaMode ? Colors.cyanAccent : ParishColors.marianBlue,
-                                    ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Title: ${item.receiptTitle} • Cashier: ${item.cashierTitle}',
+                                    style: TextStyle(fontSize: 11.5, color: textDark, fontStyle: FontStyle.italic),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Paper: ${item.paperSize} (${item.orientation}) • ${isPlain ? "Plain (No Border)" : item.backgroundMode} • Font: ${item.styleConfig.fontFamily.toUpperCase()} • Version ${item.version}',
-                              style: TextStyle(fontSize: 12.0, color: textMuted),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              'Title: ${item.receiptTitle} • Cashier: ${item.cashierTitle}',
-                              style: TextStyle(fontSize: 11.5, color: textDark, fontStyle: FontStyle.italic),
-                            ),
+                            if (!isMobile) actionButtons,
                           ],
                         ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                            icon: const Icon(Icons.picture_as_pdf, color: ParishColors.marianBlue),
-                            tooltip: 'Preview PDF Layout',
-                            onPressed: () => _previewTemplate(item),
-                          ),
-                          IconButton(
-                            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                            icon: Icon(Icons.copy, color: textDark),
-                            tooltip: 'Duplicate Template',
-                            onPressed: () => _duplicateTemplate(item),
-                          ),
-                          IconButton(
-                            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                            icon: Icon(Icons.edit, color: textDark),
-                            tooltip: 'Edit Template',
-                            onPressed: () => _openTemplateEditor(item),
-                          ),
-                          Switch(
-                            value: item.isActive,
-                            activeColor: ParishColors.oliveGreen,
-                            onChanged: (val) async {
-                              await ReceiptTemplateService.toggleTemplateStatus(item.templateId, val);
-                              _loadTemplates();
-                            },
+                        if (isMobile) ...[
+                          const SizedBox(height: 8),
+                          const Divider(height: 1),
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: actionButtons,
                           ),
                         ],
-                      ),
-                    ],
-                  ),
-                );
-              },
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -641,364 +691,434 @@ class _ReceiptTemplateEditorDialogState extends State<_ReceiptTemplateEditorDial
     final textDark = ParishColors.textDark;
     final textMuted = ParishColors.textMuted;
     final cardWhite = ParishColors.cardWhite;
+    final screenSize = MediaQuery.of(context).size;
 
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: cardWhite,
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            isEditMode ? 'Edit Receipt Template' : 'Create Receipt Template',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: textDark),
+    return AssetLoadingOverlay(
+      isLoading: _isSaving,
+      message: 'Saving...',
+      child: AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: cardWhite,
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                isEditMode ? 'Edit Receipt Template' : 'Create Receipt Template',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: textDark),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 780,
+            maxHeight: screenSize.height * 0.74,
           ),
-          IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
-        ],
-      ),
-      content: SizedBox(
-        width: 780,
-        height: 680,
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_errorMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 14),
-                    decoration: BoxDecoration(
-                      color: ParishColors.mercyRedSurface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: ParishColors.mercyRed),
-                    ),
-                    child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold, fontSize: 12.5)),
-                  ),
-                ],
-
-                // Name & Title
-                Row(
+          child: SizedBox(
+            width: 780,
+            child: Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextFormField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(labelText: 'Template Name *', border: OutlineInputBorder()),
-                        validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                    if (_errorMessage != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: ParishColors.mercyRedSurface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: ParishColors.mercyRed),
+                        ),
+                        child: Text(_errorMessage!, style: const TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold, fontSize: 12.5)),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: TextFormField(
-                        controller: _titleController,
-                        decoration: const InputDecoration(labelText: 'Receipt Title Banner *', border: OutlineInputBorder()),
-                        validator: (v) => v!.trim().isEmpty ? 'Required' : null,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                    ],
 
-                // Dimension & Paper Size Configuration (A4, Letter, Legal 8.5x13, Ecclesiastical)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: ParishColors.backgroundLight,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ParishColors.borderGrey),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Paper Size & Orientation Parameters',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                    // Name & Title
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final nameField = TextFormField(
+                          controller: _nameController,
+                          decoration: const InputDecoration(labelText: 'Template Name *', border: OutlineInputBorder()),
+                          validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                        );
+                        final titleField = TextFormField(
+                          controller: _titleController,
+                          decoration: const InputDecoration(labelText: 'Receipt Title Banner *', border: OutlineInputBorder()),
+                          validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                        );
+
+                        if (constraints.maxWidth < 480) {
+                          return Column(
+                            children: [
+                              nameField,
+                              const SizedBox(height: 12),
+                              titleField,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(flex: 3, child: nameField),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 2, child: titleField),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Dimension & Paper Size Configuration (A4, Letter, Legal 8.5x13, Ecclesiastical)
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: ParishColors.backgroundLight,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: ParishColors.borderGrey),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _paperSize,
-                              decoration: const InputDecoration(labelText: 'Paper Size *', border: OutlineInputBorder()),
-                              items: _paperSizeOptions.map((s) {
-                                String label = s;
-                                if (s == 'Ecclesiastical') label = 'Ecclesiastical Receipt (8.5 × 4.125 in)';
-                                if (s == 'Legal') label = 'Legal (8.5 × 13 in) Folio';
-                                if (s == 'Letter') label = 'Letter (8.5 × 11 in)';
-                                if (s == 'A4') label = 'A4 (210 × 297 mm)';
+                          const Text(
+                            'Paper Size & Orientation Parameters',
+                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                          ),
+                          const SizedBox(height: 10),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final paperDropdown = DropdownButtonFormField<String>(
+                                value: _paperSize,
+                                isExpanded: true,
+                                decoration: const InputDecoration(labelText: 'Paper Size *', border: OutlineInputBorder()),
+                                items: _paperSizeOptions.map((s) {
+                                  String label = s;
+                                  if (s == 'Ecclesiastical') label = 'Ecclesiastical Receipt (8.5 × 4.125 in)';
+                                  if (s == 'Legal') label = 'Legal (8.5 × 13 in) Folio';
+                                  if (s == 'Letter') label = 'Letter (8.5 × 11 in)';
+                                  if (s == 'A4') label = 'A4 (210 × 297 mm)';
 
-                                return DropdownMenuItem(value: s, child: Text(label, style: const TextStyle(fontSize: 13)));
-                              }).toList(),
-                              onChanged: (val) {
-                                if (val != null) {
-                                  setState(() {
-                                    _paperSize = val;
-                                    if (val == 'Ecclesiastical') _orientation = 'Landscape';
-                                  });
-                                }
-                              },
-                            ),
+                                  return DropdownMenuItem(
+                                    value: s,
+                                    child: Text(label, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() {
+                                      _paperSize = val;
+                                      if (val == 'Ecclesiastical') _orientation = 'Landscape';
+                                    });
+                                  }
+                                },
+                              );
+
+                              final orientationDropdown = DropdownButtonFormField<String>(
+                                value: _orientation,
+                                isExpanded: true,
+                                decoration: const InputDecoration(labelText: 'Orientation *', border: OutlineInputBorder()),
+                                items: const [
+                                  DropdownMenuItem(value: 'Landscape', child: Text('Landscape (Horizontal)', overflow: TextOverflow.ellipsis)),
+                                  DropdownMenuItem(value: 'Portrait', child: Text('Portrait (Vertical)', overflow: TextOverflow.ellipsis)),
+                                ],
+                                onChanged: (val) => setState(() => _orientation = val ?? 'Landscape'),
+                              );
+
+                              if (constraints.maxWidth < 480) {
+                                return Column(
+                                  children: [
+                                    paperDropdown,
+                                    const SizedBox(height: 12),
+                                    orientationDropdown,
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                children: [
+                                  Expanded(child: paperDropdown),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: orientationDropdown),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // VISUAL Mode Toggle
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: _useVisualCanvas ? const Color(0xFF0F172A) : ParishColors.oliveGreenSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _useVisualCanvas ? const Color(0xFF0284C7) : ParishColors.oliveGreen.withOpacity(0.4),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _useVisualCanvas ? Icons.palette_outlined : Icons.receipt_long,
+                            color: _useVisualCanvas ? Colors.cyanAccent : ParishColors.oliveGreen,
+                            size: 26,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _orientation,
-                              decoration: const InputDecoration(labelText: 'Orientation *', border: OutlineInputBorder()),
-                              items: const [
-                                DropdownMenuItem(value: 'Landscape', child: Text('Landscape (Horizontal)')),
-                                DropdownMenuItem(value: 'Portrait', child: Text('Portrait (Vertical)')),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _useVisualCanvas ? 'Visual Canvas Active' : 'Structured Canonical Flow (Standard Voucher)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13.5,
+                                    color: _useVisualCanvas ? Colors.white : ParishColors.textDark,
+                                  ),
+                                ),
+                                Text(
+                                  _useVisualCanvas
+                                      ? 'Custom visual canvas is enabled (${_canvasElements.length} elements placed).'
+                                      : 'Auto-adapts to A4, Letter, Legal, and Ecclesiastical voucher dimensions.',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: _useVisualCanvas ? Colors.white70 : textMuted,
+                                  ),
+                                ),
                               ],
-                              onChanged: (val) => setState(() => _orientation = val ?? 'Landscape'),
                             ),
+                          ),
+                          Switch(
+                            value: _useVisualCanvas,
+                            activeColor: Colors.cyanAccent,
+                            onChanged: (val) {
+                              setState(() => _useVisualCanvas = val);
+                              if (val && _canvasElements.isEmpty) {
+                                _launchVisualDesigner();
+                              }
+                            },
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // VISUAL Mode Toggle
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: _useVisualCanvas ? const Color(0xFF0F172A) : ParishColors.oliveGreenSurface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _useVisualCanvas ? const Color(0xFF0284C7) : ParishColors.oliveGreen.withOpacity(0.4),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _useVisualCanvas ? Icons.palette_outlined : Icons.receipt_long,
-                        color: _useVisualCanvas ? Colors.cyanAccent : ParishColors.oliveGreen,
-                        size: 26,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _useVisualCanvas ? 'Visual Canvas Active' : 'Structured Canonical Flow (Standard Voucher)',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13.5,
-                                color: _useVisualCanvas ? Colors.white : ParishColors.textDark,
-                              ),
-                            ),
-                            Text(
-                              _useVisualCanvas
-                                  ? 'Custom visual canvas is enabled (${_canvasElements.length} elements placed).'
-                                  : 'Auto-adapts to A4, Letter, Legal, and Ecclesiastical voucher dimensions.',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: _useVisualCanvas ? Colors.white70 : textMuted,
-                              ),
-                            ),
-                          ],
+                    const SizedBox(height: 16),
+
+                    if (_useVisualCanvas) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0284C7),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: _launchVisualDesigner,
+                          icon: const Icon(Icons.open_in_new, size: 18),
+                          label: Text(
+                            _canvasElements.isEmpty
+                                ? 'Open Receipt Visual Designer'
+                                : 'Open Receipt Visual Designer (${_canvasElements.length} Elements Configured)',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                      Switch(
-                        value: _useVisualCanvas,
-                        activeColor: Colors.cyanAccent,
-                        onChanged: (val) {
-                          setState(() => _useVisualCanvas = val);
-                          if (val && _canvasElements.isEmpty) {
-                            _launchVisualDesigner();
-                          }
-                        },
-                      ),
+                      const SizedBox(height: 16),
                     ],
-                  ),
-                ),
-                const SizedBox(height: 16),
 
-                if (_useVisualCanvas) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    height: 46,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0284C7),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _launchVisualDesigner,
-                      icon: const Icon(Icons.open_in_new, size: 18),
-                      label: Text(
-                        _canvasElements.isEmpty
-                            ? 'Open Receipt Visual Designer'
-                            : 'Open Receipt Visual Designer (${_canvasElements.length} Elements Configured)',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                    // Header Text
+                    TextFormField(
+                      controller: _headerController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Header Text (One line per row)',
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
+                    const SizedBox(height: 16),
 
-                // Header Text
-                TextFormField(
-                  controller: _headerController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Header Text (One line per row)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
+                    // Cashier and Clergy
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final cashierField = TextFormField(
+                          controller: _cashierTitleController,
+                          decoration: const InputDecoration(labelText: 'Cashier Title *', border: OutlineInputBorder()),
+                          validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                        );
+                        final priestField = TextFormField(
+                          controller: _parishPriestController,
+                          decoration: const InputDecoration(labelText: 'Parish Priest Name *', border: OutlineInputBorder()),
+                          validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                        );
 
-                // Cashier and Clergy
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _cashierTitleController,
-                        decoration: const InputDecoration(labelText: 'Cashier Title *', border: OutlineInputBorder()),
-                        validator: (v) => v!.trim().isEmpty ? 'Required' : null,
-                      ),
+                        if (constraints.maxWidth < 480) {
+                          return Column(
+                            children: [
+                              cashierField,
+                              const SizedBox(height: 12),
+                              priestField,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: cashierField),
+                            const SizedBox(width: 12),
+                            Expanded(child: priestField),
+                          ],
+                        );
+                      },
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _parishPriestController,
-                        decoration: const InputDecoration(labelText: 'Parish Priest Name *', border: OutlineInputBorder()),
-                        validator: (v) => v!.trim().isEmpty ? 'Required' : null,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                // Plain vs Border / Background Styling Selector
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: ParishColors.backgroundLight,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ParishColors.borderGrey),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Design & Border Styling',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.marianBlue),
+                    // Plain vs Border / Background Styling Selector
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: ParishColors.backgroundLight,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: ParishColors.borderGrey),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
+                          const Text(
+                            'Design & Border Styling',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.marianBlue),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 14,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              Radio<String>(
-                                value: 'None',
-                                groupValue: _backgroundMode,
-                                onChanged: (v) => setState(() => _backgroundMode = v!),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<String>(
+                                    value: 'None',
+                                    groupValue: _backgroundMode,
+                                    onChanged: (v) => setState(() => _backgroundMode = v!),
+                                  ),
+                                  const Text('Plain Paper (No Border)'),
+                                ],
                               ),
-                              const Text('Plain Paper (No Border)'),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<String>(
+                                    value: 'Border',
+                                    groupValue: _backgroundMode,
+                                    onChanged: (v) => setState(() => _backgroundMode = v!),
+                                  ),
+                                  const Text('Border Frame'),
+                                ],
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<String>(
+                                    value: 'Full-Page',
+                                    groupValue: _backgroundMode,
+                                    onChanged: (v) => setState(() => _backgroundMode = v!),
+                                  ),
+                                  const Text('Full-Page Background'),
+                                ],
+                              ),
                             ],
                           ),
-                          const SizedBox(width: 14),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Radio<String>(
-                                value: 'Border',
-                                groupValue: _backgroundMode,
-                                onChanged: (v) => setState(() => _backgroundMode = v!),
-                              ),
-                              const Text('Border Frame'),
-                            ],
-                          ),
-                          const SizedBox(width: 14),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Radio<String>(
-                                value: 'Full-Page',
-                                groupValue: _backgroundMode,
-                                onChanged: (v) => setState(() => _backgroundMode = v!),
-                              ),
-                              const Text('Full-Page Background'),
-                            ],
-                          ),
+                          if (_backgroundMode != 'None') ...[
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: cardWhite,
+                                    foregroundColor: textDark,
+                                    minimumSize: const Size(44, 44),
+                                  ),
+                                  onPressed: _isUploading ? null : () => _pickAndUploadAsset('borders'),
+                                  icon: const Icon(Icons.cloud_upload),
+                                  label: Text(_backgroundImageUrl != null ? 'Replace Graphic' : 'Upload Graphic / Border'),
+                                ),
+                                if (_backgroundImageUrl != null)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20),
+                                      const SizedBox(width: 6),
+                                      Text('Image Attached', style: TextStyle(color: textDark, fontSize: 13)),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: ParishColors.mercyRed),
+                                        onPressed: () => setState(() => _backgroundImageUrl = null),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
-                      if (_backgroundMode != 'None') ...[
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: cardWhite,
-                                foregroundColor: textDark,
-                                minimumSize: const Size(44, 44),
-                              ),
-                              onPressed: _isUploading ? null : () => _pickAndUploadAsset('borders'),
-                              icon: const Icon(Icons.cloud_upload),
-                              label: Text(_backgroundImageUrl != null ? 'Replace Graphic' : 'Upload Graphic / Border'),
-                            ),
-                            const SizedBox(width: 12),
-                            if (_backgroundImageUrl != null) ...[
-                              const Icon(Icons.check_circle, color: ParishColors.oliveGreen, size: 20),
-                              const SizedBox(width: 6),
-                              Text('Image Attached', style: TextStyle(color: textDark, fontSize: 13)),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, color: ParishColors.mercyRed),
-                                onPressed: () => setState(() => _backgroundImageUrl = null),
-                              ),
-                            ],
-                          ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Switches
+                    Row(
+                      children: [
+                        Checkbox(value: _enableQr, onChanged: (v) => setState(() => _enableQr = v ?? true)),
+                        const Expanded(
+                          child: Text('Enable QR Verification Token on Receipt', style: TextStyle(fontSize: 13)),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // Switches
-                Row(
-                  children: [
-                    Checkbox(value: _enableQr, onChanged: (v) => setState(() => _enableQr = v ?? true)),
-                    const Text('Enable QR Verification Token on Receipt', style: TextStyle(fontSize: 13)),
+                    ),
+                    Row(
+                      children: [
+                        Checkbox(value: _isDefault, onChanged: (v) => setState(() => _isDefault = v ?? false)),
+                        const Expanded(
+                          child: Text(
+                            'Make this the default receipt template',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                Row(
-                  children: [
-                    Checkbox(value: _isDefault, onChanged: (v) => setState(() => _isDefault = v ?? false)),
-                    const Text('Make this the default receipt template', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      actions: [
-        OutlinedButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: ParishColors.marianBlue,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(120, 44),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
-          onPressed: _isSaving ? null : _saveTemplate,
-          icon: _isSaving
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Icon(Icons.save),
-          label: Text(_isSaving ? 'Saving...' : 'Save Template'),
-        ),
-      ],
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(120, 44),
+            ),
+            onPressed: _isSaving ? null : _saveTemplate,
+            icon: const Icon(Icons.save),
+            label: Text(_isSaving ? 'Saving...' : 'Save Template'),
+          ),
+        ],
+      ),
     );
   }
 }
