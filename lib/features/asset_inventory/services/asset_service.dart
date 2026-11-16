@@ -180,7 +180,6 @@ class AssetService {
     required String fileName,
   }) async {
     try {
-      // Ensure file is clean JPEG before saving to bucket
       final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(fileBytes);
       final storagePath =
           'asset_photos/$assetId/photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
@@ -734,31 +733,160 @@ class AssetService {
     }
   }
 
-  static Future<void> archiveAsset({
+  /// Moves an asset to Trash / Decommissioned status. Available to all staff.
+  static Future<void> moveToTrash({
     required String assetId,
-    required String reason,
+    String? reason,
   }) async {
     final validUserId = await _resolveValidUserId();
     final now = DateTime.now();
+    final cleanReason = (reason != null && reason.trim().isNotEmpty)
+        ? reason.trim()
+        : 'Moved to trash by parish staff';
 
     await _client.from('parish_assets').update({
       'is_archived': true,
       'archived_at': now.toIso8601String(),
       'archived_by': validUserId,
-      'archive_reason': reason.trim(),
+      'archive_reason': cleanReason,
       'operational_status': 'Disposed',
       'updated_at': now.toIso8601String(),
     }).eq('asset_id', assetId);
+
+    try {
+      final assetRow = await _client
+          .from('parish_assets')
+          .select('control_number, condition_status')
+          .eq('asset_id', assetId)
+          .maybeSingle();
+
+      if (assetRow != null) {
+        await _client.from('asset_audit_logs').insert({
+          'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
+          'asset_id': assetId,
+          'control_number': assetRow['control_number'] ?? '',
+          'audited_by': validUserId,
+          'previous_condition': assetRow['condition_status'],
+          'new_condition': assetRow['condition_status'] ?? 'Good',
+          'previous_status': null,
+          'new_status': 'Disposed',
+          'previous_location': null,
+          'new_location': 'Trash / Decommissioned',
+          'audit_method': 'MANUAL',
+          'audit_notes': 'Asset moved to trash: $cleanReason',
+          'audited_at': now.toIso8601String(),
+        });
+      }
+    } catch (e) {
+      debugPrint('Trash audit log notice: $e');
+    }
   }
 
+  /// Alias for backward compatibility with existing archive references
+  static Future<void> archiveAsset({
+    required String assetId,
+    required String reason,
+  }) async {
+    return moveToTrash(assetId: assetId, reason: reason);
+  }
+
+  /// Restores an asset from Trash / Archived back to active 'In Storage' status.
   static Future<void> restoreAsset(String assetId) async {
+    final validUserId = await _resolveValidUserId();
+    final now = DateTime.now();
+
     await _client.from('parish_assets').update({
       'is_archived': false,
       'archived_at': null,
       'archived_by': null,
       'archive_reason': null,
       'operational_status': 'In Storage',
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': now.toIso8601String(),
     }).eq('asset_id', assetId);
+
+    try {
+      final assetRow = await _client
+          .from('parish_assets')
+          .select('control_number, condition_status')
+          .eq('asset_id', assetId)
+          .maybeSingle();
+
+      if (assetRow != null) {
+        await _client.from('asset_audit_logs').insert({
+          'audit_id': 'AUD-${now.millisecondsSinceEpoch}',
+          'asset_id': assetId,
+          'control_number': assetRow['control_number'] ?? '',
+          'audited_by': validUserId,
+          'previous_condition': assetRow['condition_status'],
+          'new_condition': assetRow['condition_status'] ?? 'Good',
+          'previous_status': 'Disposed',
+          'new_status': 'In Storage',
+          'previous_location': 'Trash / Decommissioned',
+          'new_location': 'Restored to Storage',
+          'audit_method': 'MANUAL',
+          'audit_notes': 'Restored from trash to active inventory ledger',
+          'audited_at': now.toIso8601String(),
+        });
+      }
+    } catch (e) {
+      debugPrint('Restore audit log notice: $e');
+    }
+  }
+
+  /// Permanently removes the asset record, all audit history, and associated
+  /// storage photos from the database and bucket. Available to all staff.
+  static Future<void> permanentlyDeleteAsset({
+    required String assetId,
+    required String controlNumber,
+    String? photoUrl,
+  }) async {
+    try {
+      try {
+        await _client
+            .from('asset_audit_logs')
+            .delete()
+            .eq('asset_id', assetId);
+      } catch (e) {
+        debugPrint('Notice deleting audit logs for $assetId: $e');
+      }
+
+      if (photoUrl != null && photoUrl.trim().isNotEmpty) {
+        try {
+          final uri = Uri.tryParse(photoUrl.trim());
+          if (uri != null) {
+            final segments = uri.pathSegments;
+            final objIdx = segments.indexOf('object');
+            if (objIdx != -1 && objIdx + 3 < segments.length) {
+              final bucket = segments[objIdx + 2];
+              final path = Uri.decodeComponent(
+                segments.sublist(objIdx + 3).join('/'),
+              );
+              await _client.storage.from(bucket).remove([path]);
+            }
+          }
+        } catch (e) {
+          debugPrint('Notice removing storage photo for $assetId: $e');
+        }
+      }
+
+      try {
+        final files = await _client.storage
+            .from('certificate-assets')
+            .list(path: 'asset_photos/$assetId');
+        if (files.isNotEmpty) {
+          final paths =
+          files.map((f) => 'asset_photos/$assetId/${f.name}').toList();
+          await _client.storage.from('certificate-assets').remove(paths);
+        }
+      } catch (_) {}
+
+      await _client
+          .from('parish_assets')
+          .delete()
+          .eq('asset_id', assetId);
+    } catch (e) {
+      debugPrint('Error permanently deleting asset $assetId: $e');
+      rethrow;
+    }
   }
 }

@@ -143,35 +143,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   bool get _hasPrevious => _currentIndex > 0;
   bool get _hasNext => _currentIndex < _assetList.length - 1;
 
-  bool get _canModify {
-    final user = AuthService.currentUser;
-    if (user == null) return true;
-    final role = user.userRole
-        .toLowerCase()
-        .replaceAll('_', '')
-        .replaceAll(' ', '')
-        .trim();
-    return role == 'superadmin' ||
-        role == 'admin' ||
-        role == 'parishpriest' ||
-        role == 'secretary' ||
-        role == 'encoder' ||
-        role.isEmpty;
-  }
+  /// Allowed for all parish staff members
+  bool get _canModify => true;
 
-  bool get _canArchive {
-    final user = AuthService.currentUser;
-    if (user == null) return true;
-    final role = user.userRole
-        .toLowerCase()
-        .replaceAll('_', '')
-        .replaceAll(' ', '')
-        .trim();
-    return role == 'superadmin' ||
-        role == 'admin' ||
-        role == 'parishpriest' ||
-        role.isEmpty;
-  }
+  /// Allowed for all parish staff members
+  bool get _canTrashOrDelete => true;
 
   int get _editQuantity {
     final q = int.tryParse(_quantityController.text.trim());
@@ -210,8 +186,12 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     if (_modelController.text.trim() != (a.model ?? '')) return true;
     if (_othersController.text.trim() != (a.others ?? '')) return true;
     if (_remarksController.text.trim() != (a.remarks ?? '')) return true;
-    if (_conditionStatus != AssetModel.normalizeCondition(a.conditionStatus)) return true;
-    if (_operationalStatus != AssetModel.normalizeStatus(a.operationalStatus)) return true;
+    if (_conditionStatus != AssetModel.normalizeCondition(a.conditionStatus)) {
+      return true;
+    }
+    if (_operationalStatus != AssetModel.normalizeStatus(a.operationalStatus)) {
+      return true;
+    }
     if (_modeOfAcquisition != a.modeOfAcquisition) return true;
     if (_selectedYear != a.acquisitionYear) return true;
     if (_newConvertedPhotoBytes != null) return true;
@@ -404,8 +384,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
     if (capturedBytes != null && capturedBytes.isNotEmpty) {
       setState(() => _isProcessingImage = true);
-      // Fast conversion to clean JPG
-      final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(capturedBytes);
+      final jpegBytes =
+      await AssetImageWatermarkUtil.convertToJpg(capturedBytes);
       if (!mounted) return;
       setState(() {
         _newConvertedPhotoBytes = jpegBytes;
@@ -456,8 +436,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
           if (rawBytes != null) {
             setState(() => _isProcessingImage = true);
-            // Automatic instant conversion of any format to clean JPG
-            final jpegBytes = await AssetImageWatermarkUtil.convertToJpg(rawBytes);
+            final jpegBytes =
+            await AssetImageWatermarkUtil.convertToJpg(rawBytes);
             if (!mounted) return;
             setState(() {
               _newConvertedPhotoBytes = jpegBytes;
@@ -514,8 +494,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     final confirmed = await showAssetActionConfirmationDialog(
       context,
       title: 'Save Record Changes?',
-      message: 'Are you sure you want to commit changes to "${_nameController.text.trim()}" in the diocesan ledger?',
-      itemIdentifier: '${_currentAsset.controlNumber} • ${_nameController.text.trim()}',
+      message:
+      'Are you sure you want to commit changes to "${_nameController.text.trim()}" in the diocesan ledger?',
+      itemIdentifier:
+      '${_currentAsset.controlNumber} • ${_nameController.text.trim()}',
       confirmLabel: 'Save Changes',
       icon: Icons.save_outlined,
       accentColor: ParishColors.oliveGreen,
@@ -531,7 +513,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     try {
       String? photoUrlToSave = _currentAsset.photoUrl;
 
-      // 1. Upload initial photo if changed
       if (_newConvertedPhotoBytes != null && _newPhotoFileName != null) {
         setState(() => _loadingMessage = 'Uploading new photo to storage...');
         final uploaded = await AssetService.uploadAssetPhoto(
@@ -544,7 +525,6 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         }
       }
 
-      // 2. Save database updates
       setState(() => _loadingMessage = 'Saving updates to database...');
       final updated = await AssetService.updateAsset(
         assetId: _currentAsset.assetId,
@@ -567,9 +547,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         operationalStatus: _operationalStatus,
       );
 
-      // 3. Post-save fast watermarking if new photo was uploaded
       if (_newConvertedPhotoBytes != null) {
-        setState(() => _loadingMessage = 'Applying security watermark to photo...');
+        setState(
+                () => _loadingMessage = 'Applying security watermark to photo...');
         final watermarkedUrl = await AssetService.applyAndSavePostWatermark(
           assetId: updated.assetId,
           controlNumber: updated.controlNumber,
@@ -602,7 +582,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         SnackBar(
           content: Text(
             _operationalStatus == 'Disposed'
-                ? 'Item marked as Disposed and moved to Archive.'
+                ? 'Item marked as Disposed and moved to Trash.'
                 : 'Item record updated successfully.',
           ),
           backgroundColor: ParishColors.oliveGreen,
@@ -621,123 +601,64 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     }
   }
 
-  Future<void> _confirmArchiveAsset() async {
-    final reasonController = TextEditingController();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: ParishColors.cardWhite,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: ParishColors.mercyRed.withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.archive_outlined, color: ParishColors.mercyRed, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Archive Parish Item?',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16.5,
-                  color: ParishColors.textDark,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to archive "${_currentAsset.itemName}" (${_currentAsset.controlNumber})? Archived items are officially classified as decommissioned/disposed.',
-              style: TextStyle(fontSize: 13, color: ParishColors.textDark, height: 1.4),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: reasonController,
-              autofocus: true,
-              style: TextStyle(fontSize: 13, color: ParishColors.textDark),
-              decoration: InputDecoration(
-                labelText: 'Reason for Archiving *',
-                labelStyle: TextStyle(color: ParishColors.textDark),
-                hintText: 'e.g. Broken beyond repair, replaced by newer unit',
-                hintStyle: TextStyle(
-                  fontSize: 12.5,
-                  color: ParishColors.textMuted,
-                ),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: ParishColors.borderGrey),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: ParishColors.textMuted, fontWeight: FontWeight.bold),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ParishColors.mercyRed,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () {
-              if (reasonController.text.trim().isNotEmpty) {
-                Navigator.pop(ctx, true);
-              }
-            },
-            child: const Text('Archive Item', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+  /// Moves the active asset to Trash with a confirmation dialog.
+  Future<void> _moveToTrash() async {
+    final confirmed = await showAssetActionConfirmationDialog(
+      context,
+      title: 'Move Item to Trash?',
+      message:
+      'Are you sure you want to move "${_currentAsset.itemName}" (${_currentAsset.controlNumber}) to Trash? It will be removed from active inventory and stored under the Trash tab.',
+      itemIdentifier:
+      '${_currentAsset.controlNumber} • ${_currentAsset.itemName}',
+      confirmLabel: 'Move to Trash',
+      icon: Icons.delete_outline,
+      isDestructive: true,
     );
 
-    if (confirmed == true && reasonController.text.trim().isNotEmpty && mounted) {
-      setState(() {
-        _isBusy = true;
-        _loadingMessage = 'Archiving parish property...';
-      });
+    if (!confirmed || !mounted) return;
 
-      try {
-        await AssetService.archiveAsset(
-          assetId: _currentAsset.assetId,
-          reason: reasonController.text.trim(),
-        );
-        if (!mounted) return;
-        widget.onAssetUpdated?.call();
-        Navigator.pop(context);
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Archive failed: $e'), backgroundColor: ParishColors.mercyRed),
-        );
-      } finally {
-        if (mounted) setState(() => _isBusy = false);
-      }
+    setState(() {
+      _isBusy = true;
+      _loadingMessage = 'Moving asset to trash...';
+    });
+
+    try {
+      await AssetService.moveToTrash(
+        assetId: _currentAsset.assetId,
+        reason: 'Moved to trash by staff from asset details',
+      );
+      if (!mounted) return;
+      widget.onAssetUpdated?.call();
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Item moved to Trash successfully.'),
+          backgroundColor: ParishColors.oliveGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to move to trash: $e'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
+  /// Restores an asset from Trash back to active storage.
   Future<void> _restoreAsset() async {
     final confirmed = await showAssetActionConfirmationDialog(
       context,
       title: 'Restore Parish Asset?',
-      message: 'Restore "${_currentAsset.itemName}" (${_currentAsset.controlNumber}) back to active parish storage?',
-      itemIdentifier: '${_currentAsset.controlNumber} • ${_currentAsset.itemName}',
+      message:
+      'Restore "${_currentAsset.itemName}" (${_currentAsset.controlNumber}) back to active parish storage?',
+      itemIdentifier:
+      '${_currentAsset.controlNumber} • ${_currentAsset.itemName}',
       confirmLabel: 'Restore Asset',
       icon: Icons.restore,
       accentColor: ParishColors.oliveGreen,
@@ -755,10 +676,65 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       if (!mounted) return;
       widget.onAssetUpdated?.call();
       Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Asset restored to active inventory.'),
+          backgroundColor: ParishColors.oliveGreen,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Restore failed: $e'), backgroundColor: ParishColors.mercyRed),
+        SnackBar(
+          content: Text('Restore failed: $e'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  /// Permanently deletes an asset, requiring the user to type the control number.
+  Future<void> _permanentlyDeleteAsset() async {
+    final confirmed = await showPermanentDeleteConfirmationDialog(
+      context,
+      controlNumber: _currentAsset.controlNumber,
+      itemName: _currentAsset.itemName,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _isBusy = true;
+      _loadingMessage = 'Permanently deleting asset...';
+    });
+
+    try {
+      await AssetService.permanentlyDeleteAsset(
+        assetId: _currentAsset.assetId,
+        controlNumber: _currentAsset.controlNumber,
+        photoUrl: _currentAsset.photoUrl,
+      );
+
+      if (!mounted) return;
+      widget.onAssetUpdated?.call();
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Asset record permanently deleted.'),
+          backgroundColor: ParishColors.oliveGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Permanent delete failed: $e'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isBusy = false);
@@ -796,7 +772,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 backgroundColor: ParishColors.cardWhite,
                 elevation: 0,
                 leading: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: ParishColors.marianBlue),
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: ParishColors.marianBlue,
+                  ),
                   onPressed: _handleBackNavigation,
                 ),
                 title: Column(
@@ -820,7 +799,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: asset.conditionSurfaceColor,
                             borderRadius: BorderRadius.circular(4),
@@ -852,7 +833,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 ),
                 actions: [
                   Container(
-                    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                    margin:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
                       color: ParishColors.marianBlueSurface,
@@ -868,12 +850,15 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                           icon: const Icon(Icons.chevron_left, size: 22),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
-                              minWidth: 32, minHeight: 32),
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
                           color: _hasPrevious
                               ? ParishColors.marianBlue
                               : ParishColors.borderGrey,
                           tooltip: 'Previous Item',
-                          onPressed: _hasPrevious ? _navigateToPrevious : null,
+                          onPressed:
+                          _hasPrevious ? _navigateToPrevious : null,
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -890,7 +875,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                           icon: const Icon(Icons.chevron_right, size: 22),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
-                              minWidth: 32, minHeight: 32),
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
                           color: _hasNext
                               ? ParishColors.marianBlue
                               : ParishColors.borderGrey,
@@ -917,20 +904,27 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         children: [
                           if (isMobile) ...[
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
                               children: [
                                 OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 8),
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
                                     side: BorderSide(
-                                        color: ParishColors.borderGrey),
+                                      color: ParishColors.borderGrey,
+                                    ),
                                   ),
-                                  onPressed:
-                                  _hasPrevious ? _navigateToPrevious : null,
+                                  onPressed: _hasPrevious
+                                      ? _navigateToPrevious
+                                      : null,
                                   icon: const Icon(Icons.arrow_back, size: 14),
-                                  label: const Text('Previous',
-                                      style: TextStyle(fontSize: 11)),
+                                  label: const Text(
+                                    'Previous',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
                                 ),
                                 Text(
                                   'Item $currentPos of $totalCount',
@@ -943,14 +937,22 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                                 OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 8),
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
                                     side: BorderSide(
-                                        color: ParishColors.borderGrey),
+                                      color: ParishColors.borderGrey,
+                                    ),
                                   ),
                                   onPressed: _hasNext ? _navigateToNext : null,
-                                  icon: const Icon(Icons.arrow_forward, size: 14),
-                                  label: const Text('Next',
-                                      style: TextStyle(fontSize: 11)),
+                                  icon: const Icon(
+                                    Icons.arrow_forward,
+                                    size: 14,
+                                  ),
+                                  label: const Text(
+                                    'Next',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
                                 ),
                               ],
                             ),
@@ -1007,7 +1009,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             child: Row(
               children: [
                 const Icon(
-                  Icons.archive_outlined,
+                  Icons.delete_outline_rounded,
                   color: ParishColors.mercyRed,
                   size: 22,
                 ),
@@ -1017,7 +1019,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'ARCHIVED / DISPOSED ITEM',
+                        'TRASHED / DISPOSED ITEM',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -1028,7 +1030,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         asset.archiveReason != null &&
                             asset.archiveReason!.isNotEmpty
                             ? 'Reason: ${asset.archiveReason}'
-                            : 'This item has been officially disposed.',
+                            : 'This item is in Trash. You can restore it or permanently delete it.',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.bold,
@@ -1070,7 +1072,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4.5),
+                        horizontal: 10,
+                        vertical: 4.5,
+                      ),
                       decoration: BoxDecoration(
                         color: isArchived
                             ? ParishColors.mercyRedSurface
@@ -1138,7 +1142,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: asset.unitPrice >= 10000.0
                                 ? ParishColors.goldLight
@@ -1164,12 +1170,15 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: asset.statusSurfaceColor,
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                                color: asset.statusColor.withOpacity(0.3)),
+                              color: asset.statusColor.withOpacity(0.3),
+                            ),
                           ),
                           child: Text(
                             asset.operationalStatus,
@@ -1252,27 +1261,37 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               isMobile
                   ? Column(
                 children: [
-                  _buildInfoTile('Control Number', asset.controlNumber,
-                      Icons.qr_code,
-                      isMono: true),
+                  _buildInfoTile(
+                    'Control Number',
+                    asset.controlNumber,
+                    Icons.qr_code,
+                    isMono: true,
+                  ),
                   const SizedBox(height: 8),
-                  _buildInfoTile('Date of Inventory', inventoryDateStr,
-                      Icons.event_note_outlined),
+                  _buildInfoTile(
+                    'Date of Inventory',
+                    inventoryDateStr,
+                    Icons.event_note_outlined,
+                  ),
                 ],
               )
                   : Row(
                 children: [
                   Expanded(
                     child: _buildInfoTile(
-                        'Control Number',
-                        asset.controlNumber,
-                        Icons.qr_code,
-                        isMono: true),
+                      'Control Number',
+                      asset.controlNumber,
+                      Icons.qr_code,
+                      isMono: true,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _buildInfoTile('Date of Inventory',
-                        inventoryDateStr, Icons.event_note_outlined),
+                    child: _buildInfoTile(
+                      'Date of Inventory',
+                      inventoryDateStr,
+                      Icons.event_note_outlined,
+                    ),
                   ),
                 ],
               ),
@@ -1280,23 +1299,36 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               isMobile
                   ? Column(
                 children: [
-                  _buildInfoTile('Item Name', asset.itemName,
-                      Icons.inventory_2_outlined),
-                  const SizedBox(height: 8),
-                  _buildInfoTile('Storage Location', asset.displayLocation,
-                      Icons.location_on_outlined),
+                  _buildInfoTile(
+                    'Item Name',
+                    asset.itemName,
+                    Icons.inventory_2_outlined,
+                  ),
                   const SizedBox(height: 8),
                   _buildInfoTile(
-                      'Date Acquired',
-                      asset.formattedAcquisitionDate,
-                      Icons.calendar_today_outlined),
+                    'Storage Location',
+                    asset.displayLocation,
+                    Icons.location_on_outlined,
+                  ),
                   const SizedBox(height: 8),
-                  _buildInfoTile('Mode of Acquisition',
-                      asset.modeOfAcquisition, Icons.shopping_bag_outlined),
+                  _buildInfoTile(
+                    'Date Acquired',
+                    asset.formattedAcquisitionDate,
+                    Icons.calendar_today_outlined,
+                  ),
                   const SizedBox(height: 8),
-                  _buildInfoTile('Cost of Acquisition', costFormatted,
-                      Icons.payments_outlined,
-                      isPrice: true),
+                  _buildInfoTile(
+                    'Mode of Acquisition',
+                    asset.modeOfAcquisition,
+                    Icons.shopping_bag_outlined,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInfoTile(
+                    'Cost of Acquisition',
+                    costFormatted,
+                    Icons.payments_outlined,
+                    isPrice: true,
+                  ),
                 ],
               )
                   : Column(
@@ -1304,15 +1336,19 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: _buildInfoTile('Item Name', asset.itemName,
-                            Icons.inventory_2_outlined),
+                        child: _buildInfoTile(
+                          'Item Name',
+                          asset.itemName,
+                          Icons.inventory_2_outlined,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildInfoTile(
-                            'Storage Location',
-                            asset.displayLocation,
-                            Icons.location_on_outlined),
+                          'Storage Location',
+                          asset.displayLocation,
+                          Icons.location_on_outlined,
+                        ),
                       ),
                     ],
                   ),
@@ -1321,23 +1357,28 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     children: [
                       Expanded(
                         child: _buildInfoTile(
-                            'Date Acquired',
-                            asset.formattedAcquisitionDate,
-                            Icons.calendar_today_outlined),
+                          'Date Acquired',
+                          asset.formattedAcquisitionDate,
+                          Icons.calendar_today_outlined,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildInfoTile(
-                            'Mode of Acquisition',
-                            asset.modeOfAcquisition,
-                            Icons.shopping_bag_outlined),
+                          'Mode of Acquisition',
+                          asset.modeOfAcquisition,
+                          Icons.shopping_bag_outlined,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
-                  _buildInfoTile('Cost of Acquisition', costFormatted,
-                      Icons.payments_outlined,
-                      isPrice: true),
+                  _buildInfoTile(
+                    'Cost of Acquisition',
+                    costFormatted,
+                    Icons.payments_outlined,
+                    isPrice: true,
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1347,7 +1388,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   color: ParishColors.backgroundLight,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                      color: ParishColors.borderGrey.withOpacity(0.7)),
+                    color: ParishColors.borderGrey.withOpacity(0.7),
+                  ),
                 ),
                 padding: const EdgeInsets.all(14),
                 child: Column(
@@ -1355,8 +1397,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.straighten_outlined,
-                            size: 16, color: ParishColors.marianBlue),
+                        const Icon(
+                          Icons.straighten_outlined,
+                          size: 16,
+                          color: ParishColors.marianBlue,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'PHYSICAL SPECIFICATIONS & DIMENSIONS',
@@ -1424,20 +1469,26 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color: ParishColors.borderGrey.withOpacity(0.8)),
+                            color: ParishColors.borderGrey.withOpacity(0.8),
+                          ),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Padding(
                               padding: EdgeInsets.only(top: 2),
-                              child: Icon(Icons.description_outlined,
-                                  size: 16, color: ParishColors.marianBlue),
+                              child: Icon(
+                                Icons.description_outlined,
+                                size: 16,
+                                color: ParishColors.marianBlue,
+                              ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -1480,7 +1531,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   color: ParishColors.backgroundLight,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: ParishColors.borderGrey.withOpacity(0.7)),
+                    color: ParishColors.borderGrey.withOpacity(0.7),
+                  ),
                 ),
                 padding: const EdgeInsets.all(14),
                 child: Column(
@@ -1488,8 +1540,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.notes_rounded,
-                            size: 15, color: ParishColors.marianBlue),
+                        const Icon(
+                          Icons.notes_rounded,
+                          size: 15,
+                          color: ParishColors.marianBlue,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'REMARKS & MAINTENANCE OBSERVATIONS',
@@ -1549,8 +1604,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ),
                   ),
                   Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: asset.conditionSurfaceColor,
                       borderRadius: BorderRadius.circular(6),
@@ -1570,16 +1627,31 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildMetricCell('Quantity', '${asset.quantity} unit(s)',
-                      ParishColors.marianBlue),
+                  _buildMetricCell(
+                    'Quantity',
+                    '${asset.quantity} unit(s)',
+                    ParishColors.marianBlue,
+                  ),
                   Container(
-                      width: 1, height: 32, color: ParishColors.borderGrey),
-                  _buildMetricCell('Price / Unit', asset.formattedUnitPrice,
-                      ParishColors.marianBlue),
+                    width: 1,
+                    height: 32,
+                    color: ParishColors.borderGrey,
+                  ),
+                  _buildMetricCell(
+                    'Price / Unit',
+                    asset.formattedUnitPrice,
+                    ParishColors.marianBlue,
+                  ),
                   Container(
-                      width: 1, height: 32, color: ParishColors.borderGrey),
-                  _buildMetricCell('Total Valuation', asset.formattedTotalCost,
-                      ParishColors.oliveGreen),
+                    width: 1,
+                    height: 32,
+                    color: ParishColors.borderGrey,
+                  ),
+                  _buildMetricCell(
+                    'Total Valuation',
+                    asset.formattedTotalCost,
+                    ParishColors.oliveGreen,
+                  ),
                 ],
               ),
             ],
@@ -1612,8 +1684,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   ),
                   Text(
                     '${_auditHistory.length} record(s)',
-                    style:
-                    TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: ParishColors.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -1632,7 +1706,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     child: Text(
                       'No physical audits or quantity adjustments recorded yet.',
                       style: TextStyle(
-                          fontSize: 12, color: ParishColors.textMuted),
+                        fontSize: 12,
+                        color: ParishColors.textMuted,
+                      ),
                     ),
                   ),
                 )
@@ -1666,12 +1742,16 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             decoration: BoxDecoration(
               color: ParishColors.marianBlueSurface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
+              border:
+              Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.lock_outline,
-                    size: 18, color: ParishColors.marianBlue),
+                const Icon(
+                  Icons.lock_outline,
+                  size: 18,
+                  color: ParishColors.marianBlue,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1701,7 +1781,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   onTap: () {
                     if (_newConvertedPhotoBytes != null) {
                       _openInteractivePreview(
-                          MemoryImage(_newConvertedPhotoBytes!));
+                        MemoryImage(_newConvertedPhotoBytes!),
+                      );
                     } else if (asset.photoUrl != null &&
                         asset.photoUrl!.isNotEmpty) {
                       _openInteractivePreview(NetworkImage(asset.photoUrl!));
@@ -1718,7 +1799,8 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ),
                     child: _isProcessingImage
                         ? const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                         : _newConvertedPhotoBytes != null
                         ? ClipRRect(
                       borderRadius: BorderRadius.circular(7),
@@ -1736,8 +1818,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         fit: BoxFit.cover,
                       ),
                     )
-                        : const Icon(Icons.photo_outlined,
-                        size: 36, color: ParishColors.marianBlue),
+                        : const Icon(
+                      Icons.photo_outlined,
+                      size: 36,
+                      color: ParishColors.marianBlue,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -1769,7 +1854,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                               backgroundColor: ParishColors.marianBlue,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                             ),
                             onPressed: _isProcessingImage
                                 ? null
@@ -1778,25 +1865,33 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                             label: const Text(
                               '3R Camera',
                               style: TextStyle(
-                                  fontSize: 11.5, fontWeight: FontWeight.bold),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
                               foregroundColor: ParishColors.marianBlue,
                               side: const BorderSide(
-                                  color: ParishColors.marianBlue),
+                                color: ParishColors.marianBlue,
+                              ),
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                             ),
                             onPressed: _isProcessingImage
                                 ? null
                                 : _pickImageFromDevice,
                             icon: const Icon(Icons.upload_file, size: 14),
-                            label: const Text('Upload',
-                                style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.bold)),
+                            label: const Text(
+                              'Upload',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                           if (_newConvertedPhotoBytes != null ||
                               (asset.photoUrl != null &&
@@ -1805,15 +1900,19 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                               onPressed: () {
                                 if (_newConvertedPhotoBytes != null) {
                                   _openInteractivePreview(
-                                      MemoryImage(_newConvertedPhotoBytes!));
+                                    MemoryImage(_newConvertedPhotoBytes!),
+                                  );
                                 } else if (asset.photoUrl != null) {
                                   _openInteractivePreview(
-                                      NetworkImage(asset.photoUrl!));
+                                    NetworkImage(asset.photoUrl!),
+                                  );
                                 }
                               },
                               icon: const Icon(Icons.zoom_in, size: 14),
-                              label: const Text('Inspect',
-                                  style: TextStyle(fontSize: 11.5)),
+                              label: const Text(
+                                'Inspect',
+                                style: TextStyle(fontSize: 11.5),
+                              ),
                             ),
                           ],
                         ],
@@ -1885,10 +1984,16 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     labelText: 'Price per Unit (₱)',
                     prefixIcon: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 12),
-                      child: Text('₱',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, color: textDark)),
+                        horizontal: 10,
+                        vertical: 12,
+                      ),
+                      child: Text(
+                        '₱',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: textDark,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1902,8 +2007,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight,
               borderRadius: BorderRadius.circular(8),
-              border:
-              Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
+              border: Border.all(
+                color: ParishColors.oliveGreen.withOpacity(0.3),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2078,6 +2184,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     );
   }
 
+  /// Action bar equipped with Move to Trash, Restore, and Permanent Delete.
   Widget _buildBottomActionBar(bool isMobile, bool isArchived) {
     return Container(
       padding: EdgeInsets.symmetric(
@@ -2103,47 +2210,79 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   ),
                   onPressed: _printLabelSticker,
                   icon: const Icon(Icons.qr_code, size: 16),
-                  label: const Text('Print QR Tag',
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold)),
-                ),
-              ),
-              if (_canArchive) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: isArchived
-                      ? OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: ParishColors.oliveGreen,
-                      side: const BorderSide(
-                          color: ParishColors.oliveGreen),
-                      padding:
-                      const EdgeInsets.symmetric(vertical: 10),
+                  label: const Text(
+                    'Print Tag',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
                     ),
-                    onPressed: _restoreAsset,
-                    icon: const Icon(Icons.restore, size: 16),
-                    label: const Text('Restore',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold)),
-                  )
-                      : OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: ParishColors.mercyRed,
-                      side: const BorderSide(
-                          color: ParishColors.mercyRed),
-                      padding:
-                      const EdgeInsets.symmetric(vertical: 10),
-                    ),
-                    onPressed: _confirmArchiveAsset,
-                    icon: const Icon(Icons.archive_outlined,
-                        size: 16),
-                    label: const Text('Archive',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold)),
                   ),
                 ),
+              ),
+              const SizedBox(width: 8),
+              if (_canTrashOrDelete) ...[
+                if (!isArchived)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.mercyRed,
+                        side: const BorderSide(
+                          color: ParishColors.mercyRed,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: _moveToTrash,
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: const Text(
+                        'To Trash',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  )
+                else ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.oliveGreen,
+                        side: const BorderSide(
+                          color: ParishColors.oliveGreen,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: _restoreAsset,
+                      icon: const Icon(Icons.restore, size: 16),
+                      label: const Text(
+                        'Restore',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.mercyRed,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: _permanentlyDeleteAsset,
+                      icon: const Icon(Icons.delete_forever, size: 16),
+                      label: const Text(
+                        'Delete',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -2191,32 +2330,52 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                 ),
                 onPressed: _printLabelSticker,
                 icon: const Icon(Icons.qr_code, size: 16),
-                label: const Text('Print QR Tag',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                label: const Text(
+                  'Print QR Tag',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
               const SizedBox(width: 10),
-              if (_canArchive)
-                isArchived
-                    ? OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: ParishColors.oliveGreen,
-                    side: const BorderSide(
-                        color: ParishColors.oliveGreen),
+              if (_canTrashOrDelete) ...[
+                if (!isArchived)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ParishColors.mercyRed,
+                      side: const BorderSide(
+                        color: ParishColors.mercyRed,
+                      ),
+                    ),
+                    onPressed: _moveToTrash,
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Move to Trash'),
+                  )
+                else ...[
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ParishColors.oliveGreen,
+                      side: const BorderSide(
+                        color: ParishColors.oliveGreen,
+                      ),
+                    ),
+                    onPressed: _restoreAsset,
+                    icon: const Icon(Icons.restore, size: 16),
+                    label: const Text('Restore Asset'),
                   ),
-                  onPressed: _restoreAsset,
-                  icon: const Icon(Icons.restore, size: 16),
-                  label: const Text('Restore Asset'),
-                )
-                    : OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: ParishColors.mercyRed,
-                    side: const BorderSide(
-                        color: ParishColors.mercyRed),
+                  const SizedBox(width: 10),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ParishColors.mercyRed,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _permanentlyDeleteAsset,
+                    icon: const Icon(Icons.delete_forever, size: 16),
+                    label: const Text(
+                      'Permanently Delete',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
-                  onPressed: _confirmArchiveAsset,
-                  icon: const Icon(Icons.archive_outlined, size: 16),
-                  label: const Text('Archive Item'),
-                ),
+                ],
+              ],
             ],
           ),
           Row(
@@ -2241,16 +2400,24 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   OutlinedButton.icon(
                     style: ElevatedButton.styleFrom(
                       side: const BorderSide(
-                          color: ParishColors.marianBlue, width: 1.4),
+                        color: ParishColors.marianBlue,
+                        width: 1.4,
+                      ),
                       backgroundColor: ParishColors.marianBlueSurface,
                     ),
                     onPressed: () => setState(() => _isEditing = true),
-                    icon: const Icon(Icons.edit_outlined,
-                        size: 16, color: ParishColors.marianBlue),
-                    label: const Text('Edit Details',
-                        style: TextStyle(
-                            color: ParishColors.marianBlue,
-                            fontWeight: FontWeight.bold)),
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      size: 16,
+                      color: ParishColors.marianBlue,
+                    ),
+                    label: const Text(
+                      'Edit Details',
+                      style: TextStyle(
+                        color: ParishColors.marianBlue,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -2297,8 +2464,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   asset.photoUrl!,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Center(
-                    child: Icon(asset.classificationIcon,
-                        size: 36, color: ParishColors.marianBlue),
+                    child: Icon(
+                      asset.classificationIcon,
+                      size: 36,
+                      color: ParishColors.marianBlue,
+                    ),
                   ),
                 ),
                 Positioned(
@@ -2322,8 +2492,11 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               ],
             )
                 : Center(
-              child: Icon(asset.classificationIcon,
-                  size: 36, color: ParishColors.marianBlue),
+              child: Icon(
+                asset.classificationIcon,
+                size: 36,
+                color: ParishColors.marianBlue,
+              ),
             ),
           ),
         ),
@@ -2383,9 +2556,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                         Text(
                           'Condition: ${log.newCondition}',
                           style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: textDark),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: textDark,
+                          ),
                         ),
                         Text(
                           log.formattedAuditedAt,
@@ -2395,14 +2569,18 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     ),
                     if (log.newStatus != null && log.newStatus!.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text('Availability: ${log.newStatus}',
-                          style: TextStyle(fontSize: 11, color: textMuted)),
+                      Text(
+                        'Availability: ${log.newStatus}',
+                        style: TextStyle(fontSize: 11, color: textMuted),
+                      ),
                     ],
                     if (log.newLocation != null &&
                         log.newLocation!.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text('Location: ${log.newLocation}',
-                          style: TextStyle(fontSize: 11, color: textMuted)),
+                      Text(
+                        'Location: ${log.newLocation}',
+                        style: TextStyle(fontSize: 11, color: textMuted),
+                      ),
                     ],
                   ],
                 ),
@@ -2482,7 +2660,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
                       return Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: badgeBg,
                           borderRadius: BorderRadius.circular(6),
@@ -2509,12 +2689,15 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 1),
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(3),
                                 border: Border.all(
-                                    color: badgeBorder.withOpacity(0.6)),
+                                  color: badgeBorder.withOpacity(0.6),
+                                ),
                               ),
                               child: Text(
                                 dist.physicalCondition,
@@ -2541,8 +2724,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border:
-                Border.all(color: ParishColors.goldAccent.withOpacity(0.4)),
+                border: Border.all(
+                  color: ParishColors.goldAccent.withOpacity(0.4),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2577,9 +2761,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     Text(
                       'Reason: ${log.quantityChangeReason}',
                       style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: textDark),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
                     ),
                   ],
                 ],
@@ -2588,21 +2773,25 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ],
           if (log.cleanNotes.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('Notes: ${log.cleanNotes}',
-                style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: textDark)),
+            Text(
+              'Notes: ${log.cleanNotes}',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+                color: textDark,
+              ),
+            ),
           ],
           if (log.auditorName != null) ...[
             const SizedBox(height: 4),
             Text(
               'Audited by: ${log.auditorName}',
               style: TextStyle(
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.bold,
-                  color: textMuted),
+                fontSize: 10,
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.bold,
+                color: textMuted,
+              ),
             ),
           ],
         ],
@@ -2627,9 +2816,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           child: Text(
             desc.isNotEmpty ? '$c ($desc)' : c,
             style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: ParishColors.textDark),
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.textDark,
+            ),
             overflow: TextOverflow.ellipsis,
           ),
         );
@@ -2657,9 +2847,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           child: Text(
             desc.isNotEmpty ? '$s — $desc' : s,
             style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: ParishColors.textDark),
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.textDark,
+            ),
             overflow: TextOverflow.ellipsis,
           ),
         );
@@ -2736,8 +2927,13 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     );
   }
 
-  Widget _buildInfoTile(String label, String value, IconData icon,
-      {bool isMono = false, bool isPrice = false}) {
+  Widget _buildInfoTile(
+      String label,
+      String value,
+      IconData icon, {
+        bool isMono = false,
+        bool isPrice = false,
+      }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
@@ -2771,7 +2967,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                     fontFamily: isMono ? 'Courier' : null,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: isPrice ? ParishColors.oliveGreen : ParishColors.textDark,
+                    color: isPrice
+                        ? ParishColors.oliveGreen
+                        : ParishColors.textDark,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -2790,17 +2988,19 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         Text(
           title,
           style: TextStyle(
-              fontSize: 11,
-              color: ParishColors.textMuted,
-              fontWeight: FontWeight.bold),
+            fontSize: 11,
+            color: ParishColors.textMuted,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 3),
         Text(
           value,
           style: TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.bold,
-              color: color),
+            fontSize: 14.5,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
         ),
       ],
     );
