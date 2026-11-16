@@ -9,21 +9,28 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../services/matrimony_service.dart';
+import '../../services/sacramental_draft_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 class MatrimonyManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
   final Map<String, dynamic>? initialData; // Enables Edit Record Mode
+  final String? draftId;
+  final Map<String, dynamic>? initialDraftData;
 
   const MatrimonyManualEntryPage({
     super.key,
     this.onRecordSaved,
     this.initialData,
+    this.draftId,
+    this.initialDraftData,
   });
 
   @override
-  State<MatrimonyManualEntryPage> createState() => _MatrimonyManualEntryPageState();
+  State<MatrimonyManualEntryPage> createState() =>
+      _MatrimonyManualEntryPageState();
 }
 
 class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
@@ -35,6 +42,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   bool _isBackToTopHovered = false;
 
   bool get isEditMode => widget.initialData != null;
+
+  String? _activeDraftId;
+  bool _isSavingDraft = false;
+  String _loadingMessage = 'Processing matrimony record...';
 
   // Royal Amethyst / Burgundy Theme Accent for Matrimony
   static const Color _matrimonyBurgundy = Color(0xFF9D174D);
@@ -113,7 +124,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   final _crasmNumberController = TextEditingController();
   DateTime? _crasmValidityDate;
   final _stipendController = TextEditingController();
-  final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
+  final _parishNameController =
+  TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
   String? _existingCanonicalNotes;
 
@@ -125,18 +137,28 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _activeDraftId = widget.draftId;
 
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
+      if (widget.initialDraftData != null) {
+        _populateDraftData(widget.initialDraftData!);
+      }
       _bookNumberController.addListener(_onCoordinateChanged);
       _pageNumberController.addListener(_onCoordinateChanged);
       _lineNumberController.addListener(_onCoordinateChanged);
+      if (widget.initialDraftData != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _checkCoordinatesLive();
+        });
+      }
     }
   }
 
   void _onScroll() {
-    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    final shouldShow =
+        _scrollController.hasClients && _scrollController.offset >= 1000;
     if (shouldShow != _showBackToTop) {
       setState(() => _showBackToTop = shouldShow);
     }
@@ -157,53 +179,81 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     _pageNumberController.text = data['page_number']?.toString() ?? '';
     _lineNumberController.text = data['line_number']?.toString() ?? '';
     _entryStatus = data['entry_status']?.toString() ?? 'ORIGINAL';
-    _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
+    _registryDate =
+        DateTime.tryParse(data['registry_date']?.toString() ?? '') ??
+            DateTime.now();
     _existingCanonicalNotes = data['canonical_notes']?.toString();
 
     // Groom
     _groomFirstNameController.text = data['groom_first_name']?.toString() ?? '';
-    _groomMiddleNameController.text = data['groom_middle_name']?.toString() ?? '';
+    _groomMiddleNameController.text =
+        data['groom_middle_name']?.toString() ?? '';
     _groomLastNameController.text = data['groom_last_name']?.toString() ?? '';
     _groomSuffixController.text = data['groom_suffix']?.toString() ?? '';
     _groomCivilStatus = data['groom_civil_status']?.toString() ?? 'Single';
     _groomAgeController.text = data['groom_age']?.toString() ?? '';
-    _groomDateOfBirth = DateTime.tryParse(data['groom_date_of_birth']?.toString() ?? '');
-    _groomPlaceOfBirthController.text = data['groom_place_of_birth']?.toString() ?? '';
+    _groomDateOfBirth =
+        DateTime.tryParse(data['groom_date_of_birth']?.toString() ?? '');
+    _groomPlaceOfBirthController.text =
+        data['groom_place_of_birth']?.toString() ?? '';
     _groomAddressController.text = data['groom_address']?.toString() ?? '';
-    _groomFatherFirstNameController.text = data['groom_father_first_name']?.toString() ?? '';
-    _groomFatherMiddleNameController.text = data['groom_father_middle_name']?.toString() ?? '';
-    _groomFatherLastNameController.text = data['groom_father_last_name']?.toString() ?? '';
-    _groomMotherFirstNameController.text = data['groom_mother_first_name']?.toString() ?? '';
-    _groomMotherMiddleNameController.text = data['groom_mother_middle_name']?.toString() ?? '';
-    _groomMotherMaidenLastController.text = data['groom_mother_maiden_last']?.toString() ?? '';
+    _groomFatherFirstNameController.text =
+        data['groom_father_first_name']?.toString() ?? '';
+    _groomFatherMiddleNameController.text =
+        data['groom_father_middle_name']?.toString() ?? '';
+    _groomFatherLastNameController.text =
+        data['groom_father_last_name']?.toString() ?? '';
+    _groomMotherFirstNameController.text =
+        data['groom_mother_first_name']?.toString() ?? '';
+    _groomMotherMiddleNameController.text =
+        data['groom_mother_middle_name']?.toString() ?? '';
+    _groomMotherMaidenLastController.text =
+        data['groom_mother_maiden_last']?.toString() ?? '';
 
     // Bride
     _brideFirstNameController.text = data['bride_first_name']?.toString() ?? '';
-    _brideMiddleNameController.text = data['bride_middle_name']?.toString() ?? '';
+    _brideMiddleNameController.text =
+        data['bride_middle_name']?.toString() ?? '';
     _brideLastNameController.text = data['bride_last_name']?.toString() ?? '';
     _brideSuffixController.text = data['bride_suffix']?.toString() ?? '';
     _brideCivilStatus = data['bride_civil_status']?.toString() ?? 'Single';
     _brideAgeController.text = data['bride_age']?.toString() ?? '';
-    _brideDateOfBirth = DateTime.tryParse(data['bride_date_of_birth']?.toString() ?? '');
-    _bridePlaceOfBirthController.text = data['bride_place_of_birth']?.toString() ?? '';
+    _brideDateOfBirth =
+        DateTime.tryParse(data['bride_date_of_birth']?.toString() ?? '');
+    _bridePlaceOfBirthController.text =
+        data['bride_place_of_birth']?.toString() ?? '';
     _brideAddressController.text = data['bride_address']?.toString() ?? '';
-    _brideFatherFirstNameController.text = data['bride_father_first_name']?.toString() ?? '';
-    _brideFatherMiddleNameController.text = data['bride_father_middle_name']?.toString() ?? '';
-    _brideFatherLastNameController.text = data['bride_father_last_name']?.toString() ?? '';
-    _brideMotherFirstNameController.text = data['bride_mother_first_name']?.toString() ?? '';
-    _brideMotherMiddleNameController.text = data['bride_mother_middle_name']?.toString() ?? '';
-    _brideMotherMaidenLastController.text = data['bride_mother_maiden_last']?.toString() ?? '';
+    _brideFatherFirstNameController.text =
+        data['bride_father_first_name']?.toString() ?? '';
+    _brideFatherMiddleNameController.text =
+        data['bride_father_middle_name']?.toString() ?? '';
+    _brideFatherLastNameController.text =
+        data['bride_father_last_name']?.toString() ?? '';
+    _brideMotherFirstNameController.text =
+        data['bride_mother_first_name']?.toString() ?? '';
+    _brideMotherMiddleNameController.text =
+        data['bride_mother_middle_name']?.toString() ?? '';
+    _brideMotherMaidenLastController.text =
+        data['bride_mother_maiden_last']?.toString() ?? '';
 
     // Sponsors
-    _sponsor1FirstNameController.text = data['sponsor_1_first_name']?.toString() ?? '';
-    _sponsor1MiddleNameController.text = data['sponsor_1_middle_name']?.toString() ?? '';
-    _sponsor1LastNameController.text = data['sponsor_1_last_name']?.toString() ?? '';
-    _sponsor1OriginAddressController.text = data['sponsor_1_origin_address']?.toString() ?? '';
+    _sponsor1FirstNameController.text =
+        data['sponsor_1_first_name']?.toString() ?? '';
+    _sponsor1MiddleNameController.text =
+        data['sponsor_1_middle_name']?.toString() ?? '';
+    _sponsor1LastNameController.text =
+        data['sponsor_1_last_name']?.toString() ?? '';
+    _sponsor1OriginAddressController.text =
+        data['sponsor_1_origin_address']?.toString() ?? '';
 
-    _sponsor2FirstNameController.text = data['sponsor_2_first_name']?.toString() ?? '';
-    _sponsor2MiddleNameController.text = data['sponsor_2_middle_name']?.toString() ?? '';
-    _sponsor2LastNameController.text = data['sponsor_2_last_name']?.toString() ?? '';
-    _sponsor2OriginAddressController.text = data['sponsor_2_origin_address']?.toString() ?? '';
+    _sponsor2FirstNameController.text =
+        data['sponsor_2_first_name']?.toString() ?? '';
+    _sponsor2MiddleNameController.text =
+        data['sponsor_2_middle_name']?.toString() ?? '';
+    _sponsor2LastNameController.text =
+        data['sponsor_2_last_name']?.toString() ?? '';
+    _sponsor2OriginAddressController.text =
+        data['sponsor_2_origin_address']?.toString() ?? '';
 
     final rawOtherSponsors = data['other_sponsors']?.toString() ?? '';
     if (rawOtherSponsors.trim().isNotEmpty) {
@@ -218,29 +268,331 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     }
 
     // Ceremony Details
-    _dateOfMarriage = DateTime.tryParse(data['date_of_marriage']?.toString() ?? '');
+    _dateOfMarriage =
+        DateTime.tryParse(data['date_of_marriage']?.toString() ?? '');
     _marriageType = data['marriage_type']?.toString() ?? 'Between Catholics';
     _isFilipinoForeigner = data['is_filipino_foreigner'] == true;
-    _marriageLicenseNoController.text = data['marriage_license_no']?.toString() ?? '';
-    _licenseDateRegistered = DateTime.tryParse(data['license_date_registered']?.toString() ?? '');
-    _licensePlaceIssuedController.text = data['license_place_issued']?.toString() ?? '';
+    _marriageLicenseNoController.text =
+        data['marriage_license_no']?.toString() ?? '';
+    _licenseDateRegistered =
+        DateTime.tryParse(data['license_date_registered']?.toString() ?? '');
+    _licensePlaceIssuedController.text =
+        data['license_place_issued']?.toString() ?? '';
 
-    _solemnizerFirstNameController.text = data['solemnizer_first_name']?.toString() ?? '';
-    _solemnizerMiddleNameController.text = data['solemnizer_middle_name']?.toString() ?? '';
-    _solemnizerLastNameController.text = data['solemnizer_last_name']?.toString() ?? '';
+    _solemnizerFirstNameController.text =
+        data['solemnizer_first_name']?.toString() ?? '';
+    _solemnizerMiddleNameController.text =
+        data['solemnizer_middle_name']?.toString() ?? '';
+    _solemnizerLastNameController.text =
+        data['solemnizer_last_name']?.toString() ?? '';
     _crasmNumberController.text = data['crasm_number']?.toString() ?? '';
-    _crasmValidityDate = DateTime.tryParse(data['crasm_validity_date']?.toString() ?? '');
+    _crasmValidityDate =
+        DateTime.tryParse(data['crasm_validity_date']?.toString() ?? '');
     _stipendController.text = data['stipend']?.toString() ?? '';
-    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _parishNameController.text =
+        data['parish_name']?.toString() ?? 'St. John Paul II Parish';
     _remarksController.text = data['remarks']?.toString() ?? '';
 
     if (_groomDateOfBirth != null) _recomputeGroomAge();
     if (_brideDateOfBirth != null) _recomputeBrideAge();
   }
 
+  void _populateDraftData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+    final rawStatus = data['entry_status']?.toString();
+    if (rawStatus != null &&
+        ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'].contains(rawStatus)) {
+      _entryStatus = rawStatus;
+    }
+    _registryDate =
+        DateTime.tryParse(data['registry_date']?.toString() ?? '') ??
+            DateTime.now();
+
+    // Groom
+    _groomFirstNameController.text = data['groom_first_name']?.toString() ?? '';
+    _groomMiddleNameController.text =
+        data['groom_middle_name']?.toString() ?? '';
+    _groomLastNameController.text = data['groom_last_name']?.toString() ?? '';
+    _groomSuffixController.text = data['groom_suffix']?.toString() ?? '';
+    final gStatus = data['groom_civil_status']?.toString();
+    if (gStatus != null &&
+        ['Single', 'Widower', 'Annulled', 'Divorced'].contains(gStatus)) {
+      _groomCivilStatus = gStatus;
+    }
+    _groomAgeController.text = data['groom_age']?.toString() ?? '';
+    _groomDateOfBirth =
+        DateTime.tryParse(data['groom_date_of_birth']?.toString() ?? '');
+    _groomPlaceOfBirthController.text =
+        data['groom_place_of_birth']?.toString() ?? '';
+    _groomAddressController.text = data['groom_address']?.toString() ?? '';
+    _groomFatherFirstNameController.text =
+        data['groom_father_first_name']?.toString() ?? '';
+    _groomFatherMiddleNameController.text =
+        data['groom_father_middle_name']?.toString() ?? '';
+    _groomFatherLastNameController.text =
+        data['groom_father_last_name']?.toString() ?? '';
+    _groomMotherFirstNameController.text =
+        data['groom_mother_first_name']?.toString() ?? '';
+    _groomMotherMiddleNameController.text =
+        data['groom_mother_middle_name']?.toString() ?? '';
+    _groomMotherMaidenLastController.text =
+        data['groom_mother_maiden_last']?.toString() ?? '';
+
+    // Bride
+    _brideFirstNameController.text = data['bride_first_name']?.toString() ?? '';
+    _brideMiddleNameController.text =
+        data['bride_middle_name']?.toString() ?? '';
+    _brideLastNameController.text = data['bride_last_name']?.toString() ?? '';
+    _brideSuffixController.text = data['bride_suffix']?.toString() ?? '';
+    final bStatus = data['bride_civil_status']?.toString();
+    if (bStatus != null &&
+        ['Single', 'Widow', 'Annulled', 'Divorced'].contains(bStatus)) {
+      _brideCivilStatus = bStatus;
+    }
+    _brideAgeController.text = data['bride_age']?.toString() ?? '';
+    _brideDateOfBirth =
+        DateTime.tryParse(data['bride_date_of_birth']?.toString() ?? '');
+    _bridePlaceOfBirthController.text =
+        data['bride_place_of_birth']?.toString() ?? '';
+    _brideAddressController.text = data['bride_address']?.toString() ?? '';
+    _brideFatherFirstNameController.text =
+        data['bride_father_first_name']?.toString() ?? '';
+    _brideFatherMiddleNameController.text =
+        data['bride_father_middle_name']?.toString() ?? '';
+    _brideFatherLastNameController.text =
+        data['bride_father_last_name']?.toString() ?? '';
+    _brideMotherFirstNameController.text =
+        data['bride_mother_first_name']?.toString() ?? '';
+    _brideMotherMiddleNameController.text =
+        data['bride_mother_middle_name']?.toString() ?? '';
+    _brideMotherMaidenLastController.text =
+        data['bride_mother_maiden_last']?.toString() ?? '';
+
+    // Sponsors
+    _sponsor1FirstNameController.text =
+        data['sponsor_1_first_name']?.toString() ?? '';
+    _sponsor1MiddleNameController.text =
+        data['sponsor_1_middle_name']?.toString() ?? '';
+    _sponsor1LastNameController.text =
+        data['sponsor_1_last_name']?.toString() ?? '';
+    _sponsor1OriginAddressController.text =
+        data['sponsor_1_origin_address']?.toString() ?? '';
+
+    _sponsor2FirstNameController.text =
+        data['sponsor_2_first_name']?.toString() ?? '';
+    _sponsor2MiddleNameController.text =
+        data['sponsor_2_middle_name']?.toString() ?? '';
+    _sponsor2LastNameController.text =
+        data['sponsor_2_last_name']?.toString() ?? '';
+    _sponsor2OriginAddressController.text =
+        data['sponsor_2_origin_address']?.toString() ?? '';
+
+    final rawOtherSponsors = data['other_sponsors'];
+    if (rawOtherSponsors is List) {
+      for (var s in rawOtherSponsors) {
+        if (s.toString().trim().isNotEmpty) {
+          _otherSponsorControllers
+              .add(TextEditingController(text: s.toString().trim()));
+        }
+      }
+    } else if (rawOtherSponsors != null &&
+        rawOtherSponsors.toString().trim().isNotEmpty) {
+      for (var s in rawOtherSponsors.toString().split('\n')) {
+        if (s.trim().isNotEmpty) {
+          _otherSponsorControllers.add(TextEditingController(text: s.trim()));
+        }
+      }
+    }
+
+    // Ceremony Details
+    if (data['date_of_marriage'] != null) {
+      _dateOfMarriage =
+          DateTime.tryParse(data['date_of_marriage'].toString());
+    }
+    final mType = data['marriage_type']?.toString();
+    if (mType != null &&
+        ['Between Catholics', 'Mixed Marriage', 'Disparity of Cults']
+            .contains(mType)) {
+      _marriageType = mType;
+    }
+    _isFilipinoForeigner = data['is_filipino_foreigner'] == true;
+    _marriageLicenseNoController.text =
+        data['marriage_license_no']?.toString() ?? '';
+    _licenseDateRegistered =
+        DateTime.tryParse(data['license_date_registered']?.toString() ?? '');
+    _licensePlaceIssuedController.text =
+        data['license_place_issued']?.toString() ?? '';
+
+    if (data.containsKey('solemnizer_first_name')) {
+      _solemnizerFirstNameController.text =
+          data['solemnizer_first_name']?.toString() ?? '';
+    }
+    _solemnizerMiddleNameController.text =
+        data['solemnizer_middle_name']?.toString() ?? '';
+    if (data.containsKey('solemnizer_last_name')) {
+      _solemnizerLastNameController.text =
+          data['solemnizer_last_name']?.toString() ?? '';
+    }
+    _crasmNumberController.text = data['crasm_number']?.toString() ?? '';
+    _crasmValidityDate =
+        DateTime.tryParse(data['crasm_validity_date']?.toString() ?? '');
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    if (data.containsKey('parish_name')) {
+      _parishNameController.text = data['parish_name']?.toString() ?? '';
+    }
+    _remarksController.text = data['remarks']?.toString() ?? '';
+
+    if (_groomDateOfBirth != null) _recomputeGroomAge();
+    if (_brideDateOfBirth != null) _recomputeBrideAge();
+  }
+
+  Map<String, dynamic> _collectDraftData() {
+    return {
+      'book_number': _bookNumberController.text.trim(),
+      'page_number': _pageNumberController.text.trim(),
+      'line_number': _lineNumberController.text.trim(),
+      'entry_status': _entryStatus,
+      'registry_date': _registryDate.toIso8601String().substring(0, 10),
+      'groom_first_name': _groomFirstNameController.text.trim(),
+      'groom_middle_name': _groomMiddleNameController.text.trim(),
+      'groom_last_name': _groomLastNameController.text.trim(),
+      'groom_suffix': _groomSuffixController.text.trim(),
+      'groom_civil_status': _groomCivilStatus,
+      'groom_age': _groomAgeController.text.trim(),
+      'groom_date_of_birth':
+      _groomDateOfBirth?.toIso8601String().substring(0, 10),
+      'groom_place_of_birth': _groomPlaceOfBirthController.text.trim(),
+      'groom_address': _groomAddressController.text.trim(),
+      'groom_father_first_name': _groomFatherFirstNameController.text.trim(),
+      'groom_father_middle_name': _groomFatherMiddleNameController.text.trim(),
+      'groom_father_last_name': _groomFatherLastNameController.text.trim(),
+      'groom_mother_first_name': _groomMotherFirstNameController.text.trim(),
+      'groom_mother_middle_name': _groomMotherMiddleNameController.text.trim(),
+      'groom_mother_maiden_last': _groomMotherMaidenLastController.text.trim(),
+      'bride_first_name': _brideFirstNameController.text.trim(),
+      'bride_middle_name': _brideMiddleNameController.text.trim(),
+      'bride_last_name': _brideLastNameController.text.trim(),
+      'bride_suffix': _brideSuffixController.text.trim(),
+      'bride_civil_status': _brideCivilStatus,
+      'bride_age': _brideAgeController.text.trim(),
+      'bride_date_of_birth':
+      _brideDateOfBirth?.toIso8601String().substring(0, 10),
+      'bride_place_of_birth': _bridePlaceOfBirthController.text.trim(),
+      'bride_address': _brideAddressController.text.trim(),
+      'bride_father_first_name': _brideFatherFirstNameController.text.trim(),
+      'bride_father_middle_name': _brideFatherMiddleNameController.text.trim(),
+      'bride_father_last_name': _brideFatherLastNameController.text.trim(),
+      'bride_mother_first_name': _brideMotherFirstNameController.text.trim(),
+      'bride_mother_middle_name': _brideMotherMiddleNameController.text.trim(),
+      'bride_mother_maiden_last': _brideMotherMaidenLastController.text.trim(),
+      'sponsor_1_first_name': _sponsor1FirstNameController.text.trim(),
+      'sponsor_1_middle_name': _sponsor1MiddleNameController.text.trim(),
+      'sponsor_1_last_name': _sponsor1LastNameController.text.trim(),
+      'sponsor_1_origin_address':
+      _sponsor1OriginAddressController.text.trim(),
+      'sponsor_2_first_name': _sponsor2FirstNameController.text.trim(),
+      'sponsor_2_middle_name': _sponsor2MiddleNameController.text.trim(),
+      'sponsor_2_last_name': _sponsor2LastNameController.text.trim(),
+      'sponsor_2_origin_address':
+      _sponsor2OriginAddressController.text.trim(),
+      'other_sponsors': _otherSponsorControllers
+          .map((c) => c.text.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      'date_of_marriage': _dateOfMarriage?.toIso8601String().substring(0, 10),
+      'marriage_type': _marriageType,
+      'is_filipino_foreigner': _isFilipinoForeigner,
+      'marriage_license_no': _marriageLicenseNoController.text.trim(),
+      'license_date_registered':
+      _licenseDateRegistered?.toIso8601String().substring(0, 10),
+      'license_place_issued': _licensePlaceIssuedController.text.trim(),
+      'solemnizer_first_name': _solemnizerFirstNameController.text.trim(),
+      'solemnizer_middle_name': _solemnizerMiddleNameController.text.trim(),
+      'solemnizer_last_name': _solemnizerLastNameController.text.trim(),
+      'crasm_number': _crasmNumberController.text.trim(),
+      'crasm_validity_date':
+      _crasmValidityDate?.toIso8601String().substring(0, 10),
+      'stipend': _stipendController.text.trim(),
+      'parish_name': _parishNameController.text.trim(),
+      'remarks': _remarksController.text.trim(),
+    };
+  }
+
+  String _buildDraftDisplayTitle() {
+    final groom = [
+      _groomFirstNameController.text.trim(),
+      _groomLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+    final bride = [
+      _brideFirstNameController.text.trim(),
+      _brideLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    if (groom.isNotEmpty && bride.isNotEmpty) return '$groom & $bride';
+    if (groom.isNotEmpty) return groom;
+    if (bride.isNotEmpty) return bride;
+    return 'Untitled Matrimony Draft';
+  }
+
+  String? _buildDraftBookReference() {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+    if (b.isEmpty && p.isEmpty && l.isEmpty) return null;
+    return 'Book ${b.isEmpty ? '?' : b}, Page ${p.isEmpty ? '?' : p}, Line ${l.isEmpty ? '?' : l}';
+  }
+
+  Future<void> _saveToDraft() async {
+    if (_isSubmitting || _isSavingDraft) return;
+
+    setState(() {
+      _isSavingDraft = true;
+      _loadingMessage = 'Saving matrimony draft...';
+      _errorMessage = null;
+    });
+
+    try {
+      final saved = await SacramentalDraftService.saveDraft(
+        existingDraftId: _activeDraftId,
+        sacramentType: 'Matrimony',
+        displayTitle: _buildDraftDisplayTitle(),
+        bookReference: _buildDraftBookReference(),
+        draftData: _collectDraftData(),
+      );
+
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      setState(() {
+        _activeDraftId = saved.draftId;
+        _isSavingDraft = false;
+      });
+
+      // Navigate back to the sacrament registry page immediately
+      Navigator.pop(context);
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Draft saved! You can resume it anytime from the Drafts page.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSavingDraft = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
   void _onCoordinateChanged() {
     _coordinateDebounce?.cancel();
-    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+    _coordinateDebounce =
+        Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
   }
 
   Future<void> _checkCoordinatesLive() async {
@@ -262,7 +614,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       bookNumber: b,
       pageNumber: p,
       lineNumber: l,
-      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+      excludeRecordId:
+      isEditMode ? widget.initialData!['record_id']?.toString() : null,
     );
 
     if (mounted) {
@@ -358,8 +711,12 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     DateTime initialDate = now;
 
     if (dateType == 0) initialDate = _registryDate;
-    if (dateType == 1) initialDate = _groomDateOfBirth ?? DateTime(now.year - 25, 1, 1);
-    if (dateType == 2) initialDate = _brideDateOfBirth ?? DateTime(now.year - 23, 1, 1);
+    if (dateType == 1) {
+      initialDate = _groomDateOfBirth ?? DateTime(now.year - 25, 1, 1);
+    }
+    if (dateType == 2) {
+      initialDate = _brideDateOfBirth ?? DateTime(now.year - 23, 1, 1);
+    }
     if (dateType == 3) initialDate = _dateOfMarriage ?? now;
     if (dateType == 4) initialDate = _licenseDateRegistered ?? now;
     if (dateType == 5) initialDate = _crasmValidityDate ?? now;
@@ -370,7 +727,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
+      initialDate:
+      initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
       lastDate: upperDateBound,
     );
@@ -416,7 +774,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
 
     final isFormValid = _formKey.currentState?.validate() ?? false;
     if (!isFormValid) {
-      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      setState(() =>
+      _errorMessage = 'Please review the highlighted fields below before saving.');
       _scrollToTop();
       return false;
     }
@@ -427,39 +786,47 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       return false;
     }
 
-    final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+    final bookError =
+    SacramentalValidators.validateBookNumber(_bookNumberController.text);
     if (bookError != null) {
       setState(() => _errorMessage = bookError);
       _scrollToTop();
       return false;
     }
-    final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+    final pageError =
+    SacramentalValidators.validatePageNumber(_pageNumberController.text);
     if (pageError != null) {
       setState(() => _errorMessage = pageError);
       _scrollToTop();
       return false;
     }
-    final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+    final lineError =
+    SacramentalValidators.validateLineNumber(_lineNumberController.text);
     if (lineError != null) {
       setState(() => _errorMessage = lineError);
       _scrollToTop();
       return false;
     }
-    final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
+    final regDateError = SacramentalValidators.validateNotFutureDate(
+        _registryDate, 'Registry Date');
     if (regDateError != null) {
       setState(() => _errorMessage = regDateError);
       _scrollToTop();
       return false;
     }
 
-    final groomDobError = SacramentalValidators.validateDateOfBirth(_groomDateOfBirth, isRequired: false);
+    final groomDobError = SacramentalValidators.validateDateOfBirth(
+        _groomDateOfBirth,
+        isRequired: false);
     if (groomDobError != null) {
       setState(() => _errorMessage = 'Groom: $groomDobError');
       _scrollToTop();
       return false;
     }
 
-    final brideDobError = SacramentalValidators.validateDateOfBirth(_brideDateOfBirth, isRequired: false);
+    final brideDobError = SacramentalValidators.validateDateOfBirth(
+        _brideDateOfBirth,
+        isRequired: false);
     if (brideDobError != null) {
       setState(() => _errorMessage = 'Bride: $brideDobError');
       _scrollToTop();
@@ -479,7 +846,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   }
 
   /// Computes strict dynamic diff, excluding unchanged fields and uneditable audit metadata
-  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+  String _computeChangesSummaryJson(
+      Map<String, dynamic> oldData, Map<String, dynamic> newData) {
     final diffs = <String, Map<String, dynamic>>{};
 
     final Map<String, String> fieldLabels = {
@@ -551,8 +919,16 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       }
 
       final oldVal = oldData[key];
-      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
-      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+      final oldStr = (oldVal == null ||
+          oldVal.toString().trim().isEmpty ||
+          oldVal.toString().toLowerCase() == 'null')
+          ? ''
+          : oldVal.toString().trim();
+      final newStr = (newVal == null ||
+          newVal.toString().trim().isEmpty ||
+          newVal.toString().toLowerCase() == 'null')
+          ? ''
+          : newVal.toString().trim();
 
       String normOld = oldStr;
       String normNew = newStr;
@@ -634,7 +1010,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                 color: _matrimonyBurgundy.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.fact_check_outlined, color: _matrimonyBurgundy, size: 24),
+              child: const Icon(Icons.fact_check_outlined,
+                  color: _matrimonyBurgundy, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -652,7 +1029,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   const SizedBox(height: 2),
                   Text(
                     'Verify all fields before saving into Liber Matrimoniorum.',
-                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    style:
+                    TextStyle(fontSize: 12, color: ParishColors.textMuted),
                   ),
                 ],
               ),
@@ -667,10 +1045,14 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildReviewSection('1. Registry Coordinates', [
-                  _buildReviewRow('Book No.:', _bookNumberController.text.trim()),
-                  _buildReviewRow('Page No.:', _pageNumberController.text.trim()),
-                  _buildReviewRow('Line No.:', _lineNumberController.text.trim()),
-                  _buildReviewRow('Registry Date:', _registryDate.toIso8601String().substring(0, 10)),
+                  _buildReviewRow(
+                      'Book No.:', _bookNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Page No.:', _pageNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Line No.:', _lineNumberController.text.trim()),
+                  _buildReviewRow('Registry Date:',
+                      _registryDate.toIso8601String().substring(0, 10)),
                   _buildReviewRow('Entry Status:', _entryStatus),
                 ]),
                 const SizedBox(height: 12),
@@ -679,12 +1061,17 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   _buildReviewRow('Age:', _groomAgeController.text.trim()),
                   _buildReviewRow('Civil Status:', _groomCivilStatus),
                   if (_groomDateOfBirth != null)
-                    _buildReviewRow('Date of Birth:', _groomDateOfBirth!.toIso8601String().substring(0, 10)),
+                    _buildReviewRow('Date of Birth:',
+                        _groomDateOfBirth!.toIso8601String().substring(0, 10)),
                   if (_groomPlaceOfBirthController.text.trim().isNotEmpty)
-                    _buildReviewRow('Birthplace:', _groomPlaceOfBirthController.text.trim()),
-                  _buildReviewRow('Residence:', _groomAddressController.text.trim()),
-                  _buildReviewRow('Father:', '${_groomFatherFirstNameController.text.trim()} ${_groomFatherLastNameController.text.trim()}'),
-                  _buildReviewRow('Mother Maiden Name:', '${_groomMotherFirstNameController.text.trim()} ${_groomMotherMaidenLastController.text.trim()}'),
+                    _buildReviewRow('Birthplace:',
+                        _groomPlaceOfBirthController.text.trim()),
+                  _buildReviewRow(
+                      'Residence:', _groomAddressController.text.trim()),
+                  _buildReviewRow('Father:',
+                      '${_groomFatherFirstNameController.text.trim()} ${_groomFatherLastNameController.text.trim()}'),
+                  _buildReviewRow('Mother Maiden Name:',
+                      '${_groomMotherFirstNameController.text.trim()} ${_groomMotherMaidenLastController.text.trim()}'),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection("3. Bride's Information", [
@@ -692,32 +1079,48 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   _buildReviewRow('Age:', _brideAgeController.text.trim()),
                   _buildReviewRow('Civil Status:', _brideCivilStatus),
                   if (_brideDateOfBirth != null)
-                    _buildReviewRow('Date of Birth:', _brideDateOfBirth!.toIso8601String().substring(0, 10)),
+                    _buildReviewRow('Date of Birth:',
+                        _brideDateOfBirth!.toIso8601String().substring(0, 10)),
                   if (_bridePlaceOfBirthController.text.trim().isNotEmpty)
-                    _buildReviewRow('Birthplace:', _bridePlaceOfBirthController.text.trim()),
-                  _buildReviewRow('Residence:', _brideAddressController.text.trim()),
-                  _buildReviewRow('Father:', '${_brideFatherFirstNameController.text.trim()} ${_brideFatherLastNameController.text.trim()}'),
-                  _buildReviewRow('Mother Maiden Name:', '${_brideMotherFirstNameController.text.trim()} ${_brideMotherMaidenLastController.text.trim()}'),
+                    _buildReviewRow('Birthplace:',
+                        _bridePlaceOfBirthController.text.trim()),
+                  _buildReviewRow(
+                      'Residence:', _brideAddressController.text.trim()),
+                  _buildReviewRow('Father:',
+                      '${_brideFatherFirstNameController.text.trim()} ${_brideFatherLastNameController.text.trim()}'),
+                  _buildReviewRow('Mother Maiden Name:',
+                      '${_brideMotherFirstNameController.text.trim()} ${_brideMotherMaidenLastController.text.trim()}'),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('4. Primary & Secondary Witnesses', [
                   _buildReviewRow('Primary Sponsor 1:', sponsor1Name),
                   _buildReviewRow('Primary Sponsor 2:', sponsor2Name),
                   if (otherSponsors.isNotEmpty)
-                    _buildReviewRow('Additional Witnesses:', otherSponsors.join(', ')),
+                    _buildReviewRow(
+                        'Additional Witnesses:', otherSponsors.join(', ')),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('5. Ceremony & Legal Details', [
-                  _buildReviewRow('Date of Marriage:', _dateOfMarriage?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow(
+                      'Date of Marriage:',
+                      _dateOfMarriage?.toIso8601String().substring(0, 10) ??
+                          '—'),
                   _buildReviewRow('Marriage Type:', _marriageType),
                   _buildReviewRow('Solemnizing Priest:', priestName),
                   if (_marriageLicenseNoController.text.trim().isNotEmpty)
-                    _buildReviewRow('Marriage License No.:', _marriageLicenseNoController.text.trim()),
+                    _buildReviewRow('Marriage License No.:',
+                        _marriageLicenseNoController.text.trim()),
                   if (_crasmNumberController.text.trim().isNotEmpty)
-                    _buildReviewRow('CRASM Number:', _crasmNumberController.text.trim()),
-                  _buildReviewRow('Stipend / Offering:', _stipendController.text.trim().isNotEmpty ? '₱ ${_stipendController.text.trim()}' : '₱ 0.00'),
+                    _buildReviewRow(
+                        'CRASM Number:', _crasmNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Stipend / Offering:',
+                      _stipendController.text.trim().isNotEmpty
+                          ? '₱ ${_stipendController.text.trim()}'
+                          : '₱ 0.00'),
                   if (_remarksController.text.trim().isNotEmpty)
-                    _buildReviewRow('Remarks / Notes:', _remarksController.text.trim()),
+                    _buildReviewRow(
+                        'Remarks / Notes:', _remarksController.text.trim()),
                 ]),
               ],
             ),
@@ -741,7 +1144,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+            label: const Text('Confirm and Save',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
           ),
         ],
       ),
@@ -821,7 +1225,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
         : 'Authorized Parish Personnel';
     final userRole = currentUser?.userRole ?? 'Secretary';
 
-    final reasonController = TextEditingController(text: 'Correction of marriage record details');
+    final reasonController =
+    TextEditingController(text: 'Correction of marriage record details');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -838,7 +1243,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                 color: _matrimonyBurgundy.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.security_update_good, color: _matrimonyBurgundy, size: 24),
+              child: const Icon(Icons.security_update_good,
+                  color: _matrimonyBurgundy, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -861,7 +1267,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             children: [
               Text(
                 'You are modifying canonical entry ${widget.initialData!['record_id']} (${_groomLastNameController.text.trim()} & ${_brideLastNameController.text.trim()}).',
-                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+                style: TextStyle(
+                    fontSize: 14, color: ParishColors.textDark, height: 1.35),
               ),
               const SizedBox(height: 12),
               Container(
@@ -877,16 +1284,23 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   children: [
                     Text(
                       'AUDIT LOG ATTRIBUTION',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textMuted),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Editor: $currentUserName ($userRole)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _matrimonyBurgundy),
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: _matrimonyBurgundy),
                     ),
                     Text(
                       'Coordinates: Book ${_bookNumberController.text.trim()}, Page ${_pageNumberController.text.trim()}, Line ${_lineNumberController.text.trim()}',
-                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -894,7 +1308,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               const SizedBox(height: 14),
               Text(
                 'Reason for Correction *',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark),
               ),
               const SizedBox(height: 6),
               TextFormField(
@@ -902,11 +1319,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                 maxLines: 2,
                 style: const TextStyle(fontSize: 13.5),
                 decoration: InputDecoration(
-                  hintText: 'e.g. Typographical error correction on bride surname or license details',
+                  hintText:
+                  'e.g. Typographical error correction on bride surname or license details',
                   filled: true,
                   fillColor: ParishColors.backgroundLight,
                   isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],
@@ -930,7 +1349,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            label: const Text('Confirm & Save Update',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ],
       ),
@@ -944,7 +1364,12 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   Future<void> _submitForm({String? reasonForCorrection}) async {
     if (!isEditMode && !_validateAllFields()) return;
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _loadingMessage = isEditMode
+          ? 'Updating matrimony record...'
+          : 'Saving matrimony record...';
+    });
 
     try {
       List<String> collectedOtherSponsors = _otherSponsorControllers
@@ -967,7 +1392,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
         final editLogStamp =
             '[Amended on ${now.toIso8601String().substring(0, 10)} by $currentUserName (${currentUser?.userRole ?? "Staff"})]: $reason';
 
-        if (compiledCanonicalNotes != null && compiledCanonicalNotes.trim().isNotEmpty) {
+        if (compiledCanonicalNotes != null &&
+            compiledCanonicalNotes.trim().isNotEmpty) {
           compiledCanonicalNotes = '$compiledCanonicalNotes\n$editLogStamp';
         } else {
           compiledCanonicalNotes = editLogStamp;
@@ -979,7 +1405,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
         'page_number': _pageNumberController.text.trim(),
         'line_number': _lineNumberController.text.trim(),
         'registry_date': isEditMode
-            ? (widget.initialData!['registry_date']?.toString().substring(0, 10) ??
+            ? (widget.initialData!['registry_date']
+            ?.toString()
+            .substring(0, 10) ??
             _registryDate.toIso8601String().substring(0, 10))
             : _registryDate.toIso8601String().substring(0, 10),
         'entry_status': isEditMode
@@ -989,107 +1417,176 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
 
         // Groom
         'groom_first_name': _groomFirstNameController.text.trim(),
-        'groom_middle_name': _groomMiddleNameController.text.trim().isEmpty ? null : _groomMiddleNameController.text.trim(),
+        'groom_middle_name': _groomMiddleNameController.text.trim().isEmpty
+            ? null
+            : _groomMiddleNameController.text.trim(),
         'groom_last_name': _groomLastNameController.text.trim(),
-        'groom_suffix': _groomSuffixController.text.trim().isEmpty ? null : _groomSuffixController.text.trim(),
+        'groom_suffix': _groomSuffixController.text.trim().isEmpty
+            ? null
+            : _groomSuffixController.text.trim(),
         'groom_civil_status': _groomCivilStatus,
         'groom_age': int.parse(_groomAgeController.text.trim()),
-        'groom_date_of_birth': _groomDateOfBirth?.toIso8601String().substring(0, 10),
-        'groom_place_of_birth': _groomPlaceOfBirthController.text.trim().isEmpty ? null : _groomPlaceOfBirthController.text.trim(),
+        'groom_date_of_birth':
+        _groomDateOfBirth?.toIso8601String().substring(0, 10),
+        'groom_place_of_birth':
+        _groomPlaceOfBirthController.text.trim().isEmpty
+            ? null
+            : _groomPlaceOfBirthController.text.trim(),
         'groom_address': _groomAddressController.text.trim(),
         'groom_father_first_name': _groomFatherFirstNameController.text.trim(),
-        'groom_father_middle_name': _groomFatherMiddleNameController.text.trim().isEmpty ? null : _groomFatherMiddleNameController.text.trim(),
+        'groom_father_middle_name':
+        _groomFatherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _groomFatherMiddleNameController.text.trim(),
         'groom_father_last_name': _groomFatherLastNameController.text.trim(),
         'groom_mother_first_name': _groomMotherFirstNameController.text.trim(),
-        'groom_mother_middle_name': _groomMotherMiddleNameController.text.trim().isEmpty ? null : _groomMotherMiddleNameController.text.trim(),
-        'groom_mother_maiden_last': _groomMotherMaidenLastController.text.trim(),
+        'groom_mother_middle_name':
+        _groomMotherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _groomMotherMiddleNameController.text.trim(),
+        'groom_mother_maiden_last':
+        _groomMotherMaidenLastController.text.trim(),
 
         // Bride
         'bride_first_name': _brideFirstNameController.text.trim(),
-        'bride_middle_name': _brideMiddleNameController.text.trim().isEmpty ? null : _brideMiddleNameController.text.trim(),
+        'bride_middle_name': _brideMiddleNameController.text.trim().isEmpty
+            ? null
+            : _brideMiddleNameController.text.trim(),
         'bride_last_name': _brideLastNameController.text.trim(),
-        'bride_suffix': _brideSuffixController.text.trim().isEmpty ? null : _brideSuffixController.text.trim(),
+        'bride_suffix': _brideSuffixController.text.trim().isEmpty
+            ? null
+            : _brideSuffixController.text.trim(),
         'bride_civil_status': _brideCivilStatus,
         'bride_age': int.parse(_brideAgeController.text.trim()),
-        'bride_date_of_birth': _brideDateOfBirth?.toIso8601String().substring(0, 10),
-        'bride_place_of_birth': _bridePlaceOfBirthController.text.trim().isEmpty ? null : _bridePlaceOfBirthController.text.trim(),
+        'bride_date_of_birth':
+        _brideDateOfBirth?.toIso8601String().substring(0, 10),
+        'bride_place_of_birth':
+        _bridePlaceOfBirthController.text.trim().isEmpty
+            ? null
+            : _bridePlaceOfBirthController.text.trim(),
         'bride_address': _brideAddressController.text.trim(),
         'bride_father_first_name': _brideFatherFirstNameController.text.trim(),
-        'bride_father_middle_name': _brideFatherMiddleNameController.text.trim().isEmpty ? null : _brideFatherMiddleNameController.text.trim(),
+        'bride_father_middle_name':
+        _brideFatherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _brideFatherMiddleNameController.text.trim(),
         'bride_father_last_name': _brideFatherLastNameController.text.trim(),
         'bride_mother_first_name': _brideMotherFirstNameController.text.trim(),
-        'bride_mother_middle_name': _brideMotherMiddleNameController.text.trim().isEmpty ? null : _brideMotherMiddleNameController.text.trim(),
-        'bride_mother_maiden_last': _brideMotherMaidenLastController.text.trim(),
+        'bride_mother_middle_name':
+        _brideMotherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _brideMotherMiddleNameController.text.trim(),
+        'bride_mother_maiden_last':
+        _brideMotherMaidenLastController.text.trim(),
 
         // Sponsors
         'sponsor_1_first_name': _sponsor1FirstNameController.text.trim(),
-        'sponsor_1_middle_name': _sponsor1MiddleNameController.text.trim().isEmpty ? null : _sponsor1MiddleNameController.text.trim(),
+        'sponsor_1_middle_name':
+        _sponsor1MiddleNameController.text.trim().isEmpty
+            ? null
+            : _sponsor1MiddleNameController.text.trim(),
         'sponsor_1_last_name': _sponsor1LastNameController.text.trim(),
-        'sponsor_1_origin_address': _sponsor1OriginAddressController.text.trim().isEmpty ? null : _sponsor1OriginAddressController.text.trim(),
+        'sponsor_1_origin_address':
+        _sponsor1OriginAddressController.text.trim().isEmpty
+            ? null
+            : _sponsor1OriginAddressController.text.trim(),
         'sponsor_2_first_name': _sponsor2FirstNameController.text.trim(),
-        'sponsor_2_middle_name': _sponsor2MiddleNameController.text.trim().isEmpty ? null : _sponsor2MiddleNameController.text.trim(),
+        'sponsor_2_middle_name':
+        _sponsor2MiddleNameController.text.trim().isEmpty
+            ? null
+            : _sponsor2MiddleNameController.text.trim(),
         'sponsor_2_last_name': _sponsor2LastNameController.text.trim(),
-        'sponsor_2_origin_address': _sponsor2OriginAddressController.text.trim().isEmpty ? null : _sponsor2OriginAddressController.text.trim(),
+        'sponsor_2_origin_address':
+        _sponsor2OriginAddressController.text.trim().isEmpty
+            ? null
+            : _sponsor2OriginAddressController.text.trim(),
         'other_sponsors': collectedOtherSponsors.join('\n'),
 
         // Ceremony Details
         'date_of_marriage': _dateOfMarriage!.toIso8601String().substring(0, 10),
         'marriage_type': _marriageType,
         'is_filipino_foreigner': _isFilipinoForeigner,
-        'marriage_license_no': _marriageLicenseNoController.text.trim().isEmpty ? null : _marriageLicenseNoController.text.trim(),
-        'license_date_registered': _licenseDateRegistered?.toIso8601String().substring(0, 10),
-        'license_place_issued': _licensePlaceIssuedController.text.trim().isEmpty ? null : _licensePlaceIssuedController.text.trim(),
+        'marriage_license_no':
+        _marriageLicenseNoController.text.trim().isEmpty
+            ? null
+            : _marriageLicenseNoController.text.trim(),
+        'license_date_registered':
+        _licenseDateRegistered?.toIso8601String().substring(0, 10),
+        'license_place_issued':
+        _licensePlaceIssuedController.text.trim().isEmpty
+            ? null
+            : _licensePlaceIssuedController.text.trim(),
 
         // Minister
         'solemnizer_first_name': _solemnizerFirstNameController.text.trim(),
-        'solemnizer_middle_name': _solemnizerMiddleNameController.text.trim().isEmpty ? null : _solemnizerMiddleNameController.text.trim(),
+        'solemnizer_middle_name':
+        _solemnizerMiddleNameController.text.trim().isEmpty
+            ? null
+            : _solemnizerMiddleNameController.text.trim(),
         'solemnizer_last_name': _solemnizerLastNameController.text.trim(),
-        'crasm_number': _crasmNumberController.text.trim().isEmpty ? null : _crasmNumberController.text.trim(),
-        'crasm_validity_date': _crasmValidityDate?.toIso8601String().substring(0, 10),
-        'stipend': _stipendController.text.trim().isNotEmpty ? double.parse(_stipendController.text.trim()) : 0.00,
-        'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
+        'crasm_number': _crasmNumberController.text.trim().isEmpty
+            ? null
+            : _crasmNumberController.text.trim(),
+        'crasm_validity_date':
+        _crasmValidityDate?.toIso8601String().substring(0, 10),
+        'stipend': _stipendController.text.trim().isNotEmpty
+            ? double.parse(_stipendController.text.trim())
+            : 0.00,
+        'remarks': _remarksController.text.trim().isEmpty
+            ? null
+            : _remarksController.text.trim(),
         'parish_name': _parishNameController.text.trim(),
       };
 
       if (isEditMode) {
         final recordId = widget.initialData!['record_id'].toString();
 
-        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+        final changesJson =
+        _computeChangesSummaryJson(widget.initialData!, recordMap);
 
         await MatrimonyService.updateMatrimonyRecord(recordId, recordMap);
 
         if (changesJson.isNotEmpty) {
           try {
-            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            await Supabase.instance.client
+                .from('sacramental_record_audit_logs')
+                .insert({
               'log_id': 'LOG-${now.millisecondsSinceEpoch}',
               'record_id': recordId,
               'sacrament_type': 'Matrimony',
               'action_type': 'UPDATED',
-              'recipient_name': '${_groomLastNameController.text.trim()} & ${_brideLastNameController.text.trim()}',
+              'recipient_name':
+              '${_groomLastNameController.text.trim()} & ${_brideLastNameController.text.trim()}',
               'book_number': _bookNumberController.text.trim(),
               'page_number': _pageNumberController.text.trim(),
               'line_number': _lineNumberController.text.trim(),
               'performed_by_id': currentUserId,
               'performed_by_name': currentUserName,
               'performed_by_role': currentUser?.userRole ?? 'Secretary',
-              'justification': reasonForCorrection ?? 'Correction of marriage record details',
+              'justification':
+              reasonForCorrection ?? 'Correction of marriage record details',
               'changes_summary': changesJson,
               'created_at': now.toIso8601String(),
             });
           } catch (auditErr) {
-            debugPrint('[MatrimonyManualEntryPage] Audit log insertion notice: $auditErr');
+            debugPrint(
+                '[MatrimonyManualEntryPage] Audit log insertion notice: $auditErr');
           }
         }
       } else {
-        final insertedRecord = await MatrimonyService.insertManualMatrimonyRecord(recordMap);
+        final insertedRecord =
+        await MatrimonyService.insertManualMatrimonyRecord(recordMap);
 
         try {
-          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+          await Supabase.instance.client
+              .from('sacramental_record_audit_logs')
+              .insert({
             'log_id': 'LOG-${now.millisecondsSinceEpoch}',
             'record_id': insertedRecord.recordId,
             'sacrament_type': 'Matrimony',
             'action_type': 'CREATED',
-            'recipient_name': '${insertedRecord.groomFullName} & ${insertedRecord.brideFullName}',
+            'recipient_name':
+            '${insertedRecord.groomFullName} & ${insertedRecord.brideFullName}',
             'book_number': insertedRecord.bookNumber,
             'page_number': insertedRecord.pageNumber,
             'line_number': insertedRecord.lineNumber,
@@ -1101,7 +1598,14 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             'created_at': now.toIso8601String(),
           });
         } catch (auditErr) {
-          debugPrint('[MatrimonyManualEntryPage] Audit log insertion notice: $auditErr');
+          debugPrint(
+              '[MatrimonyManualEntryPage] Audit log insertion notice: $auditErr');
+        }
+
+        if (_activeDraftId != null && _activeDraftId!.isNotEmpty) {
+          try {
+            await SacramentalDraftService.deleteDraft(_activeDraftId!);
+          } catch (_) {}
         }
       }
 
@@ -1135,12 +1639,14 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
+    final bool isNarrowAppBar = MediaQuery.sizeOf(context).width < 520;
 
     return PopScope(
-      canPop: !_isSubmitting,
+      canPop: !isBusy,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_isSubmitting) return;
+        if (isBusy) return;
         final shouldExit = await showDiscardConfirmationDialog(
           context,
           accentColor: _matrimonyBurgundy,
@@ -1149,72 +1655,122 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           Navigator.pop(context);
         }
       },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhiteColor,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: _matrimonyBurgundy, size: 26),
-            onPressed: _isSubmitting
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: _matrimonyBurgundy,
-              );
-              if (shouldExit && context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditMode ? 'Edit Matrimony Record' : 'Matrimony Manual Entry',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-              ),
-              Text(
-                isEditMode
-                    ? 'Editing Record: ${widget.initialData!['record_id']}'
-                    : 'Canonical Registry Book (Liber Matrimoniorum)',
-                style: TextStyle(fontSize: 12, color: textMutedColor),
-              ),
+      child: SacramentalLoadingOverlay(
+        isLoading: isBusy,
+        message: _loadingMessage,
+        accentColor: _matrimonyBurgundy,
+        icon: Icons.favorite_border,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhiteColor,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back,
+                  color: _matrimonyBurgundy, size: 26),
+              onPressed: isBusy
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: _matrimonyBurgundy,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditMode
+                      ? 'Edit Matrimony Record'
+                      : 'Matrimony Manual Entry',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDarkColor),
+                ),
+                Text(
+                  isEditMode
+                      ? 'Editing Record: ${widget.initialData!['record_id']}'
+                      : (_activeDraftId != null
+                      ? 'Resuming Saved Draft'
+                      : 'Canonical Registry Book (Liber Matrimoniorum)'),
+                  style: TextStyle(fontSize: 12, color: textMutedColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            actions: [
+              if (!isEditMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _matrimonyBurgundy,
+                        backgroundColor: _matrimonyBurgundy.withOpacity(0.08),
+                        side: BorderSide(
+                          color: _matrimonyBurgundy.withOpacity(0.45),
+                          width: 1.2,
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrowAppBar ? 10 : 14,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: isBusy ? null : _saveToDraft,
+                      icon: const Icon(Icons.save_as_outlined, size: 18),
+                      label: Text(
+                        isNarrowAppBar ? 'Draft' : 'Save to Draft',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-        ),
-        floatingActionButton: IgnorePointer(
-          ignoring: !_showBackToTop,
-          child: AnimatedOpacity(
-            opacity: _showBackToTop ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 250),
-            child: Semantics(
-              button: true,
-              label: 'Back to top, button',
-              child: FocusableActionDetector(
-                onShowHoverHighlight: (hovered) {
-                  setState(() => _isBackToTopHovered = hovered);
-                },
-                actions: <Type, Action<Intent>>{
-                  ActivateIntent: CallbackAction<ActivateIntent>(
-                    onInvoke: (_) => _scrollToTop(),
-                  ),
-                },
-                child: AnimatedScale(
-                  scale: _isBackToTopHovered ? 1.05 : 1.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: SizedBox(
-                    height: 48,
-                    child: FloatingActionButton.extended(
-                      backgroundColor: _matrimonyBurgundy,
-                      foregroundColor: Colors.white,
-                      elevation: 4,
-                      onPressed: _scrollToTop,
-                      icon: const Icon(Icons.arrow_upward, size: 18),
-                      label: const Text(
-                        'Back to Top',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          floatingActionButton: IgnorePointer(
+            ignoring: !_showBackToTop,
+            child: AnimatedOpacity(
+              opacity: _showBackToTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: Semantics(
+                button: true,
+                label: 'Back to top, button',
+                child: FocusableActionDetector(
+                  onShowHoverHighlight: (hovered) {
+                    setState(() => _isBackToTopHovered = hovered);
+                  },
+                  actions: <Type, Action<Intent>>{
+                    ActivateIntent: CallbackAction<ActivateIntent>(
+                      onInvoke: (_) => _scrollToTop(),
+                    ),
+                  },
+                  child: AnimatedScale(
+                    scale: _isBackToTopHovered ? 1.05 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: SizedBox(
+                      height: 48,
+                      child: FloatingActionButton.extended(
+                        backgroundColor: _matrimonyBurgundy,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        onPressed: _scrollToTop,
+                        icon: const Icon(Icons.arrow_upward, size: 18),
+                        label: const Text(
+                          'Back to Top',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ),
                     ),
                   ),
@@ -1222,94 +1778,82 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               ),
             ),
           ),
-        ),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double availableWidth = constraints.maxWidth;
-              final bool isWide = availableWidth >= 900;
-              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double availableWidth = constraints.maxWidth;
+                final bool isWide = availableWidth >= 900;
+                final double horizontalPadding =
+                isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Stack(
-                children: [
-                  SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
-                        child: Form(
-                          key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildFormHeaderCard(),
-                              const SizedBox(height: 16),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding, vertical: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                      BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormHeaderCard(),
+                            const SizedBox(height: 16),
 
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: ParishColors.mercyRed),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
+                            if (_errorMessage != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRedSurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                  Border.all(color: ParishColors.mercyRed),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        color: ParishColors.mercyRed, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.mercyRed,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-
-                              _buildSection1Coordinates(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection2Groom(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection3Bride(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection4Sponsors(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection5Ceremony(isWide: isWide),
-                              const SizedBox(height: 24),
-                              _buildBottomSubmissionBar(isWide: isWide),
-                              const SizedBox(height: 50),
+                              ),
                             ],
-                          ),
+
+                            _buildSection1Coordinates(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection2Groom(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection3Bride(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection4Sponsors(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection5Ceremony(isWide: isWide),
+                            const SizedBox(height: 24),
+                            _buildBottomSubmissionBar(isWide: isWide),
+                            const SizedBox(height: 50),
+                          ],
                         ),
                       ),
                     ),
                   ),
-
-                  if (_isSubmitting)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black.withOpacity(0.55),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: ParishColors.goldAccent,
-                            strokeWidth: 4.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1360,14 +1904,19 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: _matrimonyBurgundy.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Canonical Step',
-                        style: TextStyle(
+                      child: Text(
+                        isEditMode
+                            ? 'Edit Mode'
+                            : (_activeDraftId != null
+                            ? 'Draft Mode'
+                            : 'New Entry'),
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: _matrimonyBurgundy,
@@ -1427,7 +1976,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   Expanded(
                     child: Text(
                       'Book, Page, and Line coordinates are permanent physical coordinates and cannot be altered.',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _matrimonyBurgundy),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _matrimonyBurgundy),
                     ),
                   ),
                 ],
@@ -1438,7 +1990,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           if (hasDup) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
                 color: ParishColors.mercyRedSurface,
@@ -1447,7 +2000,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded,
+                      color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1510,9 +2064,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
               child: Row(
                 children: [
-                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _matrimonyBurgundy)),
+                  const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.8, color: _matrimonyBurgundy)),
                   const SizedBox(width: 8),
-                  Text('Checking physical matrimony register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                  Text('Checking physical matrimony register...',
+                      style: TextStyle(
+                          fontSize: 11, color: ParishColors.textMuted)),
                 ],
               ),
             ),
@@ -1523,7 +2083,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               Expanded(
                 child: isEditMode
                     ? _buildTextFormField(
-                  controller: TextEditingController(text: _entryStatus),
+                  controller:
+                  TextEditingController(text: _entryStatus),
                   label: 'Entry Status (Locked)',
                   isRequired: false,
                   enabled: false,
@@ -1533,14 +2094,18 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   isRequired: true,
                   value: _entryStatus,
                   items: const ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'],
-                  onChanged: (val) => setState(() => _entryStatus = val!),
+                  onChanged: (val) =>
+                      setState(() => _entryStatus = val!),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: isEditMode
                     ? _buildTextFormField(
-                  controller: TextEditingController(text: _registryDate.toIso8601String().substring(0, 10)),
+                  controller: TextEditingController(
+                      text: _registryDate
+                          .toIso8601String()
+                          .substring(0, 10)),
                   label: 'Registry Date (Locked)',
                   isRequired: false,
                   enabled: false,
@@ -1580,7 +2145,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Groom's First Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Groom's first name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Groom's first name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1591,7 +2158,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Groom's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1602,7 +2171,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Groom's Last Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Groom's last name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Groom's last name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1629,7 +2200,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Groom's First Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Groom's first name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Groom's first name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1640,7 +2213,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Groom's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Groom's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1655,7 +2230,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Groom's Last Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Groom's last name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Groom's last name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1682,19 +2259,24 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   isRequired: true,
                   value: _groomCivilStatus,
                   items: const ['Single', 'Widower', 'Annulled', 'Divorced'],
-                  onChanged: (val) => setState(() => _groomCivilStatus = val!),
+                  onChanged: (val) =>
+                      setState(() => _groomCivilStatus = val!),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _buildTextFormField(
                   controller: _groomAgeController,
-                  label: hasGroomDob ? "Groom's Age (Calculated)" : "Groom's Age",
+                  label: hasGroomDob
+                      ? "Groom's Age (Calculated)"
+                      : "Groom's Age",
                   isRequired: true,
                   enabled: !hasGroomDob,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
-                  validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
+                  validator: (val) =>
+                      SacramentalValidators.validateWholeNumberAge(val,
+                          isRequired: true),
                 ),
               ),
             ],
@@ -1719,7 +2301,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Birthplace / Hometown',
                   isRequired: false,
                   maxLength: 100,
-                  validator: (val) => SacramentalValidators.validatePlace(val, "Groom's birthplace", isRequired: false, maxLength: 100),
+                  validator: (val) => SacramentalValidators.validatePlace(
+                      val, "Groom's birthplace",
+                      isRequired: false, maxLength: 100),
                 ),
               ),
             ],
@@ -1730,11 +2314,17 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: "Groom's Residential Address",
             isRequired: true,
             maxLength: 150,
-            validator: (val) => SacramentalValidators.validatePlace(val, "Groom's address", isRequired: true, maxLength: 150),
+            validator: (val) => SacramentalValidators.validatePlace(
+                val, "Groom's address",
+                isRequired: true, maxLength: 150),
           ),
 
           const Divider(height: 24),
-          const Text("Groom's Parents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
+          const Text("Groom's Parents",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _matrimonyBurgundy)),
           const SizedBox(height: 8),
 
           Row(
@@ -1746,7 +2336,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: "Father's First Name",
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Father's first name",
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1756,7 +2348,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Father's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1766,7 +2360,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: "Father's Last Name",
             isRequired: true,
             maxLength: 50,
-            validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
+            validator: (val) => SacramentalValidators.validateName(
+                val, "Father's last name",
+                isRequired: true, maxLength: 50),
           ),
 
           Row(
@@ -1778,7 +2374,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: "Mother's First Name",
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Mother's first name",
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1788,7 +2386,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Mother's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1798,7 +2398,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: "Mother's Maiden Last Name",
             isRequired: true,
             maxLength: 50,
-            validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+            validator: (val) => SacramentalValidators.validateName(
+                val, "Mother's maiden last name",
+                isRequired: true, maxLength: 50),
           ),
         ],
       ),
@@ -1825,7 +2427,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Bride's First Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Bride's first name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Bride's first name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1836,7 +2440,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Bride's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1847,7 +2453,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Bride's Last Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Bride's last name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Bride's last name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1874,7 +2482,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Bride's First Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Bride's first name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Bride's first name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1885,7 +2495,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Bride's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Bride's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1900,7 +2512,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     label: "Bride's Last Name",
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Bride's last name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Bride's last name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1927,19 +2541,24 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   isRequired: true,
                   value: _brideCivilStatus,
                   items: const ['Single', 'Widow', 'Annulled', 'Divorced'],
-                  onChanged: (val) => setState(() => _brideCivilStatus = val!),
+                  onChanged: (val) =>
+                      setState(() => _brideCivilStatus = val!),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _buildTextFormField(
                   controller: _brideAgeController,
-                  label: hasBrideDob ? "Bride's Age (Calculated)" : "Bride's Age",
+                  label: hasBrideDob
+                      ? "Bride's Age (Calculated)"
+                      : "Bride's Age",
                   isRequired: true,
                   enabled: !hasBrideDob,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
-                  validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: true),
+                  validator: (val) =>
+                      SacramentalValidators.validateWholeNumberAge(val,
+                          isRequired: true),
                 ),
               ),
             ],
@@ -1964,7 +2583,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Birthplace / Hometown',
                   isRequired: false,
                   maxLength: 100,
-                  validator: (val) => SacramentalValidators.validatePlace(val, "Bride's birthplace", isRequired: false, maxLength: 100),
+                  validator: (val) => SacramentalValidators.validatePlace(
+                      val, "Bride's birthplace",
+                      isRequired: false, maxLength: 100),
                 ),
               ),
             ],
@@ -1975,11 +2596,17 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: "Bride's Residential Address",
             isRequired: true,
             maxLength: 150,
-            validator: (val) => SacramentalValidators.validatePlace(val, "Bride's address", isRequired: true, maxLength: 150),
+            validator: (val) => SacramentalValidators.validatePlace(
+                val, "Bride's address",
+                isRequired: true, maxLength: 150),
           ),
 
           const Divider(height: 24),
-          const Text("Bride's Parents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
+          const Text("Bride's Parents",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _matrimonyBurgundy)),
           const SizedBox(height: 8),
 
           Row(
@@ -1991,7 +2618,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: "Father's First Name",
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Father's first name",
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2001,7 +2630,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Father's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -2011,7 +2642,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: "Father's Last Name",
             isRequired: true,
             maxLength: 50,
-            validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50),
+            validator: (val) => SacramentalValidators.validateName(
+                val, "Father's last name",
+                isRequired: true, maxLength: 50),
           ),
 
           Row(
@@ -2023,7 +2656,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: "Mother's First Name",
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Mother's first name",
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2033,7 +2668,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, "Mother's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -2043,7 +2680,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: "Mother's Maiden Last Name",
             isRequired: true,
             maxLength: 50,
-            validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+            validator: (val) => SacramentalValidators.validateName(
+                val, "Mother's maiden last name",
+                isRequired: true, maxLength: 50),
           ),
         ],
       ),
@@ -2057,7 +2696,11 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Primary Witnesses (Ninong & Ninang)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: _matrimonyBurgundy)),
+          const Text('Primary Witnesses (Ninong & Ninang)',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.5,
+                  color: _matrimonyBurgundy)),
           const SizedBox(height: 8),
 
           Row(
@@ -2069,7 +2712,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Sponsor 1 First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Sponsor 1 first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2079,7 +2724,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Sponsor 1 middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -2089,7 +2736,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: 'Sponsor 1 Last Name',
             isRequired: true,
             maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
+            validator: (v) => SacramentalValidators.validateName(
+                v, 'Sponsor 1 last name',
+                isRequired: true, maxLength: 50),
           ),
 
           const Divider(height: 24),
@@ -2103,7 +2752,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Sponsor 2 First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 first name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Sponsor 2 first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2113,7 +2764,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Sponsor 2 middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -2123,13 +2776,19 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: 'Sponsor 2 Last Name',
             isRequired: true,
             maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, 'Sponsor 2 last name', isRequired: true, maxLength: 50),
+            validator: (v) => SacramentalValidators.validateName(
+                v, 'Sponsor 2 last name',
+                isRequired: true, maxLength: 50),
           ),
 
           const Divider(height: 26),
 
-          Text('Additional Secondary Sponsors / Witnesses', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
-          SizedBox(height: 4),
+          Text('Additional Secondary Sponsors / Witnesses',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.5,
+                  color: ParishColors.textDark)),
+          const SizedBox(height: 4),
           Text(
             'Click "[+] Add Witness" to add additional secondary sponsor names individually.',
             style: TextStyle(fontSize: 13, color: ParishColors.textMuted),
@@ -2146,21 +2805,29 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                     child: TextFormField(
                       controller: controller,
                       maxLength: 60,
-                      buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                      buildCounter: (context,
+                          {required currentLength,
+                            required isFocused,
+                            maxLength}) =>
+                      null,
                       style: const TextStyle(fontSize: 14.5),
                       decoration: InputDecoration(
                         labelText: 'Witness #${idx + 1} Full Name',
                         filled: true,
                         fillColor: ParishColors.backgroundLight,
                         isDense: true,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8)),
                       ),
-                      validator: (val) => SacramentalValidators.validateName(val, 'Witness #${idx + 1}', isRequired: false, maxLength: 60),
+                      validator: (val) => SacramentalValidators.validateName(
+                          val, 'Witness #${idx + 1}',
+                          isRequired: false, maxLength: 60),
                     ),
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    icon: Icon(Icons.remove_circle_outline, color: ParishColors.mercyRed),
+                    icon: Icon(Icons.remove_circle_outline,
+                        color: ParishColors.mercyRed),
                     onPressed: () => _removeOtherSponsorField(idx),
                     tooltip: 'Remove Witness',
                   ),
@@ -2176,11 +2843,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: _matrimonyBurgundy, width: 1.5),
                 foregroundColor: _matrimonyBurgundy,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _addOtherSponsorField,
               icon: const Icon(Icons.add_circle_outline, size: 20),
-              label: const Text('Add Witness', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              label: const Text('Add Witness',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             ),
           ),
         ],
@@ -2213,7 +2882,11 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Marriage Type',
                   isRequired: true,
                   value: _marriageType,
-                  items: const ['Between Catholics', 'Mixed Marriage', 'Disparity of Cults'],
+                  items: const [
+                    'Between Catholics',
+                    'Mixed Marriage',
+                    'Disparity of Cults'
+                  ],
                   onChanged: (val) => setState(() => _marriageType = val!),
                 ),
               ),
@@ -2223,13 +2896,18 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             activeColor: _matrimonyBurgundy,
-            title: const Text('Filipino / Foreigner Status', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+            title: const Text('Filipino / Foreigner Status',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
             value: _isFilipinoForeigner,
             onChanged: (val) => setState(() => _isFilipinoForeigner = val),
           ),
 
           const Divider(height: 24),
-          const Text('Civil Marriage License Compliance', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
+          const Text('Civil Marriage License Compliance',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _matrimonyBurgundy)),
           const SizedBox(height: 10),
 
           Row(
@@ -2260,11 +2938,17 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             label: 'Place Issued',
             isRequired: false,
             maxLength: 100,
-            validator: (v) => SacramentalValidators.validatePlace(v, 'Place issued', isRequired: false, maxLength: 100),
+            validator: (v) => SacramentalValidators.validatePlace(
+                v, 'Place issued',
+                isRequired: false, maxLength: 100),
           ),
 
           const Divider(height: 24),
-          const Text('Solemnizing Priest & CRASM Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _matrimonyBurgundy)),
+          const Text('Solemnizing Priest & CRASM Details',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _matrimonyBurgundy)),
           const SizedBox(height: 10),
 
           Row(
@@ -2277,7 +2961,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Priest First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Priest first name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Priest first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2288,7 +2974,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Priest middle name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Priest middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2299,7 +2987,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Priest Last Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Priest last name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Priest last name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
             ],
@@ -2339,7 +3029,9 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Parish Name',
                   isRequired: true,
                   maxLength: 150,
-                  validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
+                  validator: (v) => SacramentalValidators.validatePlace(
+                      v, 'Parish name',
+                      isRequired: true, maxLength: 150),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2350,7 +3042,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   label: 'Stipend / Offering (₱)',
                   isRequired: false,
                   maxLength: 12,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
                   validator: SacramentalValidators.validateStipend,
                 ),
               ),
@@ -2372,6 +3065,7 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
   Widget _buildBottomSubmissionBar({required bool isWide}) {
     final borderGreyColor = ParishColors.borderGrey;
     final textMutedColor = ParishColors.textMuted;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
 
     return Container(
       width: double.infinity,
@@ -2397,9 +3091,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: borderGreyColor, width: 1.4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: _isSubmitting
+              onPressed: isBusy
                   ? null
                   : () async {
                 final shouldExit = await showDiscardConfirmationDialog(
@@ -2412,7 +3107,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               },
               child: Text(
                 'Discard & Exit',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: textMutedColor),
               ),
             ),
           ),
@@ -2423,12 +3121,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: (_coordinateDuplicateError != null)
                     ? ParishColors.mercyRed
-                    : (isEditMode ? _matrimonyBurgundy : ParishColors.oliveGreen),
+                    : (isEditMode
+                    ? _matrimonyBurgundy
+                    : ParishColors.oliveGreen),
                 foregroundColor: Colors.white,
                 elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+              onPressed: (isBusy || _coordinateDuplicateError != null)
                   ? null
                   : () {
                 if (isEditMode) {
@@ -2437,10 +3138,15 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
                   _promptSaveConfirmation();
                 }
               },
-              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              icon: Icon(
+                  isEditMode
+                      ? Icons.security_update_good
+                      : Icons.check_circle_outline,
+                  size: 22),
               label: Text(
                 isEditMode ? 'Update Matrimony' : 'Save Matrimony',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ),
           ),
@@ -2544,14 +3250,23 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
             keyboardType: keyboardType,
             maxLines: maxLines,
             maxLength: maxLength,
-            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            buildCounter: (context,
+                {required currentLength,
+                  required isFocused,
+                  maxLength}) =>
+            null,
             validator: validator,
-            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(
+                fontSize: 14.5,
+                color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
-              fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
+              fillColor: enabled
+                  ? ParishColors.backgroundLight
+                  : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -2566,11 +3281,13 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.8),
               ),
               errorStyle: TextStyle(
                 color: ParishColors.mercyRed,
@@ -2591,7 +3308,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
     required bool hasError,
     required VoidCallback onTap,
   }) {
-    final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+    final borderColor =
+    hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -2608,16 +3326,21 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: borderColor, width: hasError ? 1.4 : 1.0),
+                border: Border.all(
+                    color: borderColor, width: hasError ? 1.4 : 1.0),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
+                    value != null
+                        ? value.toIso8601String().substring(0, 10)
+                        : 'YYYY-MM-DD',
                     style: TextStyle(
                       fontSize: 14.5,
-                      color: value != null ? ParishColors.textDark : ParishColors.textMuted,
+                      color: value != null
+                          ? ParishColors.textDark
+                          : ParishColors.textMuted,
                     ),
                   ),
                   const Icon(
@@ -2634,7 +3357,10 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               padding: const EdgeInsets.only(top: 6, left: 12),
               child: Text(
                 'Date selection is required.',
-                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    color: ParishColors.mercyRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500),
               ),
             ),
         ],
@@ -2672,7 +3398,8 @@ class _MatrimonyManualEntryPageState extends State<MatrimonyManualEntryPage> {
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),

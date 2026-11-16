@@ -22,6 +22,7 @@ import '../../models/certificate_style_config.dart';
 import '../../models/certificate_template_model.dart';
 import '../../services/certificate_pdf_generator.dart';
 import '../../utils/placeholder_registry.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 import 'certificate_canvas_designer_page.dart';
 import 'certificate_template_editor_page.dart';
 
@@ -318,16 +319,20 @@ class _CertificateTemplateManagementPageState
 
     if (sacramentFilter != 'All') {
       activeTemplates = activeTemplates
-          .where((t) => t.sacramentType.toLowerCase() == sacramentFilter.toLowerCase())
+          .where((t) =>
+      t.sacramentType.toLowerCase() == sacramentFilter.toLowerCase())
           .toList();
     }
 
     if (_searchQuery.isNotEmpty) {
       activeTemplates = activeTemplates.where((t) {
         final nameMatch = t.templateName.toLowerCase().contains(_searchQuery);
-        final titleMatch = t.certificateTitle.toLowerCase().contains(_searchQuery);
-        final sacramentMatch = t.sacramentType.toLowerCase().contains(_searchQuery);
-        final signatoryMatch = t.signatoryName.toLowerCase().contains(_searchQuery);
+        final titleMatch =
+        t.certificateTitle.toLowerCase().contains(_searchQuery);
+        final sacramentMatch =
+        t.sacramentType.toLowerCase().contains(_searchQuery);
+        final signatoryMatch =
+        t.signatoryName.toLowerCase().contains(_searchQuery);
         return nameMatch || titleMatch || sacramentMatch || signatoryMatch;
       }).toList();
     }
@@ -335,7 +340,8 @@ class _CertificateTemplateManagementPageState
     return activeTemplates;
   }
 
-  List<CertificateTemplateModel> _paginateList(List<CertificateTemplateModel> list) {
+  List<CertificateTemplateModel> _paginateList(
+      List<CertificateTemplateModel> list) {
     final startIndex = _currentPage * _rowsPerPage;
     if (startIndex >= list.length) return [];
     final endIndex = min(startIndex + _rowsPerPage, list.length);
@@ -453,11 +459,19 @@ class _CertificateTemplateManagementPageState
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed == true && mounted) {
+      final loading = SacramentalLoadingBarrierController.show(
+        context,
+        initialMessage: 'Archiving "${template.templateName}"...',
+        accentColor: ParishColors.mercyRed,
+        icon: Icons.archive_outlined,
+      );
+
       _onTemplateStatusChanged(template.templateId, false);
 
       try {
         await CertificateService.toggleTemplateStatus(template.templateId, false);
+        loading.dismiss();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -467,14 +481,24 @@ class _CertificateTemplateManagementPageState
               label: 'Undo',
               textColor: Colors.white,
               onPressed: () async {
+                final restoreLoading = SacramentalLoadingBarrierController.show(
+                  context,
+                  initialMessage: 'Restoring "${template.templateName}"...',
+                  icon: Icons.restore,
+                );
                 _onTemplateStatusChanged(template.templateId, true);
-                await CertificateService.toggleTemplateStatus(
-                    template.templateId, true);
+                try {
+                  await CertificateService.toggleTemplateStatus(
+                      template.templateId, true);
+                } finally {
+                  restoreLoading.dismiss();
+                }
               },
             ),
           ),
         );
       } catch (e) {
+        loading.dismiss();
         _onTemplateStatusChanged(template.templateId, true);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -504,7 +528,19 @@ class _CertificateTemplateManagementPageState
   }
 
   Future<void> _openGlobalEmblemsDialog() async {
-    final settings = await CertificateService.getGlobalEmblemSettings();
+    final loading = SacramentalLoadingBarrierController.show(
+      context,
+      initialMessage: 'Loading official parish emblems...',
+      icon: Icons.shield_outlined,
+    );
+
+    Map<String, dynamic> settings;
+    try {
+      settings = await CertificateService.getGlobalEmblemSettings();
+    } finally {
+      loading.dismiss();
+    }
+
     if (!mounted) return;
 
     await showDialog(
@@ -548,15 +584,23 @@ class _CertificateTemplateManagementPageState
       ),
     );
 
-    if (confirmed == true && controller.text.trim().isNotEmpty) {
+    if (confirmed == true && controller.text.trim().isNotEmpty && mounted) {
+      final loading = SacramentalLoadingBarrierController.show(
+        context,
+        initialMessage: 'Duplicating certificate template...',
+        icon: Icons.copy,
+      );
       try {
         await CertificateService.duplicateTemplate(
             template.templateId, controller.text.trim());
         await _loadTemplates();
       } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Duplication error: $e')));
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Duplication error: $e')));
+        }
+      } finally {
+        loading.dismiss();
       }
     }
   }
@@ -688,19 +732,71 @@ class _CertificateTemplateManagementPageState
                 foregroundColor: Colors.white,
               ),
               onPressed: () async {
-                final pdfBytes = await CertificatePdfGenerator.generatePdf(
-                  template: template,
-                  sacramentType: template.sacramentType,
-                  recordData: sampleData,
-                  purpose: template.defaultPurpose,
-                  verificationId: 'PREVIEW-SAMPLE-TOKEN',
-                  qrVerificationUrl:
-                  '${CertificateService.verificationBaseUrl}?v=PREVIEW-SAMPLE-TOKEN',
+                final confirmPrint = await showDialog<bool>(
+                  context: ctx,
+                  barrierDismissible: false,
+                  builder: (confirmCtx) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    title: const Row(
+                      children: [
+                        Icon(Icons.print_outlined,
+                            color: ParishColors.marianBlue, size: 22),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text('Print Sample Preview?',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16)),
+                        ),
+                      ],
+                    ),
+                    content: Text(
+                      'Are you sure you want to print a sample preview of "${template.templateName}"?',
+                      style: const TextStyle(fontSize: 13.5, height: 1.4),
+                    ),
+                    actions: [
+                      OutlinedButton(
+                        onPressed: () => Navigator.pop(confirmCtx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: ParishColors.marianBlue,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => Navigator.pop(confirmCtx, true),
+                        icon: const Icon(Icons.print, size: 17),
+                        label: const Text('Yes, Print Preview',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
                 );
-                await CertificatePdfGenerator.printCertificate(
-                  pdfBytes: pdfBytes,
-                  documentTitle: 'Preview_${template.templateName}',
+
+                if (confirmPrint != true || !ctx.mounted) return;
+
+                final loading = SacramentalLoadingBarrierController.show(
+                  ctx,
+                  initialMessage: 'Preparing sample certificate print job...',
+                  icon: Icons.print_rounded,
                 );
+                try {
+                  final pdfBytes = await CertificatePdfGenerator.generatePdf(
+                    template: template,
+                    sacramentType: template.sacramentType,
+                    recordData: sampleData,
+                    purpose: template.defaultPurpose,
+                    verificationId: 'PREVIEW-SAMPLE-TOKEN',
+                    qrVerificationUrl:
+                    '${CertificateService.verificationBaseUrl}?v=PREVIEW-SAMPLE-TOKEN',
+                  );
+                  await CertificatePdfGenerator.printCertificate(
+                    pdfBytes: pdfBytes,
+                    documentTitle: 'Preview_${template.templateName}',
+                  );
+                } finally {
+                  loading.dismiss();
+                }
               },
               icon: const Icon(Icons.print, size: 18),
               label: const Text('Print Preview',
@@ -751,9 +847,12 @@ class _CertificateTemplateManagementPageState
         final totalFilteredList = _getFilteredTemplates(currentTab);
         final totalCount = totalFilteredList.length;
 
-        final int totalPages =
-        (totalCount / _rowsPerPage).ceil() > 0 ? (totalCount / _rowsPerPage).ceil() : 1;
-        if (_currentPage >= totalPages) _currentPage = totalPages > 0 ? totalPages - 1 : 0;
+        final int totalPages = (totalCount / _rowsPerPage).ceil() > 0
+            ? (totalCount / _rowsPerPage).ceil()
+            : 1;
+        if (_currentPage >= totalPages) {
+          _currentPage = totalPages > 0 ? totalPages - 1 : 0;
+        }
 
         final pagedTemplates = _paginateList(totalFilteredList);
 
@@ -1302,9 +1401,21 @@ class _CertificateTemplateManagementPageState
                         value: item.isActive,
                         activeColor: ParishColors.oliveGreen,
                         onChanged: (val) async {
+                          final loading =
+                          SacramentalLoadingBarrierController.show(
+                            context,
+                            initialMessage: val
+                                ? 'Activating template...'
+                                : 'Archiving template...',
+                            icon: Icons.toggle_on_outlined,
+                          );
                           _onTemplateStatusChanged(item.templateId, val);
-                          await CertificateService.toggleTemplateStatus(
-                              item.templateId, val);
+                          try {
+                            await CertificateService.toggleTemplateStatus(
+                                item.templateId, val);
+                          } finally {
+                            loading.dismiss();
+                          }
                         },
                       ),
                     ),
@@ -1363,10 +1474,8 @@ class _CertificateTemplateManagementPageState
     return LayoutBuilder(
       builder: (context, constraints) {
         final double containerWidth = constraints.maxWidth;
-        // Check if the current viewport is large enough to show all columns directly
         final bool isLargeScreen = containerWidth >= 960;
 
-        // Dynamic spacing calibrated to the container width so large screens never force horizontal overflow
         final double columnSpacing = isLargeScreen
             ? ((containerWidth - 780) / 6).clamp(12.0, 26.0)
             : 16.0;
@@ -1812,7 +1921,6 @@ class _TrashBinDialog extends StatefulWidget {
 
 class _TrashBinDialogState extends State<_TrashBinDialog> {
   late List<CertificateTemplateModel> _archivedTemplates;
-  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -1840,6 +1948,12 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
   }
 
   Future<void> _restoreTemplate(CertificateTemplateModel template) async {
+    final loading = SacramentalLoadingBarrierController.show(
+      context,
+      initialMessage: 'Restoring "${template.templateName}"...',
+      icon: Icons.restore,
+    );
+
     setState(() {
       _archivedTemplates.removeWhere((t) => t.templateId == template.templateId);
     });
@@ -1849,6 +1963,7 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
     try {
       await CertificateService.toggleTemplateStatus(template.templateId, true);
       widget.onRefreshNeeded();
+      loading.dismiss();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1857,9 +1972,12 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
         ),
       );
     } catch (e) {
-      setState(() {
-        _archivedTemplates.add(template);
-      });
+      loading.dismiss();
+      if (mounted) {
+        setState(() {
+          _archivedTemplates.add(template);
+        });
+      }
       widget.onTemplateRestored(template.copyWith(isActive: false));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1917,7 +2035,14 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed == true && mounted) {
+      final loading = SacramentalLoadingBarrierController.show(
+        context,
+        initialMessage: 'Permanently deleting "${template.templateName}"...',
+        accentColor: ParishColors.mercyRed,
+        icon: Icons.delete_forever,
+      );
+
       setState(() {
         _archivedTemplates
             .removeWhere((t) => t.templateId == template.templateId);
@@ -1927,6 +2052,7 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
       try {
         await CertificateService.deleteTemplatePermanently(template.templateId);
         widget.onRefreshNeeded();
+        loading.dismiss();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1935,6 +2061,7 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
           ),
         );
       } catch (e) {
+        loading.dismiss();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Deletion failed: $e')),
@@ -1993,18 +2120,31 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
       ),
     );
 
-    if (confirmed == true) {
-      final itemsToDelete = List<CertificateTemplateModel>.from(_archivedTemplates);
+    if (confirmed == true && mounted) {
+      final itemsToDelete =
+      List<CertificateTemplateModel>.from(_archivedTemplates);
+      final loading = SacramentalLoadingBarrierController.show(
+        context,
+        initialMessage:
+        'Emptying trash bin (${itemsToDelete.length} templates)...',
+        accentColor: ParishColors.mercyRed,
+        icon: Icons.delete_sweep,
+      );
+
       setState(() {
         _archivedTemplates.clear();
       });
       widget.onTrashEmptied();
 
       try {
-        for (final t in itemsToDelete) {
-          await CertificateService.deleteTemplatePermanently(t.templateId);
+        for (int i = 0; i < itemsToDelete.length; i++) {
+          loading.updateMessage(
+              'Deleting template ${i + 1} of ${itemsToDelete.length}...');
+          await CertificateService.deleteTemplatePermanently(
+              itemsToDelete[i].templateId);
         }
         widget.onRefreshNeeded();
+        loading.dismiss();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2013,6 +2153,7 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
           ),
         );
       } catch (e) {
+        loading.dismiss();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error emptying trash: $e')),
@@ -2090,7 +2231,7 @@ class _TrashBinDialogState extends State<_TrashBinDialog> {
                         minimumSize: const Size(36, 36),
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
-                      onPressed: _isProcessing ? null : _confirmEmptyTrash,
+                      onPressed: _confirmEmptyTrash,
                       icon: const Icon(Icons.delete_sweep, size: 16),
                       label: const Text('Empty Trash',
                           style: TextStyle(
@@ -2246,9 +2387,6 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
   late bool _showDioceseLogo;
   late bool _showParishSeal;
 
-  bool _isSaving = false;
-  bool _isUploading = false;
-
   @override
   void initState() {
     super.initState();
@@ -2259,7 +2397,14 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
   }
 
   Future<void> _pickAndUploadEmblem(bool isDiocese) async {
-    setState(() => _isUploading = true);
+    final loading = SacramentalLoadingBarrierController.show(
+      context,
+      initialMessage: isDiocese
+          ? 'Uploading Diocese logo...'
+          : 'Uploading Parish seal...',
+      icon: Icons.shield_outlined,
+    );
+
     try {
       final dynamic result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -2308,27 +2453,34 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
               assetCategory: 'logos',
             );
 
-            setState(() {
-              if (isDiocese) {
-                _dioceseLogoUrl = url;
-              } else {
-                _parishSealUrl = url;
-              }
-            });
+            if (mounted) {
+              setState(() {
+                if (isDiocese) {
+                  _dioceseLogoUrl = url;
+                } else {
+                  _parishSealUrl = url;
+                }
+              });
+            }
           }
         }
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      }
     } finally {
-      if (mounted) setState(() => _isUploading = false);
+      loading.dismiss();
     }
   }
 
   Future<void> _saveGlobalEmblems() async {
-    setState(() => _isSaving = true);
+    final loading = SacramentalLoadingBarrierController.show(
+      context,
+      initialMessage: 'Updating official emblems across all templates...',
+      icon: Icons.shield_outlined,
+    );
     try {
       await CertificateService.updateGlobalEmblems(
         dioceseLogoUrl: _dioceseLogoUrl,
@@ -2337,6 +2489,7 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
         showParishSeal: _showParishSeal,
       );
 
+      loading.dismiss();
       if (!mounted) return;
       Navigator.pop(context);
       widget.onSaved();
@@ -2348,8 +2501,8 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
         ),
       );
     } catch (e) {
+      loading.dismiss();
       if (!mounted) return;
-      setState(() => _isSaving = false);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Error: $e')));
     }
@@ -2357,208 +2510,183 @@ class _GlobalEmblemsDialogState extends State<_GlobalEmblemsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        AlertDialog(
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          backgroundColor: ParishColors.cardWhite,
-          title: const Row(
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      backgroundColor: ParishColors.cardWhite,
+      title: const Row(
+        children: [
+          Icon(Icons.shield, color: ParishColors.marianBlue, size: 24),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text('Official Emblems',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.shield, color: ParishColors.marianBlue, size: 24),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text('Official Emblems',
-                    style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(
+                'Changes made here apply automatically to ALL issued certificates and templates.',
+                style: TextStyle(
+                    fontSize: 12.5,
+                    color: ParishColors.textMuted,
+                    height: 1.3),
+              ),
+              const Divider(height: 20),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ParishColors.borderGrey),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: ParishColors.marianBlue,
+                      title: const Text('Display Diocese Logo',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
+                      value: _showDioceseLogo,
+                      onChanged: (val) =>
+                          setState(() => _showDioceseLogo = val),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                            Border.all(color: ParishColors.borderGrey),
+                          ),
+                          child: _dioceseLogoUrl != null &&
+                              _dioceseLogoUrl!.isNotEmpty
+                              ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(_dioceseLogoUrl!,
+                                  fit: BoxFit.contain))
+                              : const Center(
+                              child: Text('DSP',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.marianBlue))),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(40, 40)),
+                            onPressed: () => _pickAndUploadEmblem(true),
+                            icon: const Icon(Icons.upload_file, size: 16),
+                            label: Text(
+                                _dioceseLogoUrl != null
+                                    ? 'Replace Logo'
+                                    : 'Upload Logo',
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ParishColors.backgroundLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ParishColors.borderGrey),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: ParishColors.marianBlue,
+                      title: const Text('Display Parish Seal',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
+                      value: _showParishSeal,
+                      onChanged: (val) =>
+                          setState(() => _showParishSeal = val),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                            Border.all(color: ParishColors.borderGrey),
+                          ),
+                          child: _parishSealUrl != null &&
+                              _parishSealUrl!.isNotEmpty
+                              ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(_parishSealUrl!,
+                                  fit: BoxFit.contain))
+                              : const Center(
+                              child: Text('SJP2',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: ParishColors.marianBlue))),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(40, 40)),
+                            onPressed: () => _pickAndUploadEmblem(false),
+                            icon: const Icon(Icons.upload_file, size: 16),
+                            label: Text(
+                                _parishSealUrl != null
+                                    ? 'Replace Seal'
+                                    : 'Upload Seal',
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Changes made here apply automatically to ALL issued certificates and templates.',
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        color: ParishColors.textMuted,
-                        height: 1.3),
-                  ),
-                  const Divider(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: ParishColors.backgroundLight,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: ParishColors.borderGrey),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: ParishColors.marianBlue,
-                          title: const Text('Display Diocese Logo',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13)),
-                          value: _showDioceseLogo,
-                          onChanged: (val) =>
-                              setState(() => _showDioceseLogo = val),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border:
-                                Border.all(color: ParishColors.borderGrey),
-                              ),
-                              child: _dioceseLogoUrl != null &&
-                                  _dioceseLogoUrl!.isNotEmpty
-                                  ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(_dioceseLogoUrl!,
-                                      fit: BoxFit.contain))
-                                  : const Center(
-                                  child: Text('DSP',
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: ParishColors.marianBlue))),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(40, 40)),
-                                onPressed: (_isUploading || _isSaving)
-                                    ? null
-                                    : () => _pickAndUploadEmblem(true),
-                                icon: const Icon(Icons.upload_file, size: 16),
-                                label: Text(
-                                    _dioceseLogoUrl != null
-                                        ? 'Replace Logo'
-                                        : 'Upload Logo',
-                                    style: const TextStyle(fontSize: 12)),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: ParishColors.backgroundLight,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: ParishColors.borderGrey),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: ParishColors.marianBlue,
-                          title: const Text('Display Parish Seal',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13)),
-                          value: _showParishSeal,
-                          onChanged: (val) =>
-                              setState(() => _showParishSeal = val),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border:
-                                Border.all(color: ParishColors.borderGrey),
-                              ),
-                              child: _parishSealUrl != null &&
-                                  _parishSealUrl!.isNotEmpty
-                                  ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(_parishSealUrl!,
-                                      fit: BoxFit.contain))
-                                  : const Center(
-                                  child: Text('SJP2',
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: ParishColors.marianBlue))),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(40, 40)),
-                                onPressed: (_isUploading || _isSaving)
-                                    ? null
-                                    : () => _pickAndUploadEmblem(false),
-                                icon: const Icon(Icons.upload_file, size: 16),
-                                label: Text(
-                                    _parishSealUrl != null
-                                        ? 'Replace Seal'
-                                        : 'Upload Seal',
-                                    style: const TextStyle(fontSize: 12)),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actionsPadding:
-          const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          actions: [
-            OutlinedButton(
-                onPressed: _isSaving ? null : () => Navigator.pop(context),
-                child: const Text('Cancel')),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ParishColors.marianBlue,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(44, 44),
-              ),
-              onPressed: (_isSaving || _isUploading) ? null : _saveGlobalEmblems,
-              icon: const Icon(Icons.done_all, size: 18),
-              label: const Text('Apply Emblems',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
         ),
-        if (_isSaving || _isUploading)
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.55),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  color: ParishColors.goldAccent,
-                  strokeWidth: 4,
-                ),
-              ),
-            ),
+      ),
+      actionsPadding:
+      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      actions: [
+        OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ParishColors.marianBlue,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(44, 44),
           ),
+          onPressed: _saveGlobalEmblems,
+          icon: const Icon(Icons.done_all, size: 18),
+          label: const Text('Apply Emblems',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
       ],
     );
   }

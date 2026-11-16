@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/database/local_database_service.dart';
@@ -27,7 +28,7 @@ import 'pages/first_communion_manual_entry_page.dart';
 import 'pages/matrimony_manual_entry_page.dart';
 import 'pages/sacrament_record_detail_page.dart';
 import 'pages/sacrament_registry_page.dart';
-import 'package:sqflite/sqflite.dart';
+import 'widgets/sacramental_loading_overlay.dart';
 
 enum RecordsViewDisplayMode { cards, table }
 
@@ -180,12 +181,24 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         final db = await LocalDatabaseService.instance.database;
                         if (db != null) {
                                 try {
-                                        bCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM baptism_records')) ?? 0;
-                                        cCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM confirmation_records')) ?? 0;
-                                        fcCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM first_communion_records')) ?? 0;
-                                        mCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM matrimony_records')) ?? 0;
-                                        dCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM death_records')) ?? 0;
-                                        cvCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM conversion_records')) ?? 0;
+                                        bCount = Sqflite.firstIntValue(
+                                            await db.rawQuery('SELECT COUNT(*) FROM baptism_records')) ??
+                                            0;
+                                        cCount = Sqflite.firstIntValue(await db
+                                            .rawQuery('SELECT COUNT(*) FROM confirmation_records')) ??
+                                            0;
+                                        fcCount = Sqflite.firstIntValue(await db.rawQuery(
+                                            'SELECT COUNT(*) FROM first_communion_records')) ??
+                                            0;
+                                        mCount = Sqflite.firstIntValue(
+                                            await db.rawQuery('SELECT COUNT(*) FROM matrimony_records')) ??
+                                            0;
+                                        dCount = Sqflite.firstIntValue(
+                                            await db.rawQuery('SELECT COUNT(*) FROM death_records')) ??
+                                            0;
+                                        cvCount = Sqflite.firstIntValue(await db
+                                            .rawQuery('SELECT COUNT(*) FROM conversion_records')) ??
+                                            0;
                                 } catch (_) {}
                         }
                 }
@@ -277,7 +290,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                     .limit(15);
 
                                 return (response as List).map((row) {
-                                        final model = BaptismRecordModel.fromMap(row as Map<String, dynamic>);
+                                        final model =
+                                        BaptismRecordModel.fromMap(row as Map<String, dynamic>);
                                         return _mapBaptismResult(model);
                                 }).toList();
                         } catch (_) {
@@ -298,7 +312,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ''',
                                 ['%$q%', '%$q%', '%$q%', '%$q%', '%$q%', '%$q%', '%$q%', '%$q%'],
                         );
-                        return rows.map((r) => _mapBaptismResult(BaptismRecordModel.fromMap(r))).toList();
+                        return rows
+                            .map((r) => _mapBaptismResult(BaptismRecordModel.fromMap(r)))
+                            .toList();
                 }
 
                 return [];
@@ -310,9 +326,11 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         recordId: model.recordId,
                         name: model.childFullName,
                         bookRef: model.bookReference,
-                        dateString: 'Baptism: ${model.dateOfBaptism.toIso8601String().substring(0, 10)}',
+                        dateString:
+                        'Baptism: ${model.dateOfBaptism.toIso8601String().substring(0, 10)}',
                         parentage: 'Parents: ${model.fatherFullName} & ${model.motherFullName}',
-                        sponsors: 'Sponsors: ${model.sponsor1FullName} & ${model.sponsor2FullName}',
+                        sponsors:
+                        'Sponsors: ${model.sponsor1FullName} & ${model.sponsor2FullName}',
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFF164E87),
                         surfaceColor: const Color(0xFFEDF4FB),
@@ -335,7 +353,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                     .limit(15);
 
                                 return (response as List).map((row) {
-                                        final model = ConfirmationRecordModel.fromMap(row as Map<String, dynamic>);
+                                        final model =
+                                        ConfirmationRecordModel.fromMap(row as Map<String, dynamic>);
                                         return _mapConfirmationResult(model);
                                 }).toList();
                         } catch (_) {
@@ -356,20 +375,25 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ''',
                                 ['%$q%', '%$q%', '%$q%', '%$q%', '%$q%', '%$q%', '%$q%', '%$q%'],
                         );
-                        return rows.map((r) => _mapConfirmationResult(ConfirmationRecordModel.fromMap(r))).toList();
+                        return rows
+                            .map((r) =>
+                            _mapConfirmationResult(ConfirmationRecordModel.fromMap(r)))
+                            .toList();
                 }
 
                 return [];
         }
 
         UniversalRecordResult _mapConfirmationResult(ConfirmationRecordModel model) {
-                final s2Text = model.sponsor2FullName != null ? ' & ${model.sponsor2FullName} (S2)' : '';
+                final s2Text =
+                model.sponsor2FullName != null ? ' & ${model.sponsor2FullName} (S2)' : '';
                 return UniversalRecordResult(
                         sacramentName: 'Confirmation',
                         recordId: model.recordId,
                         name: model.confirmandFullName,
                         bookRef: model.bookReference,
-                        dateString: 'Confirmation: ${model.dateOfConfirmation.toIso8601String().substring(0, 10)}',
+                        dateString:
+                        'Confirmation: ${model.dateOfConfirmation.toIso8601String().substring(0, 10)}',
                         parentage: 'Parents: ${model.fatherFullName} & ${model.motherFullName}',
                         sponsors: 'Sponsors: ${model.sponsor1FullName} (S1)$s2Text',
                         marginalNotation: model.remarks,
@@ -394,7 +418,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                     .limit(15);
 
                                 return (response as List).map((row) {
-                                        final model = FirstCommunionRecordModel.fromMap(row as Map<String, dynamic>);
+                                        final model =
+                                        FirstCommunionRecordModel.fromMap(row as Map<String, dynamic>);
                                         return _mapCommunionResult(model);
                                 }).toList();
                         } catch (_) {
@@ -414,7 +439,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ''',
                                 ['%$q%', '%$q%', '%$q%'],
                         );
-                        return rows.map((r) => _mapCommunionResult(FirstCommunionRecordModel.fromMap(r))).toList();
+                        return rows
+                            .map((r) =>
+                            _mapCommunionResult(FirstCommunionRecordModel.fromMap(r)))
+                            .toList();
                 }
 
                 return [];
@@ -429,7 +457,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         recordId: model.recordId,
                         name: model.communicantFullName,
                         bookRef: model.referenceDisplay,
-                        dateString: 'Communion: ${model.dateOfCommunion.toIso8601String().substring(0, 10)}',
+                        dateString:
+                        'Communion: ${model.dateOfCommunion.toIso8601String().substring(0, 10)}',
                         parentage: parents,
                         sponsors: 'Baptism Parish: ${model.baptismParish}',
                         marginalNotation: model.remarks,
@@ -454,7 +483,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                     .limit(15);
 
                                 return (response as List).map((row) {
-                                        final model = MatrimonyRecordModel.fromMap(row as Map<String, dynamic>);
+                                        final model =
+                                        MatrimonyRecordModel.fromMap(row as Map<String, dynamic>);
                                         return _mapMatrimonyResult(model);
                                 }).toList();
                         } catch (_) {
@@ -474,7 +504,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ''',
                                 ['%$q%', '%$q%', '%$q%', '%$q%', '%$q%', '%$q%'],
                         );
-                        return rows.map((r) => _mapMatrimonyResult(MatrimonyRecordModel.fromMap(r))).toList();
+                        return rows
+                            .map((r) => _mapMatrimonyResult(MatrimonyRecordModel.fromMap(r)))
+                            .toList();
                 }
 
                 return [];
@@ -486,9 +518,12 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         recordId: model.recordId,
                         name: '${model.groomFullName}  &  ${model.brideFullName}',
                         bookRef: model.bookReference,
-                        dateString: 'Marriage: ${model.dateOfMarriage.toIso8601String().substring(0, 10)}',
-                        parentage: 'Groom (${model.groomFatherLastName}) & Bride (${model.brideFatherLastName})',
-                        sponsors: 'Primary Sponsors: ${model.sponsor1FirstName} ${model.sponsor1LastName} & ${model.sponsor2FirstName} ${model.sponsor2LastName}',
+                        dateString:
+                        'Marriage: ${model.dateOfMarriage.toIso8601String().substring(0, 10)}',
+                        parentage:
+                        'Groom (${model.groomFatherLastName}) & Bride (${model.brideFatherLastName})',
+                        sponsors:
+                        'Primary Sponsors: ${model.sponsor1FirstName} ${model.sponsor1LastName} & ${model.sponsor2FirstName} ${model.sponsor2LastName}',
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFF9D174D),
                         surfaceColor: const Color(0xFFFCE7F3),
@@ -531,7 +566,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ''',
                                 ['%$q%', '%$q%', '%$q%', '%$q%', '%$q%'],
                         );
-                        return rows.map((r) => _mapDeathResult(DeathRecordModel.fromMap(r))).toList();
+                        return rows
+                            .map((r) => _mapDeathResult(DeathRecordModel.fromMap(r)))
+                            .toList();
                 }
 
                 return [];
@@ -546,9 +583,11 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         recordId: model.recordId,
                         name: model.deceasedFullName,
                         bookRef: model.bookReference,
-                        dateString: 'Burial: ${model.dateOfBurial.toIso8601String().substring(0, 10)}',
+                        dateString:
+                        'Burial: ${model.dateOfBurial.toIso8601String().substring(0, 10)}',
                         parentage: spouseOrParents,
-                        sponsors: 'Cemetery: ${model.placeOfBurial} • Service: ${model.liturgicalService}',
+                        sponsors:
+                        'Cemetery: ${model.placeOfBurial} • Service: ${model.liturgicalService}',
                         marginalNotation: model.remarks,
                         themeColor: const Color(0xFF6B21A8),
                         surfaceColor: const Color(0xFFF3E8FF),
@@ -571,7 +610,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                     .limit(15);
 
                                 return (response as List).map((row) {
-                                        final model = ConversionRecordModel.fromMap(row as Map<String, dynamic>);
+                                        final model =
+                                        ConversionRecordModel.fromMap(row as Map<String, dynamic>);
                                         return _mapConversionResult(model);
                                 }).toList();
                         } catch (_) {
@@ -591,7 +631,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
         ''',
                                 ['%$q%', '%$q%', '%$q%'],
                         );
-                        return rows.map((r) => _mapConversionResult(ConversionRecordModel.fromMap(r))).toList();
+                        return rows
+                            .map((r) =>
+                            _mapConversionResult(ConversionRecordModel.fromMap(r)))
+                            .toList();
                 }
 
                 return [];
@@ -603,7 +646,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         recordId: model.recordId,
                         name: model.convertFullName,
                         bookRef: model.bookReference,
-                        dateString: 'Reception: ${model.dateOfReception.toIso8601String().substring(0, 10)}',
+                        dateString:
+                        'Reception: ${model.dateOfReception.toIso8601String().substring(0, 10)}',
                         parentage: 'Parents: ${model.fatherFullName} & ${model.motherFullName}',
                         sponsors: 'Witness: ${model.witness1FullName}',
                         marginalNotation: model.remarks,
@@ -623,7 +667,11 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 var list = List<UniversalRecordResult>.from(_searchResults);
 
                 if (_selectedSacramentFilter != 'All') {
-                        list = list.where((s) => s.sacramentName.toLowerCase() == _selectedSacramentFilter.toLowerCase()).toList();
+                        list = list
+                            .where((s) =>
+                        s.sacramentName.toLowerCase() ==
+                            _selectedSacramentFilter.toLowerCase())
+                            .toList();
                 }
 
                 _applySorting(list);
@@ -786,7 +834,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 ],
                                                                         ),
                                                                         const Divider(height: 14),
-
                                                                         Text(
                                                                                 'Sort Sequence',
                                                                                 style: TextStyle(
@@ -803,11 +850,16 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                         value: _sortBy,
                                                                                                         isExpanded: true,
                                                                                                         decoration: InputDecoration(
-                                                                                                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                                                                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                                                                                contentPadding: const EdgeInsets.symmetric(
+                                                                                                                    horizontal: 12, vertical: 10),
+                                                                                                                border: OutlineInputBorder(
+                                                                                                                    borderRadius: BorderRadius.circular(10)),
                                                                                                         ),
                                                                                                         items: _sortOptions
-                                                                                                            .map((opt) => DropdownMenuItem(value: opt, child: Text(opt, style: const TextStyle(fontSize: 13))))
+                                                                                                            .map((opt) => DropdownMenuItem(
+                                                                                                            value: opt,
+                                                                                                            child: Text(opt,
+                                                                                                                style: const TextStyle(fontSize: 13))))
                                                                                                             .toList(),
                                                                                                         onChanged: (val) {
                                                                                                                 if (val != null) {
@@ -821,10 +873,13 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                         IconButton(
                                                                                                 style: IconButton.styleFrom(
                                                                                                         backgroundColor: ParishColors.marianBlueSurface,
-                                                                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                                                                        shape: RoundedRectangleBorder(
+                                                                                                            borderRadius: BorderRadius.circular(10)),
                                                                                                 ),
                                                                                                 icon: Icon(
-                                                                                                        _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                                                                                                        _sortAscending
+                                                                                                            ? Icons.arrow_upward
+                                                                                                            : Icons.arrow_downward,
                                                                                                         size: 18,
                                                                                                         color: ParishColors.marianBlue,
                                                                                                 ),
@@ -836,7 +891,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 ],
                                                                         ),
                                                                         const SizedBox(height: 14),
-
                                                                         Text(
                                                                                 'Sacrament Register Filter',
                                                                                 style: TextStyle(
@@ -850,7 +904,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 scrollDirection: Axis.horizontal,
                                                                                 child: Row(
                                                                                         children: _sacramentFilterOptions.map((sacrament) {
-                                                                                                final isSelected = _selectedSacramentFilter == sacrament;
+                                                                                                final isSelected =
+                                                                                                    _selectedSacramentFilter == sacrament;
                                                                                                 return Padding(
                                                                                                         padding: const EdgeInsets.only(right: 6.0),
                                                                                                         child: ChoiceChip(
@@ -859,7 +914,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                 selectedColor: ParishColors.marianBlue,
                                                                                                                 backgroundColor: ParishColors.backgroundLight,
                                                                                                                 labelStyle: TextStyle(
-                                                                                                                        color: isSelected ? Colors.white : ParishColors.textDark,
+                                                                                                                        color: isSelected
+                                                                                                                            ? Colors.white
+                                                                                                                            : ParishColors.textDark,
                                                                                                                         fontWeight: FontWeight.bold,
                                                                                                                         fontSize: 11.5,
                                                                                                                 ),
@@ -876,7 +933,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 ),
                                                                         ),
                                                                         const SizedBox(height: 18),
-
                                                                         SizedBox(
                                                                                 width: double.infinity,
                                                                                 height: 46,
@@ -884,10 +940,13 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                         style: ElevatedButton.styleFrom(
                                                                                                 backgroundColor: ParishColors.marianBlue,
                                                                                                 foregroundColor: Colors.white,
-                                                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                                                                shape: RoundedRectangleBorder(
+                                                                                                    borderRadius: BorderRadius.circular(10)),
                                                                                         ),
                                                                                         onPressed: () => Navigator.pop(ctx),
-                                                                                        child: const Text('Apply & Close', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                                                                        child: const Text('Apply & Close',
+                                                                                            style: TextStyle(
+                                                                                                fontSize: 14, fontWeight: FontWeight.bold)),
                                                                                 ),
                                                                         ),
                                                                         const SizedBox(height: 12),
@@ -915,7 +974,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                         final isSyncing = RecordsSyncService.instance.isSyncInProgress;
 
                                         return AlertDialog(
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                                shape:
+                                                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                                                 backgroundColor: ParishColors.cardWhite,
                                                 title: Row(
                                                         children: [
@@ -925,7 +985,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 color: ParishColors.marianBlue,
                                                                                 shape: BoxShape.circle,
                                                                         ),
-                                                                        child: const Icon(Icons.cloud_download, color: Colors.white, size: 20),
+                                                                        child: const Icon(Icons.cloud_download,
+                                                                            color: Colors.white, size: 20),
                                                                 ),
                                                                 const SizedBox(width: 12),
                                                                 Expanded(
@@ -934,11 +995,15 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 children: [
                                                                                         Text(
                                                                                                 'Offline Records Pack',
-                                                                                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 17,
+                                                                                                    fontWeight: FontWeight.bold,
+                                                                                                    color: ParishColors.textDark),
                                                                                         ),
                                                                                         Text(
                                                                                                 'Cache all 6 registers, templates & seals locally',
-                                                                                                style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 11.5, color: ParishColors.textMuted),
                                                                                         ),
                                                                                 ],
                                                                         ),
@@ -948,14 +1013,16 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 content: SizedBox(
                                                         width: 480,
                                                         child: ValueListenableBuilder<RecordsSyncProgress?>(
-                                                                valueListenable: RecordsSyncService.downloadProgressNotifier,
+                                                                valueListenable:
+                                                                RecordsSyncService.downloadProgressNotifier,
                                                                 builder: (context, progress, _) {
                                                                         return Column(
                                                                                 mainAxisSize: MainAxisSize.min,
                                                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                                                 children: [
                                                                                         ValueListenableBuilder<DateTime?>(
-                                                                                                valueListenable: RecordsSyncService.lastSyncedAtNotifier,
+                                                                                                valueListenable:
+                                                                                                RecordsSyncService.lastSyncedAtNotifier,
                                                                                                 builder: (context, lastSync, _) {
                                                                                                         final lastSyncText = lastSync != null
                                                                                                             ? '${lastSync.toLocal().toString().substring(0, 16)}'
@@ -965,16 +1032,22 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                 decoration: BoxDecoration(
                                                                                                                         color: ParishColors.marianBlue.withOpacity(0.06),
                                                                                                                         borderRadius: BorderRadius.circular(10),
-                                                                                                                        border: Border.all(color: ParishColors.marianBlue.withOpacity(0.2)),
+                                                                                                                        border: Border.all(
+                                                                                                                            color: ParishColors.marianBlue
+                                                                                                                                .withOpacity(0.2)),
                                                                                                                 ),
                                                                                                                 child: Row(
                                                                                                                         children: [
-                                                                                                                                const Icon(Icons.info_outline, size: 18, color: ParishColors.marianBlue),
+                                                                                                                                const Icon(Icons.info_outline,
+                                                                                                                                    size: 18, color: ParishColors.marianBlue),
                                                                                                                                 const SizedBox(width: 10),
                                                                                                                                 Expanded(
                                                                                                                                         child: Text(
                                                                                                                                                 'Last offline pack update: $lastSyncText',
-                                                                                                                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+                                                                                                                                                style: TextStyle(
+                                                                                                                                                    fontSize: 12,
+                                                                                                                                                    fontWeight: FontWeight.w600,
+                                                                                                                                                    color: ParishColors.textDark),
                                                                                                                                         ),
                                                                                                                                 ),
                                                                                                                         ],
@@ -983,21 +1056,25 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 },
                                                                                         ),
                                                                                         const SizedBox(height: 14),
-
                                                                                         Text(
                                                                                                 'Downloading the offline pack pulls all canonical registers, active/custom certificate templates, background frames, seals, and typography into your device\'s SQLite database. You can operate freely in archives and vaults without internet.',
-                                                                                                style: TextStyle(fontSize: 12.5, color: ParishColors.textDark.withOpacity(0.85), height: 1.4),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 12.5,
+                                                                                                    color: ParishColors.textDark.withOpacity(0.85),
+                                                                                                    height: 1.4),
                                                                                         ),
                                                                                         const SizedBox(height: 14),
-
                                                                                         if (progress != null) ...[
                                                                                                 ClipRRect(
                                                                                                         borderRadius: BorderRadius.circular(6),
                                                                                                         child: LinearProgressIndicator(
-                                                                                                                value: progress.progressFraction > 0 ? progress.progressFraction : null,
+                                                                                                                value: progress.progressFraction > 0
+                                                                                                                    ? progress.progressFraction
+                                                                                                                    : null,
                                                                                                                 minHeight: 8,
                                                                                                                 backgroundColor: Colors.grey.shade200,
-                                                                                                                valueColor: const AlwaysStoppedAnimation<Color>(ParishColors.marianBlue),
+                                                                                                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                                                                                                    ParishColors.marianBlue),
                                                                                                         ),
                                                                                                 ),
                                                                                                 const SizedBox(height: 8),
@@ -1007,13 +1084,19 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                 Expanded(
                                                                                                                         child: Text(
                                                                                                                                 progress.currentTableName,
-                                                                                                                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                                                                                                                                style: const TextStyle(
+                                                                                                                                    fontSize: 11.5,
+                                                                                                                                    fontWeight: FontWeight.bold,
+                                                                                                                                    color: ParishColors.marianBlue),
                                                                                                                                 overflow: TextOverflow.ellipsis,
                                                                                                                         ),
                                                                                                                 ),
                                                                                                                 Text(
                                                                                                                         '${(progress.progressFraction * 100).toInt()}%',
-                                                                                                                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                                                                                                                        style: TextStyle(
+                                                                                                                            fontSize: 11.5,
+                                                                                                                            fontWeight: FontWeight.bold,
+                                                                                                                            color: ParishColors.textMuted),
                                                                                                                 ),
                                                                                                         ],
                                                                                                 ),
@@ -1021,11 +1104,14 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 CheckboxListTile(
                                                                                                         contentPadding: EdgeInsets.zero,
                                                                                                         dense: true,
-                                                                                                        title: const Text('Force clean wipe and full re-download', style: TextStyle(fontSize: 12.5)),
+                                                                                                        title: const Text(
+                                                                                                            'Force clean wipe and full re-download',
+                                                                                                            style: TextStyle(fontSize: 12.5)),
                                                                                                         value: forceWipe,
                                                                                                         onChanged: isSyncing
                                                                                                             ? null
-                                                                                                            : (val) => setModalState(() => forceWipe = val ?? false),
+                                                                                                            : (val) =>
+                                                                                                            setModalState(() => forceWipe = val ?? false),
                                                                                                         controlAffinity: ListTileControlAffinity.leading,
                                                                                                 ),
                                                                                         ],
@@ -1037,27 +1123,31 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 actions: [
                                                         TextButton(
                                                                 onPressed: isSyncing ? null : () => Navigator.pop(ctx),
-                                                                child: Text('Close', style: TextStyle(color: ParishColors.textMuted)),
+                                                                child: Text('Close',
+                                                                    style: TextStyle(color: ParishColors.textMuted)),
                                                         ),
                                                         ElevatedButton.icon(
                                                                 style: ElevatedButton.styleFrom(
                                                                         backgroundColor: ParishColors.marianBlue,
                                                                         foregroundColor: Colors.white,
-                                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                                        shape: RoundedRectangleBorder(
+                                                                            borderRadius: BorderRadius.circular(10)),
                                                                 ),
                                                                 onPressed: isSyncing
                                                                     ? null
                                                                     : () async {
                                                                         setModalState(() {});
                                                                         try {
-                                                                                await RecordsSyncService.instance.downloadAllOfflineResources(
+                                                                                await RecordsSyncService.instance
+                                                                                    .downloadAllOfflineResources(
                                                                                         forceWipe: forceWipe,
                                                                                 );
                                                                                 _loadSummaryStats();
                                                                                 if (context.mounted) {
                                                                                         ScaffoldMessenger.of(context).showSnackBar(
                                                                                                 const SnackBar(
-                                                                                                        content: Text('Offline pack successfully synchronized to local SQLite!'),
+                                                                                                        content: Text(
+                                                                                                            'Offline pack successfully synchronized to local SQLite!'),
                                                                                                         backgroundColor: ParishColors.oliveGreen,
                                                                                                 ),
                                                                                         );
@@ -1075,7 +1165,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                         }
                                                                 },
                                                                 icon: const Icon(Icons.download, size: 16),
-                                                                label: const Text('Download Offline Pack', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                                                label: const Text('Download Offline Pack',
+                                                                    style:
+                                                                    TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                                         ),
                                                 ],
                                         );
@@ -1101,7 +1193,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                         child: Container(
                                                 decoration: BoxDecoration(
                                                         color: ParishColors.cardWhite,
-                                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                                                        borderRadius:
+                                                        const BorderRadius.vertical(top: Radius.circular(20)),
                                                 ),
                                                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                                                 child: Column(
@@ -1147,7 +1240,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                         ),
                                                                                 ),
                                                                                 IconButton(
-                                                                                        icon: Icon(Icons.close, color: ParishColors.textMuted, size: 22),
+                                                                                        icon: Icon(Icons.close,
+                                                                                            color: ParishColors.textMuted, size: 22),
                                                                                         padding: EdgeInsets.zero,
                                                                                         constraints: const BoxConstraints(),
                                                                                         tooltip: 'Close',
@@ -1159,67 +1253,97 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
                                                                         title: 'Baptism Register',
-                                                                        subtitle: 'Liber Baptismorum • Baptisms, lineage & godparents',
+                                                                        subtitle:
+                                                                        'Liber Baptismorum • Baptisms, lineage & godparents',
                                                                         icon: Icons.water_drop_outlined,
                                                                         color: const Color(0xFF164E87),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
-                                                                                Navigator.push(context, MaterialPageRoute(builder: (_) => BaptismManualEntryPage(onRecordSaved: _loadSummaryStats)));
+                                                                                Navigator.push(
+                                                                                    context,
+                                                                                    MaterialPageRoute(
+                                                                                        builder: (_) => BaptismManualEntryPage(
+                                                                                            onRecordSaved: _loadSummaryStats)));
                                                                         },
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
                                                                         title: 'Confirmation Register',
-                                                                        subtitle: 'Liber Confirmatorum • Confirmands & sponsors',
+                                                                        subtitle:
+                                                                        'Liber Confirmatorum • Confirmands & sponsors',
                                                                         icon: Icons.local_fire_department_outlined,
                                                                         color: const Color(0xFFB91C1C),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
-                                                                                Navigator.push(context, MaterialPageRoute(builder: (_) => ConfirmationManualEntryPage(onRecordSaved: _loadSummaryStats)));
+                                                                                Navigator.push(
+                                                                                    context,
+                                                                                    MaterialPageRoute(
+                                                                                        builder: (_) => ConfirmationManualEntryPage(
+                                                                                            onRecordSaved: _loadSummaryStats)));
                                                                         },
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
                                                                         title: 'First Communion Register',
-                                                                        subtitle: 'Liber Primae Communionis • Annual batch registries',
+                                                                        subtitle:
+                                                                        'Liber Primae Communionis • Annual batch registries',
                                                                         icon: Icons.restaurant,
                                                                         color: const Color(0xFFD49B18),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
-                                                                                Navigator.push(context, MaterialPageRoute(builder: (_) => FirstCommunionManualEntryPage(onRecordSaved: _loadSummaryStats)));
+                                                                                Navigator.push(
+                                                                                    context,
+                                                                                    MaterialPageRoute(
+                                                                                        builder: (_) => FirstCommunionManualEntryPage(
+                                                                                            onRecordSaved: _loadSummaryStats)));
                                                                         },
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
                                                                         title: 'Matrimony Register',
-                                                                        subtitle: 'Liber Matrimoniorum • Spouses, license & banns',
+                                                                        subtitle:
+                                                                        'Liber Matrimoniorum • Spouses, license & banns',
                                                                         icon: Icons.favorite_border,
                                                                         color: const Color(0xFF9D174D),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
-                                                                                Navigator.push(context, MaterialPageRoute(builder: (_) => MatrimonyManualEntryPage(onRecordSaved: _loadSummaryStats)));
+                                                                                Navigator.push(
+                                                                                    context,
+                                                                                    MaterialPageRoute(
+                                                                                        builder: (_) => MatrimonyManualEntryPage(
+                                                                                            onRecordSaved: _loadSummaryStats)));
                                                                         },
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
                                                                         title: 'Death & Burial Register',
-                                                                        subtitle: 'Liber Defunctorum • Deceased, burial & rites',
+                                                                        subtitle:
+                                                                        'Liber Defunctorum • Deceased, burial & rites',
                                                                         icon: Icons.church_outlined,
                                                                         color: const Color(0xFF6B21A8),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
-                                                                                Navigator.push(context, MaterialPageRoute(builder: (_) => DeathManualEntryPage(onRecordSaved: _loadSummaryStats)));
+                                                                                Navigator.push(
+                                                                                    context,
+                                                                                    MaterialPageRoute(
+                                                                                        builder: (_) => DeathManualEntryPage(
+                                                                                            onRecordSaved: _loadSummaryStats)));
                                                                         },
                                                                 ),
                                                                 _buildSacramentPickerTile(
                                                                         ctx: ctx,
                                                                         title: 'Conversion Register',
-                                                                        subtitle: 'Liber Conversorum • Reception into full communion',
+                                                                        subtitle:
+                                                                        'Liber Conversorum • Reception into full communion',
                                                                         icon: Icons.eco_outlined,
                                                                         color: const Color(0xFF2D6A4F),
                                                                         onTap: () {
                                                                                 Navigator.pop(ctx);
-                                                                                Navigator.push(context, MaterialPageRoute(builder: (_) => ConversionManualEntryPage(onRecordSaved: _loadSummaryStats)));
+                                                                                Navigator.push(
+                                                                                    context,
+                                                                                    MaterialPageRoute(
+                                                                                        builder: (_) => ConversionManualEntryPage(
+                                                                                            onRecordSaved: _loadSummaryStats)));
                                                                         },
                                                                 ),
                                                         ],
@@ -1256,7 +1380,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                         children: [
                                                                 Container(
                                                                         padding: const EdgeInsets.all(8),
-                                                                        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                                                                        decoration:
+                                                                        BoxDecoration(color: color, shape: BoxShape.circle),
                                                                         child: Icon(icon, color: Colors.white, size: 18),
                                                                 ),
                                                                 const SizedBox(width: 14),
@@ -1266,12 +1391,16 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 children: [
                                                                                         Text(
                                                                                                 title,
-                                                                                                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 13.5,
+                                                                                                    fontWeight: FontWeight.bold,
+                                                                                                    color: ParishColors.textDark),
                                                                                         ),
                                                                                         const SizedBox(height: 2),
                                                                                         Text(
                                                                                                 subtitle,
-                                                                                                style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 11.5, color: ParishColors.textMuted),
                                                                                         ),
                                                                                 ],
                                                                         ),
@@ -1319,7 +1448,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         onTap: () {
                                 Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => const CertificateTemplateManagementPage()),
+                                        MaterialPageRoute(
+                                            builder: (_) => const CertificateTemplateManagementPage()),
                                 );
                         },
                 );
@@ -1361,10 +1491,14 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 Color? titleColor,
                 required VoidCallback onTap,
         }) {
-                final bgColor = isSolidBlue ? ParishColors.marianBlue : ParishColors.cardWhite;
-                final primaryTextColor = isSolidBlue ? Colors.white : (titleColor ?? ParishColors.textDark);
-                final secondaryTextColor = isSolidBlue ? Colors.white70 : ParishColors.textMuted;
-                final resolvedIconColor = isSolidBlue ? Colors.white : (iconColor ?? ParishColors.marianBlue);
+                final bgColor =
+                isSolidBlue ? ParishColors.marianBlue : ParishColors.cardWhite;
+                final primaryTextColor =
+                isSolidBlue ? Colors.white : (titleColor ?? ParishColors.textDark);
+                final secondaryTextColor =
+                isSolidBlue ? Colors.white70 : ParishColors.textMuted;
+                final resolvedIconColor =
+                isSolidBlue ? Colors.white : (iconColor ?? ParishColors.marianBlue);
 
                 return InkWell(
                         onTap: onTap,
@@ -1376,7 +1510,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                         color: bgColor,
                                         borderRadius: BorderRadius.circular(14),
                                         border: Border.all(
-                                                color: isSolidBlue ? Colors.transparent : (borderColor ?? ParishColors.borderGrey),
+                                                color: isSolidBlue
+                                                    ? Colors.transparent
+                                                    : (borderColor ?? ParishColors.borderGrey),
                                                 width: 1.4,
                                         ),
                                         boxShadow: [
@@ -1393,7 +1529,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                         width: 44,
                                                         height: 44,
                                                         decoration: BoxDecoration(
-                                                                color: isSolidBlue ? Colors.white.withOpacity(0.18) : (iconColor?.withOpacity(0.12) ?? ParishColors.marianBlueSurface),
+                                                                color: isSolidBlue
+                                                                    ? Colors.white.withOpacity(0.18)
+                                                                    : (iconColor?.withOpacity(0.12) ??
+                                                                    ParishColors.marianBlueSurface),
                                                                 borderRadius: BorderRadius.circular(10),
                                                         ),
                                                         child: Icon(icon, color: resolvedIconColor, size: 22),
@@ -1450,7 +1589,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                         'images/jp2-bg.png',
                                                         fit: BoxFit.cover,
                                                         alignment: const Alignment(0.35, -0.55),
-                                                        errorBuilder: (_, __, ___) => Container(color: ParishColors.marianBlueSurface),
+                                                        errorBuilder: (_, __, ___) =>
+                                                            Container(color: ParishColors.marianBlueSurface),
                                                 ),
                                         ),
                                         // Left-to-right fade so the title stays readable
@@ -1485,7 +1625,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                         ),
                                         // Content
                                         Padding(
-                                                padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 16 : 22, isMobile ? 12 : 16, 14),
+                                                padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 16 : 22,
+                                                    isMobile ? 12 : 16, 14),
                                                 child: Column(
                                                         crossAxisAlignment: CrossAxisAlignment.start,
                                                         children: [
@@ -1509,7 +1650,10 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                 'Sacramental Registers',
                                                                                                                 style: TextStyle(
                                                                                                                         fontFamily: 'Georgia',
-                                                                                                                        fontFamilyFallback: const ['Times New Roman', 'serif'],
+                                                                                                                        fontFamilyFallback: const [
+                                                                                                                                'Times New Roman',
+                                                                                                                                'serif'
+                                                                                                                        ],
                                                                                                                         fontSize: isMobile ? 26 : 38,
                                                                                                                         fontWeight: FontWeight.w800,
                                                                                                                         height: 1.1,
@@ -1541,7 +1685,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
-
         Widget _buildOverflowMenu() {
                 return Container(
                         decoration: BoxDecoration(
@@ -1550,17 +1693,30 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 border: Border.all(color: ParishColors.borderGrey),
                         ),
                         child: PopupMenuButton<String>(
-                                icon: Icon(Icons.more_vert, color: ParishColors.textMuted, size: 22),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                icon:
+                                Icon(Icons.more_vert, color: ParishColors.textMuted, size: 22),
+                                shape:
+                                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 color: ParishColors.cardWhite,
-                                onSelected: (val) {
+                                onSelected: (val) async {
                                         if (val == 'download_pack') {
                                                 _showOfflinePackModal(context);
                                         } else if (val == 'pabuklat') {
                                                 showPabuklatRequestsModal(context);
                                         } else if (val == 'refresh') {
-                                                _loadSummaryStats();
-                                                RecordsSyncService.instance.checkConnectivity();
+                                                final loading = SacramentalLoadingBarrierController.show(
+                                                        context,
+                                                        initialMessage: 'Refreshing sacramental registers...',
+                                                        accentColor: ParishColors.marianBlue,
+                                                        icon: Icons.refresh,
+                                                );
+                                                try {
+                                                        await _loadSummaryStats();
+                                                        await RecordsSyncService.instance.checkConnectivity();
+                                                        await RecordsSyncService.instance.updatePendingCount();
+                                                } finally {
+                                                        loading.dismiss();
+                                                }
                                         }
                                 },
                                 itemBuilder: (ctx) => [
@@ -1568,7 +1724,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 value: 'download_pack',
                                                 child: Row(
                                                         children: [
-                                                                Icon(Icons.cloud_download_outlined, size: 18, color: ParishColors.marianBlue),
+                                                                Icon(Icons.cloud_download_outlined,
+                                                                    size: 18, color: ParishColors.marianBlue),
                                                                 SizedBox(width: 10),
                                                                 Text('Download Offline Pack', style: TextStyle(fontSize: 13)),
                                                         ],
@@ -1578,9 +1735,11 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 value: 'pabuklat',
                                                 child: Row(
                                                         children: [
-                                                                Icon(Icons.folder_shared_outlined, size: 18, color: ParishColors.oliveGreen),
+                                                                Icon(Icons.folder_shared_outlined,
+                                                                    size: 18, color: ParishColors.oliveGreen),
                                                                 SizedBox(width: 10),
-                                                                Text('Pabuklat Search Requests', style: TextStyle(fontSize: 13)),
+                                                                Text('Pabuklat Search Requests',
+                                                                    style: TextStyle(fontSize: 13)),
                                                         ],
                                                 ),
                                         ),
@@ -1598,7 +1757,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         ),
                 );
         }
-
 
         Widget _buildSyncStatusBar(bool isMobile) {
                 return ValueListenableBuilder<RecordsSyncStatus>(
@@ -1628,7 +1786,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                         pillColor = Colors.orange.shade50;
                                                         textColor = Colors.orange.shade900;
                                                         statusIcon = Icons.upload_file;
-                                                        statusLabel = 'Online • $pendingCount record(s) queued (Tap to Sync Now)';
+                                                        statusLabel =
+                                                        'Online • $pendingCount record(s) queued (Tap to Sync Now)';
                                                 } else {
                                                         pillColor = const Color(0xFFE8F5E9);
                                                         textColor = const Color(0xFF2E7D32);
@@ -1636,10 +1795,28 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                         statusLabel = 'Online • All records synchronized';
                                                 }
 
-                                                final canSync = pendingCount > 0 && status != RecordsSyncStatus.syncing;
+                                                final canSync =
+                                                    pendingCount > 0 && status != RecordsSyncStatus.syncing;
 
                                                 return InkWell(
-                                                        onTap: canSync ? () => RecordsSyncService.instance.syncPendingChanges() : null,
+                                                        onTap: canSync
+                                                            ? () async {
+                                                                final loading =
+                                                                SacramentalLoadingBarrierController.show(
+                                                                        context,
+                                                                        initialMessage:
+                                                                        'Synchronizing records with Supabase cloud...',
+                                                                        accentColor: ParishColors.marianBlue,
+                                                                        icon: Icons.sync,
+                                                                );
+                                                                try {
+                                                                        await RecordsSyncService.instance.syncPendingChanges();
+                                                                        await _loadSummaryStats();
+                                                                } finally {
+                                                                        loading.dismiss();
+                                                                }
+                                                        }
+                                                            : null,
                                                         borderRadius: BorderRadius.circular(12),
                                                         child: Container(
                                                                 width: double.infinity,
@@ -1664,22 +1841,28 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 Expanded(
                                                                                         child: Text(
                                                                                                 statusLabel,
-                                                                                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: textColor),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 12.5,
+                                                                                                    fontWeight: FontWeight.w700,
+                                                                                                    color: textColor),
                                                                                                 overflow: TextOverflow.ellipsis,
                                                                                         ),
                                                                                 ),
                                                                                 if (!isMobile)
                                                                                         ValueListenableBuilder<DateTime?>(
-                                                                                                valueListenable: RecordsSyncService.lastSyncedAtNotifier,
+                                                                                                valueListenable:
+                                                                                                RecordsSyncService.lastSyncedAtNotifier,
                                                                                                 builder: (context, lastSync, _) {
                                                                                                         final text = lastSync != null
-                                                                                                            ? lastSync.toLocal().toString().substring(0, 16)
+                                                                                                            ? '${lastSync.toLocal().toString().substring(0, 16)}'
                                                                                                             : 'Never';
                                                                                                         return Padding(
                                                                                                                 padding: const EdgeInsets.only(left: 10),
                                                                                                                 child: Text(
                                                                                                                         'Last sync: $text',
-                                                                                                                        style: TextStyle(fontSize: 11.5, color: textColor.withOpacity(0.85)),
+                                                                                                                        style: TextStyle(
+                                                                                                                            fontSize: 11.5,
+                                                                                                                            color: textColor.withOpacity(0.85)),
                                                                                                                 ),
                                                                                                         );
                                                                                                 },
@@ -1695,7 +1878,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         },
                 );
         }
-
 
         Widget _buildSearchAndFilterRow(bool isMobile, bool isSearchActive) {
                 return Row(
@@ -1718,19 +1900,22 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 ),
                                                 child: Row(
                                                         children: [
-                                                                const Icon(Icons.search, size: 21, color: ParishColors.marianBlue),
+                                                                const Icon(Icons.search,
+                                                                    size: 21, color: ParishColors.marianBlue),
                                                                 const SizedBox(width: 10),
                                                                 Expanded(
                                                                         child: TextField(
                                                                                 controller: _searchController,
                                                                                 focusNode: _searchFocusNode,
                                                                                 onChanged: _onSearchChanged,
-                                                                                style: TextStyle(fontSize: 14, color: ParishColors.textDark),
+                                                                                style:
+                                                                                TextStyle(fontSize: 14, color: ParishColors.textDark),
                                                                                 decoration: InputDecoration(
                                                                                         hintText: isMobile
                                                                                             ? 'Search name, parent, book or ID...'
                                                                                             : 'Search every register by name, parent, book or ID...',
-                                                                                        hintStyle: TextStyle(fontSize: 13, color: ParishColors.textMuted),
+                                                                                        hintStyle: TextStyle(
+                                                                                            fontSize: 13, color: ParishColors.textMuted),
                                                                                         border: InputBorder.none,
                                                                                         isDense: true,
                                                                                 ),
@@ -1742,7 +1927,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 child: SizedBox(
                                                                                         width: 16,
                                                                                         height: 16,
-                                                                                        child: CircularProgressIndicator(strokeWidth: 2, color: ParishColors.marianBlue),
+                                                                                        child: CircularProgressIndicator(
+                                                                                            strokeWidth: 2, color: ParishColors.marianBlue),
                                                                                 ),
                                                                         )
                                                                 else if (isSearchActive)
@@ -1771,10 +1957,14 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                 height: 46,
                                                 padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
                                                 decoration: BoxDecoration(
-                                                        color: _hasActiveFilters ? ParishColors.marianBlueSurface : ParishColors.cardWhite,
+                                                        color: _hasActiveFilters
+                                                            ? ParishColors.marianBlueSurface
+                                                            : ParishColors.cardWhite,
                                                         borderRadius: BorderRadius.circular(12),
                                                         border: Border.all(
-                                                                color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.borderGrey,
+                                                                color: _hasActiveFilters
+                                                                    ? ParishColors.marianBlue
+                                                                    : ParishColors.borderGrey,
                                                         ),
                                                 ),
                                                 child: Row(
@@ -1783,16 +1973,22 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 Icon(
                                                                         Icons.tune,
                                                                         size: 18,
-                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textDark,
+                                                                        color: _hasActiveFilters
+                                                                            ? ParishColors.marianBlue
+                                                                            : ParishColors.textDark,
                                                                 ),
                                                                 if (!isMobile || _hasActiveFilters) ...[
                                                                         const SizedBox(width: 8),
                                                                         Text(
-                                                                                _hasActiveFilters ? 'Filter ($_activeFilterCount)' : 'Filter',
+                                                                                _hasActiveFilters
+                                                                                    ? 'Filter ($_activeFilterCount)'
+                                                                                    : 'Filter',
                                                                                 style: TextStyle(
                                                                                         fontSize: 13,
                                                                                         fontWeight: FontWeight.w600,
-                                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textDark,
+                                                                                        color: _hasActiveFilters
+                                                                                            ? ParishColors.marianBlue
+                                                                                            : ParishColors.textDark,
                                                                                 ),
                                                                         ),
                                                                 ],
@@ -1800,7 +1996,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 Icon(
                                                                         Icons.expand_more,
                                                                         size: 18,
-                                                                        color: _hasActiveFilters ? ParishColors.marianBlue : ParishColors.textMuted,
+                                                                        color: _hasActiveFilters
+                                                                            ? ParishColors.marianBlue
+                                                                            : ParishColors.textMuted,
                                                                 ),
                                                         ],
                                                 ),
@@ -1809,7 +2007,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         ],
                 );
         }
-
 
         Widget _buildSectionHeader() {
                 return Row(
@@ -1858,11 +2055,15 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                         child: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                        Icon(Icons.menu_book_outlined, size: 16, color: ParishColors.textDark),
+                                                        Icon(Icons.menu_book_outlined,
+                                                            size: 16, color: ParishColors.textDark),
                                                         const SizedBox(width: 6),
                                                         Text(
                                                                 '6 registers',
-                                                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ParishColors.textDark),
+                                                                style: TextStyle(
+                                                                    fontSize: 12.5,
+                                                                    fontWeight: FontWeight.w600,
+                                                                    color: ParishColors.textDark),
                                                         ),
                                                 ],
                                         ),
@@ -1870,7 +2071,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                         ],
                 );
         }
-
 
         Widget _buildSkeletonLoading() {
                 return AnimatedBuilder(
@@ -1886,7 +2086,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 decoration: BoxDecoration(
                                                                         color: ParishColors.cardWhite,
                                                                         borderRadius: BorderRadius.circular(14),
-                                                                        border: Border.all(color: ParishColors.borderGrey.withOpacity(0.4)),
+                                                                        border: Border.all(
+                                                                            color: ParishColors.borderGrey.withOpacity(0.4)),
                                                                 ),
                                                                 padding: const EdgeInsets.all(14),
                                                                 child: Row(
@@ -1950,7 +2151,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
 
         @override
         Widget build(BuildContext context) {
-                final textDarkColor = ParishColors.textDark;
                 final cardWhiteColor = ParishColors.cardWhite;
                 final borderGreyColor = ParishColors.borderGrey;
 
@@ -2034,10 +2234,15 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                                         selectedColor: Colors.white,
                                                                                                                         fillColor: ParishColors.marianBlue,
                                                                                                                         color: ParishColors.textMuted,
-                                                                                                                        constraints: const BoxConstraints(minHeight: 32, minWidth: 38),
+                                                                                                                        constraints: const BoxConstraints(
+                                                                                                                            minHeight: 32, minWidth: 38),
                                                                                                                         children: const [
-                                                                                                                                Tooltip(message: 'Card View', child: Icon(Icons.grid_view, size: 16)),
-                                                                                                                                Tooltip(message: 'Table View', child: Icon(Icons.table_chart, size: 16)),
+                                                                                                                                Tooltip(
+                                                                                                                                    message: 'Card View',
+                                                                                                                                    child: Icon(Icons.grid_view, size: 16)),
+                                                                                                                                Tooltip(
+                                                                                                                                    message: 'Table View',
+                                                                                                                                    child: Icon(Icons.table_chart, size: 16)),
                                                                                                                         ],
                                                                                                                 ),
                                                                                                         ),
@@ -2081,7 +2286,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 sacramentName: 'Baptism',
                                 onQuickAdd: () => Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => BaptismManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        MaterialPageRoute(
+                                            builder: (_) => BaptismManualEntryPage(
+                                                onRecordSaved: _loadSummaryStats)),
                                 ),
                         ),
                         _buildRegisterCard(
@@ -2095,7 +2302,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 sacramentName: 'Confirmation',
                                 onQuickAdd: () => Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => ConfirmationManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        MaterialPageRoute(
+                                            builder: (_) => ConfirmationManualEntryPage(
+                                                onRecordSaved: _loadSummaryStats)),
                                 ),
                         ),
                         _buildRegisterCard(
@@ -2109,7 +2318,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 sacramentName: 'First Communion',
                                 onQuickAdd: () => Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => FirstCommunionManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        MaterialPageRoute(
+                                            builder: (_) => FirstCommunionManualEntryPage(
+                                                onRecordSaved: _loadSummaryStats)),
                                 ),
                         ),
                         _buildRegisterCard(
@@ -2123,7 +2334,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 sacramentName: 'Matrimony',
                                 onQuickAdd: () => Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => MatrimonyManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        MaterialPageRoute(
+                                            builder: (_) => MatrimonyManualEntryPage(
+                                                onRecordSaved: _loadSummaryStats)),
                                 ),
                         ),
                         _buildRegisterCard(
@@ -2137,7 +2350,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 sacramentName: 'Death',
                                 onQuickAdd: () => Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => DeathManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                DeathManualEntryPage(onRecordSaved: _loadSummaryStats)),
                                 ),
                         ),
                         _buildRegisterCard(
@@ -2151,7 +2366,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 sacramentName: 'Conversion',
                                 onQuickAdd: () => Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => ConversionManualEntryPage(onRecordSaved: _loadSummaryStats)),
+                                        MaterialPageRoute(
+                                            builder: (_) => ConversionManualEntryPage(
+                                                onRecordSaved: _loadSummaryStats)),
                                 ),
                         ),
                 ];
@@ -2159,7 +2376,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 if (crossAxisCount == 1) {
                         return Column(
                                 children: registerCards
-                                    .map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: c))
+                                    .map((c) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12), child: c))
                                     .toList(),
                         );
                 }
@@ -2167,12 +2385,15 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 return LayoutBuilder(
                         builder: (context, gridConstraints) {
                                 final double itemWidth =
-                                    (gridConstraints.maxWidth - ((crossAxisCount - 1) * 16)) / crossAxisCount;
+                                    (gridConstraints.maxWidth - ((crossAxisCount - 1) * 16)) /
+                                        crossAxisCount;
 
                                 return Wrap(
                                         spacing: 16,
                                         runSpacing: 16,
-                                        children: registerCards.map((card) => SizedBox(width: itemWidth, child: card)).toList(),
+                                        children: registerCards
+                                            .map((card) => SizedBox(width: itemWidth, child: card))
+                                            .toList(),
                                 );
                         },
                 );
@@ -2241,9 +2462,11 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                         decoration: BoxDecoration(
                                                                                                 color: surfaceColor,
                                                                                                 borderRadius: BorderRadius.circular(12),
-                                                                                                border: Border.all(color: themeColor.withOpacity(0.25), width: 1.0),
+                                                                                                border: Border.all(
+                                                                                                    color: themeColor.withOpacity(0.25), width: 1.0),
                                                                                         ),
-                                                                                        child: Icon(icon, color: themeColor, size: compact ? 19 : 22),
+                                                                                        child: Icon(icon,
+                                                                                            color: themeColor, size: compact ? 19 : 22),
                                                                                 ),
                                                                                 Column(
                                                                                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -2259,7 +2482,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                 ),
                                                                                                 Text(
                                                                                                         'records',
-                                                                                                        style: TextStyle(fontSize: compact ? 10 : 11, color: textMuted),
+                                                                                                        style: TextStyle(
+                                                                                                            fontSize: compact ? 10 : 11, color: textMuted),
                                                                                                 ),
                                                                                         ],
                                                                                 ),
@@ -2312,11 +2536,13 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                                         ),
                                                                                                 ),
                                                                                                 const SizedBox(width: 4),
-                                                                                                Icon(Icons.arrow_forward, size: compact ? 12 : 14, color: themeColor),
+                                                                                                Icon(Icons.arrow_forward,
+                                                                                                    size: compact ? 12 : 14, color: themeColor),
                                                                                         ],
                                                                                 ),
                                                                                 IconButton(
-                                                                                        icon: Icon(Icons.add_circle_outline, color: themeColor, size: compact ? 19 : 22),
+                                                                                        icon: Icon(Icons.add_circle_outline,
+                                                                                            color: themeColor, size: compact ? 19 : 22),
                                                                                         padding: EdgeInsets.zero,
                                                                                         constraints: const BoxConstraints(),
                                                                                         tooltip: 'Encode $title Record',
@@ -2341,7 +2567,9 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 final totalItems = list.length;
                 final start = (_currentPage - 1) * _itemsPerPage;
                 final end = min(start + _itemsPerPage, totalItems);
-                final paged = (start >= totalItems) ? <UniversalRecordResult>[] : list.sublist(start, end);
+                final paged = (start >= totalItems)
+                    ? <UniversalRecordResult>[]
+                    : list.sublist(start, end);
 
                 if (list.isEmpty) {
                         return Container(
@@ -2354,12 +2582,16 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 ),
                                 child: Column(
                                         children: [
-                                                Icon(Icons.search_off_outlined, size: 44, color: ParishColors.textMuted),
+                                                Icon(Icons.search_off_outlined,
+                                                    size: 44, color: ParishColors.textMuted),
                                                 const SizedBox(height: 10),
                                                 Text(
                                                         'No canonical records match your search criteria.',
                                                         textAlign: TextAlign.center,
-                                                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                                                        style: TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: ParishColors.textDark),
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
@@ -2415,7 +2647,6 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                         child: Icon(item.icon, color: item.themeColor, size: 22),
                                                 ),
                                                 const SizedBox(width: 12),
-
                                                 Expanded(
                                                         child: Column(
                                                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2424,11 +2655,13 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                                                 children: [
                                                                                         Container(
-                                                                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                                                                padding: const EdgeInsets.symmetric(
+                                                                                                    horizontal: 7, vertical: 2),
                                                                                                 decoration: BoxDecoration(
                                                                                                         color: item.surfaceColor,
                                                                                                         borderRadius: BorderRadius.circular(5),
-                                                                                                        border: Border.all(color: item.themeColor.withOpacity(0.4)),
+                                                                                                        border: Border.all(
+                                                                                                            color: item.themeColor.withOpacity(0.4)),
                                                                                                 ),
                                                                                                 child: Text(
                                                                                                         item.sacramentName.toUpperCase(),
@@ -2442,38 +2675,51 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                         ),
                                                                                         Text(
                                                                                                 item.bookRef,
-                                                                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 11,
+                                                                                                    fontWeight: FontWeight.bold,
+                                                                                                    color: ParishColors.textMuted),
                                                                                         ),
                                                                                 ],
                                                                         ),
                                                                         const SizedBox(height: 5),
-
                                                                         Text(
                                                                                 item.name,
-                                                                                style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                                                                                style: TextStyle(
+                                                                                    fontSize: 15.5,
+                                                                                    fontWeight: FontWeight.bold,
+                                                                                    color: ParishColors.textDark),
                                                                         ),
                                                                         const SizedBox(height: 2),
-
                                                                         Text(
                                                                                 item.parentage,
-                                                                                style: TextStyle(fontSize: 12, color: ParishColors.textDark.withOpacity(0.85)),
+                                                                                style: TextStyle(
+                                                                                    fontSize: 12,
+                                                                                    color: ParishColors.textDark.withOpacity(0.85)),
                                                                                 maxLines: 1,
                                                                                 overflow: TextOverflow.ellipsis,
                                                                         ),
                                                                         const SizedBox(height: 4),
-
                                                                         Row(
                                                                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                                                 children: [
                                                                                         Text(
                                                                                                 item.dateString,
-                                                                                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: item.themeColor),
+                                                                                                style: TextStyle(
+                                                                                                    fontSize: 11.5,
+                                                                                                    fontWeight: FontWeight.w600,
+                                                                                                    color: item.themeColor),
                                                                                         ),
                                                                                         Row(
                                                                                                 children: [
-                                                                                                        Text('Inspect', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: item.themeColor)),
+                                                                                                        Text('Inspect',
+                                                                                                            style: TextStyle(
+                                                                                                                fontSize: 11,
+                                                                                                                fontWeight: FontWeight.bold,
+                                                                                                                color: item.themeColor)),
                                                                                                         const SizedBox(width: 2),
-                                                                                                        Icon(Icons.arrow_forward, size: 13, color: item.themeColor),
+                                                                                                        Icon(Icons.arrow_forward,
+                                                                                                            size: 13, color: item.themeColor),
                                                                                                 ],
                                                                                         ),
                                                                                 ],
@@ -2487,7 +2733,8 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                 );
         }
 
-        Widget _buildUniversalRecordsTableView(List<UniversalRecordResult> items, double availableWidth) {
+        Widget _buildUniversalRecordsTableView(
+            List<UniversalRecordResult> items, double availableWidth) {
                 return Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
@@ -2500,15 +2747,18 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 child: SingleChildScrollView(
                                         scrollDirection: Axis.horizontal,
                                         child: ConstrainedBox(
-                                                constraints: BoxConstraints(minWidth: max(availableWidth, 980)),
+                                                constraints:
+                                                BoxConstraints(minWidth: max(availableWidth, 980)),
                                                 child: DataTable(
-                                                        headingRowColor: WidgetStateProperty.all(ParishColors.marianBlueSurface),
-                                                        headingTextStyle: TextStyle(
+                                                        headingRowColor:
+                                                        WidgetStateProperty.all(ParishColors.marianBlueSurface),
+                                                        headingTextStyle: const TextStyle(
                                                                 fontWeight: FontWeight.bold,
                                                                 color: ParishColors.marianBlue,
                                                                 fontSize: 12.5,
                                                         ),
-                                                        dataTextStyle: TextStyle(fontSize: 12.5, color: ParishColors.textDark),
+                                                        dataTextStyle:
+                                                        TextStyle(fontSize: 12.5, color: ParishColors.textDark),
                                                         columnSpacing: 16,
                                                         horizontalMargin: 14,
                                                         columns: const [
@@ -2523,11 +2773,13 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                         rows: items.map((r) {
                                                                 return DataRow(cells: [
                                                                         DataCell(Container(
-                                                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                                                padding: const EdgeInsets.symmetric(
+                                                                                    horizontal: 6, vertical: 2),
                                                                                 decoration: BoxDecoration(
                                                                                         color: r.surfaceColor,
                                                                                         borderRadius: BorderRadius.circular(4),
-                                                                                        border: Border.all(color: r.themeColor.withOpacity(0.4)),
+                                                                                        border: Border.all(
+                                                                                            color: r.themeColor.withOpacity(0.4)),
                                                                                 ),
                                                                                 child: Text(
                                                                                         r.sacramentName.toUpperCase(),
@@ -2538,20 +2790,26 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                                         ),
                                                                                 ),
                                                                         )),
-                                                                        DataCell(Text(r.recordId, style: const TextStyle(fontWeight: FontWeight.bold))),
-                                                                        DataCell(Text(r.name, style: const TextStyle(fontWeight: FontWeight.bold))),
+                                                                        DataCell(Text(r.recordId,
+                                                                            style: const TextStyle(fontWeight: FontWeight.bold))),
+                                                                        DataCell(Text(r.name,
+                                                                            style: const TextStyle(fontWeight: FontWeight.bold))),
                                                                         DataCell(Text(r.bookRef)),
                                                                         DataCell(Text(r.dateString)),
                                                                         DataCell(ConstrainedBox(
                                                                                 constraints: const BoxConstraints(maxWidth: 220),
-                                                                                child: Text(r.parentage, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                                                                child: Text(r.parentage,
+                                                                                    maxLines: 1, overflow: TextOverflow.ellipsis),
                                                                         )),
                                                                         DataCell(
                                                                                 TextButton.icon(
-                                                                                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                                                                                        style: TextButton.styleFrom(
+                                                                                            visualDensity: VisualDensity.compact),
                                                                                         onPressed: () => _navigateToDetail(r),
                                                                                         icon: const Icon(Icons.visibility, size: 14),
-                                                                                        label: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                                                                        label: const Text('View',
+                                                                                            style: TextStyle(
+                                                                                                fontSize: 11, fontWeight: FontWeight.bold)),
                                                                                 ),
                                                                         ),
                                                                 ]);
@@ -2582,12 +2840,17 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                 children: [
                                         Row(
                                                 children: [
-                                                        Text('Show: ', style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+                                                        Text('Show: ',
+                                                            style:
+                                                            TextStyle(fontSize: 12, color: ParishColors.textMuted)),
                                                         DropdownButton<int>(
                                                                 value: _itemsPerPage,
                                                                 isDense: true,
                                                                 underline: const SizedBox.shrink(),
-                                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ParishColors.marianBlueAdaptive),
+                                                                style: TextStyle(
+                                                                    fontSize: 12,
+                                                                    fontWeight: FontWeight.bold,
+                                                                    color: ParishColors.marianBlueAdaptive),
                                                                 items: const [
                                                                         DropdownMenuItem(value: 10, child: Text('10')),
                                                                         DropdownMenuItem(value: 25, child: Text('25')),
@@ -2610,12 +2873,17 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 icon: const Icon(Icons.chevron_left, size: 22),
                                                                 padding: EdgeInsets.zero,
                                                                 constraints: const BoxConstraints(),
-                                                                color: _currentPage > 1 ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
-                                                                onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
+                                                                color: _currentPage > 1
+                                                                    ? ParishColors.marianBlueAdaptive
+                                                                    : ParishColors.borderGrey,
+                                                                onPressed: _currentPage > 1
+                                                                    ? () => setState(() => _currentPage--)
+                                                                    : null,
                                                         ),
                                                         const SizedBox(width: 8),
                                                         Container(
-                                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                                padding:
+                                                                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                                                 decoration: BoxDecoration(
                                                                         color: ParishColors.marianBlueSurface,
                                                                         borderRadius: BorderRadius.circular(6),
@@ -2634,8 +2902,12 @@ class _SacramentalRecordsViewState extends State<SacramentalRecordsView>
                                                                 icon: const Icon(Icons.chevron_right, size: 22),
                                                                 padding: EdgeInsets.zero,
                                                                 constraints: const BoxConstraints(),
-                                                                color: _currentPage < totalPages ? ParishColors.marianBlueAdaptive : ParishColors.borderGrey,
-                                                                onPressed: _currentPage < totalPages ? () => setState(() => _currentPage++) : null,
+                                                                color: _currentPage < totalPages
+                                                                    ? ParishColors.marianBlueAdaptive
+                                                                    : ParishColors.borderGrey,
+                                                                onPressed: _currentPage < totalPages
+                                                                    ? () => setState(() => _currentPage++)
+                                                                    : null,
                                                         ),
                                                 ],
                                         ),

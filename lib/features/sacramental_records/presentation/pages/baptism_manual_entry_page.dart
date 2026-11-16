@@ -9,17 +9,23 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../services/baptism_service.dart';
+import '../../services/sacramental_draft_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 class BaptismManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
   final Map<String, dynamic>? initialData; // Passing initialData activates Edit Record Mode
+  final String? draftId;
+  final Map<String, dynamic>? initialDraftData;
 
   const BaptismManualEntryPage({
     super.key,
     this.onRecordSaved,
     this.initialData,
+    this.draftId,
+    this.initialDraftData,
   });
 
   @override
@@ -35,6 +41,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   bool _isBackToTopHovered = false;
 
   bool get isEditMode => widget.initialData != null;
+
+  String? _activeDraftId;
+  bool _isSavingDraft = false;
+  String _loadingMessage = 'Processing baptism record...';
 
   // Canonical options for Legitimacy
   static const List<String> _canonicalStatusOptions = [
@@ -118,13 +128,22 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _activeDraftId = widget.draftId;
 
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
+      if (widget.initialDraftData != null) {
+        _populateDraftData(widget.initialDraftData!);
+      }
       _bookNumberController.addListener(_onCoordinateChanged);
       _pageNumberController.addListener(_onCoordinateChanged);
       _lineNumberController.addListener(_onCoordinateChanged);
+      if (widget.initialDraftData != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _checkCoordinatesLive();
+        });
+      }
     }
   }
 
@@ -221,6 +240,205 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     _remarksController.text = data['remarks']?.toString() ?? '';
 
     _recomputeAge();
+  }
+
+  void _populateDraftData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+    final rawStatus = data['entry_status']?.toString();
+    if (rawStatus != null && ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'].contains(rawStatus)) {
+      _entryStatus = rawStatus;
+    }
+    _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
+
+    _childFirstNameController.text = data['child_first_name']?.toString() ?? '';
+    _childMiddleNameController.text = data['child_middle_name']?.toString() ?? '';
+    _childLastNameController.text = data['child_last_name']?.toString() ?? '';
+    _childSuffixController.text = data['child_suffix']?.toString() ?? '';
+    _dateOfBirth = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    _ageController.text = data['age']?.toString() ?? '';
+    _placeOfBirthController.text = data['place_of_birth']?.toString() ?? '';
+    final rawGender = data['gender']?.toString();
+    if (rawGender == 'Male' || rawGender == 'Female') {
+      _gender = rawGender!;
+    }
+
+    final rawLegitimacy = data['legitimacy']?.toString();
+    if (rawLegitimacy != null && _canonicalStatusOptions.contains(rawLegitimacy)) {
+      _legitimacy = rawLegitimacy;
+    }
+    _legitimacyOtherController.text = data['legitimacy_other']?.toString() ?? '';
+
+    _fatherNotIndicated = data['father_not_indicated'] == true;
+    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+    _fatherPlaceOfBirthController.text = data['father_place_of_birth']?.toString() ?? '';
+
+    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+    _motherPlaceOfBirthController.text = data['mother_place_of_birth']?.toString() ?? '';
+
+    _parentsContactNumberController.text = data['parents_contact_number']?.toString() ?? '';
+    _parentsResidenceController.text = data['parents_residence']?.toString() ?? '';
+
+    _sponsor1FirstNameController.text = data['sponsor_1_first_name']?.toString() ?? '';
+    _sponsor1MiddleNameController.text = data['sponsor_1_middle_name']?.toString() ?? '';
+    _sponsor1LastNameController.text = data['sponsor_1_last_name']?.toString() ?? '';
+    _sponsor1ResidenceController.text = data['sponsor_1_residence']?.toString() ?? '';
+
+    _sponsor2FirstNameController.text = data['sponsor_2_first_name']?.toString() ?? '';
+    _sponsor2MiddleNameController.text = data['sponsor_2_middle_name']?.toString() ?? '';
+    _sponsor2LastNameController.text = data['sponsor_2_last_name']?.toString() ?? '';
+    _sponsor2ResidenceController.text = data['sponsor_2_residence']?.toString() ?? '';
+
+    final rawGodparents = data['other_godparents'];
+    if (rawGodparents is List) {
+      for (var gp in rawGodparents) {
+        if (gp.toString().trim().isNotEmpty) {
+          _otherGodparentControllers.add(TextEditingController(text: gp.toString().trim()));
+        }
+      }
+    } else if (rawGodparents != null && rawGodparents.toString().trim().isNotEmpty) {
+      final list = rawGodparents.toString().split('\n');
+      for (var gp in list) {
+        if (gp.trim().isNotEmpty) {
+          _otherGodparentControllers.add(TextEditingController(text: gp.trim()));
+        }
+      }
+    }
+
+    if (data.containsKey('place_of_baptism')) {
+      _parishChurchController.text = data['place_of_baptism']?.toString() ?? '';
+    }
+    if (data.containsKey('minister_first_name')) {
+      _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
+    }
+    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
+    if (data.containsKey('minister_last_name')) {
+      _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
+    }
+    if (data['date_of_baptism'] != null) {
+      _dateOfBaptism = DateTime.tryParse(data['date_of_baptism'].toString());
+    }
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    _remarksController.text = data['remarks']?.toString() ?? '';
+
+    _recomputeAge();
+  }
+
+  Map<String, dynamic> _collectDraftData() {
+    return {
+      'book_number': _bookNumberController.text.trim(),
+      'page_number': _pageNumberController.text.trim(),
+      'line_number': _lineNumberController.text.trim(),
+      'entry_status': _entryStatus,
+      'registry_date': _registryDate.toIso8601String().substring(0, 10),
+      'child_first_name': _childFirstNameController.text.trim(),
+      'child_middle_name': _childMiddleNameController.text.trim(),
+      'child_last_name': _childLastNameController.text.trim(),
+      'child_suffix': _childSuffixController.text.trim(),
+      'date_of_birth': _dateOfBirth?.toIso8601String().substring(0, 10),
+      'age': _ageController.text.trim(),
+      'place_of_birth': _placeOfBirthController.text.trim(),
+      'gender': _gender,
+      'legitimacy': _legitimacy,
+      'legitimacy_other': _legitimacyOtherController.text.trim(),
+      'father_not_indicated': _fatherNotIndicated,
+      'father_first_name': _fatherFirstNameController.text.trim(),
+      'father_middle_name': _fatherMiddleNameController.text.trim(),
+      'father_last_name': _fatherLastNameController.text.trim(),
+      'father_place_of_birth': _fatherPlaceOfBirthController.text.trim(),
+      'mother_first_name': _motherFirstNameController.text.trim(),
+      'mother_middle_name': _motherMiddleNameController.text.trim(),
+      'mother_maiden_last_name': _motherMaidenLastNameController.text.trim(),
+      'mother_place_of_birth': _motherPlaceOfBirthController.text.trim(),
+      'parents_contact_number': _parentsContactNumberController.text.trim(),
+      'parents_residence': _parentsResidenceController.text.trim(),
+      'sponsor_1_first_name': _sponsor1FirstNameController.text.trim(),
+      'sponsor_1_middle_name': _sponsor1MiddleNameController.text.trim(),
+      'sponsor_1_last_name': _sponsor1LastNameController.text.trim(),
+      'sponsor_1_residence': _sponsor1ResidenceController.text.trim(),
+      'sponsor_2_first_name': _sponsor2FirstNameController.text.trim(),
+      'sponsor_2_middle_name': _sponsor2MiddleNameController.text.trim(),
+      'sponsor_2_last_name': _sponsor2LastNameController.text.trim(),
+      'sponsor_2_residence': _sponsor2ResidenceController.text.trim(),
+      'other_godparents': _otherGodparentControllers
+          .map((c) => c.text.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      'place_of_baptism': _parishChurchController.text.trim(),
+      'minister_first_name': _ministerFirstNameController.text.trim(),
+      'minister_middle_name': _ministerMiddleNameController.text.trim(),
+      'minister_last_name': _ministerLastNameController.text.trim(),
+      'date_of_baptism': _dateOfBaptism?.toIso8601String().substring(0, 10),
+      'stipend': _stipendController.text.trim(),
+      'remarks': _remarksController.text.trim(),
+    };
+  }
+
+  String _buildDraftDisplayTitle() {
+    final name = [
+      _childFirstNameController.text.trim(),
+      _childMiddleNameController.text.trim(),
+      _childLastNameController.text.trim(),
+      _childSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+    return name.isNotEmpty ? name : 'Untitled Baptism Draft';
+  }
+
+  String? _buildDraftBookReference() {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+    if (b.isEmpty && p.isEmpty && l.isEmpty) return null;
+    return 'Book ${b.isEmpty ? '?' : b}, Page ${p.isEmpty ? '?' : p}, Line ${l.isEmpty ? '?' : l}';
+  }
+
+  Future<void> _saveToDraft() async {
+    if (_isSubmitting || _isSavingDraft) return;
+
+    setState(() {
+      _isSavingDraft = true;
+      _loadingMessage = 'Saving baptism draft...';
+      _errorMessage = null;
+    });
+
+    try {
+      final saved = await SacramentalDraftService.saveDraft(
+        existingDraftId: _activeDraftId,
+        sacramentType: 'Baptism',
+        displayTitle: _buildDraftDisplayTitle(),
+        bookReference: _buildDraftBookReference(),
+        draftData: _collectDraftData(),
+      );
+
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      setState(() {
+        _activeDraftId = saved.draftId;
+        _isSavingDraft = false;
+      });
+
+      // Navigate back to the sacrament registry page immediately
+      Navigator.pop(context);
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Draft saved! You can resume it anytime from the Drafts page.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSavingDraft = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
   }
 
   void _onCoordinateChanged() {
@@ -674,10 +892,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('4. Godparents & Sponsors', [
-                  _buildReviewRow('Sponsor 1 (Ninong/Ninang):', sponsor1Name),
+                  _buildReviewRow('Sponsor 1 :', sponsor1Name),
                   if (_sponsor1ResidenceController.text.trim().isNotEmpty)
                     _buildReviewRow('Sponsor 1 Residence:', _sponsor1ResidenceController.text.trim()),
-                  _buildReviewRow('Sponsor 2 (Ninong/Ninang):', sponsor2Name),
+                  _buildReviewRow('Sponsor 2 :', sponsor2Name),
                   if (_sponsor2ResidenceController.text.trim().isNotEmpty)
                     _buildReviewRow('Sponsor 2 Residence:', _sponsor2ResidenceController.text.trim()),
                   if (otherGodparents.isNotEmpty)
@@ -923,7 +1141,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         : 'Others')
         : _legitimacy;
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _loadingMessage = isEditMode
+          ? 'Updating baptism record...'
+          : 'Saving baptism record...';
+    });
 
     try {
       final parishChurch = _parishChurchController.text.trim();
@@ -1068,6 +1291,12 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
         } catch (auditErr) {
           debugPrint('[BaptismManualEntryPage] Audit log insertion notice: $auditErr');
         }
+
+        if (_activeDraftId != null && _activeDraftId!.isNotEmpty) {
+          try {
+            await SacramentalDraftService.deleteDraft(_activeDraftId!);
+          } catch (_) {}
+        }
       }
 
       if (!mounted) return;
@@ -1100,12 +1329,14 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
+    final bool isNarrowAppBar = MediaQuery.sizeOf(context).width < 520;
 
     return PopScope(
-      canPop: !_isSubmitting,
+      canPop: !isBusy,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_isSubmitting) return;
+        if (isBusy) return;
         final shouldExit = await showDiscardConfirmationDialog(
           context,
           accentColor: ParishColors.marianBlue,
@@ -1114,72 +1345,115 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
           Navigator.pop(context);
         }
       },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhiteColor,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
-            onPressed: _isSubmitting
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: ParishColors.marianBlue,
-              );
-              if (shouldExit && context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditMode ? 'Edit Baptism Record' : 'Baptism Manual Entry',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-              ),
-              Text(
-                isEditMode
-                    ? 'Editing Record: ${widget.initialData!['record_id']}'
-                    : 'Parish Baptismal Register (Liber Baptismorum)',
-                style: TextStyle(fontSize: 12, color: textMutedColor),
-              ),
+      child: SacramentalLoadingOverlay(
+        isLoading: isBusy,
+        message: _loadingMessage,
+        accentColor: ParishColors.marianBlue,
+        icon: Icons.water_drop_outlined,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhiteColor,
+            elevation: 0,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
+              onPressed: isBusy
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: ParishColors.marianBlue,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditMode ? 'Edit Baptism Record' : 'Baptism Manual Entry',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
+                ),
+                Text(
+                  isEditMode
+                      ? 'Editing Record: ${widget.initialData!['record_id']}'
+                      : (_activeDraftId != null
+                      ? 'Resuming Saved Draft'
+                      : 'Parish Baptismal Register (Liber Baptismorum)'),
+                  style: TextStyle(fontSize: 12, color: textMutedColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            actions: [
+              if (!isEditMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ParishColors.marianBlue,
+                        backgroundColor: ParishColors.marianBlueSurface,
+                        side: BorderSide(
+                          color: ParishColors.marianBlue.withOpacity(0.5),
+                          width: 1.2,
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrowAppBar ? 10 : 14,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: isBusy ? null : _saveToDraft,
+                      icon: const Icon(Icons.save_as_outlined, size: 18),
+                      label: Text(
+                        isNarrowAppBar ? 'Draft' : 'Save to Draft',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-        ),
-        floatingActionButton: IgnorePointer(
-          ignoring: !_showBackToTop,
-          child: AnimatedOpacity(
-            opacity: _showBackToTop ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 250),
-            child: Semantics(
-              button: true,
-              label: 'Back to top, button',
-              child: FocusableActionDetector(
-                onShowHoverHighlight: (hovered) {
-                  setState(() => _isBackToTopHovered = hovered);
-                },
-                actions: <Type, Action<Intent>>{
-                  ActivateIntent: CallbackAction<ActivateIntent>(
-                    onInvoke: (_) => _scrollToTop(),
-                  ),
-                },
-                child: AnimatedScale(
-                  scale: _isBackToTopHovered ? 1.05 : 1.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: SizedBox(
-                    height: 48,
-                    child: FloatingActionButton.extended(
-                      backgroundColor: ParishColors.marianBlue,
-                      foregroundColor: Colors.white,
-                      elevation: 4,
-                      onPressed: _scrollToTop,
-                      icon: const Icon(Icons.arrow_upward, size: 18),
-                      label: const Text(
-                        'Back to Top',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          floatingActionButton: IgnorePointer(
+            ignoring: !_showBackToTop,
+            child: AnimatedOpacity(
+              opacity: _showBackToTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: Semantics(
+                button: true,
+                label: 'Back to top, button',
+                child: FocusableActionDetector(
+                  onShowHoverHighlight: (hovered) {
+                    setState(() => _isBackToTopHovered = hovered);
+                  },
+                  actions: <Type, Action<Intent>>{
+                    ActivateIntent: CallbackAction<ActivateIntent>(
+                      onInvoke: (_) => _scrollToTop(),
+                    ),
+                  },
+                  child: AnimatedScale(
+                    scale: _isBackToTopHovered ? 1.05 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: SizedBox(
+                      height: 48,
+                      child: FloatingActionButton.extended(
+                        backgroundColor: ParishColors.marianBlue,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        onPressed: _scrollToTop,
+                        icon: const Icon(Icons.arrow_upward, size: 18),
+                        label: const Text(
+                          'Back to Top',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ),
                     ),
                   ),
@@ -1187,94 +1461,77 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
               ),
             ),
           ),
-        ),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double availableWidth = constraints.maxWidth;
-              final bool isWide = availableWidth >= 900;
-              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double availableWidth = constraints.maxWidth;
+                final bool isWide = availableWidth >= 900;
+                final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Stack(
-                children: [
-                  SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
-                        child: Form(
-                          key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildFormHeaderCard(),
-                              const SizedBox(height: 16),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormHeaderCard(),
+                            const SizedBox(height: 16),
 
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: ParishColors.mercyRed),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
+                            if (_errorMessage != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRedSurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: ParishColors.mercyRed),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.mercyRed,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-
-                              _buildSection1Coordinates(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection2Child(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection3Parents(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection4Godparents(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection5Administration(isWide: isWide),
-                              const SizedBox(height: 24),
-                              _buildBottomSubmissionBar(isWide: isWide),
-                              const SizedBox(height: 50),
+                              ),
                             ],
-                          ),
+
+                            _buildSection1Coordinates(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection2Child(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection3Parents(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection4Godparents(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection5Administration(isWide: isWide),
+                            const SizedBox(height: 24),
+                            _buildBottomSubmissionBar(isWide: isWide),
+                            const SizedBox(height: 50),
+                          ],
                         ),
                       ),
                     ),
                   ),
-
-                  if (_isSubmitting)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black.withOpacity(0.55),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: ParishColors.goldAccent,
-                            strokeWidth: 4.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1331,7 +1588,9 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        isEditMode ? 'Edit Mode' : 'New Entry',
+                        isEditMode
+                            ? 'Edit Mode'
+                            : (_activeDraftId != null ? 'Draft Mode' : 'New Entry'),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -2392,6 +2651,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
   Widget _buildBottomSubmissionBar({required bool isWide}) {
     final borderGreyColor = ParishColors.borderGrey;
     final textMutedColor = ParishColors.textMuted;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
 
     return Container(
       width: double.infinity,
@@ -2419,7 +2679,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 side: BorderSide(color: borderGreyColor, width: 1.4),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: _isSubmitting
+              onPressed: isBusy
                   ? null
                   : () async {
                 final shouldExit = await showDiscardConfirmationDialog(
@@ -2448,7 +2708,7 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 elevation: 1,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+              onPressed: (isBusy || _coordinateDuplicateError != null)
                   ? null
                   : () {
                 if (isEditMode) {
@@ -2712,4 +2972,3 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
     );
   }
 }
-

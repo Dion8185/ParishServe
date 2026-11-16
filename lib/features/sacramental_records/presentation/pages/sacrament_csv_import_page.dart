@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
 import '../../services/sacrament_csv_service.dart';
 import '../dialogs/csv_preview_confirmation_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 class SacramentCsvImportPage extends StatefulWidget {
   final String sacramentName;
@@ -77,7 +78,10 @@ class _SacramentCsvImportPageState extends State<SacramentCsvImportPage> {
 
       String fileName = _expectedFileName;
       try {
-        fileName = (file as dynamic).name ?? (file as dynamic).path?.split('/')?.last ?? (file as dynamic).path?.split(r'\')?.last ?? _expectedFileName;
+        fileName = (file as dynamic).name ??
+            (file as dynamic).path?.split('/')?.last ??
+            (file as dynamic).path?.split(r'\')?.last ??
+            _expectedFileName;
       } catch (_) {}
 
       Uint8List? bytes;
@@ -229,7 +233,8 @@ class _SacramentCsvImportPageState extends State<SacramentCsvImportPage> {
               height: 1.4,
             ),
           ),
-          actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          actionsPadding:
+          const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           actions: [
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -238,7 +243,8 @@ class _SacramentCsvImportPageState extends State<SacramentCsvImportPage> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               onPressed: () {
                 Navigator.pop(ctx);
@@ -279,446 +285,390 @@ class _SacramentCsvImportPageState extends State<SacramentCsvImportPage> {
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: cardWhite,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: widget.themeColor, size: 26),
-          onPressed: _isImporting ? null : () => Navigator.pop(context),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Import ${widget.sacramentName} Records',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: textDark,
+    final bool isBusy = _isReadingFile || _isImporting;
+    final String overlayMessage = _isReadingFile
+        ? 'Reading & validating CSV file...'
+        : '${_importProgressStatus.isNotEmpty ? _importProgressStatus : 'Importing ${widget.sacramentName.toLowerCase()} records...'} (${(_importProgress * 100).toInt()}%)';
+
+    return SacramentalLoadingOverlay(
+      isLoading: isBusy,
+      message: overlayMessage,
+      accentColor: widget.themeColor,
+      icon: Icons.upload_file_outlined,
+      child: Scaffold(
+        backgroundColor: ParishColors.backgroundLight,
+        appBar: AppBar(
+          backgroundColor: cardWhite,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: widget.themeColor, size: 26),
+            onPressed: isBusy ? null : () => Navigator.pop(context),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Import ${widget.sacramentName} Records',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: textDark,
+                ),
               ),
-            ),
-            Text(
-              'Batch CSV record ingestion for ${widget.sacramentName} Registry',
-              style: TextStyle(fontSize: 12, color: textMuted),
-            ),
-          ],
+              Text(
+                'Batch CSV record ingestion for ${widget.sacramentName} Registry',
+                style: TextStyle(fontSize: 12, color: textMuted),
+              ),
+            ],
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 780),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Strict File Restriction Policy Banner
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: widget.surfaceColor,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: widget.themeColor.withOpacity(0.35),
-                        width: 1.2,
-                      ),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: widget.themeColor,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.info_outline,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Sacrament Registry Restriction Policy',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: widget.themeColor,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'To preserve ledger integrity, only "$_expectedFileName" can be imported inside the ${widget.sacramentName} registry. Files belonging to other sacraments will be rejected automatically.',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  color: textDark.withOpacity(0.85),
-                                  height: 1.35,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // 2. Click or Select File Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: cardWhite,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: _validationResult != null &&
-                            !_validationResult!.isValid
-                            ? ParishColors.mercyRed
-                            : borderGrey,
-                        width: 1.4,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.02),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: widget.surfaceColor,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.upload_file_outlined,
-                            size: 32,
-                            color: widget.themeColor,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Upload "$_expectedFileName"',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Select your comma-separated CSV file containing canonical records.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12.5, color: textMuted),
-                        ),
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          height: 46,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: widget.themeColor,
-                              foregroundColor: Colors.white,
-                              elevation: 1,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                            ),
-                            onPressed:
-                            (_isReadingFile || _isImporting) ? null : _pickCsvFile,
-                            icon: const Icon(Icons.folder_open, size: 20),
-                            label: Text(
-                              _selectedFileName == null
-                                  ? 'Browse Files'
-                                  : 'Select Different File',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextButton.icon(
-                          style: TextButton.styleFrom(
-                            foregroundColor: widget.themeColor,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          onPressed: () =>
-                              SacramentCsvService.downloadSampleTemplate(
-                                widget.sacramentName,
-                              ),
-                          icon: const Icon(Icons.download, size: 16),
-                          label: Text(
-                            'Download blank template for ${widget.sacramentName}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // 3. File Selected & Validation Feedback
-                  if (_isReadingFile)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          children: [
-                            CircularProgressIndicator(color: widget.themeColor),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Analyzing and validating CSV structure...',
-                              style: TextStyle(fontSize: 13, color: textMuted),
-                            ),
-                          ],
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 780),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 1. Strict File Restriction Policy Banner
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: widget.surfaceColor,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: widget.themeColor.withOpacity(0.35),
+                          width: 1.2,
                         ),
                       ),
-                    )
-                  else if (_selectedFileName != null && _validationResult != null) ...[
-                    if (!_validationResult!.isValid)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: ParishColors.mercyRedSurface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: ParishColors.mercyRed),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(
-                              Icons.error_outline,
-                              color: ParishColors.mercyRed,
-                              size: 22,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: widget.themeColor,
+                              shape: BoxShape.circle,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Validation Failed',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.mercyRed,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _validationResult!.errorMessage ??
-                                        'File failed verification.',
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      color: ParishColors.mercyRed,
-                                      height: 1.35,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            child: const Icon(
+                              Icons.info_outline,
+                              color: Colors.white,
+                              size: 20,
                             ),
-                          ],
-                        ),
-                      )
-                    else ...[
-                      // Valid File Card
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: cardWhite,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: ParishColors.oliveGreen.withOpacity(0.5),
-                            width: 1.3,
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.check_circle,
-                                      color: ParishColors.oliveGreen,
-                                      size: 22,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _selectedFileName!,
-                                      style: TextStyle(
-                                        fontSize: 14.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: textDark,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (_selectedFileSizeBytes != null)
-                                  Text(
-                                    _formatFileSize(_selectedFileSizeBytes!),
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: textMuted,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFDCFCE7),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    '${_validationResult!.totalCount} records identified',
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: ParishColors.oliveGreen,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: widget.surfaceColor,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    '${_validationResult!.headers.length} columns verified',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: widget.themeColor,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 18),
-
-                            // Preview and Confirmation Action Button
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: ParishColors.oliveGreen,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                onPressed: _isImporting
-                                    ? null
-                                    : _startPreviewAndImport,
-                                icon: const Icon(
-                                  Icons.preview_outlined,
-                                  size: 20,
-                                ),
-                                label: const Text(
-                                  'Preview & Confirm Import',
+                                Text(
+                                  'Sacrament Registry Restriction Policy',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
+                                    color: widget.themeColor,
                                   ),
                                 ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-
-                  // 4. Progress Feedback While Ingesting
-                  if (_isImporting) ...[
-                    const SizedBox(height: 20),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: cardWhite,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: borderGrey),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Importing records...',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13.5,
-                                  color: textDark,
+                                const SizedBox(height: 4),
+                                Text(
+                                  'To preserve ledger integrity, only "$_expectedFileName" can be imported inside the ${widget.sacramentName} registry. Files belonging to other sacraments will be rejected automatically.',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: textDark.withOpacity(0.85),
+                                    height: 1.35,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                '${(_importProgress * 100).toInt()}%',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: widget.themeColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: LinearProgressIndicator(
-                              value: _importProgress > 0 ? _importProgress : null,
-                              minHeight: 8,
-                              backgroundColor: widget.surfaceColor,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                widget.themeColor,
-                              ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _importProgressStatus,
-                            style: TextStyle(fontSize: 12, color: textMuted),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 20),
+
+                    // 2. Click or Select File Card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: cardWhite,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _validationResult != null &&
+                              !_validationResult!.isValid
+                              ? ParishColors.mercyRed
+                              : borderGrey,
+                          width: 1.4,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.02),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: widget.surfaceColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.upload_file_outlined,
+                              size: 32,
+                              color: widget.themeColor,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Upload "$_expectedFileName"',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Select your comma-separated CSV file containing canonical records.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12.5, color: textMuted),
+                          ),
+                          const SizedBox(height: 18),
+                          SizedBox(
+                            height: 46,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: widget.themeColor,
+                                foregroundColor: Colors.white,
+                                elevation: 1,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20),
+                              ),
+                              onPressed: isBusy ? null : _pickCsvFile,
+                              icon: const Icon(Icons.folder_open, size: 20),
+                              label: Text(
+                                _selectedFileName == null
+                                    ? 'Browse Files'
+                                    : 'Select Different File',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: widget.themeColor,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: () =>
+                                SacramentCsvService.downloadSampleTemplate(
+                                  widget.sacramentName,
+                                ),
+                            icon: const Icon(Icons.download, size: 16),
+                            label: Text(
+                              'Download blank template for ${widget.sacramentName}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // 3. File Selected & Validation Feedback
+                    if (_selectedFileName != null &&
+                        _validationResult != null) ...[
+                      if (!_validationResult!.isValid)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: ParishColors.mercyRedSurface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: ParishColors.mercyRed),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: ParishColors.mercyRed,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Validation Failed',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: ParishColors.mercyRed,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      _validationResult!.errorMessage ??
+                                          'File failed verification.',
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        color: ParishColors.mercyRed,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else ...[
+                        // Valid File Card
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: cardWhite,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: ParishColors.oliveGreen.withOpacity(0.5),
+                              width: 1.3,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: ParishColors.oliveGreen,
+                                          size: 22,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            _selectedFileName!,
+                                            style: TextStyle(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: textDark,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_selectedFileSizeBytes != null)
+                                    Text(
+                                      _formatFileSize(_selectedFileSizeBytes!),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: textMuted,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDCFCE7),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${_validationResult!.totalCount} records identified',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: ParishColors.oliveGreen,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: widget.surfaceColor,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${_validationResult!.headers.length} columns verified',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: widget.themeColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 18),
+
+                              // Preview and Confirmation Action Button
+                              SizedBox(
+                                width: double.infinity,
+                                height: 48,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: ParishColors.oliveGreen,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  onPressed:
+                                  isBusy ? null : _startPreviewAndImport,
+                                  icon: const Icon(
+                                    Icons.preview_outlined,
+                                    size: 20,
+                                  ),
+                                  label: const Text(
+                                    'Preview & Confirm Import',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

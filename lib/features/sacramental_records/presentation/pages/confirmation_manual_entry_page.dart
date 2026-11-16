@@ -9,24 +9,32 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../services/confirmation_service.dart';
+import '../../services/sacramental_draft_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 class ConfirmationManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
   final Map<String, dynamic>? initialData; // Enables Edit Record Mode
+  final String? draftId;
+  final Map<String, dynamic>? initialDraftData;
 
   const ConfirmationManualEntryPage({
     super.key,
     this.onRecordSaved,
     this.initialData,
+    this.draftId,
+    this.initialDraftData,
   });
 
   @override
-  State<ConfirmationManualEntryPage> createState() => _ConfirmationManualEntryPageState();
+  State<ConfirmationManualEntryPage> createState() =>
+      _ConfirmationManualEntryPageState();
 }
 
-class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPage> {
+class _ConfirmationManualEntryPageState
+    extends State<ConfirmationManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
 
@@ -35,6 +43,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   bool _isBackToTopHovered = false;
 
   bool get isEditMode => widget.initialData != null;
+
+  String? _activeDraftId;
+  bool _isSavingDraft = false;
+  String _loadingMessage = 'Processing confirmation record...';
 
   // Pentecost Theme Accent for Confirmation
   static const Color _pentecostRed = Color(0xFFB91C1C);
@@ -59,7 +71,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   DateTime? _dateOfBirth;
   final _ageController = TextEditingController();
   DateTime? _dateOfBaptism;
-  final _churchBaptizedController = TextEditingController(text: 'St. John Paul II Parish');
+  final _churchBaptizedController =
+  TextEditingController(text: 'St. John Paul II Parish');
   final _addressController = TextEditingController();
 
   // 3. Father Information
@@ -92,7 +105,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
   final _ministerLastNameController = TextEditingController(text: 'Reyes');
-  final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
+  final _parishNameController =
+  TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
   String? _existingCanonicalNotes;
 
@@ -105,18 +119,28 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _activeDraftId = widget.draftId;
 
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
+      if (widget.initialDraftData != null) {
+        _populateDraftData(widget.initialDraftData!);
+      }
       _bookNumberController.addListener(_onCoordinateChanged);
       _pageNumberController.addListener(_onCoordinateChanged);
       _lineNumberController.addListener(_onCoordinateChanged);
+      if (widget.initialDraftData != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _checkCoordinatesLive();
+        });
+      }
     }
   }
 
   void _onScroll() {
-    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    final shouldShow =
+        _scrollController.hasClients && _scrollController.offset >= 1000;
     if (shouldShow != _showBackToTop) {
       setState(() => _showBackToTop = shouldShow);
     }
@@ -137,46 +161,75 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     _pageNumberController.text = data['page_number']?.toString() ?? '';
     _lineNumberController.text = data['line_number']?.toString() ?? '';
     _entryStatus = data['entry_status']?.toString() ?? 'ORIGINAL';
-    _registryDate = DateTime.tryParse(data['registry_date']?.toString() ?? '') ?? DateTime.now();
+    _registryDate =
+        DateTime.tryParse(data['registry_date']?.toString() ?? '') ??
+            DateTime.now();
     _existingCanonicalNotes = data['remarks']?.toString();
 
-    _confirmandFirstNameController.text = data['confirmand_first_name']?.toString() ?? '';
-    _confirmandMiddleNameController.text = data['confirmand_middle_name']?.toString() ?? '';
-    _confirmandLastNameController.text = data['confirmand_last_name']?.toString() ?? '';
-    _confirmandSuffixController.text = data['confirmand_suffix']?.toString() ?? '';
-    _dateOfBirth = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    _confirmandFirstNameController.text =
+        data['confirmand_first_name']?.toString() ?? '';
+    _confirmandMiddleNameController.text =
+        data['confirmand_middle_name']?.toString() ?? '';
+    _confirmandLastNameController.text =
+        data['confirmand_last_name']?.toString() ?? '';
+    _confirmandSuffixController.text =
+        data['confirmand_suffix']?.toString() ?? '';
+    _dateOfBirth =
+        DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
     _ageController.text = data['age']?.toString() ?? '';
-    _dateOfBaptism = DateTime.tryParse(data['date_of_baptism']?.toString() ?? '');
-    _churchBaptizedController.text = data['church_baptized']?.toString() ?? '';
+    _dateOfBaptism =
+        DateTime.tryParse(data['date_of_baptism']?.toString() ?? '');
+    _churchBaptizedController.text =
+        data['church_baptized']?.toString() ?? '';
     _addressController.text = data['address']?.toString() ?? '';
 
-    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
-    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
-    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text =
+        data['father_last_name']?.toString() ?? '';
     _fatherOriginController.text = data['father_origin']?.toString() ?? '';
-    _fatherNotIndicated = _fatherFirstNameController.text.toLowerCase() == 'not indicated';
+    _fatherNotIndicated =
+        _fatherFirstNameController.text.toLowerCase() == 'not indicated';
 
-    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
-    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
-    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
     _motherOriginController.text = data['mother_origin']?.toString() ?? '';
 
-    _sponsor1FirstNameController.text = data['sponsor_1_first_name']?.toString() ?? '';
-    _sponsor1MiddleNameController.text = data['sponsor_1_middle_name']?.toString() ?? '';
-    _sponsor1LastNameController.text = data['sponsor_1_last_name']?.toString() ?? '';
-    _sponsor1OriginAddressController.text = data['sponsor_1_origin_address']?.toString() ?? '';
+    _sponsor1FirstNameController.text =
+        data['sponsor_1_first_name']?.toString() ?? '';
+    _sponsor1MiddleNameController.text =
+        data['sponsor_1_middle_name']?.toString() ?? '';
+    _sponsor1LastNameController.text =
+        data['sponsor_1_last_name']?.toString() ?? '';
+    _sponsor1OriginAddressController.text =
+        data['sponsor_1_origin_address']?.toString() ?? '';
 
-    _sponsor2FirstNameController.text = data['sponsor_2_first_name']?.toString() ?? '';
-    _sponsor2MiddleNameController.text = data['sponsor_2_middle_name']?.toString() ?? '';
-    _sponsor2LastNameController.text = data['sponsor_2_last_name']?.toString() ?? '';
-    _sponsor2OriginAddressController.text = data['sponsor_2_origin_address']?.toString() ?? '';
+    _sponsor2FirstNameController.text =
+        data['sponsor_2_first_name']?.toString() ?? '';
+    _sponsor2MiddleNameController.text =
+        data['sponsor_2_middle_name']?.toString() ?? '';
+    _sponsor2LastNameController.text =
+        data['sponsor_2_last_name']?.toString() ?? '';
+    _sponsor2OriginAddressController.text =
+        data['sponsor_2_origin_address']?.toString() ?? '';
 
-    _dateOfConfirmation = DateTime.tryParse(data['date_of_confirmation']?.toString() ?? '');
+    _dateOfConfirmation =
+        DateTime.tryParse(data['date_of_confirmation']?.toString() ?? '');
     _stipendController.text = data['stipend']?.toString() ?? '';
-    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
-    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
-    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
-    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _ministerFirstNameController.text =
+        data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text =
+        data['minister_last_name']?.toString() ?? '';
+    _parishNameController.text =
+        data['parish_name']?.toString() ?? 'St. John Paul II Parish';
     _remarksController.text = data['remarks']?.toString() ?? '';
 
     if (_dateOfBirth != null) {
@@ -184,9 +237,211 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     }
   }
 
+  void _populateDraftData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+    final rawStatus = data['entry_status']?.toString();
+    if (rawStatus != null &&
+        ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'].contains(rawStatus)) {
+      _entryStatus = rawStatus;
+    }
+    _registryDate =
+        DateTime.tryParse(data['registry_date']?.toString() ?? '') ??
+            DateTime.now();
+
+    _confirmandFirstNameController.text =
+        data['confirmand_first_name']?.toString() ?? '';
+    _confirmandMiddleNameController.text =
+        data['confirmand_middle_name']?.toString() ?? '';
+    _confirmandLastNameController.text =
+        data['confirmand_last_name']?.toString() ?? '';
+    _confirmandSuffixController.text =
+        data['confirmand_suffix']?.toString() ?? '';
+    _dateOfBirth =
+        DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    _ageController.text = data['age']?.toString() ?? '';
+    _dateOfBaptism =
+        DateTime.tryParse(data['date_of_baptism']?.toString() ?? '');
+    if (data.containsKey('church_baptized')) {
+      _churchBaptizedController.text =
+          data['church_baptized']?.toString() ?? '';
+    }
+    _addressController.text = data['address']?.toString() ?? '';
+
+    _fatherNotIndicated = data['father_not_indicated'] == true;
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text =
+        data['father_last_name']?.toString() ?? '';
+    _fatherOriginController.text = data['father_origin']?.toString() ?? '';
+
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
+    _motherOriginController.text = data['mother_origin']?.toString() ?? '';
+
+    _sponsor1FirstNameController.text =
+        data['sponsor_1_first_name']?.toString() ?? '';
+    _sponsor1MiddleNameController.text =
+        data['sponsor_1_middle_name']?.toString() ?? '';
+    _sponsor1LastNameController.text =
+        data['sponsor_1_last_name']?.toString() ?? '';
+    _sponsor1OriginAddressController.text =
+        data['sponsor_1_origin_address']?.toString() ?? '';
+
+    _sponsor2FirstNameController.text =
+        data['sponsor_2_first_name']?.toString() ?? '';
+    _sponsor2MiddleNameController.text =
+        data['sponsor_2_middle_name']?.toString() ?? '';
+    _sponsor2LastNameController.text =
+        data['sponsor_2_last_name']?.toString() ?? '';
+    _sponsor2OriginAddressController.text =
+        data['sponsor_2_origin_address']?.toString() ?? '';
+
+    if (data['date_of_confirmation'] != null) {
+      _dateOfConfirmation =
+          DateTime.tryParse(data['date_of_confirmation'].toString());
+    }
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    if (data.containsKey('minister_first_name')) {
+      _ministerFirstNameController.text =
+          data['minister_first_name']?.toString() ?? '';
+    }
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    if (data.containsKey('minister_last_name')) {
+      _ministerLastNameController.text =
+          data['minister_last_name']?.toString() ?? '';
+    }
+    if (data.containsKey('parish_name')) {
+      _parishNameController.text = data['parish_name']?.toString() ?? '';
+    }
+    _remarksController.text = data['remarks']?.toString() ?? '';
+
+    if (_dateOfBirth != null) {
+      _recomputeAge();
+    }
+  }
+
+  Map<String, dynamic> _collectDraftData() {
+    return {
+      'book_number': _bookNumberController.text.trim(),
+      'page_number': _pageNumberController.text.trim(),
+      'line_number': _lineNumberController.text.trim(),
+      'entry_status': _entryStatus,
+      'registry_date': _registryDate.toIso8601String().substring(0, 10),
+      'confirmand_first_name': _confirmandFirstNameController.text.trim(),
+      'confirmand_middle_name': _confirmandMiddleNameController.text.trim(),
+      'confirmand_last_name': _confirmandLastNameController.text.trim(),
+      'confirmand_suffix': _confirmandSuffixController.text.trim(),
+      'date_of_birth': _dateOfBirth?.toIso8601String().substring(0, 10),
+      'age': _ageController.text.trim(),
+      'date_of_baptism': _dateOfBaptism?.toIso8601String().substring(0, 10),
+      'church_baptized': _churchBaptizedController.text.trim(),
+      'address': _addressController.text.trim(),
+      'father_not_indicated': _fatherNotIndicated,
+      'father_first_name': _fatherFirstNameController.text.trim(),
+      'father_middle_name': _fatherMiddleNameController.text.trim(),
+      'father_last_name': _fatherLastNameController.text.trim(),
+      'father_origin': _fatherOriginController.text.trim(),
+      'mother_first_name': _motherFirstNameController.text.trim(),
+      'mother_middle_name': _motherMiddleNameController.text.trim(),
+      'mother_maiden_last_name': _motherMaidenLastNameController.text.trim(),
+      'mother_origin': _motherOriginController.text.trim(),
+      'sponsor_1_first_name': _sponsor1FirstNameController.text.trim(),
+      'sponsor_1_middle_name': _sponsor1MiddleNameController.text.trim(),
+      'sponsor_1_last_name': _sponsor1LastNameController.text.trim(),
+      'sponsor_1_origin_address':
+      _sponsor1OriginAddressController.text.trim(),
+      'sponsor_2_first_name': _sponsor2FirstNameController.text.trim(),
+      'sponsor_2_middle_name': _sponsor2MiddleNameController.text.trim(),
+      'sponsor_2_last_name': _sponsor2LastNameController.text.trim(),
+      'sponsor_2_origin_address':
+      _sponsor2OriginAddressController.text.trim(),
+      'date_of_confirmation':
+      _dateOfConfirmation?.toIso8601String().substring(0, 10),
+      'stipend': _stipendController.text.trim(),
+      'minister_first_name': _ministerFirstNameController.text.trim(),
+      'minister_middle_name': _ministerMiddleNameController.text.trim(),
+      'minister_last_name': _ministerLastNameController.text.trim(),
+      'parish_name': _parishNameController.text.trim(),
+      'remarks': _remarksController.text.trim(),
+    };
+  }
+
+  String _buildDraftDisplayTitle() {
+    final name = [
+      _confirmandFirstNameController.text.trim(),
+      _confirmandMiddleNameController.text.trim(),
+      _confirmandLastNameController.text.trim(),
+      _confirmandSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+    return name.isNotEmpty ? name : 'Untitled Confirmation Draft';
+  }
+
+  String? _buildDraftBookReference() {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+    if (b.isEmpty && p.isEmpty && l.isEmpty) return null;
+    return 'Book ${b.isEmpty ? '?' : b}, Page ${p.isEmpty ? '?' : p}, Line ${l.isEmpty ? '?' : l}';
+  }
+
+  Future<void> _saveToDraft() async {
+    if (_isSubmitting || _isSavingDraft) return;
+
+    setState(() {
+      _isSavingDraft = true;
+      _loadingMessage = 'Saving confirmation draft...';
+      _errorMessage = null;
+    });
+
+    try {
+      final saved = await SacramentalDraftService.saveDraft(
+        existingDraftId: _activeDraftId,
+        sacramentType: 'Confirmation',
+        displayTitle: _buildDraftDisplayTitle(),
+        bookReference: _buildDraftBookReference(),
+        draftData: _collectDraftData(),
+      );
+
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      setState(() {
+        _activeDraftId = saved.draftId;
+        _isSavingDraft = false;
+      });
+
+      // Navigate back to the sacrament registry page immediately
+      Navigator.pop(context);
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Draft saved! You can resume it anytime from the Drafts page.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSavingDraft = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
   void _onCoordinateChanged() {
     _coordinateDebounce?.cancel();
-    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+    _coordinateDebounce =
+        Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
   }
 
   Future<void> _checkCoordinatesLive() async {
@@ -208,7 +463,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       bookNumber: b,
       pageNumber: p,
       lineNumber: l,
-      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+      excludeRecordId:
+      isEditMode ? widget.initialData!['record_id']?.toString() : null,
     );
 
     if (mounted) {
@@ -289,7 +545,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
+      initialDate:
+      initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
       lastDate: upperDateBound,
     );
@@ -335,7 +592,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
     final isFormValid = _formKey.currentState?.validate() ?? false;
     if (!isFormValid) {
-      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      setState(() =>
+      _errorMessage = 'Please review the highlighted fields below before saving.');
       _scrollToTop();
       return false;
     }
@@ -346,33 +604,38 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       return false;
     }
 
-    final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+    final bookError =
+    SacramentalValidators.validateBookNumber(_bookNumberController.text);
     if (bookError != null) {
       setState(() => _errorMessage = bookError);
       _scrollToTop();
       return false;
     }
-    final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+    final pageError =
+    SacramentalValidators.validatePageNumber(_pageNumberController.text);
     if (pageError != null) {
       setState(() => _errorMessage = pageError);
       _scrollToTop();
       return false;
     }
-    final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+    final lineError =
+    SacramentalValidators.validateLineNumber(_lineNumberController.text);
     if (lineError != null) {
       setState(() => _errorMessage = lineError);
       _scrollToTop();
       return false;
     }
 
-    final regDateError = SacramentalValidators.validateNotFutureDate(_registryDate, 'Registry Date');
+    final regDateError = SacramentalValidators.validateNotFutureDate(
+        _registryDate, 'Registry Date');
     if (regDateError != null) {
       setState(() => _errorMessage = regDateError);
       _scrollToTop();
       return false;
     }
 
-    final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: false);
+    final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth,
+        isRequired: false);
     if (dobError != null) {
       setState(() => _errorMessage = dobError);
       _scrollToTop();
@@ -388,7 +651,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       return false;
     }
 
-    final baptismError = SacramentalValidators.validateBaptismDate(_dateOfBaptism, _dateOfBirth);
+    final baptismError =
+    SacramentalValidators.validateBaptismDate(_dateOfBaptism, _dateOfBirth);
     if (baptismError != null) {
       setState(() {
         _dateOfBaptismHasError = true;
@@ -398,7 +662,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       return false;
     }
 
-    final confError = SacramentalValidators.validateConfirmationDate(_dateOfConfirmation, _dateOfBaptism);
+    final confError = SacramentalValidators.validateConfirmationDate(
+        _dateOfConfirmation, _dateOfBaptism);
     if (confError != null) {
       setState(() {
         _dateOfConfirmationHasError = true;
@@ -412,7 +677,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   }
 
   /// Computes strict dynamic diff, excluding unchanged fields and audit metadata
-  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+  String _computeChangesSummaryJson(
+      Map<String, dynamic> oldData, Map<String, dynamic> newData) {
     final diffs = <String, Map<String, dynamic>>{};
 
     final Map<String, String> fieldLabels = {
@@ -463,8 +729,16 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       }
 
       final oldVal = oldData[key];
-      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
-      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+      final oldStr = (oldVal == null ||
+          oldVal.toString().trim().isEmpty ||
+          oldVal.toString().toLowerCase() == 'null')
+          ? ''
+          : oldVal.toString().trim();
+      final newStr = (newVal == null ||
+          newVal.toString().trim().isEmpty ||
+          newVal.toString().toLowerCase() == 'null')
+          ? ''
+          : newVal.toString().trim();
 
       String normOld = oldStr;
       String normNew = newStr;
@@ -548,7 +822,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 color: _pentecostRed.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.fact_check_outlined, color: _pentecostRed, size: 24),
+              child: const Icon(Icons.fact_check_outlined,
+                  color: _pentecostRed, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -566,7 +841,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   const SizedBox(height: 2),
                   Text(
                     'Verify all fields before saving into Liber Confirmatorum.',
-                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    style:
+                    TextStyle(fontSize: 12, color: ParishColors.textMuted),
                   ),
                 ],
               ),
@@ -581,49 +857,81 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildReviewSection('1. Registry Coordinates', [
-                  _buildReviewRow('Book No.:', _bookNumberController.text.trim()),
-                  _buildReviewRow('Page No.:', _pageNumberController.text.trim()),
-                  _buildReviewRow('Line No.:', _lineNumberController.text.trim()),
-                  _buildReviewRow('Registry Date:', _registryDate.toIso8601String().substring(0, 10)),
+                  _buildReviewRow(
+                      'Book No.:', _bookNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Page No.:', _pageNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Line No.:', _lineNumberController.text.trim()),
+                  _buildReviewRow('Registry Date:',
+                      _registryDate.toIso8601String().substring(0, 10)),
                   _buildReviewRow('Entry Status:', _entryStatus),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection("2. Confirmand's Information", [
                   _buildReviewRow('Full Name:', confirmandName),
-                  _buildReviewRow('Date of Birth:', _dateOfBirth?.toIso8601String().substring(0, 10) ?? 'Not Specified'),
-                  _buildReviewRow('Age at Confirmation:', _ageController.text.trim().isNotEmpty ? _ageController.text.trim() : '—'),
-                  _buildReviewRow('Date of Baptism:', _dateOfBaptism?.toIso8601String().substring(0, 10) ?? '—'),
-                  _buildReviewRow('Church where Baptized:', _churchBaptizedController.text.trim()),
+                  _buildReviewRow(
+                      'Date of Birth:',
+                      _dateOfBirth?.toIso8601String().substring(0, 10) ??
+                          'Not Specified'),
+                  _buildReviewRow(
+                      'Age at Confirmation:',
+                      _ageController.text.trim().isNotEmpty
+                          ? _ageController.text.trim()
+                          : '—'),
+                  _buildReviewRow(
+                      'Date of Baptism:',
+                      _dateOfBaptism?.toIso8601String().substring(0, 10) ??
+                          '—'),
+                  _buildReviewRow('Church where Baptized:',
+                      _churchBaptizedController.text.trim()),
                   if (_addressController.text.trim().isNotEmpty)
-                    _buildReviewRow('Address / Residence:', _addressController.text.trim()),
+                    _buildReviewRow(
+                        'Address / Residence:', _addressController.text.trim()),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('3. Parents & Lineage', [
                   _buildReviewRow('Father:', fatherName),
-                  if (!_fatherNotIndicated && _fatherOriginController.text.trim().isNotEmpty)
-                    _buildReviewRow('Father Birthplace:', _fatherOriginController.text.trim()),
+                  if (!_fatherNotIndicated &&
+                      _fatherOriginController.text.trim().isNotEmpty)
+                    _buildReviewRow('Father Birthplace:',
+                        _fatherOriginController.text.trim()),
                   _buildReviewRow('Mother Maiden Name:', motherName),
                   if (_motherOriginController.text.trim().isNotEmpty)
-                    _buildReviewRow('Mother Birthplace:', _motherOriginController.text.trim()),
+                    _buildReviewRow('Mother Birthplace:',
+                        _motherOriginController.text.trim()),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('4. Confirmation Sponsors', [
                   _buildReviewRow('Sponsor 1 (Required):', sponsor1Name),
                   if (_sponsor1OriginAddressController.text.trim().isNotEmpty)
-                    _buildReviewRow('Sponsor 1 Address:', _sponsor1OriginAddressController.text.trim()),
+                    _buildReviewRow('Sponsor 1 Address:',
+                        _sponsor1OriginAddressController.text.trim()),
                   if (sponsor2Name.isNotEmpty)
                     _buildReviewRow('Sponsor 2 (Optional):', sponsor2Name),
                   if (_sponsor2OriginAddressController.text.trim().isNotEmpty)
-                    _buildReviewRow('Sponsor 2 Address:', _sponsor2OriginAddressController.text.trim()),
+                    _buildReviewRow('Sponsor 2 Address:',
+                        _sponsor2OriginAddressController.text.trim()),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('5. Confirmation Details & Clergy', [
-                  _buildReviewRow('Parish Name:', _parishNameController.text.trim()),
+                  _buildReviewRow(
+                      'Parish Name:', _parishNameController.text.trim()),
                   _buildReviewRow('Officiating Bishop/Priest:', priestName),
-                  _buildReviewRow('Date of Confirmation:', _dateOfConfirmation?.toIso8601String().substring(0, 10) ?? '—'),
-                  _buildReviewRow('Stipend / Offering:', _stipendController.text.trim().isNotEmpty ? '₱ ${_stipendController.text.trim()}' : '₱ 0.00'),
+                  _buildReviewRow(
+                      'Date of Confirmation:',
+                      _dateOfConfirmation
+                          ?.toIso8601String()
+                          .substring(0, 10) ??
+                          '—'),
+                  _buildReviewRow(
+                      'Stipend / Offering:',
+                      _stipendController.text.trim().isNotEmpty
+                          ? '₱ ${_stipendController.text.trim()}'
+                          : '₱ 0.00'),
                   if (_remarksController.text.trim().isNotEmpty)
-                    _buildReviewRow('Remarks / Notes:', _remarksController.text.trim()),
+                    _buildReviewRow(
+                        'Remarks / Notes:', _remarksController.text.trim()),
                 ]),
               ],
             ),
@@ -647,7 +955,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+            label: const Text('Confirm and Save',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
           ),
         ],
       ),
@@ -727,7 +1036,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         : 'Authorized Parish Personnel';
     final userRole = currentUser?.userRole ?? 'Secretary';
 
-    final reasonController = TextEditingController(text: 'Correction of record details');
+    final reasonController =
+    TextEditingController(text: 'Correction of record details');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -744,7 +1054,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 color: _pentecostRed.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.security_update_good, color: _pentecostRed, size: 24),
+              child: const Icon(Icons.security_update_good,
+                  color: _pentecostRed, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -767,7 +1078,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             children: [
               Text(
                 'You are modifying canonical entry ${widget.initialData!['record_id']} (${_confirmandFirstNameController.text.trim()} ${_confirmandLastNameController.text.trim()}).',
-                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+                style: TextStyle(
+                    fontSize: 14, color: ParishColors.textDark, height: 1.35),
               ),
               const SizedBox(height: 12),
               Container(
@@ -783,16 +1095,23 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   children: [
                     Text(
                       'AUDIT LOG ATTRIBUTION',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textMuted),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Editor: $currentUserName ($userRole)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _pentecostRed),
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: _pentecostRed),
                     ),
                     Text(
                       'Coordinates: Book ${_bookNumberController.text.trim()}, Page ${_pageNumberController.text.trim()}, Line ${_lineNumberController.text.trim()}',
-                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -800,7 +1119,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               const SizedBox(height: 14),
               Text(
                 'Reason for Correction *',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark),
               ),
               const SizedBox(height: 6),
               TextFormField(
@@ -808,11 +1130,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 maxLines: 2,
                 style: const TextStyle(fontSize: 13.5),
                 decoration: InputDecoration(
-                  hintText: 'e.g. Typographical error correction on confirmand name',
+                  hintText:
+                  'e.g. Typographical error correction on confirmand name',
                   filled: true,
                   fillColor: ParishColors.backgroundLight,
                   isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],
@@ -836,7 +1160,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            label: const Text('Confirm & Save Update',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ],
       ),
@@ -850,7 +1175,12 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   Future<void> _submitForm({String? reasonForCorrection}) async {
     if (!isEditMode && !_validateAllFields()) return;
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _loadingMessage = isEditMode
+          ? 'Updating confirmation record...'
+          : 'Saving confirmation record...';
+    });
 
     try {
       final int parsedAge = int.tryParse(_ageController.text.trim()) ?? 0;
@@ -873,7 +1203,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         final editLogStamp =
             '[Amended on ${now.toIso8601String().substring(0, 10)} by $currentUserName (${currentUser?.userRole ?? "Staff"})]: $reason';
 
-        if (compiledCanonicalNotes != null && compiledCanonicalNotes.trim().isNotEmpty) {
+        if (compiledCanonicalNotes != null &&
+            compiledCanonicalNotes.trim().isNotEmpty) {
           compiledCanonicalNotes = '$compiledCanonicalNotes\n$editLogStamp';
         } else {
           compiledCanonicalNotes = editLogStamp;
@@ -885,87 +1216,137 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
         'page_number': _pageNumberController.text.trim(),
         'line_number': _lineNumberController.text.trim(),
         'registry_date': isEditMode
-            ? (widget.initialData!['registry_date']?.toString().substring(0, 10) ??
+            ? (widget.initialData!['registry_date']
+            ?.toString()
+            .substring(0, 10) ??
             _registryDate.toIso8601String().substring(0, 10))
             : _registryDate.toIso8601String().substring(0, 10),
         'entry_status': isEditMode
             ? (widget.initialData!['entry_status']?.toString() ?? 'ORIGINAL')
             : 'CORRECTED',
-        'remarks': compiledCanonicalNotes,
+        'remarks': _remarksController.text.trim().isEmpty
+            ? compiledCanonicalNotes
+            : _remarksController.text.trim(),
 
         'confirmand_first_name': _confirmandFirstNameController.text.trim(),
-        'confirmand_middle_name': _confirmandMiddleNameController.text.trim().isEmpty ? null : _confirmandMiddleNameController.text.trim(),
+        'confirmand_middle_name':
+        _confirmandMiddleNameController.text.trim().isEmpty
+            ? null
+            : _confirmandMiddleNameController.text.trim(),
         'confirmand_last_name': _confirmandLastNameController.text.trim(),
-        'confirmand_suffix': _confirmandSuffixController.text.trim().isEmpty ? null : _confirmandSuffixController.text.trim(),
+        'confirmand_suffix': _confirmandSuffixController.text.trim().isEmpty
+            ? null
+            : _confirmandSuffixController.text.trim(),
         'date_of_birth': _dateOfBirth?.toIso8601String().substring(0, 10),
         'age': parsedAge,
         'date_of_baptism': _dateOfBaptism!.toIso8601String().substring(0, 10),
         'church_baptized': _churchBaptizedController.text.trim(),
-        'address': _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
+        'address': _addressController.text.trim().isEmpty
+            ? null
+            : _addressController.text.trim(),
 
         'father_first_name': _fatherFirstNameController.text.trim(),
-        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty ? null : _fatherMiddleNameController.text.trim(),
+        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _fatherMiddleNameController.text.trim(),
         'father_last_name': _fatherLastNameController.text.trim(),
-        'father_origin': _fatherOriginController.text.trim().isEmpty ? null : _fatherOriginController.text.trim(),
+        'father_origin': _fatherOriginController.text.trim().isEmpty
+            ? null
+            : _fatherOriginController.text.trim(),
 
         'mother_first_name': _motherFirstNameController.text.trim(),
-        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty ? null : _motherMiddleNameController.text.trim(),
-        'mother_maiden_last_name': _motherMaidenLastNameController.text.trim(),
-        'mother_origin': _motherOriginController.text.trim().isEmpty ? null : _motherOriginController.text.trim(),
+        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _motherMiddleNameController.text.trim(),
+        'mother_maiden_last_name':
+        _motherMaidenLastNameController.text.trim(),
+        'mother_origin': _motherOriginController.text.trim().isEmpty
+            ? null
+            : _motherOriginController.text.trim(),
 
         'sponsor_1_first_name': _sponsor1FirstNameController.text.trim(),
-        'sponsor_1_middle_name': _sponsor1MiddleNameController.text.trim().isEmpty ? null : _sponsor1MiddleNameController.text.trim(),
+        'sponsor_1_middle_name':
+        _sponsor1MiddleNameController.text.trim().isEmpty
+            ? null
+            : _sponsor1MiddleNameController.text.trim(),
         'sponsor_1_last_name': _sponsor1LastNameController.text.trim(),
-        'sponsor_1_origin_address': _sponsor1OriginAddressController.text.trim().isEmpty ? null : _sponsor1OriginAddressController.text.trim(),
+        'sponsor_1_origin_address':
+        _sponsor1OriginAddressController.text.trim().isEmpty
+            ? null
+            : _sponsor1OriginAddressController.text.trim(),
 
-        'sponsor_2_first_name': _sponsor2FirstNameController.text.trim().isEmpty ? null : _sponsor2FirstNameController.text.trim(),
-        'sponsor_2_middle_name': _sponsor2MiddleNameController.text.trim().isEmpty ? null : _sponsor2MiddleNameController.text.trim(),
-        'sponsor_2_last_name': _sponsor2LastNameController.text.trim().isEmpty ? null : _sponsor2LastNameController.text.trim(),
-        'sponsor_2_origin_address': _sponsor2OriginAddressController.text.trim().isEmpty ? null : _sponsor2OriginAddressController.text.trim(),
+        'sponsor_2_first_name': _sponsor2FirstNameController.text.trim().isEmpty
+            ? null
+            : _sponsor2FirstNameController.text.trim(),
+        'sponsor_2_middle_name':
+        _sponsor2MiddleNameController.text.trim().isEmpty
+            ? null
+            : _sponsor2MiddleNameController.text.trim(),
+        'sponsor_2_last_name': _sponsor2LastNameController.text.trim().isEmpty
+            ? null
+            : _sponsor2LastNameController.text.trim(),
+        'sponsor_2_origin_address':
+        _sponsor2OriginAddressController.text.trim().isEmpty
+            ? null
+            : _sponsor2OriginAddressController.text.trim(),
 
-        'date_of_confirmation': _dateOfConfirmation!.toIso8601String().substring(0, 10),
+        'date_of_confirmation':
+        _dateOfConfirmation!.toIso8601String().substring(0, 10),
         'stipend': parsedStipend,
         'minister_first_name': _ministerFirstNameController.text.trim(),
-        'minister_middle_name': _ministerMiddleNameController.text.trim().isEmpty ? null : _ministerMiddleNameController.text.trim(),
+        'minister_middle_name':
+        _ministerMiddleNameController.text.trim().isEmpty
+            ? null
+            : _ministerMiddleNameController.text.trim(),
         'minister_last_name': _ministerLastNameController.text.trim(),
         'parish_name': _parishNameController.text.trim(),
-        'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
       };
 
       if (isEditMode) {
         final recordId = widget.initialData!['record_id'].toString();
 
-        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+        final changesJson =
+        _computeChangesSummaryJson(widget.initialData!, recordMap);
 
-        await ConfirmationService.updateConfirmationRecord(recordId, recordMap);
+        await ConfirmationService.updateConfirmationRecord(
+            recordId, recordMap);
 
         if (changesJson.isNotEmpty) {
           try {
-            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            await Supabase.instance.client
+                .from('sacramental_record_audit_logs')
+                .insert({
               'log_id': 'LOG-${now.millisecondsSinceEpoch}',
               'record_id': recordId,
               'sacrament_type': 'Confirmation',
               'action_type': 'UPDATED',
-              'recipient_name': '${_confirmandFirstNameController.text.trim()} ${_confirmandLastNameController.text.trim()}',
+              'recipient_name':
+              '${_confirmandFirstNameController.text.trim()} ${_confirmandLastNameController.text.trim()}',
               'book_number': _bookNumberController.text.trim(),
               'page_number': _pageNumberController.text.trim(),
               'line_number': _lineNumberController.text.trim(),
               'performed_by_id': currentUserId,
               'performed_by_name': currentUserName,
               'performed_by_role': currentUser?.userRole ?? 'Secretary',
-              'justification': reasonForCorrection ?? 'Correction of confirmation details',
+              'justification':
+              reasonForCorrection ?? 'Correction of confirmation details',
               'changes_summary': changesJson,
               'created_at': now.toIso8601String(),
             });
           } catch (auditErr) {
-            debugPrint('[ConfirmationManualEntryPage] Audit log insertion notice: $auditErr');
+            debugPrint(
+                '[ConfirmationManualEntryPage] Audit log insertion notice: $auditErr');
           }
         }
       } else {
-        final insertedRecord = await ConfirmationService.insertManualConfirmationRecord(recordMap);
+        final insertedRecord =
+        await ConfirmationService.insertManualConfirmationRecord(
+            recordMap);
 
         try {
-          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+          await Supabase.instance.client
+              .from('sacramental_record_audit_logs')
+              .insert({
             'log_id': 'LOG-${now.millisecondsSinceEpoch}',
             'record_id': insertedRecord.recordId,
             'sacrament_type': 'Confirmation',
@@ -982,7 +1363,14 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             'created_at': now.toIso8601String(),
           });
         } catch (auditErr) {
-          debugPrint('[ConfirmationManualEntryPage] Audit log insertion notice: $auditErr');
+          debugPrint(
+              '[ConfirmationManualEntryPage] Audit log insertion notice: $auditErr');
+        }
+
+        if (_activeDraftId != null && _activeDraftId!.isNotEmpty) {
+          try {
+            await SacramentalDraftService.deleteDraft(_activeDraftId!);
+          } catch (_) {}
         }
       }
 
@@ -1016,12 +1404,14 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
+    final bool isNarrowAppBar = MediaQuery.sizeOf(context).width < 520;
 
     return PopScope(
-      canPop: !_isSubmitting,
+      canPop: !isBusy,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_isSubmitting) return;
+        if (isBusy) return;
         final shouldExit = await showDiscardConfirmationDialog(
           context,
           accentColor: _pentecostRed,
@@ -1030,72 +1420,121 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
           Navigator.pop(context);
         }
       },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhiteColor,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: _pentecostRed, size: 26),
-            onPressed: _isSubmitting
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: _pentecostRed,
-              );
-              if (shouldExit && context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditMode ? 'Edit Confirmation Record' : 'Confirmation Manual Entry',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-              ),
-              Text(
-                isEditMode
-                    ? 'Editing Record: ${widget.initialData!['record_id']}'
-                    : 'Parish Confirmation Register (Liber Confirmatorum)',
-                style: TextStyle(fontSize: 12, color: textMutedColor),
-              ),
+      child: SacramentalLoadingOverlay(
+        isLoading: isBusy,
+        message: _loadingMessage,
+        accentColor: _pentecostRed,
+        icon: Icons.local_fire_department_outlined,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhiteColor,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: _pentecostRed, size: 26),
+              onPressed: isBusy
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: _pentecostRed,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditMode
+                      ? 'Edit Confirmation Record'
+                      : 'Confirmation Manual Entry',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDarkColor),
+                ),
+                Text(
+                  isEditMode
+                      ? 'Editing Record: ${widget.initialData!['record_id']}'
+                      : (_activeDraftId != null
+                      ? 'Resuming Saved Draft'
+                      : 'Parish Confirmation Register (Liber Confirmatorum)'),
+                  style: TextStyle(fontSize: 12, color: textMutedColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            actions: [
+              if (!isEditMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _pentecostRed,
+                        backgroundColor: _pentecostRed.withOpacity(0.08),
+                        side: BorderSide(
+                          color: _pentecostRed.withOpacity(0.45),
+                          width: 1.2,
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrowAppBar ? 10 : 14,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: isBusy ? null : _saveToDraft,
+                      icon: const Icon(Icons.save_as_outlined, size: 18),
+                      label: Text(
+                        isNarrowAppBar ? 'Draft' : 'Save to Draft',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-        ),
-        floatingActionButton: IgnorePointer(
-          ignoring: !_showBackToTop,
-          child: AnimatedOpacity(
-            opacity: _showBackToTop ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 250),
-            child: Semantics(
-              button: true,
-              label: 'Back to top, button',
-              child: FocusableActionDetector(
-                onShowHoverHighlight: (hovered) {
-                  setState(() => _isBackToTopHovered = hovered);
-                },
-                actions: <Type, Action<Intent>>{
-                  ActivateIntent: CallbackAction<ActivateIntent>(
-                    onInvoke: (_) => _scrollToTop(),
-                  ),
-                },
-                child: AnimatedScale(
-                  scale: _isBackToTopHovered ? 1.05 : 1.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: SizedBox(
-                    height: 48,
-                    child: FloatingActionButton.extended(
-                      backgroundColor: _pentecostRed,
-                      foregroundColor: Colors.white,
-                      elevation: 4,
-                      onPressed: _scrollToTop,
-                      icon: const Icon(Icons.arrow_upward, size: 18),
-                      label: const Text(
-                        'Back to Top',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          floatingActionButton: IgnorePointer(
+            ignoring: !_showBackToTop,
+            child: AnimatedOpacity(
+              opacity: _showBackToTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: Semantics(
+                button: true,
+                label: 'Back to top, button',
+                child: FocusableActionDetector(
+                  onShowHoverHighlight: (hovered) {
+                    setState(() => _isBackToTopHovered = hovered);
+                  },
+                  actions: <Type, Action<Intent>>{
+                    ActivateIntent: CallbackAction<ActivateIntent>(
+                      onInvoke: (_) => _scrollToTop(),
+                    ),
+                  },
+                  child: AnimatedScale(
+                    scale: _isBackToTopHovered ? 1.05 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: SizedBox(
+                      height: 48,
+                      child: FloatingActionButton.extended(
+                        backgroundColor: _pentecostRed,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        onPressed: _scrollToTop,
+                        icon: const Icon(Icons.arrow_upward, size: 18),
+                        label: const Text(
+                          'Back to Top',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ),
                     ),
                   ),
@@ -1103,94 +1542,82 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               ),
             ),
           ),
-        ),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double availableWidth = constraints.maxWidth;
-              final bool isWide = availableWidth >= 900;
-              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double availableWidth = constraints.maxWidth;
+                final bool isWide = availableWidth >= 900;
+                final double horizontalPadding =
+                isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Stack(
-                children: [
-                  SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
-                        child: Form(
-                          key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildFormHeaderCard(),
-                              const SizedBox(height: 16),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding, vertical: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                      BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormHeaderCard(),
+                            const SizedBox(height: 16),
 
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: ParishColors.mercyRed),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
+                            if (_errorMessage != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRedSurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                  Border.all(color: ParishColors.mercyRed),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        color: ParishColors.mercyRed, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.mercyRed,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-
-                              _buildSection1Coordinates(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection2Confirmand(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection3Parents(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection4Sponsors(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection5Administration(isWide: isWide),
-                              const SizedBox(height: 24),
-                              _buildBottomSubmissionBar(isWide: isWide),
-                              const SizedBox(height: 50),
+                              ),
                             ],
-                          ),
+
+                            _buildSection1Coordinates(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection2Confirmand(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection3Parents(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection4Sponsors(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection5Administration(isWide: isWide),
+                            const SizedBox(height: 24),
+                            _buildBottomSubmissionBar(isWide: isWide),
+                            const SizedBox(height: 50),
+                          ],
                         ),
                       ),
                     ),
                   ),
-
-                  if (_isSubmitting)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black.withOpacity(0.55),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: ParishColors.goldAccent,
-                            strokeWidth: 4.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1241,14 +1668,19 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: _pentecostRed.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Canonical Step',
-                        style: TextStyle(
+                      child: Text(
+                        isEditMode
+                            ? 'Edit Mode'
+                            : (_activeDraftId != null
+                            ? 'Draft Mode'
+                            : 'New Entry'),
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: _pentecostRed,
@@ -1308,7 +1740,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   Expanded(
                     child: Text(
                       'Book, Page, and Line coordinates are permanent physical coordinates and cannot be altered.',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _pentecostRed),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _pentecostRed),
                     ),
                   ),
                 ],
@@ -1319,7 +1754,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
           if (hasDup) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
                 color: ParishColors.mercyRedSurface,
@@ -1328,7 +1764,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               ),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded,
+                      color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1391,9 +1828,15 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
               child: Row(
                 children: [
-                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _pentecostRed)),
+                  const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.8, color: _pentecostRed)),
                   const SizedBox(width: 8),
-                  Text('Checking physical confirmation register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                  Text('Checking physical confirmation register...',
+                      style: TextStyle(
+                          fontSize: 11, color: ParishColors.textMuted)),
                 ],
               ),
             ),
@@ -1404,7 +1847,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               Expanded(
                 child: isEditMode
                     ? _buildTextFormField(
-                  controller: TextEditingController(text: _entryStatus),
+                  controller:
+                  TextEditingController(text: _entryStatus),
                   label: 'Entry Status (Locked)',
                   isRequired: false,
                   enabled: false,
@@ -1414,14 +1858,18 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   isRequired: true,
                   value: _entryStatus,
                   items: const ['ORIGINAL', 'CORRECTED', 'INCOMPLETE'],
-                  onChanged: (val) => setState(() => _entryStatus = val!),
+                  onChanged: (val) =>
+                      setState(() => _entryStatus = val!),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: isEditMode
                     ? _buildTextFormField(
-                  controller: TextEditingController(text: _registryDate.toIso8601String().substring(0, 10)),
+                  controller: TextEditingController(
+                      text: _registryDate
+                          .toIso8601String()
+                          .substring(0, 10)),
                   label: 'Registry Date (Locked)',
                   isRequired: false,
                   enabled: false,
@@ -1461,7 +1909,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Confirmand first name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Confirmand first name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1472,7 +1922,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1483,7 +1935,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Confirmand last name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Confirmand last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1510,7 +1964,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Confirmand first name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Confirmand first name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1521,7 +1977,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1536,7 +1994,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Last name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1572,12 +2032,16 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                 flex: isWide ? 2 : 1,
                 child: _buildTextFormField(
                   controller: _ageController,
-                  label: hasBirthIndicated ? 'Age (Calculated)' : 'Age (Enter in Years)',
+                  label: hasBirthIndicated
+                      ? 'Age (Calculated)'
+                      : 'Age (Enter in Years)',
                   isRequired: !hasBirthIndicated,
                   enabled: !hasBirthIndicated,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
-                  validator: (val) => SacramentalValidators.validateWholeNumberAge(val, isRequired: !hasBirthIndicated),
+                  validator: (val) =>
+                      SacramentalValidators.validateWholeNumberAge(val,
+                          isRequired: !hasBirthIndicated),
                 ),
               ),
               if (isWide) ...[
@@ -1600,7 +2064,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Church where Baptized',
                     isRequired: true,
                     maxLength: 150,
-                    validator: (val) => SacramentalValidators.validatePlace(val, 'Church where baptized', isRequired: true, maxLength: 150),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, 'Church where baptized',
+                        isRequired: true, maxLength: 150),
                   ),
                 ),
               ],
@@ -1627,7 +2093,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Church where Baptized',
                     isRequired: true,
                     maxLength: 150,
-                    validator: (val) => SacramentalValidators.validatePlace(val, 'Church where baptized', isRequired: true, maxLength: 150),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, 'Church where baptized',
+                        isRequired: true, maxLength: 150),
                   ),
                 ),
               ],
@@ -1639,7 +2107,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             label: 'Address / Residence',
             isRequired: false,
             maxLength: 150,
-            validator: (val) => SacramentalValidators.validatePlace(val, 'Address / Residence', isRequired: false, maxLength: 150),
+            validator: (val) => SacramentalValidators.validatePlace(
+                val, 'Address / Residence',
+                isRequired: false, maxLength: 150),
           ),
         ],
       ),
@@ -1653,21 +2123,29 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Father's Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: _pentecostRed)),
+          const Text("Father's Information",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                  color: _pentecostRed)),
           const SizedBox(height: 8),
 
           Container(
             margin: const EdgeInsets.only(bottom: 14),
             decoration: BoxDecoration(
-              color: _fatherNotIndicated ? _pentecostRed.withOpacity(0.12) : ParishColors.backgroundLight,
+              color: _fatherNotIndicated
+                  ? _pentecostRed.withOpacity(0.12)
+                  : ParishColors.backgroundLight,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: _fatherNotIndicated ? _pentecostRed : ParishColors.borderGrey,
+                color:
+                _fatherNotIndicated ? _pentecostRed : ParishColors.borderGrey,
                 width: _fatherNotIndicated ? 1.6 : 1.0,
               ),
             ),
             child: CheckboxListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               activeColor: _pentecostRed,
               title: const Text(
                 'Father not acknowledged in the Birth Certificate',
@@ -1694,7 +2172,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: !_fatherNotIndicated,
                     enabled: !_fatherNotIndicated,
                     maxLength: 50,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validateName(
+                        val, "Father's first name",
+                        isRequired: true, maxLength: 50)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1706,7 +2188,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: false,
                     enabled: !_fatherNotIndicated,
                     maxLength: 50,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validateName(
+                        val, "Father's middle name",
+                        isRequired: false, maxLength: 50)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1718,7 +2204,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: !_fatherNotIndicated,
                     enabled: !_fatherNotIndicated,
                     maxLength: 50,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validateName(
+                        val, "Father's last name",
+                        isRequired: true, maxLength: 50)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1730,7 +2220,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: false,
                     enabled: !_fatherNotIndicated,
                     maxLength: 100,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's birthplace", isRequired: false, maxLength: 100) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validatePlace(
+                        val, "Father's birthplace",
+                        isRequired: false, maxLength: 100)
+                        : null,
                   ),
                 ),
               ],
@@ -1746,7 +2240,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: !_fatherNotIndicated,
                     enabled: !_fatherNotIndicated,
                     maxLength: 50,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's first name", isRequired: true, maxLength: 50) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validateName(
+                        val, "Father's first name",
+                        isRequired: true, maxLength: 50)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1757,7 +2255,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: false,
                     enabled: !_fatherNotIndicated,
                     maxLength: 50,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validateName(
+                        val, "Father's middle name",
+                        isRequired: false, maxLength: 50)
+                        : null,
                   ),
                 ),
               ],
@@ -1772,7 +2274,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: !_fatherNotIndicated,
                     enabled: !_fatherNotIndicated,
                     maxLength: 50,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validateName(val, "Father's last name", isRequired: true, maxLength: 50) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validateName(
+                        val, "Father's last name",
+                        isRequired: true, maxLength: 50)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1783,7 +2289,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     isRequired: false,
                     enabled: !_fatherNotIndicated,
                     maxLength: 100,
-                    validator: (val) => !_fatherNotIndicated ? SacramentalValidators.validatePlace(val, "Father's birthplace", isRequired: false, maxLength: 100) : null,
+                    validator: (val) => !_fatherNotIndicated
+                        ? SacramentalValidators.validatePlace(
+                        val, "Father's birthplace",
+                        isRequired: false, maxLength: 100)
+                        : null,
                   ),
                 ),
               ],
@@ -1792,7 +2302,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
           const Divider(height: 26),
 
-          const Text("Mother's Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: _pentecostRed)),
+          const Text("Mother's Information",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                  color: _pentecostRed)),
           const SizedBox(height: 10),
 
           if (isWide) ...[
@@ -1806,7 +2320,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Mother First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's first name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1817,7 +2333,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1828,7 +2346,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Maiden Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's maiden last name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1839,7 +2359,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Birthplace / Hometown',
                     isRequired: false,
                     maxLength: 100,
-                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's birthplace", isRequired: false, maxLength: 100),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, "Mother's birthplace",
+                        isRequired: false, maxLength: 100),
                   ),
                 ),
               ],
@@ -1854,7 +2376,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Mother First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's first name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1864,7 +2388,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1878,7 +2404,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Maiden Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's maiden last name",
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1888,7 +2416,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Birthplace / Hometown',
                     isRequired: false,
                     maxLength: 100,
-                    validator: (val) => SacramentalValidators.validatePlace(val, "Mother's birthplace", isRequired: false, maxLength: 100),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, "Mother's birthplace",
+                        isRequired: false, maxLength: 100),
                   ),
                 ),
               ],
@@ -1906,13 +2436,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Confirmation registers limit sponsors to Sponsor 1 (Required) and Sponsor 2 (Optional).',
-            style: TextStyle(fontSize: 13, color: _pentecostRed, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-
-          Text('Sponsor 1 (Ninong / Ninang - Required)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          Text('Sponsor 1',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.5,
+                  color: ParishColors.textDark)),
           const SizedBox(height: 6),
           if (isWide) ...[
             Row(
@@ -1925,7 +2453,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 1 first name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1936,7 +2466,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 1 middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1947,7 +2479,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 1 last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1958,7 +2492,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Residence / Address',
                     isRequired: false,
                     maxLength: 150,
-                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 1 address', isRequired: false, maxLength: 150),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, 'Sponsor 1 address',
+                        isRequired: false, maxLength: 150),
                   ),
                 ),
               ],
@@ -1973,7 +2509,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 first name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 1 first name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1983,7 +2521,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 1 middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1997,7 +2537,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 1 last name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 1 last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2007,7 +2549,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Residence',
                     isRequired: false,
                     maxLength: 150,
-                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 1 address', isRequired: false, maxLength: 150),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, 'Sponsor 1 address',
+                        isRequired: false, maxLength: 150),
                   ),
                 ),
               ],
@@ -2016,7 +2560,11 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
           const Divider(height: 22),
 
-          Text('Sponsor 2 (Ninong / Ninang - Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          Text('Sponsor 2',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.5,
+                  color: ParishColors.textDark)),
           const SizedBox(height: 6),
           if (isWide) ...[
             Row(
@@ -2029,7 +2577,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'First Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 2 first name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2040,7 +2590,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 2 middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2051,7 +2603,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Last Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 2 last name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2062,7 +2616,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Residence / Address',
                     isRequired: false,
                     maxLength: 150,
-                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 2 address', isRequired: false, maxLength: 150),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, 'Sponsor 2 address',
+                        isRequired: false, maxLength: 150),
                   ),
                 ),
               ],
@@ -2077,7 +2633,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'First Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 first name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 2 first name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2087,7 +2645,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 2 middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -2101,7 +2661,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Last Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Sponsor 2 last name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Sponsor 2 last name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2111,7 +2673,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     label: 'Residence',
                     isRequired: false,
                     maxLength: 150,
-                    validator: (val) => SacramentalValidators.validatePlace(val, 'Sponsor 2 address', isRequired: false, maxLength: 150),
+                    validator: (val) => SacramentalValidators.validatePlace(
+                        val, 'Sponsor 2 address',
+                        isRequired: false, maxLength: 150),
                   ),
                 ),
               ],
@@ -2134,7 +2698,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             label: 'Parish Name',
             isRequired: true,
             maxLength: 150,
-            validator: (val) => SacramentalValidators.validatePlace(val, 'Parish name', isRequired: true, maxLength: 150),
+            validator: (val) => SacramentalValidators.validatePlace(
+                val, 'Parish name',
+                isRequired: true, maxLength: 150),
           ),
 
           Row(
@@ -2147,7 +2713,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   label: 'Priest / Bishop First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Minister first name', isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, 'Minister first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2158,7 +2726,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Minister middle name', isRequired: false, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, 'Minister middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2169,7 +2739,9 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   label: 'Priest / Bishop Last Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Minister last name', isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, 'Minister last name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
             ],
@@ -2196,7 +2768,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   label: 'Stipend / Offering (₱)',
                   isRequired: false,
                   maxLength: 12,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
                   validator: SacramentalValidators.validateStipend,
                 ),
               ),
@@ -2218,6 +2791,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
   Widget _buildBottomSubmissionBar({required bool isWide}) {
     final borderGreyColor = ParishColors.borderGrey;
     final textMutedColor = ParishColors.textMuted;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
 
     return Container(
       width: double.infinity,
@@ -2243,9 +2817,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: borderGreyColor, width: 1.4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: _isSubmitting
+              onPressed: isBusy
                   ? null
                   : () async {
                 final shouldExit = await showDiscardConfirmationDialog(
@@ -2258,7 +2833,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               },
               child: Text(
                 'Discard & Exit',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: textMutedColor),
               ),
             ),
           ),
@@ -2272,9 +2850,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                     : (isEditMode ? _pentecostRed : ParishColors.oliveGreen),
                 foregroundColor: Colors.white,
                 elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+              onPressed: (isBusy || _coordinateDuplicateError != null)
                   ? null
                   : () {
                 if (isEditMode) {
@@ -2283,10 +2862,15 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
                   _promptSaveConfirmation();
                 }
               },
-              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              icon: Icon(
+                  isEditMode
+                      ? Icons.security_update_good
+                      : Icons.check_circle_outline,
+                  size: 22),
               label: Text(
                 isEditMode ? 'Update Confirmation' : 'Save Confirmation',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ),
           ),
@@ -2390,14 +2974,23 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
             keyboardType: keyboardType,
             maxLines: maxLines,
             maxLength: maxLength,
-            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            buildCounter: (context,
+                {required currentLength,
+                  required isFocused,
+                  maxLength}) =>
+            null,
             validator: validator,
-            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(
+                fontSize: 14.5,
+                color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
-              fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
+              fillColor: enabled
+                  ? ParishColors.backgroundLight
+                  : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -2412,11 +3005,13 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.8),
               ),
               errorStyle: TextStyle(
                 color: ParishColors.mercyRed,
@@ -2437,7 +3032,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     required bool hasError,
     required VoidCallback onTap,
   }) {
-    final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+    final borderColor =
+    hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -2454,16 +3050,21 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: borderColor, width: hasError ? 1.4 : 1.0),
+                border: Border.all(
+                    color: borderColor, width: hasError ? 1.4 : 1.0),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
+                    value != null
+                        ? value.toIso8601String().substring(0, 10)
+                        : 'YYYY-MM-DD',
                     style: TextStyle(
                       fontSize: 14.5,
-                      color: value != null ? ParishColors.textDark : ParishColors.textMuted,
+                      color: value != null
+                          ? ParishColors.textDark
+                          : ParishColors.textMuted,
                     ),
                   ),
                   const Icon(
@@ -2480,7 +3081,10 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               padding: const EdgeInsets.only(top: 6, left: 12),
               child: Text(
                 'Date selection is required.',
-                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    color: ParishColors.mercyRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500),
               ),
             ),
         ],
@@ -2518,7 +3122,8 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -2538,4 +3143,3 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
     );
   }
 }
-

@@ -15,6 +15,7 @@ import '../../services/certificate_pdf_generator.dart';
 import '../../services/certificate_service.dart';
 import '../../utils/placeholder_registry.dart';
 import '../dialogs/discard_entry_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 import 'certificate_canvas_designer_page.dart';
 
 class CertificateTemplateEditorPage extends StatefulWidget {
@@ -84,6 +85,7 @@ class _CertificateTemplateEditorPageState
 
   bool _isSaving = false;
   bool _isUploadingAsset = false;
+  String _loadingMessage = 'Saving certificate template...';
   String? _errorMessage;
 
   // Placeholder category filter tab
@@ -297,7 +299,8 @@ class _CertificateTemplateEditorPageState
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -307,7 +310,8 @@ class _CertificateTemplateEditorPageState
             ),
           ],
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        contentPadding:
+        const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         content: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: 620,
@@ -330,7 +334,8 @@ class _CertificateTemplateEditorPageState
                   loadingBuilder: (context, child, progress) {
                     if (progress == null) return child;
                     return const Center(
-                      child: CircularProgressIndicator(color: ParishColors.marianBlue),
+                      child: CircularProgressIndicator(
+                          color: ParishColors.marianBlue),
                     );
                   },
                   errorBuilder: (_, __, ___) => const Center(
@@ -339,7 +344,8 @@ class _CertificateTemplateEditorPageState
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.broken_image, size: 48, color: ParishColors.mercyRed),
+                          Icon(Icons.broken_image,
+                              size: 48, color: ParishColors.mercyRed),
                           SizedBox(height: 8),
                           Text('Failed to render image asset preview.'),
                         ],
@@ -351,7 +357,8 @@ class _CertificateTemplateEditorPageState
             ),
           ),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        actionsPadding:
+        const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(ctx),
@@ -363,7 +370,10 @@ class _CertificateTemplateEditorPageState
   }
 
   Future<void> _pickAndUploadAsset(String category) async {
-    setState(() => _isUploadingAsset = true);
+    setState(() {
+      _isUploadingAsset = true;
+      _loadingMessage = 'Uploading certificate $category asset...';
+    });
     try {
       final dynamic result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -526,6 +536,7 @@ class _CertificateTemplateEditorPageState
 
   Future<void> _previewCurrentPdf() async {
     final currentModel = _buildModelSnapshot();
+    final accentColor = _getSacramentColor(_sacramentType);
 
     final sampleData = {
       'child_first_name': 'Juan',
@@ -596,7 +607,8 @@ class _CertificateTemplateEditorPageState
             Expanded(
               child: Text(
                 'Live Inspection: ${_nameController.text.trim()}',
-                style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    fontSize: 16.5, fontWeight: FontWeight.bold),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -642,7 +654,8 @@ class _CertificateTemplateEditorPageState
             ),
           ),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        actionsPadding:
+        const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(ctx),
@@ -654,19 +667,72 @@ class _CertificateTemplateEditorPageState
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
-              final pdfBytes = await CertificatePdfGenerator.generatePdf(
-                template: currentModel,
-                sacramentType: _sacramentType,
-                recordData: sampleData,
-                purpose: _purposeController.text.trim(),
-                verificationId: 'PREVIEW-LIVE-TOKEN',
-                qrVerificationUrl:
-                '${CertificateService.verificationBaseUrl}?v=PREVIEW-LIVE-TOKEN',
+              final confirmPrint = await showDialog<bool>(
+                context: ctx,
+                barrierDismissible: false,
+                builder: (confirmCtx) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  title: const Row(
+                    children: [
+                      Icon(Icons.print_outlined,
+                          color: ParishColors.marianBlue, size: 22),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text('Print Template Preview?',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    ],
+                  ),
+                  content: Text(
+                    'Are you sure you want to print a sample preview of "${_nameController.text.trim()}"?',
+                    style: const TextStyle(fontSize: 13.5, height: 1.4),
+                  ),
+                  actions: [
+                    OutlinedButton(
+                      onPressed: () => Navigator.pop(confirmCtx, false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ParishColors.marianBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => Navigator.pop(confirmCtx, true),
+                      icon: const Icon(Icons.print, size: 17),
+                      label: const Text('Yes, Print Preview',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
               );
-              await CertificatePdfGenerator.printCertificate(
-                pdfBytes: pdfBytes,
-                documentTitle: 'Preview_${_nameController.text.trim()}',
+
+              if (confirmPrint != true || !ctx.mounted) return;
+
+              final loading = SacramentalLoadingBarrierController.show(
+                ctx,
+                initialMessage: 'Generating preview print job...',
+                accentColor: accentColor,
+                icon: Icons.print_rounded,
               );
+              try {
+                final pdfBytes = await CertificatePdfGenerator.generatePdf(
+                  template: currentModel,
+                  sacramentType: _sacramentType,
+                  recordData: sampleData,
+                  purpose: _purposeController.text.trim(),
+                  verificationId: 'PREVIEW-LIVE-TOKEN',
+                  qrVerificationUrl:
+                  '${CertificateService.verificationBaseUrl}?v=PREVIEW-LIVE-TOKEN',
+                );
+                await CertificatePdfGenerator.printCertificate(
+                  pdfBytes: pdfBytes,
+                  documentTitle: 'Preview_${_nameController.text.trim()}',
+                );
+              } finally {
+                loading.dismiss();
+              }
             },
             icon: const Icon(Icons.print, size: 18),
             label: const Text('Print Preview',
@@ -685,7 +751,8 @@ class _CertificateTemplateEditorPageState
     setState(() => _errorMessage = null);
 
     if (!_formKey.currentState!.validate()) {
-      setState(() => _errorMessage = 'Please complete the highlighted required fields.');
+      setState(
+              () => _errorMessage = 'Please complete the highlighted required fields.');
       _scrollController.animateTo(0.0,
           duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
       return;
@@ -724,13 +791,15 @@ class _CertificateTemplateEditorPageState
                 color: accentColor.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.check_circle_outline, color: accentColor, size: 22),
+              child:
+              Icon(Icons.check_circle_outline, color: accentColor, size: 22),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 isEditMode ? 'Confirm Template Update' : 'Confirm Save Template',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16.5),
               ),
             ),
           ],
@@ -761,10 +830,20 @@ class _CertificateTemplateEditorPageState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSummaryRow('Sacrament:', _sacramentType),
-                  _buildSummaryRow('Layout Mode:', _useVisualCanvas ? 'Visual Canva Designer' : 'Simple Word-Processor'),
-                  _buildSummaryRow('Paper Size:', '$_paperSize ($_orientation)'),
-                  _buildSummaryRow('Default Setting:', _isDefault ? 'YES (Default for $_sacramentType)' : 'No'),
-                  _buildSummaryRow('QR Verification:', _enableQr ? 'Enabled' : 'Disabled'),
+                  _buildSummaryRow(
+                      'Layout Mode:',
+                      _useVisualCanvas
+                          ? 'Visual Canva Designer'
+                          : 'Simple Word-Processor'),
+                  _buildSummaryRow(
+                      'Paper Size:', '$_paperSize ($_orientation)'),
+                  _buildSummaryRow(
+                      'Default Setting:',
+                      _isDefault
+                          ? 'YES (Default for $_sacramentType)'
+                          : 'No'),
+                  _buildSummaryRow(
+                      'QR Verification:', _enableQr ? 'Enabled' : 'Disabled'),
                 ],
               ),
             ),
@@ -799,15 +878,23 @@ class _CertificateTemplateEditorPageState
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
-          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(label,
+              style: TextStyle(fontSize: 12, color: ParishColors.textMuted)),
+          Text(value,
+              style:
+              const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 
   Future<void> _executeSave() async {
-    setState(() => _isSaving = true);
+    setState(() {
+      _isSaving = true;
+      _loadingMessage = isEditMode
+          ? 'Updating certificate template...'
+          : 'Saving certificate template...';
+    });
 
     try {
       final model = _buildModelSnapshot();
@@ -852,12 +939,13 @@ class _CertificateTemplateEditorPageState
     final cardWhite = ParishColors.cardWhite;
     final borderGrey = ParishColors.borderGrey;
     final accentColor = _getSacramentColor(_sacramentType);
+    final bool isBusy = _isSaving || _isUploadingAsset;
 
     return PopScope(
-      canPop: !_isSaving,
+      canPop: !isBusy,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_isSaving) return;
+        if (isBusy) return;
         final shouldExit = await showDiscardConfirmationDialog(
           context,
           accentColor: accentColor,
@@ -866,153 +954,153 @@ class _CertificateTemplateEditorPageState
           Navigator.pop(context);
         }
       },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhite,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: accentColor, size: 26),
-            onPressed: _isSaving
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: accentColor,
-              );
-              if (shouldExit && context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditMode
-                    ? 'Edit Certificate Template'
-                    : 'Create Certificate Template',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: textDark,
+      child: SacramentalLoadingOverlay(
+        isLoading: isBusy,
+        message: _loadingMessage,
+        accentColor: accentColor,
+        icon: Icons.design_services_outlined,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhite,
+            elevation: 0,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back, color: accentColor, size: 26),
+              onPressed: isBusy
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: accentColor,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditMode
+                      ? 'Edit Certificate Template'
+                      : 'Create Certificate Template',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: textDark,
+                  ),
                 ),
+                Text(
+                  isEditMode
+                      ? 'Configuring Template: ${widget.initialTemplate!.templateId} • $_sacramentType'
+                      : 'Diocese of San Pablo • New Canonical Template',
+                  style: TextStyle(fontSize: 12, color: textMuted),
+                ),
+              ],
+            ),
+            actions: [
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: accentColor,
+                  side: BorderSide(color: accentColor.withOpacity(0.5)),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                onPressed: isBusy ? null : _previewCurrentPdf,
+                icon: const Icon(Icons.picture_as_pdf, size: 16),
+                label: const Text('Live Preview',
+                    style:
+                    TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
               ),
-              Text(
-                isEditMode
-                    ? 'Configuring Template: ${widget.initialTemplate!.templateId} • $_sacramentType'
-                    : 'Diocese of San Pablo • New Canonical Template',
-                style: TextStyle(fontSize: 12, color: textMuted),
-              ),
+              const SizedBox(width: 8),
             ],
           ),
-          actions: [
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: accentColor,
-                side: BorderSide(color: accentColor.withOpacity(0.5)),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              onPressed: _previewCurrentPdf,
-              icon: const Icon(Icons.picture_as_pdf, size: 16),
-              label: const Text('Live Preview', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        body: Stack(
-          children: [
-            SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final bool isDesktop = constraints.maxWidth >= 960;
-                  final bool isMobile = constraints.maxWidth < 650;
-                  final double horizontalPadding = isDesktop ? 32.0 : (isMobile ? 12.0 : 20.0);
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isDesktop = constraints.maxWidth >= 960;
+                final bool isMobile = constraints.maxWidth < 650;
+                final double horizontalPadding =
+                isDesktop ? 32.0 : (isMobile ? 12.0 : 20.0);
 
-                  return SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: horizontalPadding,
-                      vertical: 20,
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isDesktop ? 1160 : 780),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Top Hero Banner
-                              _buildHeaderCard(accentColor, cardWhite, borderGrey, textDark, textMuted),
-                              const SizedBox(height: 16),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: horizontalPadding,
+                    vertical: 20,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                      BoxConstraints(maxWidth: isDesktop ? 1160 : 780),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Top Hero Banner
+                            _buildHeaderCard(accentColor, cardWhite, borderGrey,
+                                textDark, textMuted),
+                            const SizedBox(height: 16),
 
-                              // Error Notification Banner
-                              if (_errorMessage != null)
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: ParishColors.mercyRed),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.error_outline,
-                                          color: ParishColors.mercyRed, size: 22),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: const TextStyle(
-                                            color: ParishColors.mercyRed,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
+                            // Error Notification Banner
+                            if (_errorMessage != null)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRedSurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                  Border.all(color: ParishColors.mercyRed),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.error_outline,
+                                        color: ParishColors.mercyRed, size: 22),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: const TextStyle(
+                                          color: ParishColors.mercyRed,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
+                              ),
 
-                              // Prominent Mode Selector
-                              _buildModeSelectorSegmentedCard(accentColor, cardWhite, borderGrey, textDark, textMuted, isMobile),
-                              const SizedBox(height: 16),
+                            // Prominent Mode Selector
+                            _buildModeSelectorSegmentedCard(accentColor,
+                                cardWhite, borderGrey, textDark, textMuted, isMobile),
+                            const SizedBox(height: 16),
 
-                              // Responsive Layout (Desktop 2-Column vs Mobile/Tablet 1-Column)
-                              if (isDesktop)
-                                _buildWideTwoColumnLayout(cardWhite, borderGrey, textDark, textMuted, accentColor)
-                              else
-                                _buildSingleColumnLayout(cardWhite, borderGrey, textDark, textMuted, accentColor, isMobile),
+                            // Responsive Layout (Desktop 2-Column vs Mobile/Tablet 1-Column)
+                            if (isDesktop)
+                              _buildWideTwoColumnLayout(cardWhite, borderGrey,
+                                  textDark, textMuted, accentColor)
+                            else
+                              _buildSingleColumnLayout(cardWhite, borderGrey,
+                                  textDark, textMuted, accentColor, isMobile),
 
-                              const SizedBox(height: 24),
-                              _buildBottomSubmissionBar(cardWhite, borderGrey, textMuted, accentColor, isMobile),
-                              const SizedBox(height: 40),
-                            ],
-                          ),
+                            const SizedBox(height: 24),
+                            _buildBottomSubmissionBar(cardWhite, borderGrey,
+                                textMuted, accentColor, isMobile),
+                            const SizedBox(height: 40),
+                          ],
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-
-            if (_isSaving || _isUploadingAsset)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withOpacity(0.55),
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: ParishColors.goldAccent,
-                      strokeWidth: 4.5,
-                    ),
                   ),
-                ),
-              ),
-          ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -1022,8 +1110,13 @@ class _CertificateTemplateEditorPageState
   // Mode Selector Segmented Card
   // ===========================================================================
 
-  Widget _buildModeSelectorSegmentedCard(Color accentColor, Color cardWhite,
-      Color borderGrey, Color textDark, Color textMuted, bool isMobile) {
+  Widget _buildModeSelectorSegmentedCard(
+      Color accentColor,
+      Color cardWhite,
+      Color borderGrey,
+      Color textDark,
+      Color textMuted,
+      bool isMobile) {
     final simpleTile = InkWell(
       onTap: () => setState(() => _useVisualCanvas = false),
       borderRadius: BorderRadius.circular(12),
@@ -1056,7 +1149,8 @@ class _CertificateTemplateEditorPageState
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13.5,
-                      color: !_useVisualCanvas ? ParishColors.marianBlue : textDark,
+                      color:
+                      !_useVisualCanvas ? ParishColors.marianBlue : textDark,
                     ),
                   ),
                   Text(
@@ -1069,7 +1163,8 @@ class _CertificateTemplateEditorPageState
               ),
             ),
             if (!_useVisualCanvas)
-              const Icon(Icons.check_circle, size: 18, color: ParishColors.marianBlue),
+              const Icon(Icons.check_circle,
+                  size: 18, color: ParishColors.marianBlue),
           ],
         ),
       ),
@@ -1128,7 +1223,8 @@ class _CertificateTemplateEditorPageState
               ),
             ),
             if (_useVisualCanvas)
-              const Icon(Icons.check_circle, size: 18, color: Colors.cyanAccent),
+              const Icon(Icons.check_circle,
+                  size: 18, color: Colors.cyanAccent),
           ],
         ),
       ),
@@ -1159,7 +1255,9 @@ class _CertificateTemplateEditorPageState
               Text(
                 'Design & Formatting Mode',
                 style: TextStyle(
-                    fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.bold,
+                    color: textDark),
               ),
             ],
           ),
@@ -1200,13 +1298,17 @@ class _CertificateTemplateEditorPageState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildGeneralIdentityCard(cardWhite, borderGrey, textDark, accentColor, false),
+              _buildGeneralIdentityCard(
+                  cardWhite, borderGrey, textDark, accentColor, false),
               const SizedBox(height: 16),
-              _buildPageGeometryCard(cardWhite, borderGrey, textDark, accentColor, false),
+              _buildPageGeometryCard(
+                  cardWhite, borderGrey, textDark, accentColor, false),
               const SizedBox(height: 16),
-              _buildHeaderAndLogosCard(cardWhite, borderGrey, textDark, textMuted, accentColor, false),
+              _buildHeaderAndLogosCard(
+                  cardWhite, borderGrey, textDark, textMuted, accentColor, false),
               const SizedBox(height: 16),
-              _buildSignatoryCard(cardWhite, borderGrey, textDark, textMuted, accentColor, false),
+              _buildSignatoryCard(
+                  cardWhite, borderGrey, textDark, textMuted, accentColor, false),
             ],
           ),
         ),
@@ -1219,11 +1321,14 @@ class _CertificateTemplateEditorPageState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (_useVisualCanvas) ...[
-                _buildCanvaStudioActionCard(accentColor, cardWhite, borderGrey, textDark),
+                _buildCanvaStudioActionCard(
+                    accentColor, cardWhite, borderGrey, textDark),
               ] else ...[
-                _buildLargeBodyWordingCard(cardWhite, borderGrey, textDark, textMuted, accentColor),
+                _buildLargeBodyWordingCard(
+                    cardWhite, borderGrey, textDark, textMuted, accentColor),
                 const SizedBox(height: 16),
-                _buildTypographyAndAnchorsCard(cardWhite, borderGrey, textDark, textMuted, accentColor, false),
+                _buildTypographyAndAnchorsCard(cardWhite, borderGrey, textDark,
+                    textMuted, accentColor, false),
               ],
             ],
           ),
@@ -1237,21 +1342,28 @@ class _CertificateTemplateEditorPageState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildGeneralIdentityCard(cardWhite, borderGrey, textDark, accentColor, isMobile),
+        _buildGeneralIdentityCard(
+            cardWhite, borderGrey, textDark, accentColor, isMobile),
         const SizedBox(height: 16),
         if (_useVisualCanvas) ...[
-          _buildCanvaStudioActionCard(accentColor, cardWhite, borderGrey, textDark),
+          _buildCanvaStudioActionCard(
+              accentColor, cardWhite, borderGrey, textDark),
         ] else ...[
-          _buildLargeBodyWordingCard(cardWhite, borderGrey, textDark, textMuted, accentColor),
+          _buildLargeBodyWordingCard(
+              cardWhite, borderGrey, textDark, textMuted, accentColor),
           const SizedBox(height: 16),
-          _buildTypographyAndAnchorsCard(cardWhite, borderGrey, textDark, textMuted, accentColor, isMobile),
+          _buildTypographyAndAnchorsCard(cardWhite, borderGrey, textDark,
+              textMuted, accentColor, isMobile),
         ],
         const SizedBox(height: 16),
-        _buildPageGeometryCard(cardWhite, borderGrey, textDark, accentColor, isMobile),
+        _buildPageGeometryCard(
+            cardWhite, borderGrey, textDark, accentColor, isMobile),
         const SizedBox(height: 16),
-        _buildHeaderAndLogosCard(cardWhite, borderGrey, textDark, textMuted, accentColor, isMobile),
+        _buildHeaderAndLogosCard(
+            cardWhite, borderGrey, textDark, textMuted, accentColor, isMobile),
         const SizedBox(height: 16),
-        _buildSignatoryCard(cardWhite, borderGrey, textDark, textMuted, accentColor, isMobile),
+        _buildSignatoryCard(
+            cardWhite, borderGrey, textDark, textMuted, accentColor, isMobile),
       ],
     );
   }
@@ -1277,7 +1389,8 @@ class _CertificateTemplateEditorPageState
             width: double.infinity,
             decoration: BoxDecoration(
               color: accentColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(13)),
             ),
           ),
           Padding(
@@ -1290,7 +1403,8 @@ class _CertificateTemplateEditorPageState
                     color: accentColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.design_services, color: accentColor, size: 24),
+                  child:
+                  Icon(Icons.design_services, color: accentColor, size: 24),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -1302,7 +1416,9 @@ class _CertificateTemplateEditorPageState
                             ? 'Editing: ${widget.initialTemplate!.templateName}'
                             : 'New Certificate Template',
                         style: TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: textDark),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -1348,7 +1464,8 @@ class _CertificateTemplateEditorPageState
                   color: const Color(0xFF0284C7).withOpacity(0.25),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.palette, color: Colors.cyanAccent, size: 22),
+                child: const Icon(Icons.palette,
+                    color: Colors.cyanAccent, size: 22),
               ),
               const SizedBox(width: 12),
               const Expanded(
@@ -1400,7 +1517,8 @@ class _CertificateTemplateEditorPageState
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0284C7),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _launchVisualDesigner,
               icon: const Icon(Icons.open_in_new, size: 20),
@@ -1408,7 +1526,8 @@ class _CertificateTemplateEditorPageState
                 _canvasElements.isEmpty
                     ? 'Launch Canva Designer Studio'
                     : 'Open Canva Designer (${_canvasElements.length} Elements)',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ),
           ),
@@ -1426,7 +1545,8 @@ class _CertificateTemplateEditorPageState
                 fontSize: 15,
                 fontWeight: FontWeight.bold)),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: Colors.white60, fontSize: 10.5)),
+        Text(label,
+            style: const TextStyle(color: Colors.white60, fontSize: 10.5)),
       ],
     );
   }
@@ -1449,7 +1569,8 @@ class _CertificateTemplateEditorPageState
                 labelText: 'Template Name *',
                 hintText: 'e.g. Official Certificate',
               ),
-              validator: (v) => v!.trim().isEmpty ? 'Template name is required' : null,
+              validator: (v) =>
+              v!.trim().isEmpty ? 'Template name is required' : null,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -1486,7 +1607,8 @@ class _CertificateTemplateEditorPageState
                       labelText: 'Template Name *',
                       hintText: 'e.g. Official Certificate',
                     ),
-                    validator: (v) => v!.trim().isEmpty ? 'Template name is required' : null,
+                    validator: (v) =>
+                    v!.trim().isEmpty ? 'Template name is required' : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1502,7 +1624,9 @@ class _CertificateTemplateEditorPageState
                       'Matrimony',
                       'Death',
                       'Conversion'
-                    ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                    ]
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
                     onChanged: isEditMode
                         ? null
                         : (val) {
@@ -1571,18 +1695,24 @@ class _CertificateTemplateEditorPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               Text(
                 'Tap Tag to Insert at Cursor',
                 style: TextStyle(
-                    fontSize: 12.5, fontWeight: FontWeight.bold, color: textDark),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: textDark),
               ),
               Wrap(
                 spacing: 4,
-                children: ['All', 'Personal', 'Lineage', 'Liturgy', 'Registry'].map((cat) {
+                runSpacing: 4,
+                children: ['All', 'Personal', 'Lineage', 'Liturgy', 'Registry']
+                    .map((cat) {
                   final isSelected = _activeTagCategory == cat;
                   return ChoiceChip(
                     label: Text(cat),
@@ -1596,7 +1726,8 @@ class _CertificateTemplateEditorPageState
                     backgroundColor: ParishColors.backgroundLight,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     visualDensity: VisualDensity.compact,
-                    onSelected: (val) => setState(() => _activeTagCategory = cat),
+                    onSelected: (val) =>
+                        setState(() => _activeTagCategory = cat),
                   );
                 }).toList(),
               ),
@@ -1623,7 +1754,8 @@ class _CertificateTemplateEditorPageState
                     onTap: () => _insertPlaceholder(tag),
                     borderRadius: BorderRadius.circular(6),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 5),
                       decoration: BoxDecoration(
                         color: ParishColors.goldLight,
                         borderRadius: BorderRadius.circular(6),
@@ -1634,7 +1766,8 @@ class _CertificateTemplateEditorPageState
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.add, size: 12, color: ParishColors.goldAccent),
+                          const Icon(Icons.add,
+                              size: 12, color: ParishColors.goldAccent),
                           const SizedBox(width: 4),
                           Text(
                             tag,
@@ -1681,7 +1814,8 @@ class _CertificateTemplateEditorPageState
               labelText: 'Certificate Body Wording Text *',
               hintText: 'Type canonical certificate wording here...',
             ),
-            validator: (v) => (!_useVisualCanvas && (v == null || v.trim().isEmpty))
+            validator: (v) =>
+            (!_useVisualCanvas && (v == null || v.trim().isEmpty))
                 ? 'Body text is required in Simple Mode'
                 : null,
           ),
@@ -1706,20 +1840,31 @@ class _CertificateTemplateEditorPageState
               value: _fontFamily,
               decoration: _inputDecoration(labelText: 'Font Family'),
               items: const [
-                DropdownMenuItem(value: 'serif', child: Text('Classical Serif (Times)')),
-                DropdownMenuItem(value: 'sans', child: Text('Modern Sans (Helvetica)')),
-                DropdownMenuItem(value: 'courier', child: Text('Typewriter (Courier)')),
-                DropdownMenuItem(value: 'georgia', child: Text('Georgia / Editorial')),
-                DropdownMenuItem(value: 'garamond', child: Text('Garamond / Traditional')),
-                DropdownMenuItem(value: 'cinzel', child: Text('Roman Inscription (Cinzel)')),
-                DropdownMenuItem(value: 'script', child: Text('Chancery Script (Cursive)')),
+                DropdownMenuItem(
+                    value: 'serif', child: Text('Classical Serif (Times)')),
+                DropdownMenuItem(
+                    value: 'sans', child: Text('Modern Sans (Helvetica)')),
+                DropdownMenuItem(
+                    value: 'courier', child: Text('Typewriter (Courier)')),
+                DropdownMenuItem(
+                    value: 'georgia', child: Text('Georgia / Editorial')),
+                DropdownMenuItem(
+                    value: 'garamond', child: Text('Garamond / Traditional')),
+                DropdownMenuItem(
+                    value: 'cinzel',
+                    child: Text('Roman Inscription (Cinzel)')),
+                DropdownMenuItem(
+                    value: 'script',
+                    child: Text('Chancery Script (Cursive)')),
               ],
               onChanged: (v) => setState(() => _fontFamily = v ?? 'serif'),
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                const Text('Body Font Size: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                const Text('Body Font Size: ',
+                    style:
+                    TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: const Icon(Icons.remove_circle_outline, size: 20),
                   onPressed: _bodyFontSize > 9.0
@@ -1727,7 +1872,8 @@ class _CertificateTemplateEditorPageState
                       : null,
                 ),
                 Text('${_bodyFontSize.toStringAsFixed(1)} pt',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13)),
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline, size: 20),
                   onPressed: _bodyFontSize < 16.0
@@ -1745,13 +1891,26 @@ class _CertificateTemplateEditorPageState
                     value: _fontFamily,
                     decoration: _inputDecoration(labelText: 'Font Family'),
                     items: const [
-                      DropdownMenuItem(value: 'serif', child: Text('Classical Serif (Times)')),
-                      DropdownMenuItem(value: 'sans', child: Text('Modern Sans (Helvetica)')),
-                      DropdownMenuItem(value: 'courier', child: Text('Typewriter (Courier)')),
-                      DropdownMenuItem(value: 'georgia', child: Text('Georgia / Editorial')),
-                      DropdownMenuItem(value: 'garamond', child: Text('Garamond / Traditional')),
-                      DropdownMenuItem(value: 'cinzel', child: Text('Roman Inscription (Cinzel)')),
-                      DropdownMenuItem(value: 'script', child: Text('Chancery Script (Cursive)')),
+                      DropdownMenuItem(
+                          value: 'serif',
+                          child: Text('Classical Serif (Times)')),
+                      DropdownMenuItem(
+                          value: 'sans',
+                          child: Text('Modern Sans (Helvetica)')),
+                      DropdownMenuItem(
+                          value: 'courier',
+                          child: Text('Typewriter (Courier)')),
+                      DropdownMenuItem(
+                          value: 'georgia', child: Text('Georgia / Editorial')),
+                      DropdownMenuItem(
+                          value: 'garamond',
+                          child: Text('Garamond / Traditional')),
+                      DropdownMenuItem(
+                          value: 'cinzel',
+                          child: Text('Roman Inscription (Cinzel)')),
+                      DropdownMenuItem(
+                          value: 'script',
+                          child: Text('Chancery Script (Cursive)')),
                     ],
                     onChanged: (v) => setState(() => _fontFamily = v ?? 'serif'),
                   ),
@@ -1761,7 +1920,9 @@ class _CertificateTemplateEditorPageState
                   flex: 2,
                   child: Row(
                     children: [
-                      const Text('Body: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const Text('Body: ',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.remove_circle_outline, size: 18),
                         onPressed: _bodyFontSize > 9.0
@@ -1769,7 +1930,8 @@ class _CertificateTemplateEditorPageState
                             : null,
                       ),
                       Text('${_bodyFontSize.toStringAsFixed(1)} pt',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 12)),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline, size: 18),
                         onPressed: _bodyFontSize < 16.0
@@ -1786,25 +1948,36 @@ class _CertificateTemplateEditorPageState
           if (isMobile) ...[
             DropdownButtonFormField<String>(
               value: _signatoryPosition,
-              decoration: _inputDecoration(labelText: 'Signatory Block Placement'),
+              decoration:
+              _inputDecoration(labelText: 'Signatory Block Placement'),
               items: const [
-                DropdownMenuItem(value: 'bottom-right', child: Text('Bottom Right (Standard)')),
-                DropdownMenuItem(value: 'bottom-center', child: Text('Bottom Center')),
-                DropdownMenuItem(value: 'bottom-left', child: Text('Bottom Left')),
+                DropdownMenuItem(
+                    value: 'bottom-right',
+                    child: Text('Bottom Right (Standard)')),
+                DropdownMenuItem(
+                    value: 'bottom-center', child: Text('Bottom Center')),
+                DropdownMenuItem(
+                    value: 'bottom-left', child: Text('Bottom Left')),
               ],
-              onChanged: (v) => setState(() => _signatoryPosition = v ?? 'bottom-right'),
+              onChanged: (v) =>
+                  setState(() => _signatoryPosition = v ?? 'bottom-right'),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _qrPosition,
               decoration: _inputDecoration(labelText: 'QR Token Placement'),
               items: const [
-                DropdownMenuItem(value: 'bottom-left', child: Text('Bottom Left (Standard)')),
-                DropdownMenuItem(value: 'bottom-center', child: Text('Bottom Center')),
-                DropdownMenuItem(value: 'bottom-right', child: Text('Bottom Right')),
+                DropdownMenuItem(
+                    value: 'bottom-left',
+                    child: Text('Bottom Left (Standard)')),
+                DropdownMenuItem(
+                    value: 'bottom-center', child: Text('Bottom Center')),
+                DropdownMenuItem(
+                    value: 'bottom-right', child: Text('Bottom Right')),
                 DropdownMenuItem(value: 'none', child: Text('Disabled')),
               ],
-              onChanged: (v) => setState(() => _qrPosition = v ?? 'bottom-left'),
+              onChanged: (v) =>
+                  setState(() => _qrPosition = v ?? 'bottom-left'),
             ),
           ] else ...[
             Row(
@@ -1814,25 +1987,38 @@ class _CertificateTemplateEditorPageState
                     value: _signatoryPosition,
                     decoration: _inputDecoration(labelText: 'Signatory Block'),
                     items: const [
-                      DropdownMenuItem(value: 'bottom-right', child: Text('Bottom Right (Standard)')),
-                      DropdownMenuItem(value: 'bottom-center', child: Text('Bottom Center')),
-                      DropdownMenuItem(value: 'bottom-left', child: Text('Bottom Left')),
+                      DropdownMenuItem(
+                          value: 'bottom-right',
+                          child: Text('Bottom Right (Standard)')),
+                      DropdownMenuItem(
+                          value: 'bottom-center',
+                          child: Text('Bottom Center')),
+                      DropdownMenuItem(
+                          value: 'bottom-left', child: Text('Bottom Left')),
                     ],
-                    onChanged: (v) => setState(() => _signatoryPosition = v ?? 'bottom-right'),
+                    onChanged: (v) => setState(
+                            () => _signatoryPosition = v ?? 'bottom-right'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: _qrPosition,
-                    decoration: _inputDecoration(labelText: 'QR Token Placement'),
+                    decoration:
+                    _inputDecoration(labelText: 'QR Token Placement'),
                     items: const [
-                      DropdownMenuItem(value: 'bottom-left', child: Text('Bottom Left (Standard)')),
-                      DropdownMenuItem(value: 'bottom-center', child: Text('Bottom Center')),
-                      DropdownMenuItem(value: 'bottom-right', child: Text('Bottom Right')),
+                      DropdownMenuItem(
+                          value: 'bottom-left',
+                          child: Text('Bottom Left (Standard)')),
+                      DropdownMenuItem(
+                          value: 'bottom-center',
+                          child: Text('Bottom Center')),
+                      DropdownMenuItem(
+                          value: 'bottom-right', child: Text('Bottom Right')),
                       DropdownMenuItem(value: 'none', child: Text('Disabled')),
                     ],
-                    onChanged: (v) => setState(() => _qrPosition = v ?? 'bottom-left'),
+                    onChanged: (v) =>
+                        setState(() => _qrPosition = v ?? 'bottom-left'),
                   ),
                 ),
               ],
@@ -1844,7 +2030,8 @@ class _CertificateTemplateEditorPageState
             child: TextButton.icon(
               onPressed: _resetToDefaultStyles,
               icon: const Icon(Icons.restart_alt, size: 16),
-              label: const Text('Reset Typography', style: TextStyle(fontSize: 12)),
+              label: const Text('Reset Typography',
+                  style: TextStyle(fontSize: 12)),
             ),
           ),
         ],
@@ -1911,7 +2098,10 @@ class _CertificateTemplateEditorPageState
           const SizedBox(height: 14),
 
           // Uploaded frame thumbnail with instant image preview modal
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
             children: [
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -1924,11 +2114,12 @@ class _CertificateTemplateEditorPageState
                     : () => _pickAndUploadAsset('borders'),
                 icon: const Icon(Icons.cloud_upload_outlined, size: 18),
                 label: Text(
-                  _backgroundImageUrl != null ? 'Replace Frame' : 'Upload Frame',
+                  _backgroundImageUrl != null
+                      ? 'Replace Frame'
+                      : 'Upload Frame',
                   style: const TextStyle(fontSize: 12.5),
                 ),
               ),
-              const SizedBox(width: 12),
               if (_backgroundImageUrl != null) ...[
                 InkWell(
                   onTap: () => _showImagePreviewDialog(
@@ -1943,19 +2134,20 @@ class _CertificateTemplateEditorPageState
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: ParishColors.oliveGreen, width: 1.5),
+                      border:
+                      Border.all(color: ParishColors.oliveGreen, width: 1.5),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: Image.network(
                         _backgroundImageUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 20),
+                        errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.image, size: 20),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
@@ -1967,10 +2159,12 @@ class _CertificateTemplateEditorPageState
                     title: 'Attached Certificate Frame Preview',
                   ),
                   icon: const Icon(Icons.visibility, size: 16),
-                  label: const Text('Preview Frame', style: TextStyle(fontSize: 12)),
+                  label: const Text('Preview Frame',
+                      style: TextStyle(fontSize: 12)),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, color: ParishColors.mercyRed, size: 20),
+                  icon: const Icon(Icons.delete_outline,
+                      color: ParishColors.mercyRed, size: 20),
                   tooltip: 'Remove Frame',
                   onPressed: () => setState(() => _backgroundImageUrl = null),
                 ),
@@ -1985,7 +2179,9 @@ class _CertificateTemplateEditorPageState
             spacing: 6,
             runSpacing: 4,
             children: [
-              const Text('Display Mode: ', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+              const Text('Display Mode: ',
+                  style:
+                  TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2045,7 +2241,8 @@ class _CertificateTemplateEditorPageState
             maxLines: 3,
             decoration: _inputDecoration(
               labelText: 'Header Lines (One line per row)',
-              hintText: 'Diocese of San Pablo\nSaint John Paul II Parish\nSanta Cruz, Laguna',
+              hintText:
+              'Diocese of San Pablo\nSaint John Paul II Parish\nSanta Cruz, Laguna',
             ),
           ),
           const SizedBox(height: 12),
@@ -2054,7 +2251,8 @@ class _CertificateTemplateEditorPageState
               contentPadding: EdgeInsets.zero,
               dense: true,
               activeColor: accentColor,
-              title: const Text('Show Diocese Logo', style: TextStyle(fontSize: 13)),
+              title: const Text('Show Diocese Logo',
+                  style: TextStyle(fontSize: 13)),
               value: _showDioceseLogo,
               onChanged: (v) => setState(() => _showDioceseLogo = v ?? true),
             ),
@@ -2062,7 +2260,8 @@ class _CertificateTemplateEditorPageState
               contentPadding: EdgeInsets.zero,
               dense: true,
               activeColor: accentColor,
-              title: const Text('Show Parish Seal', style: TextStyle(fontSize: 13)),
+              title: const Text('Show Parish Seal',
+                  style: TextStyle(fontSize: 13)),
               value: _showParishSeal,
               onChanged: (v) => setState(() => _showParishSeal = v ?? true),
             ),
@@ -2074,9 +2273,11 @@ class _CertificateTemplateEditorPageState
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                     activeColor: accentColor,
-                    title: const Text('Show Diocese Logo', style: TextStyle(fontSize: 13)),
+                    title: const Text('Show Diocese Logo',
+                        style: TextStyle(fontSize: 13)),
                     value: _showDioceseLogo,
-                    onChanged: (v) => setState(() => _showDioceseLogo = v ?? true),
+                    onChanged: (v) =>
+                        setState(() => _showDioceseLogo = v ?? true),
                   ),
                 ),
                 Expanded(
@@ -2084,9 +2285,11 @@ class _CertificateTemplateEditorPageState
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                     activeColor: accentColor,
-                    title: const Text('Show Parish Seal', style: TextStyle(fontSize: 13)),
+                    title: const Text('Show Parish Seal',
+                        style: TextStyle(fontSize: 13)),
                     value: _showParishSeal,
-                    onChanged: (v) => setState(() => _showParishSeal = v ?? true),
+                    onChanged: (v) =>
+                        setState(() => _showParishSeal = v ?? true),
                   ),
                 ),
               ],
@@ -2115,7 +2318,8 @@ class _CertificateTemplateEditorPageState
                 labelText: 'Signatory Name *',
                 hintText: 'Rev. Fr. Roy G. Reyes',
               ),
-              validator: (v) => v!.trim().isEmpty ? 'Signatory name required' : null,
+              validator: (v) =>
+              v!.trim().isEmpty ? 'Signatory name required' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -2124,7 +2328,8 @@ class _CertificateTemplateEditorPageState
                 labelText: 'Signatory Title *',
                 hintText: 'Parish Priest',
               ),
-              validator: (v) => v!.trim().isEmpty ? 'Signatory title required' : null,
+              validator: (v) =>
+              v!.trim().isEmpty ? 'Signatory title required' : null,
             ),
           ] else ...[
             Row(
@@ -2136,7 +2341,8 @@ class _CertificateTemplateEditorPageState
                       labelText: 'Signatory Name *',
                       hintText: 'Rev. Fr. Roy G. Reyes',
                     ),
-                    validator: (v) => v!.trim().isEmpty ? 'Signatory name required' : null,
+                    validator: (v) =>
+                    v!.trim().isEmpty ? 'Signatory name required' : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2147,7 +2353,8 @@ class _CertificateTemplateEditorPageState
                       labelText: 'Signatory Title *',
                       hintText: 'Parish Priest',
                     ),
-                    validator: (v) => v!.trim().isEmpty ? 'Signatory title required' : null,
+                    validator: (v) =>
+                    v!.trim().isEmpty ? 'Signatory title required' : null,
                   ),
                 ),
               ],
@@ -2176,7 +2383,8 @@ class _CertificateTemplateEditorPageState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Signatory E-Signature File',
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                          style: TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.bold)),
                       Text(
                         _signatureImageUrl != null
                             ? 'Electronic signature on file and rendered onto certificates.'
@@ -2202,18 +2410,21 @@ class _CertificateTemplateEditorPageState
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: borderGrey),
                       ),
-                      child: Image.network(_signatureImageUrl!, fit: BoxFit.contain),
+                      child: Image.network(_signatureImageUrl!,
+                          fit: BoxFit.contain),
                     ),
                   ),
                   const SizedBox(width: 8),
                 ],
                 OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(36, 36)),
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(36, 36)),
                   onPressed: (_isUploadingAsset || _isSaving)
                       ? null
                       : () => _pickAndUploadAsset('signatures'),
                   icon: const Icon(Icons.upload, size: 15),
-                  label: Text(_signatureImageUrl != null ? 'Replace' : 'Upload',
+                  label: Text(
+                      _signatureImageUrl != null ? 'Replace' : 'Upload',
                       style: const TextStyle(fontSize: 11.5)),
                 ),
               ],
@@ -2230,6 +2441,8 @@ class _CertificateTemplateEditorPageState
 
   Widget _buildBottomSubmissionBar(Color cardWhite, Color borderGrey,
       Color textMuted, Color accentColor, bool isMobile) {
+    final bool isBusy = _isSaving || _isUploadingAsset;
+
     if (isMobile) {
       return Container(
         width: double.infinity,
@@ -2249,12 +2462,14 @@ class _CertificateTemplateEditorPageState
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: borderGrey, width: 1.4),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
-                      onPressed: _isSaving
+                      onPressed: isBusy
                           ? null
                           : () async {
-                        final shouldExit = await showDiscardConfirmationDialog(
+                        final shouldExit =
+                        await showDiscardConfirmationDialog(
                           context,
                           accentColor: accentColor,
                         );
@@ -2265,7 +2480,9 @@ class _CertificateTemplateEditorPageState
                       child: Text(
                         'Discard & Exit',
                         style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.bold, color: textMuted),
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textMuted),
                       ),
                     ),
                   ),
@@ -2278,12 +2495,14 @@ class _CertificateTemplateEditorPageState
                       style: OutlinedButton.styleFrom(
                         foregroundColor: accentColor,
                         side: BorderSide(color: accentColor, width: 1.4),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
-                      onPressed: _isSaving ? null : _previewCurrentPdf,
+                      onPressed: isBusy ? null : _previewCurrentPdf,
                       icon: const Icon(Icons.picture_as_pdf, size: 16),
                       label: const Text('Live Preview',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
                   ),
                 ),
@@ -2297,13 +2516,15 @@ class _CertificateTemplateEditorPageState
                 style: ElevatedButton.styleFrom(
                   backgroundColor: accentColor,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
-                onPressed: _isSaving ? null : _promptSaveConfirmation,
+                onPressed: isBusy ? null : _promptSaveConfirmation,
                 icon: const Icon(Icons.save, size: 19),
                 label: Text(
                   isEditMode ? 'Update Template' : 'Save Template',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
                 ),
               ),
             ),
@@ -2336,9 +2557,10 @@ class _CertificateTemplateEditorPageState
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: borderGrey, width: 1.4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: _isSaving
+              onPressed: isBusy
                   ? null
                   : () async {
                 final shouldExit = await showDiscardConfirmationDialog(
@@ -2352,7 +2574,9 @@ class _CertificateTemplateEditorPageState
               child: Text(
                 'Discard & Exit',
                 style: TextStyle(
-                    fontSize: 13.5, fontWeight: FontWeight.bold, color: textMuted),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                    color: textMuted),
               ),
             ),
           ),
@@ -2364,13 +2588,15 @@ class _CertificateTemplateEditorPageState
                   style: OutlinedButton.styleFrom(
                     foregroundColor: accentColor,
                     side: BorderSide(color: accentColor, width: 1.4),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                   ),
-                  onPressed: _isSaving ? null : _previewCurrentPdf,
+                  onPressed: isBusy ? null : _previewCurrentPdf,
                   icon: const Icon(Icons.picture_as_pdf, size: 18),
                   label: const Text('Live Preview',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 13.5)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2381,13 +2607,15 @@ class _CertificateTemplateEditorPageState
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accentColor,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
-                  onPressed: _isSaving ? null : _promptSaveConfirmation,
+                  onPressed: isBusy ? null : _promptSaveConfirmation,
                   icon: const Icon(Icons.save, size: 19),
                   label: Text(
                     isEditMode ? 'Update Template' : 'Save Template',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                 ),
               ),
@@ -2458,7 +2686,8 @@ class _CertificateTemplateEditorPageState
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: _getSacramentColor(_sacramentType), width: 1.8),
+        borderSide:
+        BorderSide(color: _getSacramentColor(_sacramentType), width: 1.8),
       ),
     );
   }

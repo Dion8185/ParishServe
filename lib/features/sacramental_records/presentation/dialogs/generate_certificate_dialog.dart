@@ -16,6 +16,7 @@ import '../../services/certificate_pdf_generator.dart';
 import '../../services/certificate_service.dart';
 import '../../utils/placeholder_registry.dart';
 import '../../validators/sacramental_validators.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 /// Opens the full-page Certificate Generation Desk
 Future<void> showGenerateCertificateModal(
@@ -68,12 +69,12 @@ class GenerateCertificatePage extends StatefulWidget {
       _GenerateCertificatePageState();
 }
 
-class _GenerateCertificatePageState
-    extends State<GenerateCertificatePage> {
+class _GenerateCertificatePageState extends State<GenerateCertificatePage> {
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoadingTemplates = true;
   bool _isGenerating = false;
+  String _loadingMessage = 'Compiling official certificate...';
   String? _errorMessage;
 
   DateTime _dateReleased = DateTime.now();
@@ -106,7 +107,8 @@ class _GenerateCertificatePageState
   Future<void> _selectDateReleased(BuildContext context) async {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    final initial = _dateReleased.isBefore(todayStart) ? todayStart : _dateReleased;
+    final initial =
+    _dateReleased.isBefore(todayStart) ? todayStart : _dateReleased;
 
     final picked = await showDatePicker(
       context: context,
@@ -411,12 +413,14 @@ class _GenerateCertificatePageState
               Expanded(
                 child: Row(
                   children: [
-                    Icon(Icons.picture_as_pdf, color: ParishColors.marianBlue, size: 22),
+                    Icon(Icons.picture_as_pdf,
+                        color: ParishColors.marianBlue, size: 22),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         '${widget.sacramentType} Certificate Preview',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 17),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -458,14 +462,16 @@ class _GenerateCertificatePageState
                     children: [
                       CircularProgressIndicator(color: ParishColors.marianBlue),
                       const SizedBox(height: 12),
-                      const Text('Rendering certificate document...', style: TextStyle(fontSize: 14)),
+                      const Text('Rendering certificate document...',
+                          style: TextStyle(fontSize: 14)),
                     ],
                   ),
                 ),
               ),
             ),
           ),
-          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actionsPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           actions: [
             SizedBox(
               height: 44,
@@ -473,12 +479,15 @@ class _GenerateCertificatePageState
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ParishColors.marianBlue,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                 ),
                 onPressed: () => Navigator.pop(ctx),
                 icon: const Icon(Icons.check, size: 18),
-                label: const Text('Looks Good / Back', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                label: const Text('Looks Good / Back',
+                    style:
+                    TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -487,11 +496,13 @@ class _GenerateCertificatePageState
     );
   }
 
-  Future<void> _issueAndPrintCertificate() async {
+  /// Confirmation dialog before issuing & printing the certificate
+  Future<void> _confirmAndIssueCertificate() async {
     if (_selectedTemplate == null) return;
     setState(() => _errorMessage = null);
 
-    final releaseDateErr = SacramentalValidators.validateCertificateReleaseDate(_dateReleased);
+    final releaseDateErr =
+    SacramentalValidators.validateCertificateReleaseDate(_dateReleased);
     if (releaseDateErr != null) {
       setState(() {
         _dateReleasedHasError = true;
@@ -502,14 +513,165 @@ class _GenerateCertificatePageState
 
     if (!_formKey.currentState!.validate()) return;
 
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.goldLight,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.print_outlined,
+                  color: ParishColors.goldAccent, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Confirm Certificate Issuance',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              ),
+            ),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Are you sure you want to issue and prepare this official ${widget.sacramentType} certificate for printing?',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: ParishColors.textDark,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ParishColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ParishColors.borderGrey),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildConfirmSummaryRow(
+                          'Recipient:', widget.recipientName),
+                      _buildConfirmSummaryRow('Reference:', widget.bookRef),
+                      _buildConfirmSummaryRow(
+                          'Template:', _selectedTemplate!.templateName),
+                      _buildConfirmSummaryRow('Purpose:', _effectivePurpose),
+                      _buildConfirmSummaryRow(
+                        'Date Released:',
+                        '${PlaceholderRegistry.monthNames[_dateReleased.month - 1]} ${PlaceholderRegistry.formatOrdinal(_dateReleased.day)}, ${_dateReleased.year}',
+                      ),
+                      _buildConfirmSummaryRow(
+                        'Official Receipt:',
+                        _issueReceipt
+                            ? 'Yes (P ${_resolvedFee.toStringAsFixed(2)})'
+                            : 'Exempt / None',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
+        actions: [
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(100, 44),
+                  side: BorderSide(color: ParishColors.borderGrey),
+                ),
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(170, 44),
+                  backgroundColor: ParishColors.goldAccent,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: const Icon(Icons.print, size: 18),
+                label: const Text(
+                  'Yes, Issue & Print',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _issueAndPrintCertificate();
+    }
+  }
+
+  Widget _buildConfirmSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 112,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: ParishColors.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: ParishColors.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _issueAndPrintCertificate() async {
+    if (_selectedTemplate == null) return;
+
     setState(() {
       _isGenerating = true;
+      _loadingMessage = 'Compiling official PDF document...';
     });
 
     try {
       final renderedWording = _buildRenderedPreviewText();
-      final verificationId =
-      CertificateService.generateSecureVerificationId();
+      final verificationId = CertificateService.generateSecureVerificationId();
       final qrVerificationUrl =
       CertificateService.buildVerificationUrl(verificationId);
 
@@ -530,6 +692,10 @@ class _GenerateCertificatePageState
 
       // 2. Record transaction in Receipt System if requested
       if (_issueReceipt) {
+        if (mounted) {
+          setState(
+                  () => _loadingMessage = 'Recording transaction in receipt ledger...');
+        }
         final payorName = _payorNameController.text.trim().isNotEmpty
             ? _payorNameController.text.trim()
             : widget.recipientName;
@@ -550,14 +716,17 @@ class _GenerateCertificatePageState
             transactionType: 'certificate',
           );
 
-          linkedTransactionId =
-              createdTxnRecord['transaction_id']?.toString();
-          linkedReceiptNumber =
-              createdTxnRecord['receipt_number']?.toString();
+          linkedTransactionId = createdTxnRecord['transaction_id']?.toString();
+          linkedReceiptNumber = createdTxnRecord['receipt_number']?.toString();
         } catch (_) {
           linkedReceiptNumber =
           'REC-OFFLINE-${DateTime.now().millisecondsSinceEpoch % 100000}';
         }
+      }
+
+      if (mounted) {
+        setState(
+                () => _loadingMessage = 'Archiving certificate issuance & token...');
       }
 
       // 3. Save Certificate Issuance Record
@@ -599,6 +768,67 @@ class _GenerateCertificatePageState
         _isGenerating = false;
       });
     }
+  }
+
+  Future<bool> _showPrintConfirmDialog(
+      BuildContext context, {
+        required String title,
+        required String message,
+      }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: ParishColors.cardWhite,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ParishColors.marianBlueSurface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.print_outlined,
+                  color: ParishColors.marianBlue, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16.5),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            fontSize: 13.5,
+            color: ParishColors.textDark.withOpacity(0.85),
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ParishColors.marianBlue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.print, size: 17),
+            label: const Text('Yes, Print Now',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   /// Displays the official success dialog containing the visual preview of the issued certificate
@@ -679,14 +909,16 @@ class _GenerateCertificatePageState
                     borderRadius: BorderRadius.circular(12),
                     child: PdfPreview(
                       build: (format) async => certPdfBytes,
-                      useActions: false, // Clean preview without distracting bottom toolbar
+                      useActions:
+                      false, // Clean preview without distracting bottom toolbar
                       allowPrinting: false,
                       allowSharing: false,
                       canChangePageFormat: false,
                       canChangeOrientation: false,
                       canDebug: false,
                       loadingWidget: Center(
-                        child: CircularProgressIndicator(color: ParishColors.marianBlue),
+                        child: CircularProgressIndicator(
+                            color: ParishColors.marianBlue),
                       ),
                     ),
                   ),
@@ -783,7 +1015,8 @@ class _GenerateCertificatePageState
             ),
           ),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        actionsPadding:
+        const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         actions: [
           Wrap(
             alignment: WrapAlignment.end,
@@ -794,11 +1027,15 @@ class _GenerateCertificatePageState
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(90, 48),
                   side: BorderSide(color: ParishColors.borderGrey, width: 1.2),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: () => Navigator.pop(ctx),
                 child: Text('Done / Close',
-                    style: TextStyle(color: textMuted, fontSize: 14, fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        color: textMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold)),
               ),
               if (receiptRecord != null)
                 OutlinedButton.icon(
@@ -807,31 +1044,51 @@ class _GenerateCertificatePageState
                     side: const BorderSide(
                         color: ParishColors.oliveGreen, width: 1.4),
                     foregroundColor: ParishColors.oliveGreen,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
                   ),
-                  onPressed: () {
-                    final rawAmt = receiptRecord['transaction_amount'];
-                    final double parsedAmt = (rawAmt is num)
-                        ? rawAmt.toDouble()
-                        : (double.tryParse(rawAmt?.toString() ?? '0') ??
-                        _resolvedFee);
-
-                    ReceiptPdfGenerator.printReceipt(
-                      receiptNumber: receiptRecord['receipt_number'],
-                      payorName: receiptRecord['payor_name'],
-                      payorContact: receiptRecord['payor_contact'],
-                      relatedService: receiptRecord['related_service'],
-                      transactionDetails:
-                      receiptRecord['transaction_details'],
-                      amount: parsedAmt,
-                      paymentMode: 'Cash',
+                  onPressed: () async {
+                    final confirmPrint = await _showPrintConfirmDialog(
+                      ctx,
+                      title: 'Print Official Receipt?',
+                      message:
+                      'Are you sure you want to print Official Receipt #${receiptRecord!['receipt_number']}?',
                     );
+                    if (!confirmPrint || !ctx.mounted) return;
+
+                    final loading = SacramentalLoadingBarrierController.show(
+                      ctx,
+                      initialMessage: 'Preparing receipt print job...',
+                      accentColor: ParishColors.oliveGreen,
+                      icon: Icons.receipt_long,
+                    );
+                    try {
+                      final rawAmt = receiptRecord['transaction_amount'];
+                      final double parsedAmt = (rawAmt is num)
+                          ? rawAmt.toDouble()
+                          : (double.tryParse(rawAmt?.toString() ?? '0') ??
+                          _resolvedFee);
+
+                      await ReceiptPdfGenerator.printReceipt(
+                        receiptNumber: receiptRecord['receipt_number'],
+                        payorName: receiptRecord['payor_name'],
+                        payorContact: receiptRecord['payor_contact'],
+                        relatedService: receiptRecord['related_service'],
+                        transactionDetails:
+                        receiptRecord['transaction_details'],
+                        amount: parsedAmt,
+                        paymentMode: 'Cash',
+                      );
+                    } finally {
+                      loading.dismiss();
+                    }
                   },
                   icon: const Icon(Icons.receipt, size: 18),
                   label: const Text('Print Receipt',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      style:
+                      TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                 ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -839,20 +1096,40 @@ class _GenerateCertificatePageState
                   backgroundColor: ParishColors.marianBlue,
                   foregroundColor: Colors.white,
                   elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
                 onPressed: () async {
-                  await CertificatePdfGenerator.printCertificate(
-                    pdfBytes: certPdfBytes,
-                    documentTitle:
-                    '${widget.sacramentType}_Certificate_${widget.recipientName.replaceAll(" ", "_")}',
+                  final confirmPrint = await _showPrintConfirmDialog(
+                    ctx,
+                    title: 'Print Official Certificate?',
+                    message:
+                    'Are you sure you want to send the ${widget.sacramentType} certificate for ${widget.recipientName} to the printer?',
                   );
+                  if (!confirmPrint || !ctx.mounted) return;
+
+                  final loading = SacramentalLoadingBarrierController.show(
+                    ctx,
+                    initialMessage: 'Preparing certificate print job...',
+                    accentColor: ParishColors.marianBlue,
+                    icon: Icons.print_rounded,
+                  );
+                  try {
+                    await CertificatePdfGenerator.printCertificate(
+                      pdfBytes: certPdfBytes,
+                      documentTitle:
+                      '${widget.sacramentType}_Certificate_${widget.recipientName.replaceAll(" ", "_")}',
+                    );
+                  } finally {
+                    loading.dismiss();
+                  }
                 },
                 icon: const Icon(Icons.print, size: 20),
                 label: const Text('Print Certificate',
-                    style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.bold)),
+                    style:
+                    TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -870,81 +1147,78 @@ class _GenerateCertificatePageState
 
     return PopScope(
       canPop: !_isGenerating,
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhite,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: ParishColors.marianBlue, size: 26),
-            onPressed: _isGenerating ? null : () => Navigator.pop(context),
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Generate ${widget.sacramentType} Certificate',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
-              ),
-              Text(
-                'Record ID: ${widget.recordId} • ${widget.bookRef}',
-                style: TextStyle(fontSize: 12, color: textMuted),
-              ),
-            ],
-          ),
-        ),
-        body: Stack(
-          children: [
-            SafeArea(
-              child: _isLoadingTemplates
-                  ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: ParishColors.marianBlue),
-                    const SizedBox(height: 16),
-                    Text('Loading canonical certificate templates...',
-                        style: TextStyle(fontSize: 14, color: textDark)),
-                  ],
+      child: SacramentalLoadingOverlay(
+        isLoading: _isGenerating,
+        message: _loadingMessage,
+        accentColor: ParishColors.marianBlue,
+        icon: Icons.print_rounded,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhite,
+            elevation: 0,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back,
+                  color: ParishColors.marianBlue, size: 26),
+              onPressed: _isGenerating ? null : () => Navigator.pop(context),
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Generate ${widget.sacramentType} Certificate',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDark),
                 ),
-              )
-                  : LayoutBuilder(
-                builder: (context, constraints) {
-                  final bool isWide = constraints.maxWidth >= 900;
-                  final double horizontalPadding = isWide ? 32.0 : 16.0;
+                Text(
+                  'Record ID: ${widget.recordId} • ${widget.bookRef}',
+                  style: TextStyle(fontSize: 12, color: textMuted),
+                ),
+              ],
+            ),
+          ),
+          body: SafeArea(
+            child: _isLoadingTemplates
+                ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(
+                      color: ParishColors.marianBlue),
+                  const SizedBox(height: 16),
+                  Text('Loading canonical certificate templates...',
+                      style: TextStyle(fontSize: 14, color: textDark)),
+                ],
+              ),
+            )
+                : LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isWide = constraints.maxWidth >= 900;
+                final double horizontalPadding = isWide ? 32.0 : 16.0;
 
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isWide ? 1100 : 720),
-                        child: Form(
-                          key: _formKey,
-                          child: isWide
-                              ? _buildWideTwoColumnLayout(cardWhite, borderGrey, textDark, textMuted)
-                              : _buildMobileSingleColumnLayout(cardWhite, borderGrey, textDark, textMuted),
-                        ),
+                return SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding, vertical: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                      BoxConstraints(maxWidth: isWide ? 1100 : 720),
+                      child: Form(
+                        key: _formKey,
+                        child: isWide
+                            ? _buildWideTwoColumnLayout(cardWhite,
+                            borderGrey, textDark, textMuted)
+                            : _buildMobileSingleColumnLayout(cardWhite,
+                            borderGrey, textDark, textMuted),
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-
-            // Focused Non-Dismissible Translucent Loading Overlay
-            if (_isGenerating)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withOpacity(0.55),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: ParishColors.goldAccent,
-                      strokeWidth: 4.5,
-                    ),
                   ),
-                ),
-              ),
-          ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -981,7 +1255,12 @@ class _GenerateCertificatePageState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildWordingPreviewCard(cardWhite, borderGrey, textDark, textMuted),
+              _buildWordingPreviewCard(
+                  cardWhite, borderGrey, textDark, textMuted),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 14),
+                _buildErrorBanner(),
+              ],
               const SizedBox(height: 20),
               _buildActionButtonsBar(borderGrey, textMuted),
             ],
@@ -1007,6 +1286,10 @@ class _GenerateCertificatePageState
         _buildReceiptCard(cardWhite, borderGrey, textDark, textMuted),
         const SizedBox(height: 16),
         _buildWordingPreviewCard(cardWhite, borderGrey, textDark, textMuted),
+        if (_errorMessage != null) ...[
+          const SizedBox(height: 14),
+          _buildErrorBanner(),
+        ],
         const SizedBox(height: 24),
         _buildActionButtonsBar(borderGrey, textMuted),
         const SizedBox(height: 40),
@@ -1014,11 +1297,41 @@ class _GenerateCertificatePageState
     );
   }
 
+  Widget _buildErrorBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ParishColors.mercyRedSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ParishColors.mercyRed),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline,
+              color: ParishColors.mercyRed, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _errorMessage!,
+              style: const TextStyle(
+                color: ParishColors.mercyRed,
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ===========================================================================
   // Section Cards
   // ===========================================================================
 
-  Widget _buildRecipientCard(Color textDark, Color textMuted, Color borderGrey) {
+  Widget _buildRecipientCard(
+      Color textDark, Color textMuted, Color borderGrey) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1044,12 +1357,18 @@ class _GenerateCertificatePageState
               children: [
                 Text(
                   'CERTIFICATE RECIPIENT',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: textMuted),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   widget.recipientName,
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: textDark),
                 ),
                 Text(
                   widget.bookRef,
@@ -1063,7 +1382,8 @@ class _GenerateCertificatePageState
     );
   }
 
-  Widget _buildTemplateAndPurposeCard(Color cardWhite, Color borderGrey, Color textDark) {
+  Widget _buildTemplateAndPurposeCard(
+      Color cardWhite, Color borderGrey, Color textDark) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -1076,7 +1396,10 @@ class _GenerateCertificatePageState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('1. Certificate Template',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark)),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                  color: textDark)),
           const SizedBox(height: 8),
           DropdownButtonFormField<CertificateTemplateModel>(
             value: _selectedTemplate,
@@ -1090,7 +1413,8 @@ class _GenerateCertificatePageState
                   style: TextStyle(
                       fontSize: 13.5,
                       color: textDark,
-                      fontWeight: t.isDefault ? FontWeight.bold : FontWeight.normal),
+                      fontWeight:
+                      t.isDefault ? FontWeight.bold : FontWeight.normal),
                   overflow: TextOverflow.ellipsis,
                 ),
               );
@@ -1104,7 +1428,10 @@ class _GenerateCertificatePageState
           const SizedBox(height: 18),
 
           Text('2. Purpose of Certificate',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark)),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                  color: textDark)),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             value: _selectedPurposePreset,
@@ -1113,7 +1440,9 @@ class _GenerateCertificatePageState
             items: PlaceholderRegistry.standardPurposes.map((p) {
               return DropdownMenuItem(
                 value: p,
-                child: Text(p, style: TextStyle(fontSize: 13.5, color: textDark), overflow: TextOverflow.ellipsis),
+                child: Text(p,
+                    style: TextStyle(fontSize: 13.5, color: textDark),
+                    overflow: TextOverflow.ellipsis),
               );
             }).toList(),
             onChanged: (val) {
@@ -1138,7 +1467,10 @@ class _GenerateCertificatePageState
           const SizedBox(height: 18),
 
           Text('3. Date Released (Present & Future Only)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark)),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                  color: textDark)),
           const SizedBox(height: 8),
           InkWell(
             onTap: () => _selectDateReleased(context),
@@ -1158,11 +1490,15 @@ class _GenerateCertificatePageState
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.calendar_today, size: 18, color: ParishColors.marianBlue),
+                      Icon(Icons.calendar_today,
+                          size: 18, color: ParishColors.marianBlue),
                       const SizedBox(width: 10),
                       Text(
                         '${PlaceholderRegistry.monthNames[_dateReleased.month - 1]} ${PlaceholderRegistry.formatOrdinal(_dateReleased.day)}, ${_dateReleased.year}',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textDark),
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: textDark),
                       ),
                     ],
                   ),
@@ -1183,7 +1519,8 @@ class _GenerateCertificatePageState
     );
   }
 
-  Widget _buildReceiptCard(Color cardWhite, Color borderGrey, Color textDark, Color textMuted) {
+  Widget _buildReceiptCard(
+      Color cardWhite, Color borderGrey, Color textDark, Color textMuted) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -1197,12 +1534,16 @@ class _GenerateCertificatePageState
         children: [
           Row(
             children: [
-              Icon(Icons.receipt_long, size: 22, color: ParishColors.oliveGreen),
+              Icon(Icons.receipt_long,
+                  size: 22, color: ParishColors.oliveGreen),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   '4. Record in Receipt Ledger',
-                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                      color: textDark),
                 ),
               ),
               Switch(
@@ -1218,7 +1559,8 @@ class _GenerateCertificatePageState
             if (_availableCertificateParticulars.length > 1) ...[
               Text(
                 'Offering Particular Item *',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
               ),
               const SizedBox(height: 6),
               DropdownButtonFormField<PosItemModel>(
@@ -1245,18 +1587,25 @@ class _GenerateCertificatePageState
               decoration: BoxDecoration(
                 color: ParishColors.oliveGreenSurface,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
+                border:
+                Border.all(color: ParishColors.oliveGreen.withOpacity(0.3)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Standard Offering Fee:',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: textDark),
                   ),
                   Text(
                     'P ${_resolvedFee.toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ParishColors.oliveGreen),
+                    style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: ParishColors.oliveGreen),
                   ),
                 ],
               ),
@@ -1265,7 +1614,8 @@ class _GenerateCertificatePageState
 
             Text(
               "Receipt's Payor Name *",
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.bold, color: textDark),
             ),
             const SizedBox(height: 6),
             TextFormField(
@@ -1274,7 +1624,9 @@ class _GenerateCertificatePageState
               decoration: _inputDecoration(
                 hint: 'Payor / Requester Full Name',
               ),
-              validator: (v) => _issueReceipt && (v?.trim().isEmpty ?? true) ? 'Payor name required' : null,
+              validator: (v) => _issueReceipt && (v?.trim().isEmpty ?? true)
+                  ? 'Payor name required'
+                  : null,
             ),
           ],
         ],
@@ -1300,16 +1652,22 @@ class _GenerateCertificatePageState
             children: [
               Text(
                 '5. Rendered Certificate Text',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: textDark),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14.5,
+                    color: textDark),
               ),
               TextButton.icon(
                 style: TextButton.styleFrom(
                   foregroundColor: ParishColors.marianBlue,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 ),
                 onPressed: _openFullPdfPreview,
                 icon: const Icon(Icons.picture_as_pdf, size: 18),
-                label: const Text('Inspect PDF', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                label: const Text('Inspect PDF',
+                    style:
+                    TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -1320,7 +1678,8 @@ class _GenerateCertificatePageState
             decoration: BoxDecoration(
               color: ParishColors.backgroundLight,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: ParishColors.goldAccent.withOpacity(0.5), width: 1.2),
+              border: Border.all(
+                  color: ParishColors.goldAccent.withOpacity(0.5), width: 1.2),
             ),
             child: Text(
               _buildRenderedPreviewText(),
@@ -1335,7 +1694,10 @@ class _GenerateCertificatePageState
               Expanded(
                 child: Text(
                   'Signatory: ${_selectedTemplate?.signatoryName ?? "—"} (${_selectedTemplate?.signatoryTitle ?? "—"})',
-                  style: TextStyle(fontSize: 12, color: textMuted, fontStyle: FontStyle.italic),
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: textMuted,
+                      fontStyle: FontStyle.italic),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1362,11 +1724,15 @@ class _GenerateCertificatePageState
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: borderGrey, width: 1.4),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: _isGenerating ? null : () => Navigator.pop(context),
                 child: Text('Cancel',
-                    style: TextStyle(color: textMuted, fontWeight: FontWeight.bold, fontSize: 14)),
+                    style: TextStyle(
+                        color: textMuted,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14)),
               ),
             ),
           ),
@@ -1380,11 +1746,14 @@ class _GenerateCertificatePageState
                   backgroundColor: ParishColors.goldAccent,
                   foregroundColor: Colors.white,
                   elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
-                onPressed: (_isLoadingTemplates || _availableTemplates.isEmpty || _isGenerating)
+                onPressed: (_isLoadingTemplates ||
+                    _availableTemplates.isEmpty ||
+                    _isGenerating)
                     ? null
-                    : _issueAndPrintCertificate,
+                    : _confirmAndIssueCertificate,
                 icon: const Icon(Icons.print, size: 20),
                 label: const Text(
                   'Issue & Print Certificate',

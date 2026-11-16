@@ -9,21 +9,28 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../services/conversion_service.dart';
+import '../../services/sacramental_draft_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 class ConversionManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
   final Map<String, dynamic>? initialData; // Enables Edit Record Mode
+  final String? draftId;
+  final Map<String, dynamic>? initialDraftData;
 
   const ConversionManualEntryPage({
     super.key,
     this.onRecordSaved,
     this.initialData,
+    this.draftId,
+    this.initialDraftData,
   });
 
   @override
-  State<ConversionManualEntryPage> createState() => _ConversionManualEntryPageState();
+  State<ConversionManualEntryPage> createState() =>
+      _ConversionManualEntryPageState();
 }
 
 class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
@@ -35,6 +42,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   bool _isBackToTopHovered = false;
 
   bool get isEditMode => widget.initialData != null;
+
+  String? _activeDraftId;
+  bool _isSavingDraft = false;
+  String _loadingMessage = 'Processing conversion record...';
 
   // Olive Green Theme Accent for Conversion & Reception records
   static const Color _conversionOlive = Color(0xFF2D6A4F);
@@ -100,7 +111,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
   final _ministerLastNameController = TextEditingController(text: 'Reyes');
-  final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
+  final _parishNameController =
+  TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
   String? _existingCanonicalNotes;
 
@@ -113,18 +125,28 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _activeDraftId = widget.draftId;
 
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
+      if (widget.initialDraftData != null) {
+        _populateDraftData(widget.initialDraftData!);
+      }
       _bookNumberController.addListener(_onCoordinateChanged);
       _pageNumberController.addListener(_onCoordinateChanged);
       _lineNumberController.addListener(_onCoordinateChanged);
+      if (widget.initialDraftData != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _checkCoordinatesLive();
+        });
+      }
     }
   }
 
   void _onScroll() {
-    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    final shouldShow =
+        _scrollController.hasClients && _scrollController.offset >= 1000;
     if (shouldShow != _showBackToTop) {
       setState(() => _showBackToTop = shouldShow);
     }
@@ -144,17 +166,22 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     _bookNumberController.text = data['book_number']?.toString() ?? '';
     _pageNumberController.text = data['page_number']?.toString() ?? '';
     _lineNumberController.text = data['line_number']?.toString() ?? '';
-    _dateOfReception = DateTime.tryParse(data['date_of_reception']?.toString() ?? '');
+    _dateOfReception =
+        DateTime.tryParse(data['date_of_reception']?.toString() ?? '');
     _existingCanonicalNotes = data['canonical_notes']?.toString();
 
-    _convertFirstNameController.text = data['convert_first_name']?.toString() ?? '';
-    _convertMiddleNameController.text = data['convert_middle_name']?.toString() ?? '';
-    _convertLastNameController.text = data['convert_last_name']?.toString() ?? '';
+    _convertFirstNameController.text =
+        data['convert_first_name']?.toString() ?? '';
+    _convertMiddleNameController.text =
+        data['convert_middle_name']?.toString() ?? '';
+    _convertLastNameController.text =
+        data['convert_last_name']?.toString() ?? '';
     _convertSuffixController.text = data['convert_suffix']?.toString() ?? '';
     _dateOfBirth = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
     _placeOfBirthController.text = data['place_of_birth']?.toString() ?? '';
 
-    _priorBaptismDate = DateTime.tryParse(data['prior_baptism_date']?.toString() ?? '');
+    _priorBaptismDate =
+        DateTime.tryParse(data['prior_baptism_date']?.toString() ?? '');
     final rawChurch = data['prior_baptism_church']?.toString();
     if (rawChurch == null || rawChurch.trim().isEmpty) {
       _priorBaptismChurch = 'None / Not Specified';
@@ -164,37 +191,235 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       _priorBaptismChurch = 'Others (Specify)';
       _priorBaptismChurchOtherController.text = rawChurch;
     }
-    _priorBaptismPlaceController.text = data['prior_baptism_place']?.toString() ?? '';
+    _priorBaptismPlaceController.text =
+        data['prior_baptism_place']?.toString() ?? '';
 
-    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
-    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
     _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
     _fatherReligionController.text = data['father_religion']?.toString() ?? '';
 
-    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
-    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
-    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
     _motherReligionController.text = data['mother_religion']?.toString() ?? '';
 
-    _witness1FirstNameController.text = data['witness_1_first_name']?.toString() ?? '';
-    _witness1MiddleNameController.text = data['witness_1_middle_name']?.toString() ?? '';
-    _witness1LastNameController.text = data['witness_1_last_name']?.toString() ?? '';
+    _witness1FirstNameController.text =
+        data['witness_1_first_name']?.toString() ?? '';
+    _witness1MiddleNameController.text =
+        data['witness_1_middle_name']?.toString() ?? '';
+    _witness1LastNameController.text =
+        data['witness_1_last_name']?.toString() ?? '';
 
-    _witness2FirstNameController.text = data['witness_2_first_name']?.toString() ?? '';
-    _witness2MiddleNameController.text = data['witness_2_middle_name']?.toString() ?? '';
-    _witness2LastNameController.text = data['witness_2_last_name']?.toString() ?? '';
+    _witness2FirstNameController.text =
+        data['witness_2_first_name']?.toString() ?? '';
+    _witness2MiddleNameController.text =
+        data['witness_2_middle_name']?.toString() ?? '';
+    _witness2LastNameController.text =
+        data['witness_2_last_name']?.toString() ?? '';
 
     _stipendController.text = data['stipend']?.toString() ?? '';
-    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
-    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
-    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
-    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _ministerFirstNameController.text =
+        data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text =
+        data['minister_last_name']?.toString() ?? '';
+    _parishNameController.text =
+        data['parish_name']?.toString() ?? 'St. John Paul II Parish';
     _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  void _populateDraftData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+    if (data['date_of_reception'] != null) {
+      _dateOfReception =
+          DateTime.tryParse(data['date_of_reception'].toString());
+    }
+
+    _convertFirstNameController.text =
+        data['convert_first_name']?.toString() ?? '';
+    _convertMiddleNameController.text =
+        data['convert_middle_name']?.toString() ?? '';
+    _convertLastNameController.text =
+        data['convert_last_name']?.toString() ?? '';
+    _convertSuffixController.text = data['convert_suffix']?.toString() ?? '';
+    _dateOfBirth = DateTime.tryParse(data['date_of_birth']?.toString() ?? '');
+    _placeOfBirthController.text = data['place_of_birth']?.toString() ?? '';
+
+    _priorBaptismDate =
+        DateTime.tryParse(data['prior_baptism_date']?.toString() ?? '');
+    final rawChurch = data['prior_baptism_church']?.toString();
+    if (rawChurch != null && _priorChurchOptions.contains(rawChurch)) {
+      _priorBaptismChurch = rawChurch;
+    }
+    _priorBaptismChurchOtherController.text =
+        data['prior_baptism_church_other']?.toString() ?? '';
+    _priorBaptismPlaceController.text =
+        data['prior_baptism_place']?.toString() ?? '';
+
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+    _fatherReligionController.text = data['father_religion']?.toString() ?? '';
+
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
+    _motherReligionController.text = data['mother_religion']?.toString() ?? '';
+
+    _witness1FirstNameController.text =
+        data['witness_1_first_name']?.toString() ?? '';
+    _witness1MiddleNameController.text =
+        data['witness_1_middle_name']?.toString() ?? '';
+    _witness1LastNameController.text =
+        data['witness_1_last_name']?.toString() ?? '';
+
+    _witness2FirstNameController.text =
+        data['witness_2_first_name']?.toString() ?? '';
+    _witness2MiddleNameController.text =
+        data['witness_2_middle_name']?.toString() ?? '';
+    _witness2LastNameController.text =
+        data['witness_2_last_name']?.toString() ?? '';
+
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    if (data.containsKey('minister_first_name')) {
+      _ministerFirstNameController.text =
+          data['minister_first_name']?.toString() ?? '';
+    }
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    if (data.containsKey('minister_last_name')) {
+      _ministerLastNameController.text =
+          data['minister_last_name']?.toString() ?? '';
+    }
+    if (data.containsKey('parish_name')) {
+      _parishNameController.text = data['parish_name']?.toString() ?? '';
+    }
+    _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  Map<String, dynamic> _collectDraftData() {
+    return {
+      'book_number': _bookNumberController.text.trim(),
+      'page_number': _pageNumberController.text.trim(),
+      'line_number': _lineNumberController.text.trim(),
+      'date_of_reception':
+      _dateOfReception?.toIso8601String().substring(0, 10),
+      'convert_first_name': _convertFirstNameController.text.trim(),
+      'convert_middle_name': _convertMiddleNameController.text.trim(),
+      'convert_last_name': _convertLastNameController.text.trim(),
+      'convert_suffix': _convertSuffixController.text.trim(),
+      'date_of_birth': _dateOfBirth?.toIso8601String().substring(0, 10),
+      'place_of_birth': _placeOfBirthController.text.trim(),
+      'prior_baptism_date':
+      _priorBaptismDate?.toIso8601String().substring(0, 10),
+      'prior_baptism_church': _priorBaptismChurch,
+      'prior_baptism_church_other':
+      _priorBaptismChurchOtherController.text.trim(),
+      'prior_baptism_place': _priorBaptismPlaceController.text.trim(),
+      'father_first_name': _fatherFirstNameController.text.trim(),
+      'father_middle_name': _fatherMiddleNameController.text.trim(),
+      'father_last_name': _fatherLastNameController.text.trim(),
+      'father_religion': _fatherReligionController.text.trim(),
+      'mother_first_name': _motherFirstNameController.text.trim(),
+      'mother_middle_name': _motherMiddleNameController.text.trim(),
+      'mother_maiden_last_name': _motherMaidenLastNameController.text.trim(),
+      'mother_religion': _motherReligionController.text.trim(),
+      'witness_1_first_name': _witness1FirstNameController.text.trim(),
+      'witness_1_middle_name': _witness1MiddleNameController.text.trim(),
+      'witness_1_last_name': _witness1LastNameController.text.trim(),
+      'witness_2_first_name': _witness2FirstNameController.text.trim(),
+      'witness_2_middle_name': _witness2MiddleNameController.text.trim(),
+      'witness_2_last_name': _witness2LastNameController.text.trim(),
+      'stipend': _stipendController.text.trim(),
+      'minister_first_name': _ministerFirstNameController.text.trim(),
+      'minister_middle_name': _ministerMiddleNameController.text.trim(),
+      'minister_last_name': _ministerLastNameController.text.trim(),
+      'parish_name': _parishNameController.text.trim(),
+      'remarks': _remarksController.text.trim(),
+    };
+  }
+
+  String _buildDraftDisplayTitle() {
+    final name = [
+      _convertFirstNameController.text.trim(),
+      _convertMiddleNameController.text.trim(),
+      _convertLastNameController.text.trim(),
+      _convertSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+    return name.isNotEmpty ? name : 'Untitled Conversion Draft';
+  }
+
+  String? _buildDraftBookReference() {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+    if (b.isEmpty && p.isEmpty && l.isEmpty) return null;
+    return 'Book ${b.isEmpty ? '?' : b}, Page ${p.isEmpty ? '?' : p}, Line ${l.isEmpty ? '?' : l}';
+  }
+
+  Future<void> _saveToDraft() async {
+    if (_isSubmitting || _isSavingDraft) return;
+
+    setState(() {
+      _isSavingDraft = true;
+      _loadingMessage = 'Saving conversion draft...';
+      _errorMessage = null;
+    });
+
+    try {
+      final saved = await SacramentalDraftService.saveDraft(
+        existingDraftId: _activeDraftId,
+        sacramentType: 'Conversion',
+        displayTitle: _buildDraftDisplayTitle(),
+        bookReference: _buildDraftBookReference(),
+        draftData: _collectDraftData(),
+      );
+
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      setState(() {
+        _activeDraftId = saved.draftId;
+        _isSavingDraft = false;
+      });
+
+      // Navigate back to the sacrament registry page immediately
+      Navigator.pop(context);
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Draft saved! You can resume it anytime from the Drafts page.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSavingDraft = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
   }
 
   void _onCoordinateChanged() {
     _coordinateDebounce?.cancel();
-    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+    _coordinateDebounce =
+        Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
   }
 
   Future<void> _checkCoordinatesLive() async {
@@ -216,7 +441,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       bookNumber: b,
       pageNumber: p,
       lineNumber: l,
-      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+      excludeRecordId:
+      isEditMode ? widget.initialData!['record_id']?.toString() : null,
     );
 
     if (mounted) {
@@ -283,7 +509,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
+      initialDate:
+      initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
       lastDate: upperDateBound,
     );
@@ -308,7 +535,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
     final isFormValid = _formKey.currentState?.validate() ?? false;
     if (!isFormValid) {
-      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      setState(() =>
+      _errorMessage = 'Please review the highlighted fields below before saving.');
       _scrollToTop();
       return false;
     }
@@ -319,19 +547,22 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       return false;
     }
 
-    final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+    final bookError =
+    SacramentalValidators.validateBookNumber(_bookNumberController.text);
     if (bookError != null) {
       setState(() => _errorMessage = bookError);
       _scrollToTop();
       return false;
     }
-    final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+    final pageError =
+    SacramentalValidators.validatePageNumber(_pageNumberController.text);
     if (pageError != null) {
       setState(() => _errorMessage = pageError);
       _scrollToTop();
       return false;
     }
-    final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+    final lineError =
+    SacramentalValidators.validateLineNumber(_lineNumberController.text);
     if (lineError != null) {
       setState(() => _errorMessage = lineError);
       _scrollToTop();
@@ -345,7 +576,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       _scrollToTop();
       return false;
     }
-    final receptionError = SacramentalValidators.validateReceptionDate(_dateOfReception, _dateOfBirth);
+    final receptionError = SacramentalValidators.validateReceptionDate(
+        _dateOfReception, _dateOfBirth);
     if (receptionError != null) {
       setState(() {
         _dateOfReceptionHasError = true;
@@ -355,7 +587,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       return false;
     }
 
-    final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth, isRequired: true);
+    final dobError = SacramentalValidators.validateDateOfBirth(_dateOfBirth,
+        isRequired: true);
     if (dobError != null) {
       setState(() {
         _dateOfBirthHasError = true;
@@ -377,15 +610,18 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       return false;
     }
 
-    final priorBaptismError = SacramentalValidators.validatePriorBaptismDate(_priorBaptismDate, _dateOfBirth);
+    final priorBaptismError = SacramentalValidators.validatePriorBaptismDate(
+        _priorBaptismDate, _dateOfBirth);
     if (priorBaptismError != null) {
       setState(() => _errorMessage = priorBaptismError);
       _scrollToTop();
       return false;
     }
 
-    if (_priorBaptismChurch == 'Others (Specify)' && _priorBaptismChurchOtherController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Please specify the prior church / denomination.');
+    if (_priorBaptismChurch == 'Others (Specify)' &&
+        _priorBaptismChurchOtherController.text.trim().isEmpty) {
+      setState(() =>
+      _errorMessage = 'Please specify the prior church / denomination.');
       _scrollToTop();
       return false;
     }
@@ -394,7 +630,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   }
 
   /// Computes strict dynamic diff, excluding unchanged fields and audit metadata
-  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+  String _computeChangesSummaryJson(
+      Map<String, dynamic> oldData, Map<String, dynamic> newData) {
     final diffs = <String, Map<String, dynamic>>{};
 
     final Map<String, String> fieldLabels = {
@@ -443,8 +680,16 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       }
 
       final oldVal = oldData[key];
-      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
-      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+      final oldStr = (oldVal == null ||
+          oldVal.toString().trim().isEmpty ||
+          oldVal.toString().toLowerCase() == 'null')
+          ? ''
+          : oldVal.toString().trim();
+      final newStr = (newVal == null ||
+          newVal.toString().trim().isEmpty ||
+          newVal.toString().toLowerCase() == 'null')
+          ? ''
+          : newVal.toString().trim();
 
       String normOld = oldStr;
       String normNew = newStr;
@@ -526,7 +771,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 color: _conversionOlive.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.fact_check_outlined, color: _conversionOlive, size: 24),
+              child: const Icon(Icons.fact_check_outlined,
+                  color: _conversionOlive, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -544,7 +790,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   const SizedBox(height: 2),
                   Text(
                     'Verify all fields before saving into Liber Conversorum.',
-                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    style:
+                    TextStyle(fontSize: 12, color: ParishColors.textMuted),
                   ),
                 ],
               ),
@@ -559,30 +806,50 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildReviewSection('1. Registry Coordinates', [
-                  _buildReviewRow('Book No.:', _bookNumberController.text.trim()),
-                  _buildReviewRow('Page No.:', _pageNumberController.text.trim()),
-                  _buildReviewRow('Line No.:', _lineNumberController.text.trim()),
-                  _buildReviewRow('Date of Reception:', _dateOfReception?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow(
+                      'Book No.:', _bookNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Page No.:', _pageNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Line No.:', _lineNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Date of Reception:',
+                      _dateOfReception?.toIso8601String().substring(0, 10) ??
+                          '—'),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('2. Person Received into Full Communion', [
                   _buildReviewRow('Full Name:', candidateName),
-                  _buildReviewRow('Date of Birth:', _dateOfBirth?.toIso8601String().substring(0, 10) ?? '—'),
-                  _buildReviewRow('Place of Birth:', _placeOfBirthController.text.trim()),
-                  _buildReviewRow('Prior Church:', _priorBaptismChurch == 'Others (Specify)' ? _priorBaptismChurchOtherController.text.trim() : _priorBaptismChurch),
+                  _buildReviewRow(
+                      'Date of Birth:',
+                      _dateOfBirth?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow(
+                      'Place of Birth:', _placeOfBirthController.text.trim()),
+                  _buildReviewRow(
+                      'Prior Church:',
+                      _priorBaptismChurch == 'Others (Specify)'
+                          ? _priorBaptismChurchOtherController.text.trim()
+                          : _priorBaptismChurch),
                   if (_priorBaptismDate != null)
-                    _buildReviewRow('Prior Baptism Date:', _priorBaptismDate!.toIso8601String().substring(0, 10)),
+                    _buildReviewRow('Prior Baptism Date:',
+                        _priorBaptismDate!.toIso8601String().substring(0, 10)),
                   if (_priorBaptismPlaceController.text.trim().isNotEmpty)
-                    _buildReviewRow('Prior Congregation:', _priorBaptismPlaceController.text.trim()),
+                    _buildReviewRow('Prior Congregation:',
+                        _priorBaptismPlaceController.text.trim()),
                 ]),
                 const SizedBox(height: 12),
-                _buildReviewSection('3. Parents & Religious Background (Optional)', [
-                  _buildReviewRow('Father:', fatherName.isNotEmpty ? fatherName : 'Not Specified'),
+                _buildReviewSection(
+                    '3. Parents & Religious Background (Optional)', [
+                  _buildReviewRow('Father:',
+                      fatherName.isNotEmpty ? fatherName : 'Not Specified'),
                   if (_fatherReligionController.text.trim().isNotEmpty)
-                    _buildReviewRow('Father Religion:', _fatherReligionController.text.trim()),
-                  _buildReviewRow('Mother Maiden Name:', motherName.isNotEmpty ? motherName : 'Not Specified'),
+                    _buildReviewRow('Father Religion:',
+                        _fatherReligionController.text.trim()),
+                  _buildReviewRow('Mother Maiden Name:',
+                      motherName.isNotEmpty ? motherName : 'Not Specified'),
                   if (_motherReligionController.text.trim().isNotEmpty)
-                    _buildReviewRow('Mother Religion:', _motherReligionController.text.trim()),
+                    _buildReviewRow('Mother Religion:',
+                        _motherReligionController.text.trim()),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('4. Witnesses, Offering & Priest', [
@@ -590,10 +857,16 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   if (witness2Name.isNotEmpty)
                     _buildReviewRow('Witness 2 (Optional):', witness2Name),
                   _buildReviewRow('Officiating Priest:', priestName),
-                  _buildReviewRow('Parish Name:', _parishNameController.text.trim()),
-                  _buildReviewRow('Stipend / Offering:', _stipendController.text.trim().isNotEmpty ? '₱ ${_stipendController.text.trim()}' : '₱ 0.00 (Gratis)'),
+                  _buildReviewRow(
+                      'Parish Name:', _parishNameController.text.trim()),
+                  _buildReviewRow(
+                      'Stipend / Offering:',
+                      _stipendController.text.trim().isNotEmpty
+                          ? '₱ ${_stipendController.text.trim()}'
+                          : '₱ 0.00 (Gratis)'),
                   if (_remarksController.text.trim().isNotEmpty)
-                    _buildReviewRow('Remarks / Notes:', _remarksController.text.trim()),
+                    _buildReviewRow(
+                        'Remarks / Notes:', _remarksController.text.trim()),
                 ]),
               ],
             ),
@@ -617,7 +890,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+            label: const Text('Confirm and Save',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
           ),
         ],
       ),
@@ -697,7 +971,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
         : 'Authorized Parish Personnel';
     final userRole = currentUser?.userRole ?? 'Secretary';
 
-    final reasonController = TextEditingController(text: 'Correction of reception details');
+    final reasonController =
+    TextEditingController(text: 'Correction of reception details');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -714,7 +989,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 color: _conversionOlive.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.security_update_good, color: _conversionOlive, size: 24),
+              child: const Icon(Icons.security_update_good,
+                  color: _conversionOlive, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -737,7 +1013,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             children: [
               Text(
                 'You are modifying canonical entry ${widget.initialData!['record_id']} (${_convertFirstNameController.text.trim()} ${_convertLastNameController.text.trim()}).',
-                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+                style: TextStyle(
+                    fontSize: 14, color: ParishColors.textDark, height: 1.35),
               ),
               const SizedBox(height: 12),
               Container(
@@ -753,16 +1030,23 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   children: [
                     Text(
                       'AUDIT LOG ATTRIBUTION',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textMuted),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Editor: $currentUserName ($userRole)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _conversionOlive),
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: _conversionOlive),
                     ),
                     Text(
                       'Coordinates: Book ${_bookNumberController.text.trim()}, Page ${_pageNumberController.text.trim()}, Line ${_lineNumberController.text.trim()}',
-                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -770,7 +1054,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               const SizedBox(height: 14),
               Text(
                 'Reason for Correction *',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark),
               ),
               const SizedBox(height: 6),
               TextFormField(
@@ -778,11 +1065,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                 maxLines: 2,
                 style: const TextStyle(fontSize: 13.5),
                 decoration: InputDecoration(
-                  hintText: 'e.g. Typographical error correction on candidate name or denomination',
+                  hintText:
+                  'e.g. Typographical error correction on candidate name or denomination',
                   filled: true,
                   fillColor: ParishColors.backgroundLight,
                   isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],
@@ -806,7 +1095,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            label: const Text('Confirm & Save Update',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ],
       ),
@@ -820,7 +1110,12 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   Future<void> _submitForm({String? reasonForCorrection}) async {
     if (!isEditMode && !_validateAllFields()) return;
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _loadingMessage = isEditMode
+          ? 'Updating conversion record...'
+          : 'Saving conversion record...';
+    });
 
     try {
       final double stipendValue = _stipendController.text.trim().isNotEmpty
@@ -829,7 +1124,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
 
       String? finalPriorChurch;
       if (_priorBaptismChurch == 'Others (Specify)') {
-        finalPriorChurch = _priorBaptismChurchOtherController.text.trim().isNotEmpty
+        finalPriorChurch =
+        _priorBaptismChurchOtherController.text.trim().isNotEmpty
             ? _priorBaptismChurchOtherController.text.trim()
             : 'Others';
       } else if (_priorBaptismChurch != 'None / Not Specified') {
@@ -853,7 +1149,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
         final editLogStamp =
             '[Amended on ${now.toIso8601String().substring(0, 10)} by $currentUserName (${currentUser?.userRole ?? "Staff"})]: $reason';
 
-        if (compiledCanonicalNotes != null && compiledCanonicalNotes.trim().isNotEmpty) {
+        if (compiledCanonicalNotes != null &&
+            compiledCanonicalNotes.trim().isNotEmpty) {
           compiledCanonicalNotes = '$compiledCanonicalNotes\n$editLogStamp';
         } else {
           compiledCanonicalNotes = editLogStamp;
@@ -864,82 +1161,131 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
         'book_number': _bookNumberController.text.trim(),
         'page_number': _pageNumberController.text.trim(),
         'line_number': _lineNumberController.text.trim(),
-        'date_of_reception': _dateOfReception!.toIso8601String().substring(0, 10),
+        'date_of_reception':
+        _dateOfReception!.toIso8601String().substring(0, 10),
 
         'convert_first_name': _convertFirstNameController.text.trim(),
-        'convert_middle_name': _convertMiddleNameController.text.trim().isEmpty ? null : _convertMiddleNameController.text.trim(),
+        'convert_middle_name': _convertMiddleNameController.text.trim().isEmpty
+            ? null
+            : _convertMiddleNameController.text.trim(),
         'convert_last_name': _convertLastNameController.text.trim(),
-        'convert_suffix': _convertSuffixController.text.trim().isEmpty ? null : _convertSuffixController.text.trim(),
+        'convert_suffix': _convertSuffixController.text.trim().isEmpty
+            ? null
+            : _convertSuffixController.text.trim(),
 
         'date_of_birth': _dateOfBirth!.toIso8601String().substring(0, 10),
         'place_of_birth': _placeOfBirthController.text.trim(),
 
-        'prior_baptism_date': _priorBaptismDate?.toIso8601String().substring(0, 10),
+        'prior_baptism_date':
+        _priorBaptismDate?.toIso8601String().substring(0, 10),
         'prior_baptism_church': finalPriorChurch,
-        'prior_baptism_place': _priorBaptismPlaceController.text.trim().isEmpty ? null : _priorBaptismPlaceController.text.trim(),
+        'prior_baptism_place': _priorBaptismPlaceController.text.trim().isEmpty
+            ? null
+            : _priorBaptismPlaceController.text.trim(),
 
-        'father_first_name': _fatherFirstNameController.text.trim().isEmpty ? null : _fatherFirstNameController.text.trim(),
-        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty ? null : _fatherMiddleNameController.text.trim(),
-        'father_last_name': _fatherLastNameController.text.trim().isEmpty ? null : _fatherLastNameController.text.trim(),
-        'father_religion': _fatherReligionController.text.trim().isEmpty ? null : _fatherReligionController.text.trim(),
+        'father_first_name': _fatherFirstNameController.text.trim().isEmpty
+            ? null
+            : _fatherFirstNameController.text.trim(),
+        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _fatherMiddleNameController.text.trim(),
+        'father_last_name': _fatherLastNameController.text.trim().isEmpty
+            ? null
+            : _fatherLastNameController.text.trim(),
+        'father_religion': _fatherReligionController.text.trim().isEmpty
+            ? null
+            : _fatherReligionController.text.trim(),
 
-        'mother_first_name': _motherFirstNameController.text.trim().isEmpty ? null : _motherFirstNameController.text.trim(),
-        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty ? null : _motherMiddleNameController.text.trim(),
-        'mother_maiden_last_name': _motherMaidenLastNameController.text.trim().isEmpty ? null : _motherMaidenLastNameController.text.trim(),
-        'mother_religion': _motherReligionController.text.trim().isEmpty ? null : _motherReligionController.text.trim(),
+        'mother_first_name': _motherFirstNameController.text.trim().isEmpty
+            ? null
+            : _motherFirstNameController.text.trim(),
+        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _motherMiddleNameController.text.trim(),
+        'mother_maiden_last_name':
+        _motherMaidenLastNameController.text.trim().isEmpty
+            ? null
+            : _motherMaidenLastNameController.text.trim(),
+        'mother_religion': _motherReligionController.text.trim().isEmpty
+            ? null
+            : _motherReligionController.text.trim(),
 
         'witness_1_first_name': _witness1FirstNameController.text.trim(),
-        'witness_1_middle_name': _witness1MiddleNameController.text.trim().isEmpty ? null : _witness1MiddleNameController.text.trim(),
+        'witness_1_middle_name':
+        _witness1MiddleNameController.text.trim().isEmpty
+            ? null
+            : _witness1MiddleNameController.text.trim(),
         'witness_1_last_name': _witness1LastNameController.text.trim(),
 
-        'witness_2_first_name': _witness2FirstNameController.text.trim().isEmpty ? null : _witness2FirstNameController.text.trim(),
-        'witness_2_middle_name': _witness2MiddleNameController.text.trim().isEmpty ? null : _witness2MiddleNameController.text.trim(),
-        'witness_2_last_name': _witness2LastNameController.text.trim().isEmpty ? null : _witness2LastNameController.text.trim(),
+        'witness_2_first_name': _witness2FirstNameController.text.trim().isEmpty
+            ? null
+            : _witness2FirstNameController.text.trim(),
+        'witness_2_middle_name':
+        _witness2MiddleNameController.text.trim().isEmpty
+            ? null
+            : _witness2MiddleNameController.text.trim(),
+        'witness_2_last_name': _witness2LastNameController.text.trim().isEmpty
+            ? null
+            : _witness2LastNameController.text.trim(),
 
         'is_gratis': stipendValue == 0.00,
         'stipend': stipendValue,
         'minister_first_name': _ministerFirstNameController.text.trim(),
-        'minister_middle_name': _ministerMiddleNameController.text.trim().isEmpty ? null : _ministerMiddleNameController.text.trim(),
+        'minister_middle_name':
+        _ministerMiddleNameController.text.trim().isEmpty
+            ? null
+            : _ministerMiddleNameController.text.trim(),
         'minister_last_name': _ministerLastNameController.text.trim(),
 
-        'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
+        'remarks': _remarksController.text.trim().isEmpty
+            ? null
+            : _remarksController.text.trim(),
         'parish_name': _parishNameController.text.trim(),
       };
 
       if (isEditMode) {
         final recordId = widget.initialData!['record_id'].toString();
 
-        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+        final changesJson =
+        _computeChangesSummaryJson(widget.initialData!, recordMap);
 
         await ConversionService.updateConversionRecord(recordId, recordMap);
 
         if (changesJson.isNotEmpty) {
           try {
-            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            await Supabase.instance.client
+                .from('sacramental_record_audit_logs')
+                .insert({
               'log_id': 'LOG-${now.millisecondsSinceEpoch}',
               'record_id': recordId,
               'sacrament_type': 'Conversion',
               'action_type': 'UPDATED',
-              'recipient_name': '${_convertFirstNameController.text.trim()} ${_convertLastNameController.text.trim()}',
+              'recipient_name':
+              '${_convertFirstNameController.text.trim()} ${_convertLastNameController.text.trim()}',
               'book_number': _bookNumberController.text.trim(),
               'page_number': _pageNumberController.text.trim(),
               'line_number': _lineNumberController.text.trim(),
               'performed_by_id': currentUserId,
               'performed_by_name': currentUserName,
               'performed_by_role': currentUser?.userRole ?? 'Secretary',
-              'justification': reasonForCorrection ?? 'Correction of reception details',
+              'justification':
+              reasonForCorrection ?? 'Correction of reception details',
               'changes_summary': changesJson,
               'created_at': now.toIso8601String(),
             });
           } catch (auditErr) {
-            debugPrint('[ConversionManualEntryPage] Audit log insertion notice: $auditErr');
+            debugPrint(
+                '[ConversionManualEntryPage] Audit log insertion notice: $auditErr');
           }
         }
       } else {
-        final insertedRecord = await ConversionService.insertManualConversionRecord(recordMap);
+        final insertedRecord =
+        await ConversionService.insertManualConversionRecord(recordMap);
 
         try {
-          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+          await Supabase.instance.client
+              .from('sacramental_record_audit_logs')
+              .insert({
             'log_id': 'LOG-${now.millisecondsSinceEpoch}',
             'record_id': insertedRecord.recordId,
             'sacrament_type': 'Conversion',
@@ -956,7 +1302,14 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             'created_at': now.toIso8601String(),
           });
         } catch (auditErr) {
-          debugPrint('[ConversionManualEntryPage] Audit log insertion notice: $auditErr');
+          debugPrint(
+              '[ConversionManualEntryPage] Audit log insertion notice: $auditErr');
+        }
+
+        if (_activeDraftId != null && _activeDraftId!.isNotEmpty) {
+          try {
+            await SacramentalDraftService.deleteDraft(_activeDraftId!);
+          } catch (_) {}
         }
       }
 
@@ -990,12 +1343,14 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
+    final bool isNarrowAppBar = MediaQuery.sizeOf(context).width < 520;
 
     return PopScope(
-      canPop: !_isSubmitting,
+      canPop: !isBusy,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_isSubmitting) return;
+        if (isBusy) return;
         final shouldExit = await showDiscardConfirmationDialog(
           context,
           accentColor: _conversionOlive,
@@ -1004,72 +1359,122 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
           Navigator.pop(context);
         }
       },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhiteColor,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: _conversionOlive, size: 26),
-            onPressed: _isSubmitting
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: _conversionOlive,
-              );
-              if (shouldExit && context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditMode ? 'Edit Conversion Record' : 'Conversion Manual Entry',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-              ),
-              Text(
-                isEditMode
-                    ? 'Editing Record: ${widget.initialData!['record_id']}'
-                    : 'Canonical Registry Book (Liber Conversorum)',
-                style: TextStyle(fontSize: 12, color: textMutedColor),
-              ),
+      child: SacramentalLoadingOverlay(
+        isLoading: isBusy,
+        message: _loadingMessage,
+        accentColor: _conversionOlive,
+        icon: Icons.eco_outlined,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhiteColor,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back,
+                  color: _conversionOlive, size: 26),
+              onPressed: isBusy
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: _conversionOlive,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditMode
+                      ? 'Edit Conversion Record'
+                      : 'Conversion Manual Entry',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDarkColor),
+                ),
+                Text(
+                  isEditMode
+                      ? 'Editing Record: ${widget.initialData!['record_id']}'
+                      : (_activeDraftId != null
+                      ? 'Resuming Saved Draft'
+                      : 'Canonical Registry Book (Liber Conversorum)'),
+                  style: TextStyle(fontSize: 12, color: textMutedColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            actions: [
+              if (!isEditMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _conversionOlive,
+                        backgroundColor: _conversionOlive.withOpacity(0.08),
+                        side: BorderSide(
+                          color: _conversionOlive.withOpacity(0.45),
+                          width: 1.2,
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrowAppBar ? 10 : 14,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: isBusy ? null : _saveToDraft,
+                      icon: const Icon(Icons.save_as_outlined, size: 18),
+                      label: Text(
+                        isNarrowAppBar ? 'Draft' : 'Save to Draft',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-        ),
-        floatingActionButton: IgnorePointer(
-          ignoring: !_showBackToTop,
-          child: AnimatedOpacity(
-            opacity: _showBackToTop ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 250),
-            child: Semantics(
-              button: true,
-              label: 'Back to top, button',
-              child: FocusableActionDetector(
-                onShowHoverHighlight: (hovered) {
-                  setState(() => _isBackToTopHovered = hovered);
-                },
-                actions: <Type, Action<Intent>>{
-                  ActivateIntent: CallbackAction<ActivateIntent>(
-                    onInvoke: (_) => _scrollToTop(),
-                  ),
-                },
-                child: AnimatedScale(
-                  scale: _isBackToTopHovered ? 1.05 : 1.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: SizedBox(
-                    height: 48,
-                    child: FloatingActionButton.extended(
-                      backgroundColor: _conversionOlive,
-                      foregroundColor: Colors.white,
-                      elevation: 4,
-                      onPressed: _scrollToTop,
-                      icon: const Icon(Icons.arrow_upward, size: 18),
-                      label: const Text(
-                        'Back to Top',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          floatingActionButton: IgnorePointer(
+            ignoring: !_showBackToTop,
+            child: AnimatedOpacity(
+              opacity: _showBackToTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: Semantics(
+                button: true,
+                label: 'Back to top, button',
+                child: FocusableActionDetector(
+                  onShowHoverHighlight: (hovered) {
+                    setState(() => _isBackToTopHovered = hovered);
+                  },
+                  actions: <Type, Action<Intent>>{
+                    ActivateIntent: CallbackAction<ActivateIntent>(
+                      onInvoke: (_) => _scrollToTop(),
+                    ),
+                  },
+                  child: AnimatedScale(
+                    scale: _isBackToTopHovered ? 1.05 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: SizedBox(
+                      height: 48,
+                      child: FloatingActionButton.extended(
+                        backgroundColor: _conversionOlive,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        onPressed: _scrollToTop,
+                        icon: const Icon(Icons.arrow_upward, size: 18),
+                        label: const Text(
+                          'Back to Top',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ),
                     ),
                   ),
@@ -1077,92 +1482,80 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
             ),
           ),
-        ),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double availableWidth = constraints.maxWidth;
-              final bool isWide = availableWidth >= 900;
-              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double availableWidth = constraints.maxWidth;
+                final bool isWide = availableWidth >= 900;
+                final double horizontalPadding =
+                isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Stack(
-                children: [
-                  SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
-                        child: Form(
-                          key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildFormHeaderCard(),
-                              const SizedBox(height: 16),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding, vertical: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                      BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormHeaderCard(),
+                            const SizedBox(height: 16),
 
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: ParishColors.mercyRed),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
+                            if (_errorMessage != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRedSurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                  Border.all(color: ParishColors.mercyRed),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        color: ParishColors.mercyRed, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.mercyRed,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-
-                              _buildSection1Coordinates(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection2Convert(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection3Parents(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection4Witnesses(isWide: isWide),
-                              const SizedBox(height: 24),
-                              _buildBottomSubmissionBar(isWide: isWide),
-                              const SizedBox(height: 50),
+                              ),
                             ],
-                          ),
+
+                            _buildSection1Coordinates(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection2Convert(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection3Parents(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection4Witnesses(isWide: isWide),
+                            const SizedBox(height: 24),
+                            _buildBottomSubmissionBar(isWide: isWide),
+                            const SizedBox(height: 50),
+                          ],
                         ),
                       ),
                     ),
                   ),
-
-                  if (_isSubmitting)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black.withOpacity(0.55),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: ParishColors.goldAccent,
-                            strokeWidth: 4.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1213,14 +1606,19 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: _conversionOlive.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Canonical Step',
-                        style: TextStyle(
+                      child: Text(
+                        isEditMode
+                            ? 'Edit Mode'
+                            : (_activeDraftId != null
+                            ? 'Draft Mode'
+                            : 'New Entry'),
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: _conversionOlive,
@@ -1280,7 +1678,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   Expanded(
                     child: Text(
                       'Book, Page, and Line coordinates are permanent physical coordinates and cannot be altered.',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _conversionOlive),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _conversionOlive),
                     ),
                   ),
                 ],
@@ -1291,7 +1692,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
           if (hasDup) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
                 color: ParishColors.mercyRedSurface,
@@ -1300,7 +1702,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded,
+                      color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1363,9 +1766,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
               child: Row(
                 children: [
-                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _conversionOlive)),
+                  const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.8, color: _conversionOlive)),
                   const SizedBox(width: 8),
-                  Text('Checking physical conversion register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                  Text('Checking physical conversion register...',
+                      style: TextStyle(
+                          fontSize: 11, color: ParishColors.textMuted)),
                 ],
               ),
             ),
@@ -1400,7 +1809,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'First name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1411,7 +1822,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1422,7 +1835,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1449,7 +1864,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'First name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1460,7 +1877,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1475,7 +1894,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1514,14 +1935,20 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Place of Birth',
                   isRequired: true,
                   maxLength: 100,
-                  validator: (v) => SacramentalValidators.validatePlace(v, 'Place of birth', isRequired: true, maxLength: 100),
+                  validator: (v) => SacramentalValidators.validatePlace(
+                      v, 'Place of birth',
+                      isRequired: true, maxLength: 100),
                 ),
               ),
             ],
           ),
 
           const Divider(height: 24),
-          const Text('Prior Non-Catholic Baptism Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _conversionOlive)),
+          const Text('Prior Non-Catholic Baptism Details',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _conversionOlive)),
           const SizedBox(height: 8),
 
           Row(
@@ -1564,10 +1991,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               isRequired: true,
               maxLength: 100,
               validator: (v) {
-                if (_priorBaptismChurch == 'Others (Specify)' && (v == null || v.trim().isEmpty)) {
+                if (_priorBaptismChurch == 'Others (Specify)' &&
+                    (v == null || v.trim().isEmpty)) {
                   return 'Please specify the prior church / denomination.';
                 }
-                return SacramentalValidators.validatePlace(v, 'Prior church / denomination', isRequired: true, maxLength: 100);
+                return SacramentalValidators.validatePlace(
+                    v, 'Prior church / denomination',
+                    isRequired: true, maxLength: 100);
               },
             ),
           ],
@@ -1577,7 +2007,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             label: 'Prior Congregation Municipality / Address',
             isRequired: false,
             maxLength: 150,
-            validator: (v) => SacramentalValidators.validatePlace(v, 'Congregation location', isRequired: false, maxLength: 150),
+            validator: (v) => SacramentalValidators.validatePlace(
+                v, 'Congregation location',
+                isRequired: false, maxLength: 150),
           ),
         ],
       ),
@@ -1591,7 +2023,11 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Father's Particulars", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _conversionOlive)),
+          const Text("Father's Particulars",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _conversionOlive)),
           const SizedBox(height: 8),
 
           Row(
@@ -1603,7 +2039,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Father's First Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Father's first name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1613,7 +2051,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Middle Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Father's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1627,7 +2067,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Father's Last Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Father's last name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1637,14 +2079,20 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Father's Religion (e.g. Catholic, Methodist)",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validatePlace(v, "Father's religion", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validatePlace(
+                      v, "Father's religion",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
           ),
 
           const Divider(height: 24),
-          const Text("Mother's Particulars", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _conversionOlive)),
+          const Text("Mother's Particulars",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _conversionOlive)),
           const SizedBox(height: 8),
 
           Row(
@@ -1656,7 +2104,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Mother's First Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Mother's first name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1666,7 +2116,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Middle Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Mother's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1680,7 +2132,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Mother's Maiden Last Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Mother's maiden last name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1690,7 +2144,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: "Mother's Religion",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validatePlace(v, "Mother's religion", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validatePlace(
+                      v, "Mother's religion",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1707,7 +2163,11 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Primary Witness (Required)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: _conversionOlive)),
+          const Text('Primary Witness (Required)',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.5,
+                  color: _conversionOlive)),
           const SizedBox(height: 8),
 
           Row(
@@ -1719,7 +2179,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Witness 1 First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 first name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Witness 1 first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1729,7 +2191,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 middle name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Witness 1 middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1739,11 +2203,17 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             label: 'Witness 1 Last Name',
             isRequired: true,
             maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, 'Witness 1 last name', isRequired: true, maxLength: 50),
+            validator: (v) => SacramentalValidators.validateName(
+                v, 'Witness 1 last name',
+                isRequired: true, maxLength: 50),
           ),
 
           const Divider(height: 24),
-          const Text('Secondary Witness (Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: _conversionOlive)),
+          const Text('Secondary Witness (Optional)',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.5,
+                  color: _conversionOlive)),
           const SizedBox(height: 8),
 
           Row(
@@ -1755,7 +2225,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Witness 2 First Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 first name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Witness 2 first name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1765,7 +2237,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 middle name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Witness 2 middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1775,7 +2249,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             label: 'Witness 2 Last Name',
             isRequired: false,
             maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, 'Witness 2 last name', isRequired: false, maxLength: 50),
+            validator: (v) => SacramentalValidators.validateName(
+                v, 'Witness 2 last name',
+                isRequired: false, maxLength: 50),
           ),
 
           const Divider(height: 24),
@@ -1784,7 +2260,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             label: 'Stipend (₱)',
             isRequired: false,
             maxLength: 12,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType:
+            const TextInputType.numberWithOptions(decimal: true),
             validator: SacramentalValidators.validateStipend,
           ),
 
@@ -1799,7 +2276,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Priest First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Minister first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1810,7 +2289,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Minister middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1821,7 +2302,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   label: 'Priest Last Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Minister last name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
             ],
@@ -1832,7 +2315,9 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             label: 'Parish Name',
             isRequired: true,
             maxLength: 150,
-            validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
+            validator: (v) => SacramentalValidators.validatePlace(
+                v, 'Parish name',
+                isRequired: true, maxLength: 150),
           ),
           _buildTextFormField(
             controller: _remarksController,
@@ -1849,6 +2334,7 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
   Widget _buildBottomSubmissionBar({required bool isWide}) {
     final borderGreyColor = ParishColors.borderGrey;
     final textMutedColor = ParishColors.textMuted;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
 
     return Container(
       width: double.infinity,
@@ -1874,9 +2360,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: borderGreyColor, width: 1.4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: _isSubmitting
+              onPressed: isBusy
                   ? null
                   : () async {
                 final shouldExit = await showDiscardConfirmationDialog(
@@ -1889,7 +2376,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               },
               child: Text(
                 'Discard & Exit',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: textMutedColor),
               ),
             ),
           ),
@@ -1903,9 +2393,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                     : (isEditMode ? _conversionOlive : ParishColors.oliveGreen),
                 foregroundColor: Colors.white,
                 elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+              onPressed: (isBusy || _coordinateDuplicateError != null)
                   ? null
                   : () {
                 if (isEditMode) {
@@ -1914,10 +2405,15 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
                   _promptSaveConfirmation();
                 }
               },
-              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              icon: Icon(
+                  isEditMode
+                      ? Icons.security_update_good
+                      : Icons.check_circle_outline,
+                  size: 22),
               label: Text(
                 isEditMode ? 'Update Conversion' : 'Save Conversion',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ),
           ),
@@ -2021,14 +2517,23 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
             keyboardType: keyboardType,
             maxLines: maxLines,
             maxLength: maxLength,
-            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            buildCounter: (context,
+                {required currentLength,
+                  required isFocused,
+                  maxLength}) =>
+            null,
             validator: validator,
-            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(
+                fontSize: 14.5,
+                color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
-              fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
+              fillColor: enabled
+                  ? ParishColors.backgroundLight
+                  : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -2043,11 +2548,13 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.8),
               ),
               errorStyle: TextStyle(
                 color: ParishColors.mercyRed,
@@ -2068,7 +2575,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
     required bool hasError,
     required VoidCallback onTap,
   }) {
-    final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+    final borderColor =
+    hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -2085,16 +2593,21 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: borderColor, width: hasError ? 1.4 : 1.0),
+                border: Border.all(
+                    color: borderColor, width: hasError ? 1.4 : 1.0),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
+                    value != null
+                        ? value.toIso8601String().substring(0, 10)
+                        : 'YYYY-MM-DD',
                     style: TextStyle(
                       fontSize: 14.5,
-                      color: value != null ? ParishColors.textDark : ParishColors.textMuted,
+                      color: value != null
+                          ? ParishColors.textDark
+                          : ParishColors.textMuted,
                     ),
                   ),
                   const Icon(
@@ -2111,7 +2624,10 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               padding: const EdgeInsets.only(top: 6, left: 12),
               child: Text(
                 'Date selection is required.',
-                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    color: ParishColors.mercyRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500),
               ),
             ),
         ],
@@ -2151,7 +2667,8 @@ class _ConversionManualEntryPageState extends State<ConversionManualEntryPage> {
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),

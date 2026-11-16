@@ -9,17 +9,23 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../services/death_service.dart';
+import '../../services/sacramental_draft_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 class DeathManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
   final Map<String, dynamic>? initialData; // Enables Edit Record Mode
+  final String? draftId;
+  final Map<String, dynamic>? initialDraftData;
 
   const DeathManualEntryPage({
     super.key,
     this.onRecordSaved,
     this.initialData,
+    this.draftId,
+    this.initialDraftData,
   });
 
   @override
@@ -35,6 +41,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   bool _isBackToTopHovered = false;
 
   bool get isEditMode => widget.initialData != null;
+
+  String? _activeDraftId;
+  bool _isSavingDraft = false;
+  String _loadingMessage = 'Processing death & burial record...';
 
   // Solemn Violet Theme Accent for Death & Burial Registers
   static const Color _deathViolet = Color(0xFF6B21A8);
@@ -75,7 +85,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   // 4. Burial & Ministry
   DateTime? _dateOfDeath = DateTime.now();
   DateTime? _dateOfBurial = DateTime.now().add(const Duration(days: 3));
-  final _placeOfBurialController = TextEditingController(text: 'Sta. Cruz Catholic Cemetery');
+  final _placeOfBurialController =
+  TextEditingController(text: 'Sta. Cruz Catholic Cemetery');
   final _causeOfDeathController = TextEditingController();
   bool _sacramentsReceived = true;
   String _liturgicalService = 'Funeral Mass';
@@ -83,7 +94,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   final _ministerFirstNameController = TextEditingController(text: 'Roy');
   final _ministerMiddleNameController = TextEditingController();
   final _ministerLastNameController = TextEditingController(text: 'Reyes');
-  final _parishNameController = TextEditingController(text: 'St. John Paul II Parish');
+  final _parishNameController =
+  TextEditingController(text: 'St. John Paul II Parish');
   final _remarksController = TextEditingController();
   String? _existingCanonicalNotes;
 
@@ -96,18 +108,28 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _activeDraftId = widget.draftId;
 
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
+      if (widget.initialDraftData != null) {
+        _populateDraftData(widget.initialDraftData!);
+      }
       _bookNumberController.addListener(_onCoordinateChanged);
       _pageNumberController.addListener(_onCoordinateChanged);
       _lineNumberController.addListener(_onCoordinateChanged);
+      if (widget.initialDraftData != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _checkCoordinatesLive();
+        });
+      }
     }
   }
 
   void _onScroll() {
-    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    final shouldShow =
+        _scrollController.hasClients && _scrollController.offset >= 1000;
     if (shouldShow != _showBackToTop) {
       setState(() => _showBackToTop = shouldShow);
     }
@@ -129,45 +151,247 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     _lineNumberController.text = data['line_number']?.toString() ?? '';
     _existingCanonicalNotes = data['canonical_notes']?.toString();
 
-    _deceasedFirstNameController.text = data['deceased_first_name']?.toString() ?? '';
-    _deceasedMiddleNameController.text = data['deceased_middle_name']?.toString() ?? '';
-    _deceasedLastNameController.text = data['deceased_last_name']?.toString() ?? '';
-    _deceasedSuffixController.text = data['deceased_suffix']?.toString() ?? '';
+    _deceasedFirstNameController.text =
+        data['deceased_first_name']?.toString() ?? '';
+    _deceasedMiddleNameController.text =
+        data['deceased_middle_name']?.toString() ?? '';
+    _deceasedLastNameController.text =
+        data['deceased_last_name']?.toString() ?? '';
+    _deceasedSuffixController.text =
+        data['deceased_suffix']?.toString() ?? '';
     _gender = data['gender']?.toString() ?? 'Male';
     _ageController.text = data['age']?.toString() ?? '';
     _civilStatus = data['civil_status']?.toString() ?? 'Single';
     _residenceController.text = data['residence']?.toString() ?? '';
 
-    _spouseFirstNameController.text = data['spouse_first_name']?.toString() ?? '';
-    _spouseMiddleNameController.text = data['spouse_middle_name']?.toString() ?? '';
-    _spouseLastNameController.text = data['spouse_last_name']?.toString() ?? '';
+    _spouseFirstNameController.text =
+        data['spouse_first_name']?.toString() ?? '';
+    _spouseMiddleNameController.text =
+        data['spouse_middle_name']?.toString() ?? '';
+    _spouseLastNameController.text =
+        data['spouse_last_name']?.toString() ?? '';
 
-    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
-    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
-    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text =
+        data['father_last_name']?.toString() ?? '';
 
-    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
-    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
-    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
 
-    _dateOfDeath = DateTime.tryParse(data['date_of_death']?.toString() ?? '');
-    _dateOfBurial = DateTime.tryParse(data['date_of_burial']?.toString() ?? '');
-    _placeOfBurialController.text = data['place_of_burial']?.toString() ?? '';
+    _dateOfDeath =
+        DateTime.tryParse(data['date_of_death']?.toString() ?? '');
+    _dateOfBurial =
+        DateTime.tryParse(data['date_of_burial']?.toString() ?? '');
+    _placeOfBurialController.text =
+        data['place_of_burial']?.toString() ?? '';
     _causeOfDeathController.text = data['cause_of_death']?.toString() ?? '';
     _sacramentsReceived = data['sacraments_received'] == true;
 
-    _liturgicalService = data['liturgical_service']?.toString() ?? 'Funeral Mass';
+    _liturgicalService =
+        data['liturgical_service']?.toString() ?? 'Funeral Mass';
     _stipendController.text = data['stipend']?.toString() ?? '';
-    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
-    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
-    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
-    _parishNameController.text = data['parish_name']?.toString() ?? 'St. John Paul II Parish';
+    _ministerFirstNameController.text =
+        data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text =
+        data['minister_last_name']?.toString() ?? '';
+    _parishNameController.text =
+        data['parish_name']?.toString() ?? 'St. John Paul II Parish';
     _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  void _populateDraftData(Map<String, dynamic> data) {
+    _bookNumberController.text = data['book_number']?.toString() ?? '';
+    _pageNumberController.text = data['page_number']?.toString() ?? '';
+    _lineNumberController.text = data['line_number']?.toString() ?? '';
+
+    _deceasedFirstNameController.text =
+        data['deceased_first_name']?.toString() ?? '';
+    _deceasedMiddleNameController.text =
+        data['deceased_middle_name']?.toString() ?? '';
+    _deceasedLastNameController.text =
+        data['deceased_last_name']?.toString() ?? '';
+    _deceasedSuffixController.text =
+        data['deceased_suffix']?.toString() ?? '';
+    final g = data['gender']?.toString();
+    if (g == 'Male' || g == 'Female') _gender = g!;
+    _ageController.text = data['age']?.toString() ?? '';
+    final cs = data['civil_status']?.toString();
+    if (cs != null &&
+        ['Single', 'Married', 'Widow', 'Widower', 'Child'].contains(cs)) {
+      _civilStatus = cs;
+    }
+    _residenceController.text = data['residence']?.toString() ?? '';
+
+    _spouseFirstNameController.text =
+        data['spouse_first_name']?.toString() ?? '';
+    _spouseMiddleNameController.text =
+        data['spouse_middle_name']?.toString() ?? '';
+    _spouseLastNameController.text =
+        data['spouse_last_name']?.toString() ?? '';
+
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text =
+        data['father_last_name']?.toString() ?? '';
+
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
+
+    if (data['date_of_death'] != null) {
+      _dateOfDeath = DateTime.tryParse(data['date_of_death'].toString());
+    }
+    if (data['date_of_burial'] != null) {
+      _dateOfBurial = DateTime.tryParse(data['date_of_burial'].toString());
+    }
+    if (data.containsKey('place_of_burial')) {
+      _placeOfBurialController.text =
+          data['place_of_burial']?.toString() ?? '';
+    }
+    _causeOfDeathController.text = data['cause_of_death']?.toString() ?? '';
+    if (data.containsKey('sacraments_received')) {
+      _sacramentsReceived = data['sacraments_received'] == true;
+    }
+
+    final ls = data['liturgical_service']?.toString();
+    if (ls == 'Funeral Mass' || ls == 'Funeral Blessing') {
+      _liturgicalService = ls!;
+    }
+    _stipendController.text = data['stipend']?.toString() ?? '';
+    if (data.containsKey('minister_first_name')) {
+      _ministerFirstNameController.text =
+          data['minister_first_name']?.toString() ?? '';
+    }
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    if (data.containsKey('minister_last_name')) {
+      _ministerLastNameController.text =
+          data['minister_last_name']?.toString() ?? '';
+    }
+    if (data.containsKey('parish_name')) {
+      _parishNameController.text = data['parish_name']?.toString() ?? '';
+    }
+    _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  Map<String, dynamic> _collectDraftData() {
+    return {
+      'book_number': _bookNumberController.text.trim(),
+      'page_number': _pageNumberController.text.trim(),
+      'line_number': _lineNumberController.text.trim(),
+      'deceased_first_name': _deceasedFirstNameController.text.trim(),
+      'deceased_middle_name': _deceasedMiddleNameController.text.trim(),
+      'deceased_last_name': _deceasedLastNameController.text.trim(),
+      'deceased_suffix': _deceasedSuffixController.text.trim(),
+      'gender': _gender,
+      'age': _ageController.text.trim(),
+      'civil_status': _civilStatus,
+      'residence': _residenceController.text.trim(),
+      'spouse_first_name': _spouseFirstNameController.text.trim(),
+      'spouse_middle_name': _spouseMiddleNameController.text.trim(),
+      'spouse_last_name': _spouseLastNameController.text.trim(),
+      'father_first_name': _fatherFirstNameController.text.trim(),
+      'father_middle_name': _fatherMiddleNameController.text.trim(),
+      'father_last_name': _fatherLastNameController.text.trim(),
+      'mother_first_name': _motherFirstNameController.text.trim(),
+      'mother_middle_name': _motherMiddleNameController.text.trim(),
+      'mother_maiden_last_name': _motherMaidenLastNameController.text.trim(),
+      'date_of_death': _dateOfDeath?.toIso8601String().substring(0, 10),
+      'date_of_burial': _dateOfBurial?.toIso8601String().substring(0, 10),
+      'place_of_burial': _placeOfBurialController.text.trim(),
+      'cause_of_death': _causeOfDeathController.text.trim(),
+      'sacraments_received': _sacramentsReceived,
+      'liturgical_service': _liturgicalService,
+      'stipend': _stipendController.text.trim(),
+      'minister_first_name': _ministerFirstNameController.text.trim(),
+      'minister_middle_name': _ministerMiddleNameController.text.trim(),
+      'minister_last_name': _ministerLastNameController.text.trim(),
+      'parish_name': _parishNameController.text.trim(),
+      'remarks': _remarksController.text.trim(),
+    };
+  }
+
+  String _buildDraftDisplayTitle() {
+    final name = [
+      _deceasedFirstNameController.text.trim(),
+      _deceasedMiddleNameController.text.trim(),
+      _deceasedLastNameController.text.trim(),
+      _deceasedSuffixController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+    return name.isNotEmpty ? name : 'Untitled Death & Burial Draft';
+  }
+
+  String? _buildDraftBookReference() {
+    final b = _bookNumberController.text.trim();
+    final p = _pageNumberController.text.trim();
+    final l = _lineNumberController.text.trim();
+    if (b.isEmpty && p.isEmpty && l.isEmpty) return null;
+    return 'Book ${b.isEmpty ? '?' : b}, Page ${p.isEmpty ? '?' : p}, Line ${l.isEmpty ? '?' : l}';
+  }
+
+  Future<void> _saveToDraft() async {
+    if (_isSubmitting || _isSavingDraft) return;
+
+    setState(() {
+      _isSavingDraft = true;
+      _loadingMessage = 'Saving death & burial draft...';
+      _errorMessage = null;
+    });
+
+    try {
+      final saved = await SacramentalDraftService.saveDraft(
+        existingDraftId: _activeDraftId,
+        sacramentType: 'Death',
+        displayTitle: _buildDraftDisplayTitle(),
+        bookReference: _buildDraftBookReference(),
+        draftData: _collectDraftData(),
+      );
+
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      setState(() {
+        _activeDraftId = saved.draftId;
+        _isSavingDraft = false;
+      });
+
+      // Navigate back to the sacrament registry page immediately
+      Navigator.pop(context);
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Draft saved! You can resume it anytime from the Drafts page.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSavingDraft = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
   }
 
   void _onCoordinateChanged() {
     _coordinateDebounce?.cancel();
-    _coordinateDebounce = Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
+    _coordinateDebounce =
+        Timer(const Duration(milliseconds: 350), _checkCoordinatesLive);
   }
 
   Future<void> _checkCoordinatesLive() async {
@@ -189,7 +413,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
       bookNumber: b,
       pageNumber: p,
       lineNumber: l,
-      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+      excludeRecordId:
+      isEditMode ? widget.initialData!['record_id']?.toString() : null,
     );
 
     if (mounted) {
@@ -240,11 +465,13 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   Future<void> _selectDate(BuildContext context, int dateType) async {
     final now = DateTime.now();
     final upperDateBound = DateTime(2100);
-    DateTime initialDate = (dateType == 0) ? (_dateOfDeath ?? now) : (_dateOfBurial ?? now);
+    DateTime initialDate =
+    (dateType == 0) ? (_dateOfDeath ?? now) : (_dateOfBurial ?? now);
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
+      initialDate:
+      initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
       lastDate: upperDateBound,
     );
@@ -267,7 +494,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
 
     final isFormValid = _formKey.currentState?.validate() ?? false;
     if (!isFormValid) {
-      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      setState(() =>
+      _errorMessage = 'Please review the highlighted fields below before saving.');
       _scrollToTop();
       return false;
     }
@@ -278,26 +506,30 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
       return false;
     }
 
-    final bookError = SacramentalValidators.validateBookNumber(_bookNumberController.text);
+    final bookError =
+    SacramentalValidators.validateBookNumber(_bookNumberController.text);
     if (bookError != null) {
       setState(() => _errorMessage = bookError);
       _scrollToTop();
       return false;
     }
-    final pageError = SacramentalValidators.validatePageNumber(_pageNumberController.text);
+    final pageError =
+    SacramentalValidators.validatePageNumber(_pageNumberController.text);
     if (pageError != null) {
       setState(() => _errorMessage = pageError);
       _scrollToTop();
       return false;
     }
-    final lineError = SacramentalValidators.validateLineNumber(_lineNumberController.text);
+    final lineError =
+    SacramentalValidators.validateLineNumber(_lineNumberController.text);
     if (lineError != null) {
       setState(() => _errorMessage = lineError);
       _scrollToTop();
       return false;
     }
 
-    final ageError = SacramentalValidators.validateWholeNumberAge(_ageController.text);
+    final ageError =
+    SacramentalValidators.validateWholeNumberAge(_ageController.text);
     if (ageError != null) {
       setState(() => _errorMessage = ageError);
       _scrollToTop();
@@ -316,7 +548,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
       return false;
     }
 
-    final burialError = SacramentalValidators.validateBurialDate(_dateOfBurial, _dateOfDeath);
+    final burialError =
+    SacramentalValidators.validateBurialDate(_dateOfBurial, _dateOfDeath);
     if (burialError != null) {
       setState(() {
         if (_dateOfDeath == null) {
@@ -346,7 +579,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   }
 
   /// Computes strict dynamic diff, excluding unchanged fields and audit metadata
-  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+  String _computeChangesSummaryJson(
+      Map<String, dynamic> oldData, Map<String, dynamic> newData) {
     final diffs = <String, Map<String, dynamic>>{};
 
     final Map<String, String> fieldLabels = {
@@ -394,8 +628,16 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
       }
 
       final oldVal = oldData[key];
-      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
-      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+      final oldStr = (oldVal == null ||
+          oldVal.toString().trim().isEmpty ||
+          oldVal.toString().toLowerCase() == 'null')
+          ? ''
+          : oldVal.toString().trim();
+      final newStr = (newVal == null ||
+          newVal.toString().trim().isEmpty ||
+          newVal.toString().toLowerCase() == 'null')
+          ? ''
+          : newVal.toString().trim();
 
       String normOld = oldStr;
       String normNew = newStr;
@@ -471,7 +713,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 color: _deathViolet.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.fact_check_outlined, color: _deathViolet, size: 24),
+              child: const Icon(Icons.fact_check_outlined,
+                  color: _deathViolet, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -489,7 +732,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   const SizedBox(height: 2),
                   Text(
                     'Verify all fields before saving into Liber Defunctorum.',
-                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    style:
+                    TextStyle(fontSize: 12, color: ParishColors.textMuted),
                   ),
                 ],
               ),
@@ -504,17 +748,22 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildReviewSection('1. Registry Coordinates', [
-                  _buildReviewRow('Book No.:', _bookNumberController.text.trim()),
-                  _buildReviewRow('Page No.:', _pageNumberController.text.trim()),
-                  _buildReviewRow('Line No.:', _lineNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Book No.:', _bookNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Page No.:', _pageNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Line No.:', _lineNumberController.text.trim()),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection("2. Deceased Person's Information", [
                   _buildReviewRow('Full Name:', deceasedName),
-                  _buildReviewRow('Age at Death:', '${_ageController.text.trim()} years old'),
+                  _buildReviewRow(
+                      'Age at Death:', '${_ageController.text.trim()} years old'),
                   _buildReviewRow('Gender:', _gender),
                   _buildReviewRow('Civil Status:', _civilStatus),
-                  _buildReviewRow('Residence Address:', _residenceController.text.trim()),
+                  _buildReviewRow(
+                      'Residence Address:', _residenceController.text.trim()),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('3. Next of Kin', [
@@ -527,17 +776,29 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('4. Burial, Sacraments & Clergy', [
-                  _buildReviewRow('Date of Death:', _dateOfDeath?.toIso8601String().substring(0, 10) ?? '—'),
-                  _buildReviewRow('Date of Burial:', _dateOfBurial?.toIso8601String().substring(0, 10) ?? '—'),
-                  _buildReviewRow('Cemetery / Burial Place:', _placeOfBurialController.text.trim()),
+                  _buildReviewRow(
+                      'Date of Death:',
+                      _dateOfDeath?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow(
+                      'Date of Burial:',
+                      _dateOfBurial?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow('Cemetery / Burial Place:',
+                      _placeOfBurialController.text.trim()),
                   if (_causeOfDeathController.text.trim().isNotEmpty)
-                    _buildReviewRow('Cause of Death:', _causeOfDeathController.text.trim()),
-                  _buildReviewRow('Sacraments Administered:', _sacramentsReceived ? 'Yes (Administered)' : 'No'),
+                    _buildReviewRow('Cause of Death:',
+                        _causeOfDeathController.text.trim()),
+                  _buildReviewRow('Sacraments Administered:',
+                      _sacramentsReceived ? 'Yes (Administered)' : 'No'),
                   _buildReviewRow('Liturgical Rite:', _liturgicalService),
                   _buildReviewRow('Officiating Priest:', priestName),
-                  _buildReviewRow('Stipend / Offering:', _stipendController.text.trim().isNotEmpty ? '₱ ${_stipendController.text.trim()}' : '₱ 0.00'),
+                  _buildReviewRow(
+                      'Stipend / Offering:',
+                      _stipendController.text.trim().isNotEmpty
+                          ? '₱ ${_stipendController.text.trim()}'
+                          : '₱ 0.00'),
                   if (_remarksController.text.trim().isNotEmpty)
-                    _buildReviewRow('Remarks / Notes:', _remarksController.text.trim()),
+                    _buildReviewRow(
+                        'Remarks / Notes:', _remarksController.text.trim()),
                 ]),
               ],
             ),
@@ -561,7 +822,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+            label: const Text('Confirm and Save',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
           ),
         ],
       ),
@@ -641,7 +903,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
         : 'Authorized Parish Personnel';
     final userRole = currentUser?.userRole ?? 'Secretary';
 
-    final reasonController = TextEditingController(text: 'Correction of burial record details');
+    final reasonController =
+    TextEditingController(text: 'Correction of burial record details');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -658,7 +921,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 color: _deathViolet.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.security_update_good, color: _deathViolet, size: 24),
+              child: const Icon(Icons.security_update_good,
+                  color: _deathViolet, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -681,7 +945,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             children: [
               Text(
                 'You are modifying canonical entry ${widget.initialData!['record_id']} (${_deceasedFirstNameController.text.trim()} ${_deceasedLastNameController.text.trim()}).',
-                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+                style: TextStyle(
+                    fontSize: 14, color: ParishColors.textDark, height: 1.35),
               ),
               const SizedBox(height: 12),
               Container(
@@ -697,16 +962,23 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   children: [
                     Text(
                       'AUDIT LOG ATTRIBUTION',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textMuted),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Editor: $currentUserName ($userRole)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _deathViolet),
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: _deathViolet),
                     ),
                     Text(
                       'Coordinates: Book ${_bookNumberController.text.trim()}, Page ${_pageNumberController.text.trim()}, Line ${_lineNumberController.text.trim()}',
-                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -714,7 +986,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               const SizedBox(height: 14),
               Text(
                 'Reason for Correction *',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark),
               ),
               const SizedBox(height: 6),
               TextFormField(
@@ -722,11 +997,13 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                 maxLines: 2,
                 style: const TextStyle(fontSize: 13.5),
                 decoration: InputDecoration(
-                  hintText: 'e.g. Typographical error correction on date of death or burial place',
+                  hintText:
+                  'e.g. Typographical error correction on date of death or burial place',
                   filled: true,
                   fillColor: ParishColors.backgroundLight,
                   isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],
@@ -750,7 +1027,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            label: const Text('Confirm & Save Update',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ],
       ),
@@ -764,7 +1042,12 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   Future<void> _submitForm({String? reasonForCorrection}) async {
     if (!isEditMode && !_validateAllFields()) return;
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _loadingMessage = isEditMode
+          ? 'Updating death & burial record...'
+          : 'Saving death & burial record...';
+    });
 
     try {
       final currentUser = AuthService.currentUser;
@@ -782,7 +1065,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
         final editLogStamp =
             '[Amended on ${now.toIso8601String().substring(0, 10)} by $currentUserName (${currentUser?.userRole ?? "Staff"})]: $reason';
 
-        if (compiledCanonicalNotes != null && compiledCanonicalNotes.trim().isNotEmpty) {
+        if (compiledCanonicalNotes != null &&
+            compiledCanonicalNotes.trim().isNotEmpty) {
           compiledCanonicalNotes = '$compiledCanonicalNotes\n$editLogStamp';
         } else {
           compiledCanonicalNotes = editLogStamp;
@@ -795,77 +1079,119 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
         'line_number': _lineNumberController.text.trim(),
 
         'deceased_first_name': _deceasedFirstNameController.text.trim(),
-        'deceased_middle_name': _deceasedMiddleNameController.text.trim().isEmpty ? null : _deceasedMiddleNameController.text.trim(),
+        'deceased_middle_name':
+        _deceasedMiddleNameController.text.trim().isEmpty
+            ? null
+            : _deceasedMiddleNameController.text.trim(),
         'deceased_last_name': _deceasedLastNameController.text.trim(),
-        'deceased_suffix': _deceasedSuffixController.text.trim().isEmpty ? null : _deceasedSuffixController.text.trim(),
+        'deceased_suffix': _deceasedSuffixController.text.trim().isEmpty
+            ? null
+            : _deceasedSuffixController.text.trim(),
         'gender': _gender,
         'age': _ageController.text.trim(),
         'civil_status': _civilStatus,
         'residence': _residenceController.text.trim(),
 
-        'spouse_first_name': _spouseFirstNameController.text.trim().isEmpty ? null : _spouseFirstNameController.text.trim(),
-        'spouse_middle_name': _spouseMiddleNameController.text.trim().isEmpty ? null : _spouseMiddleNameController.text.trim(),
-        'spouse_last_name': _spouseLastNameController.text.trim().isEmpty ? null : _spouseLastNameController.text.trim(),
+        'spouse_first_name': _spouseFirstNameController.text.trim().isEmpty
+            ? null
+            : _spouseFirstNameController.text.trim(),
+        'spouse_middle_name': _spouseMiddleNameController.text.trim().isEmpty
+            ? null
+            : _spouseMiddleNameController.text.trim(),
+        'spouse_last_name': _spouseLastNameController.text.trim().isEmpty
+            ? null
+            : _spouseLastNameController.text.trim(),
 
-        'father_first_name': _fatherFirstNameController.text.trim().isEmpty ? null : _fatherFirstNameController.text.trim(),
-        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty ? null : _fatherMiddleNameController.text.trim(),
-        'father_last_name': _fatherLastNameController.text.trim().isEmpty ? null : _fatherLastNameController.text.trim(),
+        'father_first_name': _fatherFirstNameController.text.trim().isEmpty
+            ? null
+            : _fatherFirstNameController.text.trim(),
+        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _fatherMiddleNameController.text.trim(),
+        'father_last_name': _fatherLastNameController.text.trim().isEmpty
+            ? null
+            : _fatherLastNameController.text.trim(),
 
-        'mother_first_name': _motherFirstNameController.text.trim().isEmpty ? null : _motherFirstNameController.text.trim(),
-        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty ? null : _motherMiddleNameController.text.trim(),
-        'mother_maiden_last_name': _motherMaidenLastNameController.text.trim().isEmpty ? null : _motherMaidenLastNameController.text.trim(),
+        'mother_first_name': _motherFirstNameController.text.trim().isEmpty
+            ? null
+            : _motherFirstNameController.text.trim(),
+        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _motherMiddleNameController.text.trim(),
+        'mother_maiden_last_name':
+        _motherMaidenLastNameController.text.trim().isEmpty
+            ? null
+            : _motherMaidenLastNameController.text.trim(),
 
         'date_of_death': _dateOfDeath!.toIso8601String().substring(0, 10),
         'date_of_burial': _dateOfBurial!.toIso8601String().substring(0, 10),
         'place_of_burial': _placeOfBurialController.text.trim(),
-        'cause_of_death': _causeOfDeathController.text.trim().isEmpty ? null : _causeOfDeathController.text.trim(),
+        'cause_of_death': _causeOfDeathController.text.trim().isEmpty
+            ? null
+            : _causeOfDeathController.text.trim(),
         'sacraments_received': _sacramentsReceived,
         'sacraments_notes': null,
 
         'liturgical_service': _liturgicalService,
-        'stipend': _stipendController.text.trim().isNotEmpty ? double.parse(_stipendController.text.trim()) : 0.00,
+        'stipend': _stipendController.text.trim().isNotEmpty
+            ? double.parse(_stipendController.text.trim())
+            : 0.00,
         'minister_first_name': _ministerFirstNameController.text.trim(),
-        'minister_middle_name': _ministerMiddleNameController.text.trim().isEmpty ? null : _ministerMiddleNameController.text.trim(),
+        'minister_middle_name':
+        _ministerMiddleNameController.text.trim().isEmpty
+            ? null
+            : _ministerMiddleNameController.text.trim(),
         'minister_last_name': _ministerLastNameController.text.trim(),
 
-        'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
+        'remarks': _remarksController.text.trim().isEmpty
+            ? null
+            : _remarksController.text.trim(),
         'parish_name': _parishNameController.text.trim(),
       };
 
       if (isEditMode) {
         final recordId = widget.initialData!['record_id'].toString();
 
-        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+        final changesJson =
+        _computeChangesSummaryJson(widget.initialData!, recordMap);
 
         await DeathService.updateDeathRecord(recordId, recordMap);
 
         if (changesJson.isNotEmpty) {
           try {
-            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            await Supabase.instance.client
+                .from('sacramental_record_audit_logs')
+                .insert({
               'log_id': 'LOG-${now.millisecondsSinceEpoch}',
               'record_id': recordId,
               'sacrament_type': 'Death',
               'action_type': 'UPDATED',
-              'recipient_name': '${_deceasedFirstNameController.text.trim()} ${_deceasedLastNameController.text.trim()}',
+              'recipient_name':
+              '${_deceasedFirstNameController.text.trim()} ${_deceasedLastNameController.text.trim()}',
               'book_number': _bookNumberController.text.trim(),
               'page_number': _pageNumberController.text.trim(),
               'line_number': _lineNumberController.text.trim(),
               'performed_by_id': currentUserId,
               'performed_by_name': currentUserName,
               'performed_by_role': currentUser?.userRole ?? 'Secretary',
-              'justification': reasonForCorrection ?? 'Correction of burial details',
+              'justification':
+              reasonForCorrection ?? 'Correction of burial details',
               'changes_summary': changesJson,
               'created_at': now.toIso8601String(),
             });
           } catch (auditErr) {
-            debugPrint('[DeathManualEntryPage] Audit log insertion notice: $auditErr');
+            debugPrint(
+                '[DeathManualEntryPage] Audit log insertion notice: $auditErr');
           }
         }
       } else {
-        final insertedRecord = await DeathService.insertManualDeathRecord(recordMap);
+        final insertedRecord =
+        await DeathService.insertManualDeathRecord(recordMap);
 
         try {
-          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+          await Supabase.instance.client
+              .from('sacramental_record_audit_logs')
+              .insert({
             'log_id': 'LOG-${now.millisecondsSinceEpoch}',
             'record_id': insertedRecord.recordId,
             'sacrament_type': 'Death',
@@ -882,7 +1208,14 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             'created_at': now.toIso8601String(),
           });
         } catch (auditErr) {
-          debugPrint('[DeathManualEntryPage] Audit log insertion notice: $auditErr');
+          debugPrint(
+              '[DeathManualEntryPage] Audit log insertion notice: $auditErr');
+        }
+
+        if (_activeDraftId != null && _activeDraftId!.isNotEmpty) {
+          try {
+            await SacramentalDraftService.deleteDraft(_activeDraftId!);
+          } catch (_) {}
         }
       }
 
@@ -916,12 +1249,14 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
+    final bool isNarrowAppBar = MediaQuery.sizeOf(context).width < 520;
 
     return PopScope(
-      canPop: !_isSubmitting,
+      canPop: !isBusy,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_isSubmitting) return;
+        if (isBusy) return;
         final shouldExit = await showDiscardConfirmationDialog(
           context,
           accentColor: _deathViolet,
@@ -930,72 +1265,121 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
           Navigator.pop(context);
         }
       },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhiteColor,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: _deathViolet, size: 26),
-            onPressed: _isSubmitting
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: _deathViolet,
-              );
-              if (shouldExit && context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditMode ? 'Edit Death Record' : 'Death & Burial Manual Entry',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-              ),
-              Text(
-                isEditMode
-                    ? 'Editing Record: ${widget.initialData!['record_id']}'
-                    : 'Parish Burial Register (Liber Defunctorum)',
-                style: TextStyle(fontSize: 12, color: textMutedColor),
-              ),
+      child: SacramentalLoadingOverlay(
+        isLoading: isBusy,
+        message: _loadingMessage,
+        accentColor: _deathViolet,
+        icon: Icons.church_outlined,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhiteColor,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: _deathViolet, size: 26),
+              onPressed: isBusy
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: _deathViolet,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditMode
+                      ? 'Edit Death Record'
+                      : 'Death & Burial Manual Entry',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDarkColor),
+                ),
+                Text(
+                  isEditMode
+                      ? 'Editing Record: ${widget.initialData!['record_id']}'
+                      : (_activeDraftId != null
+                      ? 'Resuming Saved Draft'
+                      : 'Parish Burial Register (Liber Defunctorum)'),
+                  style: TextStyle(fontSize: 12, color: textMutedColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            actions: [
+              if (!isEditMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _deathViolet,
+                        backgroundColor: _deathViolet.withOpacity(0.08),
+                        side: BorderSide(
+                          color: _deathViolet.withOpacity(0.45),
+                          width: 1.2,
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrowAppBar ? 10 : 14,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: isBusy ? null : _saveToDraft,
+                      icon: const Icon(Icons.save_as_outlined, size: 18),
+                      label: Text(
+                        isNarrowAppBar ? 'Draft' : 'Save to Draft',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-        ),
-        floatingActionButton: IgnorePointer(
-          ignoring: !_showBackToTop,
-          child: AnimatedOpacity(
-            opacity: _showBackToTop ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 250),
-            child: Semantics(
-              button: true,
-              label: 'Back to top, button',
-              child: FocusableActionDetector(
-                onShowHoverHighlight: (hovered) {
-                  setState(() => _isBackToTopHovered = hovered);
-                },
-                actions: <Type, Action<Intent>>{
-                  ActivateIntent: CallbackAction<ActivateIntent>(
-                    onInvoke: (_) => _scrollToTop(),
-                  ),
-                },
-                child: AnimatedScale(
-                  scale: _isBackToTopHovered ? 1.05 : 1.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: SizedBox(
-                    height: 48,
-                    child: FloatingActionButton.extended(
-                      backgroundColor: _deathViolet,
-                      foregroundColor: Colors.white,
-                      elevation: 4,
-                      onPressed: _scrollToTop,
-                      icon: const Icon(Icons.arrow_upward, size: 18),
-                      label: const Text(
-                        'Back to Top',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          floatingActionButton: IgnorePointer(
+            ignoring: !_showBackToTop,
+            child: AnimatedOpacity(
+              opacity: _showBackToTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: Semantics(
+                button: true,
+                label: 'Back to top, button',
+                child: FocusableActionDetector(
+                  onShowHoverHighlight: (hovered) {
+                    setState(() => _isBackToTopHovered = hovered);
+                  },
+                  actions: <Type, Action<Intent>>{
+                    ActivateIntent: CallbackAction<ActivateIntent>(
+                      onInvoke: (_) => _scrollToTop(),
+                    ),
+                  },
+                  child: AnimatedScale(
+                    scale: _isBackToTopHovered ? 1.05 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: SizedBox(
+                      height: 48,
+                      child: FloatingActionButton.extended(
+                        backgroundColor: _deathViolet,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        onPressed: _scrollToTop,
+                        icon: const Icon(Icons.arrow_upward, size: 18),
+                        label: const Text(
+                          'Back to Top',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ),
                     ),
                   ),
@@ -1003,92 +1387,80 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               ),
             ),
           ),
-        ),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double availableWidth = constraints.maxWidth;
-              final bool isWide = availableWidth >= 900;
-              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double availableWidth = constraints.maxWidth;
+                final bool isWide = availableWidth >= 900;
+                final double horizontalPadding =
+                isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Stack(
-                children: [
-                  SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
-                        child: Form(
-                          key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildFormHeaderCard(),
-                              const SizedBox(height: 16),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding, vertical: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                      BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormHeaderCard(),
+                            const SizedBox(height: 16),
 
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: ParishColors.mercyRed),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
+                            if (_errorMessage != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRedSurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                  Border.all(color: ParishColors.mercyRed),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        color: ParishColors.mercyRed, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.mercyRed,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-
-                              _buildSection1Coordinates(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection2Deceased(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection3NextOfKin(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection4Burial(isWide: isWide),
-                              const SizedBox(height: 24),
-                              _buildBottomSubmissionBar(isWide: isWide),
-                              const SizedBox(height: 50),
+                              ),
                             ],
-                          ),
+
+                            _buildSection1Coordinates(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection2Deceased(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection3NextOfKin(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection4Burial(isWide: isWide),
+                            const SizedBox(height: 24),
+                            _buildBottomSubmissionBar(isWide: isWide),
+                            const SizedBox(height: 50),
+                          ],
                         ),
                       ),
                     ),
                   ),
-
-                  if (_isSubmitting)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black.withOpacity(0.55),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: ParishColors.goldAccent,
-                            strokeWidth: 4.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1139,14 +1511,19 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: _deathViolet.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Canonical Step',
-                        style: TextStyle(
+                      child: Text(
+                        isEditMode
+                            ? 'Edit Mode'
+                            : (_activeDraftId != null
+                            ? 'Draft Mode'
+                            : 'New Entry'),
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: _deathViolet,
@@ -1206,7 +1583,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   Expanded(
                     child: Text(
                       'Book, Page, and Line coordinates are permanent physical coordinates and cannot be altered.',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _deathViolet),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _deathViolet),
                     ),
                   ),
                 ],
@@ -1217,7 +1597,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
           if (hasDup) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
                 color: ParishColors.mercyRedSurface,
@@ -1226,7 +1607,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded,
+                      color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1289,9 +1671,15 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
               child: Row(
                 children: [
-                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: _deathViolet)),
+                  const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.8, color: _deathViolet)),
                   const SizedBox(width: 8),
-                  Text('Checking physical burial register...', style: TextStyle(fontSize: 11, color: ParishColors.textMuted)),
+                  Text('Checking physical burial register...',
+                      style: TextStyle(
+                          fontSize: 11, color: ParishColors.textMuted)),
                 ],
               ),
             ),
@@ -1318,7 +1706,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'First name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1329,7 +1719,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1340,7 +1732,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1367,7 +1761,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'First name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'First name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1378,7 +1774,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1393,7 +1791,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (v) => SacramentalValidators.validateName(v, 'Last name', isRequired: true, maxLength: 50),
+                    validator: (v) => SacramentalValidators.validateName(
+                        v, 'Last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1431,7 +1831,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
-                  validator: (v) => SacramentalValidators.validateWholeNumberAge(v, isRequired: true),
+                  validator: (v) =>
+                      SacramentalValidators.validateWholeNumberAge(v,
+                          isRequired: true),
                 ),
               ),
             ],
@@ -1445,7 +1847,13 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: 'Civil Status',
                   isRequired: true,
                   value: _civilStatus,
-                  items: const ['Single', 'Married', 'Widow', 'Widower', 'Child'],
+                  items: const [
+                    'Single',
+                    'Married',
+                    'Widow',
+                    'Widower',
+                    'Child'
+                  ],
                   onChanged: (val) => setState(() => _civilStatus = val!),
                 ),
               ),
@@ -1456,7 +1864,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: 'Residence Address',
                   isRequired: true,
                   maxLength: 150,
-                  validator: (v) => SacramentalValidators.validatePlace(v, 'Residence address', isRequired: true, maxLength: 150),
+                  validator: (v) => SacramentalValidators.validatePlace(
+                      v, 'Residence address',
+                      isRequired: true, maxLength: 150),
                 ),
               ),
             ],
@@ -1473,7 +1883,11 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Surviving Spouse (If Married or Widowed)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _deathViolet)),
+          const Text('Surviving Spouse (If Married or Widowed)',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _deathViolet)),
           const SizedBox(height: 8),
 
           Row(
@@ -1485,7 +1899,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: "Spouse's First Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's first name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Spouse's first name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1495,7 +1911,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: "Middle Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Spouse's middle name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Spouse's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1505,11 +1923,17 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             label: "Spouse's Last Name",
             isRequired: false,
             maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, "Spouse's last name", isRequired: false, maxLength: 50),
+            validator: (v) => SacramentalValidators.validateName(
+                v, "Spouse's last name",
+                isRequired: false, maxLength: 50),
           ),
 
           const Divider(height: 24),
-          const Text("Parents (If Unmarried, Youth or Child)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _deathViolet)),
+          const Text("Parents (If Unmarried, Youth or Child)",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: _deathViolet)),
           const SizedBox(height: 8),
 
           Row(
@@ -1521,7 +1945,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: "Father's First Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's first name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Father's first name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1531,7 +1957,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: "Middle Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Father's middle name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Father's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1541,7 +1969,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             label: "Father's Last Name",
             isRequired: false,
             maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, "Father's last name", isRequired: false, maxLength: 50),
+            validator: (v) => SacramentalValidators.validateName(
+                v, "Father's last name",
+                isRequired: false, maxLength: 50),
           ),
 
           Row(
@@ -1553,7 +1983,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: "Mother's First Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's first name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Mother's first name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1563,7 +1995,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: "Middle Name",
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, "Mother's middle name", isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, "Mother's middle name",
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1573,7 +2007,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             label: "Mother's Maiden Last Name",
             isRequired: false,
             maxLength: 50,
-            validator: (v) => SacramentalValidators.validateName(v, "Mother's maiden last name", isRequired: false, maxLength: 50),
+            validator: (v) => SacramentalValidators.validateName(
+                v, "Mother's maiden last name",
+                isRequired: false, maxLength: 50),
           ),
         ],
       ),
@@ -1622,7 +2058,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: 'Cemetery / Burial Place',
                   isRequired: true,
                   maxLength: 150,
-                  validator: (v) => SacramentalValidators.validatePlace(v, 'Place of burial', isRequired: true, maxLength: 150),
+                  validator: (v) => SacramentalValidators.validatePlace(
+                      v, 'Place of burial',
+                      isRequired: true, maxLength: 150),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1642,8 +2080,11 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             activeColor: _deathViolet,
-            title: const Text('Sacraments Administered Before Death', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
-            subtitle: const Text('Penance, Holy Viaticum, or Anointing of the Sick', style: TextStyle(fontSize: 12)),
+            title: const Text('Sacraments Administered Before Death',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+            subtitle: const Text(
+                'Penance, Holy Viaticum, or Anointing of the Sick',
+                style: TextStyle(fontSize: 12)),
             value: _sacramentsReceived,
             onChanged: (val) => setState(() => _sacramentsReceived = val),
           ),
@@ -1658,7 +2099,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   isRequired: true,
                   value: _liturgicalService,
                   items: const ['Funeral Mass', 'Funeral Blessing'],
-                  onChanged: (val) => setState(() => _liturgicalService = val!),
+                  onChanged: (val) =>
+                      setState(() => _liturgicalService = val!),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1668,7 +2110,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: 'Stipend / Offering (₱)',
                   isRequired: false,
                   maxLength: 12,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
                   validator: SacramentalValidators.validateStipend,
                 ),
               ),
@@ -1685,7 +2128,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: 'Priest First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Minister first name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Minister first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1696,7 +2141,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Minister middle name', isRequired: false, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Minister middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1707,7 +2154,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   label: 'Priest Last Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (v) => SacramentalValidators.validateName(v, 'Minister last name', isRequired: true, maxLength: 50),
+                  validator: (v) => SacramentalValidators.validateName(
+                      v, 'Minister last name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
             ],
@@ -1718,7 +2167,9 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             label: 'Parish Name',
             isRequired: true,
             maxLength: 150,
-            validator: (v) => SacramentalValidators.validatePlace(v, 'Parish name', isRequired: true, maxLength: 150),
+            validator: (v) => SacramentalValidators.validatePlace(
+                v, 'Parish name',
+                isRequired: true, maxLength: 150),
           ),
           _buildTextFormField(
             controller: _remarksController,
@@ -1735,6 +2186,7 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
   Widget _buildBottomSubmissionBar({required bool isWide}) {
     final borderGreyColor = ParishColors.borderGrey;
     final textMutedColor = ParishColors.textMuted;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
 
     return Container(
       width: double.infinity,
@@ -1760,9 +2212,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: borderGreyColor, width: 1.4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: _isSubmitting
+              onPressed: isBusy
                   ? null
                   : () async {
                 final shouldExit = await showDiscardConfirmationDialog(
@@ -1775,7 +2228,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               },
               child: Text(
                 'Discard & Exit',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: textMutedColor),
               ),
             ),
           ),
@@ -1789,9 +2245,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                     : (isEditMode ? _deathViolet : ParishColors.oliveGreen),
                 foregroundColor: Colors.white,
                 elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (_isSubmitting || _coordinateDuplicateError != null)
+              onPressed: (isBusy || _coordinateDuplicateError != null)
                   ? null
                   : () {
                 if (isEditMode) {
@@ -1800,10 +2257,15 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
                   _promptSaveConfirmation();
                 }
               },
-              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              icon: Icon(
+                  isEditMode
+                      ? Icons.security_update_good
+                      : Icons.check_circle_outline,
+                  size: 22),
               label: Text(
                 isEditMode ? 'Update Death Record' : 'Save Death Record',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ),
           ),
@@ -1907,14 +2369,23 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
             keyboardType: keyboardType,
             maxLines: maxLines,
             maxLength: maxLength,
-            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            buildCounter: (context,
+                {required currentLength,
+                  required isFocused,
+                  maxLength}) =>
+            null,
             validator: validator,
-            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(
+                fontSize: 14.5,
+                color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
-              fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
+              fillColor: enabled
+                  ? ParishColors.backgroundLight
+                  : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -1929,11 +2400,13 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.8),
               ),
               errorStyle: TextStyle(
                 color: ParishColors.mercyRed,
@@ -1954,7 +2427,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
     required bool hasError,
     required VoidCallback onTap,
   }) {
-    final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+    final borderColor =
+    hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -1971,16 +2445,21 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: borderColor, width: hasError ? 1.4 : 1.0),
+                border: Border.all(
+                    color: borderColor, width: hasError ? 1.4 : 1.0),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
+                    value != null
+                        ? value.toIso8601String().substring(0, 10)
+                        : 'YYYY-MM-DD',
                     style: TextStyle(
                       fontSize: 14.5,
-                      color: value != null ? ParishColors.textDark : ParishColors.textMuted,
+                      color: value != null
+                          ? ParishColors.textDark
+                          : ParishColors.textMuted,
                     ),
                   ),
                   const Icon(
@@ -1997,7 +2476,10 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               padding: const EdgeInsets.only(top: 6, left: 12),
               child: Text(
                 'Date selection is required.',
-                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    color: ParishColors.mercyRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500),
               ),
             ),
         ],
@@ -2035,7 +2517,8 @@ class _DeathManualEntryPageState extends State<DeathManualEntryPage> {
               filled: true,
               fillColor: ParishColors.backgroundLight,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),

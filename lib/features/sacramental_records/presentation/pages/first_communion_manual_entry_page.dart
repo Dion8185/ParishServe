@@ -9,24 +9,32 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../auth/services/auth_service.dart';
 import '../../services/first_communion_service.dart';
+import '../../services/sacramental_draft_service.dart';
 import '../../validators/sacramental_validators.dart';
 import '../dialogs/discard_entry_dialog.dart';
+import '../widgets/sacramental_loading_overlay.dart';
 
 class FirstCommunionManualEntryPage extends StatefulWidget {
   final VoidCallback? onRecordSaved;
   final Map<String, dynamic>? initialData; // Enables Edit Record Mode
+  final String? draftId;
+  final Map<String, dynamic>? initialDraftData;
 
   const FirstCommunionManualEntryPage({
     super.key,
     this.onRecordSaved,
     this.initialData,
+    this.draftId,
+    this.initialDraftData,
   });
 
   @override
-  State<FirstCommunionManualEntryPage> createState() => _FirstCommunionManualEntryPageState();
+  State<FirstCommunionManualEntryPage> createState() =>
+      _FirstCommunionManualEntryPageState();
 }
 
-class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntryPage> {
+class _FirstCommunionManualEntryPageState
+    extends State<FirstCommunionManualEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final ScrollController _scrollController = ScrollController();
 
@@ -35,6 +43,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   bool _isBackToTopHovered = false;
 
   bool get isEditMode => widget.initialData != null;
+
+  String? _activeDraftId;
+  bool _isSavingDraft = false;
+  String _loadingMessage = 'Processing First Communion record...';
 
   // Eucharistic Gold Accent Colors
   static const Color _eucharisticGold = Color(0xFFD49B18);
@@ -53,7 +65,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   final _communicantFirstNameController = TextEditingController();
   final _communicantMiddleNameController = TextEditingController();
   final _communicantLastNameController = TextEditingController();
-  final _baptismParishController = TextEditingController(text: 'St. John Paul II Parish');
+  final _baptismParishController =
+  TextEditingController(text: 'St. John Paul II Parish');
   DateTime? _baptismDate;
 
   // 3. Parents' Information
@@ -80,18 +93,24 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _activeDraftId = widget.draftId;
 
     if (isEditMode) {
       _populateExistingData(widget.initialData!);
     } else {
-      _loadAutoControlNumber();
+      if (widget.initialDraftData != null) {
+        _populateDraftData(widget.initialDraftData!);
+      } else {
+        _loadAutoControlNumber();
+      }
       _yearController.addListener(_onControlParametersChanged);
       _controlNumberController.addListener(_onControlParametersChanged);
     }
   }
 
   void _onScroll() {
-    final shouldShow = _scrollController.hasClients && _scrollController.offset >= 1000;
+    final shouldShow =
+        _scrollController.hasClients && _scrollController.offset >= 1000;
     if (shouldShow != _showBackToTop) {
       setState(() => _showBackToTop = shouldShow);
     }
@@ -108,36 +127,198 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   }
 
   void _populateExistingData(Map<String, dynamic> data) {
-    _yearController.text = data['year']?.toString() ?? '${DateTime.now().year}';
+    _yearController.text =
+        data['year']?.toString() ?? '${DateTime.now().year}';
     _controlNumberController.text = data['control_number']?.toString() ?? '';
-    _dateOfCommunion = DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
-    _communicantFirstNameController.text = data['communicant_first_name']?.toString() ?? '';
-    _communicantMiddleNameController.text = data['communicant_middle_name']?.toString() ?? '';
-    _communicantLastNameController.text = data['communicant_last_name']?.toString() ?? '';
+    _dateOfCommunion =
+        DateTime.tryParse(data['date_of_communion']?.toString() ?? '');
+    _communicantFirstNameController.text =
+        data['communicant_first_name']?.toString() ?? '';
+    _communicantMiddleNameController.text =
+        data['communicant_middle_name']?.toString() ?? '';
+    _communicantLastNameController.text =
+        data['communicant_last_name']?.toString() ?? '';
     _baptismParishController.text = data['baptism_parish']?.toString() ?? '';
     _baptismDate = DateTime.tryParse(data['baptism_date']?.toString() ?? '');
 
-    _fatherFirstNameController.text = data['father_first_name']?.toString() ?? '';
-    _fatherMiddleNameController.text = data['father_middle_name']?.toString() ?? '';
-    _fatherLastNameController.text = data['father_last_name']?.toString() ?? '';
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text =
+        data['father_last_name']?.toString() ?? '';
 
-    _motherFirstNameController.text = data['mother_first_name']?.toString() ?? '';
-    _motherMiddleNameController.text = data['mother_middle_name']?.toString() ?? '';
-    _motherMaidenLastNameController.text = data['mother_maiden_last_name']?.toString() ?? '';
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
 
-    _ministerFirstNameController.text = data['minister_first_name']?.toString() ?? '';
-    _ministerMiddleNameController.text = data['minister_middle_name']?.toString() ?? '';
-    _ministerLastNameController.text = data['minister_last_name']?.toString() ?? '';
+    _ministerFirstNameController.text =
+        data['minister_first_name']?.toString() ?? '';
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    _ministerLastNameController.text =
+        data['minister_last_name']?.toString() ?? '';
     _remarksController.text = data['remarks']?.toString() ?? '';
 
     _isLoadingControlNo = false;
   }
 
+  void _populateDraftData(Map<String, dynamic> data) {
+    if (data['year'] != null && data['year'].toString().trim().isNotEmpty) {
+      _yearController.text = data['year'].toString().trim();
+    }
+
+    final savedControl = data['control_number']?.toString().trim() ?? '';
+    if (savedControl.isNotEmpty && savedControl != 'Loading...') {
+      _controlNumberController.text = savedControl;
+      _isLoadingControlNo = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkControlNumberLive();
+      });
+    } else {
+      _loadAutoControlNumber();
+    }
+
+    if (data['date_of_communion'] != null) {
+      _dateOfCommunion =
+          DateTime.tryParse(data['date_of_communion'].toString());
+    }
+    _communicantFirstNameController.text =
+        data['communicant_first_name']?.toString() ?? '';
+    _communicantMiddleNameController.text =
+        data['communicant_middle_name']?.toString() ?? '';
+    _communicantLastNameController.text =
+        data['communicant_last_name']?.toString() ?? '';
+    if (data.containsKey('baptism_parish')) {
+      _baptismParishController.text =
+          data['baptism_parish']?.toString() ?? '';
+    }
+    _baptismDate = DateTime.tryParse(data['baptism_date']?.toString() ?? '');
+
+    _fatherFirstNameController.text =
+        data['father_first_name']?.toString() ?? '';
+    _fatherMiddleNameController.text =
+        data['father_middle_name']?.toString() ?? '';
+    _fatherLastNameController.text =
+        data['father_last_name']?.toString() ?? '';
+
+    _motherFirstNameController.text =
+        data['mother_first_name']?.toString() ?? '';
+    _motherMiddleNameController.text =
+        data['mother_middle_name']?.toString() ?? '';
+    _motherMaidenLastNameController.text =
+        data['mother_maiden_last_name']?.toString() ?? '';
+
+    if (data.containsKey('minister_first_name')) {
+      _ministerFirstNameController.text =
+          data['minister_first_name']?.toString() ?? '';
+    }
+    _ministerMiddleNameController.text =
+        data['minister_middle_name']?.toString() ?? '';
+    if (data.containsKey('minister_last_name')) {
+      _ministerLastNameController.text =
+          data['minister_last_name']?.toString() ?? '';
+    }
+    _remarksController.text = data['remarks']?.toString() ?? '';
+  }
+
+  Map<String, dynamic> _collectDraftData() {
+    return {
+      'year': _yearController.text.trim(),
+      'control_number': _controlNumberController.text.trim() == 'Loading...'
+          ? ''
+          : _controlNumberController.text.trim(),
+      'date_of_communion':
+      _dateOfCommunion?.toIso8601String().substring(0, 10),
+      'communicant_first_name': _communicantFirstNameController.text.trim(),
+      'communicant_middle_name': _communicantMiddleNameController.text.trim(),
+      'communicant_last_name': _communicantLastNameController.text.trim(),
+      'baptism_parish': _baptismParishController.text.trim(),
+      'baptism_date': _baptismDate?.toIso8601String().substring(0, 10),
+      'father_first_name': _fatherFirstNameController.text.trim(),
+      'father_middle_name': _fatherMiddleNameController.text.trim(),
+      'father_last_name': _fatherLastNameController.text.trim(),
+      'mother_first_name': _motherFirstNameController.text.trim(),
+      'mother_middle_name': _motherMiddleNameController.text.trim(),
+      'mother_maiden_last_name': _motherMaidenLastNameController.text.trim(),
+      'minister_first_name': _ministerFirstNameController.text.trim(),
+      'minister_middle_name': _ministerMiddleNameController.text.trim(),
+      'minister_last_name': _ministerLastNameController.text.trim(),
+      'remarks': _remarksController.text.trim(),
+    };
+  }
+
+  String _buildDraftDisplayTitle() {
+    final name = [
+      _communicantFirstNameController.text.trim(),
+      _communicantMiddleNameController.text.trim(),
+      _communicantLastNameController.text.trim(),
+    ].where((s) => s.isNotEmpty).join(' ');
+    return name.isNotEmpty ? name : 'Untitled First Communion Draft';
+  }
+
+  String? _buildDraftBookReference() {
+    final year = _yearController.text.trim();
+    final ctrl = _controlNumberController.text.trim();
+    if (year.isEmpty && (ctrl.isEmpty || ctrl == 'Loading...')) return null;
+    return 'Year ${year.isEmpty ? '?' : year} • Control # ${ctrl.isEmpty || ctrl == 'Loading...' ? '?' : ctrl}';
+  }
+
+  Future<void> _saveToDraft() async {
+    if (_isSubmitting || _isSavingDraft) return;
+
+    setState(() {
+      _isSavingDraft = true;
+      _loadingMessage = 'Saving First Communion draft...';
+      _errorMessage = null;
+    });
+
+    try {
+      final saved = await SacramentalDraftService.saveDraft(
+        existingDraftId: _activeDraftId,
+        sacramentType: 'First Communion',
+        displayTitle: _buildDraftDisplayTitle(),
+        bookReference: _buildDraftBookReference(),
+        draftData: _collectDraftData(),
+      );
+
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      setState(() {
+        _activeDraftId = saved.draftId;
+        _isSavingDraft = false;
+      });
+
+      // Navigate back to the sacrament registry page immediately
+      Navigator.pop(context);
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Draft saved! You can resume it anytime from the Drafts page.'),
+          backgroundColor: ParishColors.oliveGreen,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSavingDraft = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
   Future<void> _loadAutoControlNumber() async {
     setState(() => _isLoadingControlNo = true);
     try {
-      final year = int.tryParse(_yearController.text.trim()) ?? DateTime.now().year;
-      final nextControlNo = await FirstCommunionService.generateNextControlNumber(year);
+      final year =
+          int.tryParse(_yearController.text.trim()) ?? DateTime.now().year;
+      final nextControlNo =
+      await FirstCommunionService.generateNextControlNumber(year);
       if (!mounted) return;
       setState(() {
         _controlNumberController.text = nextControlNo;
@@ -155,7 +336,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
 
   void _onControlParametersChanged() {
     _controlDebounce?.cancel();
-    _controlDebounce = Timer(const Duration(milliseconds: 350), _checkControlNumberLive);
+    _controlDebounce =
+        Timer(const Duration(milliseconds: 350), _checkControlNumberLive);
   }
 
   Future<void> _checkControlNumberLive() async {
@@ -174,7 +356,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     final dupError = await SacramentalValidators.checkCommunionControlDuplicate(
       year: year,
       controlNumber: ctrl,
-      excludeRecordId: isEditMode ? widget.initialData!['record_id']?.toString() : null,
+      excludeRecordId:
+      isEditMode ? widget.initialData!['record_id']?.toString() : null,
     );
 
     if (mounted) {
@@ -224,7 +407,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
+      initialDate:
+      initialDate.isAfter(upperDateBound) ? upperDateBound : initialDate,
       firstDate: DateTime(1900),
       lastDate: upperDateBound,
     );
@@ -246,7 +430,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
 
     final isFormValid = _formKey.currentState?.validate() ?? false;
     if (!isFormValid) {
-      setState(() => _errorMessage = 'Please review the highlighted fields below before saving.');
+      setState(() =>
+      _errorMessage = 'Please review the highlighted fields below before saving.');
       _scrollToTop();
       return false;
     }
@@ -257,14 +442,16 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       return false;
     }
 
-    final yearError = SacramentalValidators.validateCommunionYear(_yearController.text);
+    final yearError =
+    SacramentalValidators.validateCommunionYear(_yearController.text);
     if (yearError != null) {
       setState(() => _errorMessage = yearError);
       _scrollToTop();
       return false;
     }
 
-    final controlError = SacramentalValidators.validateCommunionControlNumber(_controlNumberController.text);
+    final controlError = SacramentalValidators.validateCommunionControlNumber(
+        _controlNumberController.text);
     if (controlError != null && !isEditMode) {
       setState(() => _errorMessage = controlError);
       _scrollToTop();
@@ -280,7 +467,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       return false;
     }
 
-    final communionError = SacramentalValidators.validateCommunionDate(_dateOfCommunion, _baptismDate);
+    final communionError = SacramentalValidators.validateCommunionDate(
+        _dateOfCommunion, _baptismDate);
     if (communionError != null) {
       setState(() => _errorMessage = communionError);
       _scrollToTop();
@@ -291,7 +479,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   }
 
   /// Computes strict dynamic diff, excluding unchanged fields and coordinates
-  String _computeChangesSummaryJson(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
+  String _computeChangesSummaryJson(
+      Map<String, dynamic> oldData, Map<String, dynamic> newData) {
     final diffs = <String, Map<String, dynamic>>{};
 
     final Map<String, String> fieldLabels = {
@@ -322,8 +511,16 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       }
 
       final oldVal = oldData[key];
-      final oldStr = (oldVal == null || oldVal.toString().trim().isEmpty || oldVal.toString().toLowerCase() == 'null') ? '' : oldVal.toString().trim();
-      final newStr = (newVal == null || newVal.toString().trim().isEmpty || newVal.toString().toLowerCase() == 'null') ? '' : newVal.toString().trim();
+      final oldStr = (oldVal == null ||
+          oldVal.toString().trim().isEmpty ||
+          oldVal.toString().toLowerCase() == 'null')
+          ? ''
+          : oldVal.toString().trim();
+      final newStr = (newVal == null ||
+          newVal.toString().trim().isEmpty ||
+          newVal.toString().toLowerCase() == 'null')
+          ? ''
+          : newVal.toString().trim();
 
       String normOld = oldStr;
       String normNew = newStr;
@@ -392,7 +589,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                 color: _eucharisticGold.withOpacity(0.14),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.fact_check_outlined, color: _eucharisticGold, size: 24),
+              child: const Icon(Icons.fact_check_outlined,
+                  color: _eucharisticGold, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -410,7 +608,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   const SizedBox(height: 2),
                   Text(
                     'Verify all fields before saving into Liber Primae Communionis.',
-                    style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                    style:
+                    TextStyle(fontSize: 12, color: ParishColors.textMuted),
                   ),
                 ],
               ),
@@ -425,26 +624,39 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildReviewSection('1. Registry Reference', [
-                  _buildReviewRow('Archival Year:', _yearController.text.trim()),
-                  _buildReviewRow('Control Number:', _controlNumberController.text.trim()),
-                  _buildReviewRow('Communion Date:', _dateOfCommunion?.toIso8601String().substring(0, 10) ?? '—'),
+                  _buildReviewRow(
+                      'Archival Year:', _yearController.text.trim()),
+                  _buildReviewRow(
+                      'Control Number:', _controlNumberController.text.trim()),
+                  _buildReviewRow(
+                      'Communion Date:',
+                      _dateOfCommunion?.toIso8601String().substring(0, 10) ??
+                          '—'),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection("2. Communicant Information", [
                   _buildReviewRow('Full Name:', communicantName),
-                  _buildReviewRow('Church where Baptized:', _baptismParishController.text.trim()),
-                  _buildReviewRow('Date of Baptism:', _baptismDate?.toIso8601String().substring(0, 10) ?? 'Not Specified'),
+                  _buildReviewRow('Church where Baptized:',
+                      _baptismParishController.text.trim()),
+                  _buildReviewRow(
+                      'Date of Baptism:',
+                      _baptismDate?.toIso8601String().substring(0, 10) ??
+                          'Not Specified'),
                 ]),
                 const SizedBox(height: 12),
-                _buildReviewSection('3. Parents (Optional in Batch Registers)', [
-                  _buildReviewRow('Father:', fatherName.isNotEmpty ? fatherName : 'Not Specified'),
-                  _buildReviewRow('Mother Maiden Name:', motherName.isNotEmpty ? motherName : 'Not Specified'),
+                _buildReviewSection(
+                    '3. Parents (Optional in Batch Registers)', [
+                  _buildReviewRow('Father:',
+                      fatherName.isNotEmpty ? fatherName : 'Not Specified'),
+                  _buildReviewRow('Mother Maiden Name:',
+                      motherName.isNotEmpty ? motherName : 'Not Specified'),
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('4. Presiding Priest & Remarks', [
                   _buildReviewRow('Officiating Priest:', priestName),
                   if (_remarksController.text.trim().isNotEmpty)
-                    _buildReviewRow('Batch / Mass Notes:', _remarksController.text.trim()),
+                    _buildReviewRow('Batch / Mass Notes:',
+                        _remarksController.text.trim()),
                 ]),
               ],
             ),
@@ -468,7 +680,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Confirm and Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+            label: const Text('Confirm and Save',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
           ),
         ],
       ),
@@ -548,7 +761,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
         : 'Authorized Parish Personnel';
     final userRole = currentUser?.userRole ?? 'Secretary';
 
-    final reasonController = TextEditingController(text: 'Correction of communion record details');
+    final reasonController =
+    TextEditingController(text: 'Correction of communion record details');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -565,7 +779,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                 color: _eucharisticGold.withOpacity(0.14),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.security_update_good, color: _eucharisticGold, size: 24),
+              child: const Icon(Icons.security_update_good,
+                  color: _eucharisticGold, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -588,7 +803,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             children: [
               Text(
                 'You are modifying canonical entry ${widget.initialData!['record_id']} (${_communicantFirstNameController.text.trim()} ${_communicantLastNameController.text.trim()}).',
-                style: TextStyle(fontSize: 14, color: ParishColors.textDark, height: 1.35),
+                style: TextStyle(
+                    fontSize: 14, color: ParishColors.textDark, height: 1.35),
               ),
               const SizedBox(height: 12),
               Container(
@@ -604,16 +820,23 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   children: [
                     Text(
                       'AUDIT LOG ATTRIBUTION',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: ParishColors.textMuted),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Editor: $currentUserName ($userRole)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _eucharisticGold),
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: _eucharisticGold),
                     ),
                     Text(
                       'Year ${_yearController.text.trim()} • Control No. ${_controlNumberController.text.trim()}',
-                      style: TextStyle(fontSize: 12, color: ParishColors.textMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: ParishColors.textMuted),
                     ),
                   ],
                 ),
@@ -621,7 +844,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               const SizedBox(height: 14),
               Text(
                 'Reason for Correction *',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ParishColors.textDark),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: ParishColors.textDark),
               ),
               const SizedBox(height: 6),
               TextFormField(
@@ -629,11 +855,13 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                 maxLines: 2,
                 style: const TextStyle(fontSize: 13.5),
                 decoration: InputDecoration(
-                  hintText: 'e.g. Typographical error correction on communicant name',
+                  hintText:
+                  'e.g. Typographical error correction on communicant name',
                   filled: true,
                   fillColor: ParishColors.backgroundLight,
                   isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],
@@ -657,7 +885,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Confirm & Save Update', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            label: const Text('Confirm & Save Update',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ],
       ),
@@ -671,7 +900,12 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   Future<void> _submitForm({String? reasonForCorrection}) async {
     if (!isEditMode && !_validateAllFields()) return;
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _loadingMessage = isEditMode
+          ? 'Updating First Communion record...'
+          : 'Saving First Communion record...';
+    });
 
     try {
       final int year = int.parse(_yearController.text.trim());
@@ -684,65 +918,100 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
 
       final recordMap = {
         'year': isEditMode ? widget.initialData!['year'] : year,
-        'control_number': isEditMode ? widget.initialData!['control_number'] : _controlNumberController.text.trim(),
-        'date_of_communion': _dateOfCommunion!.toIso8601String().substring(0, 10),
+        'control_number': isEditMode
+            ? widget.initialData!['control_number']
+            : _controlNumberController.text.trim(),
+        'date_of_communion':
+        _dateOfCommunion!.toIso8601String().substring(0, 10),
 
         'communicant_first_name': _communicantFirstNameController.text.trim(),
-        'communicant_middle_name': _communicantMiddleNameController.text.trim().isEmpty ? null : _communicantMiddleNameController.text.trim(),
+        'communicant_middle_name':
+        _communicantMiddleNameController.text.trim().isEmpty
+            ? null
+            : _communicantMiddleNameController.text.trim(),
         'communicant_last_name': _communicantLastNameController.text.trim(),
 
         'baptism_parish': _baptismParishController.text.trim(),
         'baptism_date': _baptismDate?.toIso8601String().substring(0, 10),
 
-        'father_first_name': _fatherFirstNameController.text.trim().isEmpty ? null : _fatherFirstNameController.text.trim(),
-        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty ? null : _fatherMiddleNameController.text.trim(),
-        'father_last_name': _fatherLastNameController.text.trim().isEmpty ? null : _fatherLastNameController.text.trim(),
+        'father_first_name': _fatherFirstNameController.text.trim().isEmpty
+            ? null
+            : _fatherFirstNameController.text.trim(),
+        'father_middle_name': _fatherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _fatherMiddleNameController.text.trim(),
+        'father_last_name': _fatherLastNameController.text.trim().isEmpty
+            ? null
+            : _fatherLastNameController.text.trim(),
 
-        'mother_first_name': _motherFirstNameController.text.trim().isEmpty ? null : _motherFirstNameController.text.trim(),
-        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty ? null : _motherMiddleNameController.text.trim(),
-        'mother_maiden_last_name': _motherMaidenLastNameController.text.trim().isEmpty ? null : _motherMaidenLastNameController.text.trim(),
+        'mother_first_name': _motherFirstNameController.text.trim().isEmpty
+            ? null
+            : _motherFirstNameController.text.trim(),
+        'mother_middle_name': _motherMiddleNameController.text.trim().isEmpty
+            ? null
+            : _motherMiddleNameController.text.trim(),
+        'mother_maiden_last_name':
+        _motherMaidenLastNameController.text.trim().isEmpty
+            ? null
+            : _motherMaidenLastNameController.text.trim(),
 
         'minister_first_name': _ministerFirstNameController.text.trim(),
-        'minister_middle_name': _ministerMiddleNameController.text.trim().isEmpty ? null : _ministerMiddleNameController.text.trim(),
+        'minister_middle_name':
+        _ministerMiddleNameController.text.trim().isEmpty
+            ? null
+            : _ministerMiddleNameController.text.trim(),
         'minister_last_name': _ministerLastNameController.text.trim(),
 
-        'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
+        'remarks': _remarksController.text.trim().isEmpty
+            ? null
+            : _remarksController.text.trim(),
       };
 
       if (isEditMode) {
         final recordId = widget.initialData!['record_id'].toString();
 
-        final changesJson = _computeChangesSummaryJson(widget.initialData!, recordMap);
+        final changesJson =
+        _computeChangesSummaryJson(widget.initialData!, recordMap);
 
-        await FirstCommunionService.updateFirstCommunionRecord(recordId, recordMap);
+        await FirstCommunionService.updateFirstCommunionRecord(
+            recordId, recordMap);
 
         if (changesJson.isNotEmpty) {
           try {
-            await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+            await Supabase.instance.client
+                .from('sacramental_record_audit_logs')
+                .insert({
               'log_id': 'LOG-${now.millisecondsSinceEpoch}',
               'record_id': recordId,
               'sacrament_type': 'First Communion',
               'action_type': 'UPDATED',
-              'recipient_name': '${_communicantFirstNameController.text.trim()} ${_communicantLastNameController.text.trim()}',
+              'recipient_name':
+              '${_communicantFirstNameController.text.trim()} ${_communicantLastNameController.text.trim()}',
               'book_number': null,
               'page_number': null,
               'line_number': null,
               'performed_by_id': currentUserId,
               'performed_by_name': currentUserName,
               'performed_by_role': currentUser?.userRole ?? 'Secretary',
-              'justification': reasonForCorrection ?? 'Correction of communion record details',
+              'justification':
+              reasonForCorrection ?? 'Correction of communion record details',
               'changes_summary': changesJson,
               'created_at': now.toIso8601String(),
             });
           } catch (auditErr) {
-            debugPrint('[FirstCommunionManualEntryPage] Audit log insertion notice: $auditErr');
+            debugPrint(
+                '[FirstCommunionManualEntryPage] Audit log insertion notice: $auditErr');
           }
         }
       } else {
-        final insertedRecord = await FirstCommunionService.insertManualFirstCommunionRecord(recordMap);
+        final insertedRecord =
+        await FirstCommunionService.insertManualFirstCommunionRecord(
+            recordMap);
 
         try {
-          await Supabase.instance.client.from('sacramental_record_audit_logs').insert({
+          await Supabase.instance.client
+              .from('sacramental_record_audit_logs')
+              .insert({
             'log_id': 'LOG-${now.millisecondsSinceEpoch}',
             'record_id': insertedRecord.recordId,
             'sacrament_type': 'First Communion',
@@ -759,7 +1028,14 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             'created_at': now.toIso8601String(),
           });
         } catch (auditErr) {
-          debugPrint('[FirstCommunionManualEntryPage] Audit log insertion notice: $auditErr');
+          debugPrint(
+              '[FirstCommunionManualEntryPage] Audit log insertion notice: $auditErr');
+        }
+
+        if (_activeDraftId != null && _activeDraftId!.isNotEmpty) {
+          try {
+            await SacramentalDraftService.deleteDraft(_activeDraftId!);
+          } catch (_) {}
         }
       }
 
@@ -793,12 +1069,14 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     final textDarkColor = ParishColors.textDark;
     final textMutedColor = ParishColors.textMuted;
     final cardWhiteColor = ParishColors.cardWhite;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
+    final bool isNarrowAppBar = MediaQuery.sizeOf(context).width < 520;
 
     return PopScope(
-      canPop: !_isSubmitting,
+      canPop: !isBusy,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_isSubmitting) return;
+        if (isBusy) return;
         final shouldExit = await showDiscardConfirmationDialog(
           context,
           accentColor: _eucharisticGold,
@@ -807,72 +1085,122 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
           Navigator.pop(context);
         }
       },
-      child: Scaffold(
-        backgroundColor: ParishColors.backgroundLight,
-        appBar: AppBar(
-          backgroundColor: cardWhiteColor,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: _eucharisticGold, size: 26),
-            onPressed: _isSubmitting
-                ? null
-                : () async {
-              final shouldExit = await showDiscardConfirmationDialog(
-                context,
-                accentColor: _eucharisticGold,
-              );
-              if (shouldExit && context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditMode ? 'Edit First Communion Record' : 'First Communion Manual Entry',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDarkColor),
-              ),
-              Text(
-                isEditMode
-                    ? 'Editing Record: ${widget.initialData!['record_id']}'
-                    : 'Canonical Registry Book (Liber Primae Communionis)',
-                style: TextStyle(fontSize: 12, color: textMutedColor),
-              ),
+      child: SacramentalLoadingOverlay(
+        isLoading: isBusy,
+        message: _loadingMessage,
+        accentColor: _eucharisticGold,
+        icon: Icons.restaurant,
+        child: Scaffold(
+          backgroundColor: ParishColors.backgroundLight,
+          appBar: AppBar(
+            backgroundColor: cardWhiteColor,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back,
+                  color: _eucharisticGold, size: 26),
+              onPressed: isBusy
+                  ? null
+                  : () async {
+                final shouldExit = await showDiscardConfirmationDialog(
+                  context,
+                  accentColor: _eucharisticGold,
+                );
+                if (shouldExit && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditMode
+                      ? 'Edit First Communion Record'
+                      : 'First Communion Manual Entry',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textDarkColor),
+                ),
+                Text(
+                  isEditMode
+                      ? 'Editing Record: ${widget.initialData!['record_id']}'
+                      : (_activeDraftId != null
+                      ? 'Resuming Saved Draft'
+                      : 'Canonical Registry Book (Liber Primae Communionis)'),
+                  style: TextStyle(fontSize: 12, color: textMutedColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            actions: [
+              if (!isEditMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _eucharisticGold,
+                        backgroundColor: _eucharisticGold.withOpacity(0.10),
+                        side: BorderSide(
+                          color: _eucharisticGold.withOpacity(0.55),
+                          width: 1.2,
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrowAppBar ? 10 : 14,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: isBusy ? null : _saveToDraft,
+                      icon: const Icon(Icons.save_as_outlined, size: 18),
+                      label: Text(
+                        isNarrowAppBar ? 'Draft' : 'Save to Draft',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-        ),
-        floatingActionButton: IgnorePointer(
-          ignoring: !_showBackToTop,
-          child: AnimatedOpacity(
-            opacity: _showBackToTop ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 250),
-            child: Semantics(
-              button: true,
-              label: 'Back to top, button',
-              child: FocusableActionDetector(
-                onShowHoverHighlight: (hovered) {
-                  setState(() => _isBackToTopHovered = hovered);
-                },
-                actions: <Type, Action<Intent>>{
-                  ActivateIntent: CallbackAction<ActivateIntent>(
-                    onInvoke: (_) => _scrollToTop(),
-                  ),
-                },
-                child: AnimatedScale(
-                  scale: _isBackToTopHovered ? 1.05 : 1.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: SizedBox(
-                    height: 48,
-                    child: FloatingActionButton.extended(
-                      backgroundColor: _eucharisticGold,
-                      foregroundColor: Colors.white,
-                      elevation: 4,
-                      onPressed: _scrollToTop,
-                      icon: const Icon(Icons.arrow_upward, size: 18),
-                      label: const Text(
-                        'Back to Top',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          floatingActionButton: IgnorePointer(
+            ignoring: !_showBackToTop,
+            child: AnimatedOpacity(
+              opacity: _showBackToTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: Semantics(
+                button: true,
+                label: 'Back to top, button',
+                child: FocusableActionDetector(
+                  onShowHoverHighlight: (hovered) {
+                    setState(() => _isBackToTopHovered = hovered);
+                  },
+                  actions: <Type, Action<Intent>>{
+                    ActivateIntent: CallbackAction<ActivateIntent>(
+                      onInvoke: (_) => _scrollToTop(),
+                    ),
+                  },
+                  child: AnimatedScale(
+                    scale: _isBackToTopHovered ? 1.05 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: SizedBox(
+                      height: 48,
+                      child: FloatingActionButton.extended(
+                        backgroundColor: _eucharisticGold,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        onPressed: _scrollToTop,
+                        icon: const Icon(Icons.arrow_upward, size: 18),
+                        label: const Text(
+                          'Back to Top',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ),
                     ),
                   ),
@@ -880,92 +1208,80 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               ),
             ),
           ),
-        ),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double availableWidth = constraints.maxWidth;
-              final bool isWide = availableWidth >= 900;
-              final double horizontalPadding = isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double availableWidth = constraints.maxWidth;
+                final bool isWide = availableWidth >= 900;
+                final double horizontalPadding =
+                isWide ? 32.0 : (availableWidth < 650 ? 14.0 : 22.0);
 
-              return Stack(
-                children: [
-                  SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: isWide ? 1080 : 760),
-                        child: Form(
-                          key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildFormHeaderCard(),
-                              const SizedBox(height: 16),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding, vertical: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                      BoxConstraints(maxWidth: isWide ? 1080 : 760),
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormHeaderCard(),
+                            const SizedBox(height: 16),
 
-                              if (_errorMessage != null) ...[
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    color: ParishColors.mercyRedSurface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: ParishColors.mercyRed),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.error_outline, color: ParishColors.mercyRed, size: 24),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: ParishColors.mercyRed,
-                                          ),
+                            if (_errorMessage != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: ParishColors.mercyRedSurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                  Border.all(color: ParishColors.mercyRed),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        color: ParishColors.mercyRed, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: ParishColors.mercyRed,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-
-                              _buildSection1TrackingAndReference(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection2CommunicantIdentity(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection3Parents(isWide: isWide),
-                              const SizedBox(height: 16),
-                              _buildSection4ClergyAndRemarks(isWide: isWide),
-                              const SizedBox(height: 24),
-                              _buildBottomSubmissionBar(isWide: isWide),
-                              const SizedBox(height: 50),
+                              ),
                             ],
-                          ),
+
+                            _buildSection1TrackingAndReference(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection2CommunicantIdentity(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection3Parents(isWide: isWide),
+                            const SizedBox(height: 16),
+                            _buildSection4ClergyAndRemarks(isWide: isWide),
+                            const SizedBox(height: 24),
+                            _buildBottomSubmissionBar(isWide: isWide),
+                            const SizedBox(height: 50),
+                          ],
                         ),
                       ),
                     ),
                   ),
-
-                  if (_isSubmitting)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black.withOpacity(0.55),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: ParishColors.goldAccent,
-                            strokeWidth: 4.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1016,14 +1332,19 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: _eucharisticGold.withOpacity(0.14),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Canonical Step',
-                        style: TextStyle(
+                      child: Text(
+                        isEditMode
+                            ? 'Edit Mode'
+                            : (_activeDraftId != null
+                            ? 'Draft Mode'
+                            : 'New Entry'),
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: _eucharisticGold,
@@ -1085,7 +1406,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   Expanded(
                     child: Text(
                       'Archival Year and Control Number are permanent canonical identifiers and cannot be altered.',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _eucharisticGold),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _eucharisticGold),
                     ),
                   ),
                 ],
@@ -1096,7 +1420,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
           if (hasDup) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
                 color: ParishColors.mercyRedSurface,
@@ -1105,7 +1430,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               ),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: ParishColors.mercyRed, size: 22),
+                  Icon(Icons.warning_amber_rounded,
+                      color: ParishColors.mercyRed, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1148,16 +1474,24 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                       isRequired: true,
                       enabled: false,
                       maxLength: 20,
-                      validator: SacramentalValidators.validateCommunionControlNumber,
+                      validator:
+                      SacramentalValidators.validateCommunionControlNumber,
                     ),
                     if (_isCheckingControlDuplicate)
                       Padding(
                         padding: const EdgeInsets.only(top: 2, left: 4),
                         child: Row(
                           children: [
-                            const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: _eucharisticGold)),
+                            const SizedBox(
+                                width: 10,
+                                height: 10,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 1.5, color: _eucharisticGold)),
                             const SizedBox(width: 6),
-                            Text('Checking control assignment...', style: TextStyle(fontSize: 10.5, color: ParishColors.textMuted)),
+                            Text('Checking control assignment...',
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: ParishColors.textMuted)),
                           ],
                         ),
                       ),
@@ -1197,7 +1531,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Communicant first name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Communicant first name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1208,7 +1544,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1219,7 +1557,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Last Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Communicant last name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Communicant last name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
               ],
@@ -1235,7 +1575,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'First Name',
                     isRequired: true,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Communicant first name', isRequired: true, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Communicant first name',
+                        isRequired: true, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1246,7 +1588,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, 'Middle name', isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, 'Middle name',
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1256,7 +1600,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               label: 'Last Name',
               isRequired: true,
               maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, 'Communicant last name', isRequired: true, maxLength: 50),
+              validator: (val) => SacramentalValidators.validateName(
+                  val, 'Communicant last name',
+                  isRequired: true, maxLength: 50),
             ),
           ],
           const Divider(height: 24),
@@ -1270,7 +1616,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   label: 'Church where Baptized',
                   isRequired: true,
                   maxLength: 150,
-                  validator: (val) => SacramentalValidators.validatePlace(val, 'Church where baptized', isRequired: true, maxLength: 150),
+                  validator: (val) => SacramentalValidators.validatePlace(
+                      val, 'Church where baptized',
+                      isRequired: true, maxLength: 150),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1298,7 +1646,11 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Father's Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: _eucharisticGold)),
+          const Text("Father's Information",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                  color: _eucharisticGold)),
           const SizedBox(height: 8),
 
           if (isWide) ...[
@@ -1312,7 +1664,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Father First Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Father's first name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1323,7 +1677,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Father's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1334,7 +1690,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Father Last Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Father's last name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1349,7 +1707,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Father First Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Father's first name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Father's first name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1359,7 +1719,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Father's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Father's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1369,13 +1731,19 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               label: 'Father Last Name',
               isRequired: false,
               maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, "Father's last name", isRequired: false, maxLength: 50),
+              validator: (val) => SacramentalValidators.validateName(
+                  val, "Father's last name",
+                  isRequired: false, maxLength: 50),
             ),
           ],
 
           const Divider(height: 24),
 
-          const Text("Mother's Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: _eucharisticGold)),
+          const Text("Mother's Information",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                  color: _eucharisticGold)),
           const SizedBox(height: 8),
 
           if (isWide) ...[
@@ -1389,7 +1757,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Mother First Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's first name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1400,7 +1770,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1411,7 +1783,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Maiden Last Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's maiden last name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1426,7 +1800,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Mother First Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's first name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's first name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1436,7 +1812,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                     label: 'Middle Name',
                     isRequired: false,
                     maxLength: 50,
-                    validator: (val) => SacramentalValidators.validateName(val, "Mother's middle name", isRequired: false, maxLength: 50),
+                    validator: (val) => SacramentalValidators.validateName(
+                        val, "Mother's middle name",
+                        isRequired: false, maxLength: 50),
                   ),
                 ),
               ],
@@ -1446,7 +1824,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               label: 'Maiden Last Name',
               isRequired: false,
               maxLength: 50,
-              validator: (val) => SacramentalValidators.validateName(val, "Mother's maiden last name", isRequired: false, maxLength: 50),
+              validator: (val) => SacramentalValidators.validateName(
+                  val, "Mother's maiden last name",
+                  isRequired: false, maxLength: 50),
             ),
           ],
         ],
@@ -1471,7 +1851,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   label: 'Priest First Name',
                   isRequired: true,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Priest first name', isRequired: true, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, 'Priest first name',
+                      isRequired: true, maxLength: 50),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1482,7 +1864,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   label: 'Middle Name',
                   isRequired: false,
                   maxLength: 50,
-                  validator: (val) => SacramentalValidators.validateName(val, 'Priest middle name', isRequired: false, maxLength: 50),
+                  validator: (val) => SacramentalValidators.validateName(
+                      val, 'Priest middle name',
+                      isRequired: false, maxLength: 50),
                 ),
               ),
             ],
@@ -1492,7 +1876,9 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             label: 'Priest Last Name',
             isRequired: true,
             maxLength: 50,
-            validator: (val) => SacramentalValidators.validateName(val, 'Priest last name', isRequired: true, maxLength: 50),
+            validator: (val) => SacramentalValidators.validateName(
+                val, 'Priest last name',
+                isRequired: true, maxLength: 50),
           ),
           _buildTextFormField(
             controller: _remarksController,
@@ -1509,6 +1895,7 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
   Widget _buildBottomSubmissionBar({required bool isWide}) {
     final borderGreyColor = ParishColors.borderGrey;
     final textMutedColor = ParishColors.textMuted;
+    final bool isBusy = _isSubmitting || _isSavingDraft;
 
     return Container(
       width: double.infinity,
@@ -1534,9 +1921,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: borderGreyColor, width: 1.4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: _isSubmitting
+              onPressed: isBusy
                   ? null
                   : () async {
                 final shouldExit = await showDiscardConfirmationDialog(
@@ -1549,7 +1937,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               },
               child: Text(
                 'Discard & Exit',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textMutedColor),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: textMutedColor),
               ),
             ),
           ),
@@ -1560,12 +1951,17 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               style: ElevatedButton.styleFrom(
                 backgroundColor: (_controlDuplicateError != null)
                     ? ParishColors.mercyRed
-                    : (isEditMode ? _eucharisticGold : ParishColors.oliveGreen),
+                    : (isEditMode
+                    ? _eucharisticGold
+                    : ParishColors.oliveGreen),
                 foregroundColor: Colors.white,
                 elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (_isSubmitting || _isLoadingControlNo || _controlDuplicateError != null)
+              onPressed: (isBusy ||
+                  _isLoadingControlNo ||
+                  _controlDuplicateError != null)
                   ? null
                   : () {
                 if (isEditMode) {
@@ -1574,10 +1970,15 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
                   _promptSaveConfirmation();
                 }
               },
-              icon: Icon(isEditMode ? Icons.security_update_good : Icons.check_circle_outline, size: 22),
+              icon: Icon(
+                  isEditMode
+                      ? Icons.security_update_good
+                      : Icons.check_circle_outline,
+                  size: 22),
               label: Text(
                 isEditMode ? 'Update Communion' : 'Save Communion',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ),
           ),
@@ -1682,15 +2083,24 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
             keyboardType: keyboardType,
             maxLines: maxLines,
             maxLength: maxLength,
-            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            buildCounter: (context,
+                {required currentLength,
+                  required isFocused,
+                  maxLength}) =>
+            null,
             onChanged: onChanged,
             validator: validator,
-            style: TextStyle(fontSize: 14.5, color: enabled ? ParishColors.textDark : ParishColors.textMuted),
+            style: TextStyle(
+                fontSize: 14.5,
+                color: enabled ? ParishColors.textDark : ParishColors.textMuted),
             decoration: InputDecoration(
               filled: true,
-              fillColor: enabled ? ParishColors.backgroundLight : ParishColors.borderGrey.withOpacity(0.2),
+              fillColor: enabled
+                  ? ParishColors.backgroundLight
+                  : ParishColors.borderGrey.withOpacity(0.2),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: ParishColors.borderGrey),
@@ -1705,11 +2115,13 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.8),
+                borderSide:
+                BorderSide(color: ParishColors.mercyRed, width: 1.8),
               ),
               errorStyle: TextStyle(
                 color: ParishColors.mercyRed,
@@ -1730,7 +2142,8 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
     required bool hasError,
     required VoidCallback onTap,
   }) {
-    final borderColor = hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
+    final borderColor =
+    hasError ? ParishColors.mercyRed : ParishColors.borderGrey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -1747,16 +2160,21 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               decoration: BoxDecoration(
                 color: ParishColors.backgroundLight,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: borderColor, width: hasError ? 1.4 : 1.0),
+                border: Border.all(
+                    color: borderColor, width: hasError ? 1.4 : 1.0),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    value != null ? value.toIso8601String().substring(0, 10) : 'YYYY-MM-DD',
+                    value != null
+                        ? value.toIso8601String().substring(0, 10)
+                        : 'YYYY-MM-DD',
                     style: TextStyle(
                       fontSize: 14.5,
-                      color: value != null ? ParishColors.textDark : ParishColors.textMuted,
+                      color: value != null
+                          ? ParishColors.textDark
+                          : ParishColors.textMuted,
                     ),
                   ),
                   const Icon(
@@ -1773,7 +2191,10 @@ class _FirstCommunionManualEntryPageState extends State<FirstCommunionManualEntr
               padding: const EdgeInsets.only(top: 6, left: 12),
               child: Text(
                 'Date selection is required.',
-                style: TextStyle(color: ParishColors.mercyRed, fontSize: 12, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    color: ParishColors.mercyRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500),
               ),
             ),
         ],

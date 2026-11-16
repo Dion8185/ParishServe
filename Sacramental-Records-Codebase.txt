@@ -6860,10 +6860,10 @@ class _BaptismManualEntryPageState extends State<BaptismManualEntryPage> {
                 ]),
                 const SizedBox(height: 12),
                 _buildReviewSection('4. Godparents & Sponsors', [
-                  _buildReviewRow('Sponsor 1 (Ninong/Ninang):', sponsor1Name),
+                  _buildReviewRow('Sponsor 1 :', sponsor1Name),
                   if (_sponsor1ResidenceController.text.trim().isNotEmpty)
                     _buildReviewRow('Sponsor 1 Residence:', _sponsor1ResidenceController.text.trim()),
-                  _buildReviewRow('Sponsor 2 (Ninong/Ninang):', sponsor2Name),
+                  _buildReviewRow('Sponsor 2 :', sponsor2Name),
                   if (_sponsor2ResidenceController.text.trim().isNotEmpty)
                     _buildReviewRow('Sponsor 2 Residence:', _sponsor2ResidenceController.text.trim()),
                   if (otherGodparents.isNotEmpty)
@@ -19212,13 +19212,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Confirmation registers limit sponsors to Sponsor 1 (Required) and Sponsor 2 (Optional).',
-            style: TextStyle(fontSize: 13, color: _pentecostRed, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-
-          Text('Sponsor 1 (Ninong / Ninang - Required)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          Text('Sponsor 1', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
           const SizedBox(height: 6),
           if (isWide) ...[
             Row(
@@ -19322,7 +19316,7 @@ class _ConfirmationManualEntryPageState extends State<ConfirmationManualEntryPag
 
           const Divider(height: 22),
 
-          Text('Sponsor 2 (Ninong / Ninang - Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
+          Text('Sponsor 2', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: ParishColors.textDark)),
           const SizedBox(height: 6),
           if (isWide) ...[
             Row(
