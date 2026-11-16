@@ -48,6 +48,18 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
   bool _showTermsError = false;
   String? _errorMessage;
 
+  // Diocesan Chancery & Cathedral Architecture Palette
+  static const Color _chanceryMidnight = Color(0xFF0A1C30);
+  static const Color _chanceryNavyMid = Color(0xFF0F2C4C);
+  static const Color _chanceryNavyLight = Color(0xFF164E87);
+  static const Color _eucharisticGold = Color(0xFFD49B18);
+  static const Color _eucharisticGoldLight = Color(0xFFE8B949);
+  static const Color _warmManuscriptParchment = Color(0xFFFAF7F2);
+  static const Color _warmInputFill = Color(0xFFF3EFE7);
+  static const Color _warmInputBorder = Color(0xFFDDD5C8);
+  static const Color _textCharcoal = Color(0xFF1A2633);
+  static const Color _textSlateMuted = Color(0xFF5E6D7E);
+
   // QWERTY keyboard sequences used for anti-gibberish detection
   static const List<String> _keyboardWalks = [
     'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl',
@@ -213,7 +225,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
     }
 
     final emailRegex =
-    RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+        RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
     if (!emailRegex.hasMatch(trimmed)) {
       return 'Please enter a valid email address (e.g. name@domain.com).';
     }
@@ -284,10 +296,9 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
       _passwordController.text.replaceAll(' ', '').length >= 8;
   bool get _hasNoOuterSpaces =>
       _passwordController.text.isNotEmpty &&
-          !_passwordController.text.startsWith(' ') &&
-          !_passwordController.text.endsWith(' ');
-  bool get _hasUppercase =>
-      RegExp(r'[A-Z]').hasMatch(_passwordController.text);
+      !_passwordController.text.startsWith(' ') &&
+      !_passwordController.text.endsWith(' ');
+  bool get _hasUppercase => RegExp(r'[A-Z]').hasMatch(_passwordController.text);
   bool get _hasSpecialChar =>
       RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]')
           .hasMatch(_passwordController.text);
@@ -373,11 +384,11 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
       return Container(
         width: size,
         height: size,
-        color: ParishColors.marianBlueSurface,
+        color: _chanceryNavyMid,
         child: Icon(
           Icons.church_rounded,
           size: size * 0.62,
-          color: ParishColors.marianBlue,
+          color: _eucharisticGoldLight,
         ),
       );
     }
@@ -397,777 +408,447 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isCompact = screenWidth < 680;
 
-    return Scaffold(
-      backgroundColor: ParishColors.backgroundLight,
-      body: Column(
-        children: [
-          // ===================================================================
-          // 1. CHANCERY TOP HEADER BAR (Identical to LoginView)
-          // ===================================================================
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: ParishColors.cardWhite,
-              border: Border(
-                bottom: BorderSide(
-                  color: ParishColors.goldAccent.withOpacity(0.85),
-                  width: 1.5,
-                ),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.symmetric(
-              horizontal: isCompact ? 16.0 : 36.0,
-              vertical: 12.0,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Upper Left: Return Arrow + Crest + Typography
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded, size: 22),
-                      color: ParishColors.marianBlue,
-                      tooltip: 'Back to Sign In',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
-                      ),
-                      onPressed:
-                      _isLoading ? null : () => Navigator.pop(context),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 44,
-                      height: 44,
-                      padding: const EdgeInsets.all(2.5),
-                      decoration: BoxDecoration(
-                        color: ParishColors.cardWhite,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: ParishColors.goldAccent,
-                          width: 1.8,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: ParishColors.marianBlue.withOpacity(0.10),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(9.5),
-                        child: _buildParishLogo(size: 38),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'St. John Paul II Parish',
-                          style: TextStyle(
-                            fontFamily: 'serif',
-                            fontSize: 16.5,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.2,
-                            color: ParishColors.textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 1),
-                        Text(
-                          'Diocese of San Pablo • Labuin, Sta. Cruz, Laguna',
-                          style: TextStyle(
-                            fontSize: isCompact ? 10.5 : 11.5,
-                            fontWeight: FontWeight.w500,
-                            color: ParishColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        backgroundColor: _chanceryMidnight,
+        body: Column(
+          children: [
+            // ===================================================================
+            // 1. ELEVATED DIOCESAN CHANCERY HEADER (ISOLATED FROM STATUS BAR)
+            // ===================================================================
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    _chanceryMidnight,
+                    Color(0xFF0D253F),
+                    _chanceryNavyMid,
                   ],
                 ),
-
-              ],
-            ),
-          ),
-
-          // ===================================================================
-          // 2. MAIN BODY (Watermark & Centered Registration Container)
-          // ===================================================================
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Subtle architectural background facade watermark
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: 0.07,
-                    child: Image.asset(
-                      'images/jp2-bg2.jpg',
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
+                border: Border(
+                  bottom: BorderSide(
+                    color: _eucharisticGold.withOpacity(0.85),
+                    width: 1.5,
                   ),
                 ),
-
-                // Center Scrollable View
-                SafeArea(
-                  child: Center(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isCompact ? 16.0 : 24.0,
-                        vertical: 24.0,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact ? 16.0 : 36.0,
+                    vertical: 12.0,
+                  ),
+                  child: Row(
+                    children: [
+                      // Back to Login Button
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded, size: 22),
+                        color: _eucharisticGoldLight,
+                        tooltip: 'Back to Sign In',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        onPressed:
+                            _isLoading ? null : () => Navigator.pop(context),
                       ),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 580),
+                      const SizedBox(width: 8),
+                      // Parish Crest
+                      Container(
+                        width: 44,
+                        height: 44,
+                        padding: const EdgeInsets.all(2.5),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          border: Border.all(
+                            color: _eucharisticGold,
+                            width: 2.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _eucharisticGold.withOpacity(0.35),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: _buildParishLogo(size: 38),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Typography
+                      Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Main Registration Card
-                            Container(
-                              decoration: BoxDecoration(
-                                color: ParishColors.cardWhite,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: ParishColors.borderGrey,
-                                  width: 1.2,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFF18334D)
-                                        .withOpacity(0.06),
-                                    blurRadius: 22,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.02),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
+                            const Text(
+                              'St. John Paul II Parish',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'serif',
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.2,
+                                color: Color(0xFFFAF7F0),
                               ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    // -----------------------------------------
-                                    // Parish Branding Banner
-                                    // -----------------------------------------
-                                    Container(
-                                      height: 155,
-                                      width: double.infinity,
-                                      decoration: BoxDecoration(
-                                        color: ParishColors.marianBlueSurface,
-                                      ),
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          Positioned.fill(
-                                            child: Image.asset(
-                                              'images/jp2-bg.png',
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                              const SizedBox.shrink(),
-                                            ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              'Diocese of San Pablo • Santa Cruz, Laguna',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: isCompact ? 10.5 : 11.5,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFFD6C8B4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // ===================================================================
+            // 2. ATMOSPHERIC CATHEDRAL VAULT BACKGROUND & REGISTRATION CARD
+            // ===================================================================
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Layer A: Deep Liturgical Nocturnal Gradient
+                  Positioned.fill(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            _chanceryMidnight,
+                            Color(0xFF0F263D),
+                            Color(0xFF14324F),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Layer B: Warm Candlelight / Amber Halo Centered behind the Form
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        width: 760,
+                        height: 760,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              _eucharisticGold.withOpacity(0.12),
+                              _chanceryNavyLight.withOpacity(0.08),
+                              Colors.transparent,
+                            ],
+                            stops: const [0.0, 0.45, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Layer C: Subtle Architectural Church Silhouette
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: 0.05,
+                      child: Image.asset(
+                        'images/jp2-bg2.jpg',
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+
+                  // Center Scrollable View
+                  SafeArea(
+                    top: false,
+                    child: Center(
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isCompact ? 16.0 : 24.0,
+                          vertical: 24.0,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 580),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // Illuminated Manuscript Registry Card
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: _warmManuscriptParchment,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: _eucharisticGold.withOpacity(0.45),
+                                    width: 1.2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.40),
+                                      blurRadius: 36,
+                                      offset: const Offset(0, 14),
+                                    ),
+                                    BoxShadow(
+                                      color: _eucharisticGold.withOpacity(0.10),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(18),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      // -----------------------------------------
+                                      // Parish Seal Banner (Deep Marian Vault)
+                                      // -----------------------------------------
+                                      Container(
+                                        height: 165,
+                                        width: double.infinity,
+                                        decoration: const BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              _chanceryMidnight,
+                                              _chanceryNavyMid,
+                                              _chanceryNavyLight,
+                                            ],
                                           ),
-                                          Positioned.fill(
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  begin: Alignment.topCenter,
-                                                  end: Alignment.bottomCenter,
-                                                  colors: [
-                                                    ParishColors.cardWhite
-                                                        .withOpacity(0.72),
-                                                    ParishColors.cardWhite
-                                                        .withOpacity(0.93),
-                                                  ],
+                                        ),
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            Positioned.fill(
+                                              child: Opacity(
+                                                opacity: 0.12,
+                                                child: Image.asset(
+                                                  'images/jp2-bg.png',
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) =>
+                                                      const SizedBox.shrink(),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16.0,
-                                              vertical: 12.0,
+                                            // Golden Accent Ribbon
+                                            Positioned(
+                                              bottom: 0,
+                                              left: 0,
+                                              right: 0,
+                                              child: Container(
+                                                height: 3,
+                                                color: _eucharisticGold,
+                                              ),
                                             ),
-                                            child: Column(
-                                              mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                              children: [
-                                                Container(
-                                                  width: 52,
-                                                  height: 52,
-                                                  padding:
-                                                  const EdgeInsets.all(2.5),
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color:
-                                                    ParishColors.cardWhite,
-                                                    border: Border.all(
-                                                      color: ParishColors
-                                                          .goldAccent,
-                                                      width: 2.0,
-                                                    ),
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: Colors.black
-                                                            .withOpacity(0.08),
-                                                        blurRadius: 8,
-                                                        offset:
-                                                        const Offset(0, 3),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  child: ClipOval(
-                                                    child: _buildParishLogo(
-                                                        size: 46),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'St. John Paul II Parish',
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    fontFamily: 'serif',
-                                                    fontSize: 19.5,
-                                                    fontWeight: FontWeight.bold,
-                                                    letterSpacing: -0.2,
-                                                    color:
-                                                    ParishColors.textDark,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Row(
-                                                  mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                                  children: [
-                                                    Container(
-                                                      width: 30,
-                                                      height: 1,
-                                                      color: ParishColors
-                                                          .goldAccent,
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Text(
-                                                      'ParishServe Portal',
-                                                      style: TextStyle(
-                                                        fontSize: 11.5,
-                                                        fontWeight:
-                                                        FontWeight.w700,
-                                                        color: ParishColors
-                                                            .marianBlue,
-                                                        letterSpacing: 0.8,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Container(
-                                                      width: 30,
-                                                      height: 1,
-                                                      color: ParishColors
-                                                          .goldAccent,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    // -----------------------------------------
-                                    // Registration Form Section
-                                    // -----------------------------------------
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: isCompact ? 18.0 : 32.0,
-                                        vertical: 24.0,
-                                      ),
-                                      child: Form(
-                                        key: _formKey,
-                                        child: Column(
-                                          crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                          children: [
-                                            Center(
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 16.0,
+                                                vertical: 14.0,
+                                              ),
                                               child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
                                                 children: [
-                                                  Text(
-                                                    'Parishioner Registration',
-                                                    style: TextStyle(
-                                                      fontSize: 21,
-                                                      fontWeight:
-                                                      FontWeight.bold,
-                                                      color:
-                                                      ParishColors.textDark,
-                                                      letterSpacing: -0.3,
+                                                  Container(
+                                                    width: 54,
+                                                    height: 54,
+                                                    padding:
+                                                        const EdgeInsets.all(2.5),
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: Colors.white,
+                                                      border: Border.all(
+                                                        color: _eucharisticGold,
+                                                        width: 2.2,
+                                                      ),
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: Colors.black
+                                                              .withOpacity(
+                                                                  0.35),
+                                                          blurRadius: 10,
+                                                          offset:
+                                                              const Offset(0, 4),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    child: ClipOval(
+                                                      child: _buildParishLogo(
+                                                          size: 48),
                                                     ),
                                                   ),
-                                                  const SizedBox(height: 3),
-                                                  Text(
-                                                    'Register to request sacramental services and mass intentions.',
+                                                  const SizedBox(height: 10),
+                                                  const Text(
+                                                    'St. John Paul II Parish',
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(
-                                                      fontSize: 12.5,
-                                                      color:
-                                                      ParishColors.textMuted,
+                                                      fontFamily: 'serif',
+                                                      fontSize: 20,
+                                                      fontWeight: FontWeight.bold,
+                                                      letterSpacing: 0.2,
+                                                      color: Colors.white,
+                                                      shadows: [
+                                                        Shadow(
+                                                          color: Colors.black45,
+                                                          blurRadius: 4,
+                                                          offset: Offset(0, 1),
+                                                        ),
+                                                      ],
                                                     ),
+                                                  ),
+                                                  const SizedBox(height: 5),
+                                                  Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.center,
+                                                    children: [
+                                                      Container(
+                                                        width: 32,
+                                                        height: 1.2,
+                                                        color:
+                                                            _eucharisticGold,
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      const Text(
+                                                        'PARISHSERVE PORTAL',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          color:
+                                                              _eucharisticGoldLight,
+                                                          letterSpacing: 1.4,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Container(
+                                                        width: 32,
+                                                        height: 1.2,
+                                                        color:
+                                                            _eucharisticGold,
+                                                      ),
+                                                    ],
                                                   ),
                                                 ],
                                               ),
                                             ),
-                                            const SizedBox(height: 20),
+                                          ],
+                                        ),
+                                      ),
 
-                                            if (_errorMessage != null) ...[
-                                              Container(
-                                                width: double.infinity,
-                                                padding: const EdgeInsets.all(
-                                                    12),
-                                                margin: const EdgeInsets.only(
-                                                    bottom: 16),
-                                                decoration: BoxDecoration(
-                                                  color: ParishColors
-                                                      .mercyRedSurface,
-                                                  borderRadius:
-                                                  BorderRadius.circular(10),
-                                                  border: Border.all(
-                                                    color: ParishColors
-                                                        .mercyRed
-                                                        .withOpacity(0.5),
-                                                  ),
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    const Icon(
-                                                      Icons
-                                                          .error_outline_rounded,
-                                                      color:
-                                                      ParishColors.mercyRed,
-                                                      size: 19,
+                                      // -----------------------------------------
+                                      // Registration Form Section
+                                      // -----------------------------------------
+                                      Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: isCompact ? 18.0 : 32.0,
+                                          vertical: 26.0,
+                                        ),
+                                        child: Form(
+                                          key: _formKey,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Center(
+                                                child: Column(
+                                                  children: const [
+                                                    Text(
+                                                      'Parishioner Registration',
+                                                      style: TextStyle(
+                                                        fontSize: 21,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: _textCharcoal,
+                                                        letterSpacing: -0.3,
+                                                      ),
                                                     ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Text(
-                                                        _errorMessage!,
-                                                        style: const TextStyle(
-                                                          fontSize: 12.5,
-                                                          fontWeight:
-                                                          FontWeight.bold,
-                                                          color: ParishColors
-                                                              .mercyRed,
-                                                        ),
+                                                    SizedBox(height: 4),
+                                                    Text(
+                                                      'Register to request sacramental services and mass intentions.',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: TextStyle(
+                                                        fontSize: 12.5,
+                                                        color: _textSlateMuted,
                                                       ),
                                                     ),
                                                   ],
                                                 ),
                                               ),
-                                            ],
+                                              const SizedBox(height: 22),
 
-                                            // 1. Legal Name Fields
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                    children: [
-                                                      _buildInputLabel(
-                                                        label: 'First Name *',
-                                                        icon: Icons
-                                                            .person_outline_rounded,
-                                                      ),
-                                                      const SizedBox(height: 7),
-                                                      TextFormField(
-                                                        controller:
-                                                        _firstNameController,
-                                                        focusNode:
-                                                        _firstNameFocus,
-                                                        keyboardType:
-                                                        TextInputType.name,
-                                                        textCapitalization:
-                                                        TextCapitalization
-                                                            .words,
-                                                        autofillHints: const [
-                                                          AutofillHints
-                                                              .givenName
-                                                        ],
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                          FontWeight.w600,
-                                                          color: ParishColors
-                                                              .textDark,
-                                                        ),
-                                                        onChanged: (_) {
-                                                          if (_hasAttemptedSubmit ||
-                                                              _firstNameBlurred) {
-                                                            _formKey.currentState
-                                                                ?.validate();
-                                                          }
-                                                        },
-                                                        validator: (v) {
-                                                          if (!_hasAttemptedSubmit &&
-                                                              !_firstNameBlurred) {
-                                                            return null;
-                                                          }
-                                                          return _validateName(
-                                                              v, 'First name');
-                                                        },
-                                                        decoration:
-                                                        _fieldDecoration(
-                                                          hint: 'e.g. Maria',
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                    children: [
-                                                      _buildInputLabel(
-                                                        label: 'Last Name *',
-                                                        icon: Icons
-                                                            .person_outline_rounded,
-                                                      ),
-                                                      const SizedBox(height: 7),
-                                                      TextFormField(
-                                                        controller:
-                                                        _lastNameController,
-                                                        focusNode:
-                                                        _lastNameFocus,
-                                                        keyboardType:
-                                                        TextInputType.name,
-                                                        textCapitalization:
-                                                        TextCapitalization
-                                                            .words,
-                                                        autofillHints: const [
-                                                          AutofillHints
-                                                              .familyName
-                                                        ],
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                          FontWeight.w600,
-                                                          color: ParishColors
-                                                              .textDark,
-                                                        ),
-                                                        onChanged: (_) {
-                                                          if (_hasAttemptedSubmit ||
-                                                              _lastNameBlurred) {
-                                                            _formKey.currentState
-                                                                ?.validate();
-                                                          }
-                                                        },
-                                                        validator: (v) {
-                                                          if (!_hasAttemptedSubmit &&
-                                                              !_lastNameBlurred) {
-                                                            return null;
-                                                          }
-                                                          return _validateName(
-                                                              v, 'Last name');
-                                                        },
-                                                        decoration:
-                                                        _fieldDecoration(
-                                                          hint: 'e.g. Santos',
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 16),
-
-                                            // 2. Username Field
-                                            _buildInputLabel(
-                                              label: 'Username *',
-                                              icon: Icons.alternate_email_rounded,
-                                            ),
-                                            const SizedBox(height: 7),
-                                            TextFormField(
-                                              controller: _usernameController,
-                                              focusNode: _usernameFocus,
-                                              keyboardType: TextInputType.text,
-                                              inputFormatters: [
-                                                FilteringTextInputFormatter
-                                                    .deny(RegExp(r'\s'))
-                                              ],
-                                              autofillHints: const [
-                                                AutofillHints.username
-                                              ],
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: ParishColors.textDark,
-                                              ),
-                                              onChanged: (_) {
-                                                if (_hasAttemptedSubmit ||
-                                                    _usernameBlurred) {
-                                                  _formKey.currentState
-                                                      ?.validate();
-                                                }
-                                              },
-                                              validator: (v) {
-                                                if (!_hasAttemptedSubmit &&
-                                                    !_usernameBlurred) {
-                                                  return null;
-                                                }
-                                                return _validateUsername(v);
-                                              },
-                                              decoration: _fieldDecoration(
-                                                hint: 'e.g. mariasantos_01',
-                                              ),
-                                            ),
-                                            const SizedBox(height: 16),
-
-                                            // 3. Email Address
-                                            _buildInputLabel(
-                                              label: 'Email Address *',
-                                              icon: Icons.email_outlined,
-                                            ),
-                                            const SizedBox(height: 7),
-                                            TextFormField(
-                                              controller: _emailController,
-                                              focusNode: _emailFocus,
-                                              keyboardType:
-                                              TextInputType.emailAddress,
-                                              inputFormatters: [
-                                                FilteringTextInputFormatter
-                                                    .deny(RegExp(r'\s'))
-                                              ],
-                                              autofillHints: const [
-                                                AutofillHints.email
-                                              ],
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: ParishColors.textDark,
-                                              ),
-                                              onChanged: (_) {
-                                                if (_hasAttemptedSubmit ||
-                                                    _emailBlurred) {
-                                                  _formKey.currentState
-                                                      ?.validate();
-                                                }
-                                              },
-                                              validator: (v) {
-                                                if (!_hasAttemptedSubmit &&
-                                                    !_emailBlurred) {
-                                                  return null;
-                                                }
-                                                return _validateEmail(v);
-                                              },
-                                              decoration: _fieldDecoration(
-                                                hint: 'name@email.com',
-                                              ),
-                                            ),
-                                            const SizedBox(height: 16),
-
-                                            // 4. Password Field
-                                            _buildInputLabel(
-                                              label: 'Password *',
-                                              icon: Icons.lock_outline_rounded,
-                                            ),
-                                            const SizedBox(height: 7),
-                                            TextFormField(
-                                              controller: _passwordController,
-                                              focusNode: _passwordFocus,
-                                              obscureText: _obscurePassword,
-                                              keyboardType:
-                                              TextInputType.visiblePassword,
-                                              autofillHints: const [
-                                                AutofillHints.newPassword
-                                              ],
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: ParishColors.textDark,
-                                              ),
-                                              onChanged: (_) {
-                                                if (_hasAttemptedSubmit ||
-                                                    _passwordBlurred) {
-                                                  _formKey.currentState
-                                                      ?.validate();
-                                                }
-                                              },
-                                              validator: (v) {
-                                                if (!_hasAttemptedSubmit &&
-                                                    !_passwordBlurred) {
-                                                  return null;
-                                                }
-                                                return _validatePassword(v);
-                                              },
-                                              decoration: _fieldDecoration(
-                                                hint:
-                                                'Min. 8 chars with uppercase & symbol',
-                                                suffixIcon: IconButton(
-                                                  icon: Icon(
-                                                    _obscurePassword
-                                                        ? Icons
-                                                        .visibility_off_outlined
-                                                        : Icons
-                                                        .visibility_outlined,
-                                                    color:
-                                                    ParishColors.textMuted,
-                                                    size: 19,
-                                                  ),
-                                                  onPressed: () => setState(
-                                                        () => _obscurePassword =
-                                                    !_obscurePassword,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 10),
-
-                                            // Live Password Strength Checklist
-                                            _buildPasswordStrengthWidget(),
-                                            const SizedBox(height: 16),
-
-                                            // 5. Confirm Password
-                                            _buildInputLabel(
-                                              label: 'Confirm Password *',
-                                              icon: Icons.lock_outline_rounded,
-                                            ),
-                                            const SizedBox(height: 7),
-                                            TextFormField(
-                                              controller:
-                                              _confirmPasswordController,
-                                              focusNode: _confirmPasswordFocus,
-                                              obscureText:
-                                              _obscureConfirmPassword,
-                                              keyboardType:
-                                              TextInputType.visiblePassword,
-                                              autofillHints: const [
-                                                AutofillHints.newPassword
-                                              ],
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: ParishColors.textDark,
-                                              ),
-                                              onChanged: (_) {
-                                                if (_hasAttemptedSubmit ||
-                                                    _confirmPasswordBlurred ||
-                                                    _confirmPasswordController
-                                                        .text.isNotEmpty) {
-                                                  _formKey.currentState
-                                                      ?.validate();
-                                                }
-                                              },
-                                              validator: (v) {
-                                                if (!_hasAttemptedSubmit &&
-                                                    !_confirmPasswordBlurred &&
-                                                    _confirmPasswordController
-                                                        .text.isEmpty) {
-                                                  return null;
-                                                }
-                                                return _validateConfirmPassword(
-                                                    v);
-                                              },
-                                              decoration: _fieldDecoration(
-                                                hint:
-                                                'Re-enter your password exactly',
-                                                suffixIcon: IconButton(
-                                                  icon: Icon(
-                                                    _obscureConfirmPassword
-                                                        ? Icons
-                                                        .visibility_off_outlined
-                                                        : Icons
-                                                        .visibility_outlined,
-                                                    color:
-                                                    ParishColors.textMuted,
-                                                    size: 19,
-                                                  ),
-                                                  onPressed: () => setState(
-                                                        () =>
-                                                    _obscureConfirmPassword =
-                                                    !_obscureConfirmPassword,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 16),
-
-                                            // 6. Terms and Conditions Acceptance
-                                            Row(
-                                              children: [
-                                                Checkbox(
-                                                  value: _acceptedTerms,
-                                                  activeColor:
-                                                  ParishColors.marianBlue,
-                                                  shape: RoundedRectangleBorder(
+                                              if (_errorMessage != null) ...[
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding:
+                                                      const EdgeInsets.all(12),
+                                                  margin: const EdgeInsets.only(
+                                                      bottom: 16),
+                                                  decoration: BoxDecoration(
+                                                    color: ParishColors
+                                                        .mercyRedSurface,
                                                     borderRadius:
-                                                    BorderRadius.circular(4),
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    border: Border.all(
+                                                      color: ParishColors
+                                                          .mercyRed
+                                                          .withOpacity(0.5),
+                                                    ),
                                                   ),
-                                                  onChanged: (val) {
-                                                    setState(() {
-                                                      _acceptedTerms =
-                                                          val ?? false;
-                                                      if (_acceptedTerms) {
-                                                        _showTermsError = false;
-                                                      }
-                                                    });
-                                                  },
-                                                ),
-                                                Expanded(
-                                                  child: Wrap(
-                                                    crossAxisAlignment:
-                                                    WrapCrossAlignment.center,
+                                                  child: Row(
                                                     children: [
-                                                      Text(
-                                                        'I agree to the ',
-                                                        style: TextStyle(
-                                                          fontSize: 12.5,
-                                                          color: ParishColors
-                                                              .textDark,
-                                                        ),
+                                                      const Icon(
+                                                        Icons
+                                                            .error_outline_rounded,
+                                                        color: ParishColors
+                                                            .mercyRed,
+                                                        size: 19,
                                                       ),
-                                                      InkWell(
-                                                        onTap: () =>
-                                                            showTermsAndConditionsModal(
-                                                              context,
-                                                              isReadOnly: false,
-                                                              onAccepted: () =>
-                                                                  setState(() {
-                                                                    _acceptedTerms =
-                                                                    true;
-                                                                    _showTermsError =
-                                                                    false;
-                                                                  }),
-                                                            ),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
                                                         child: Text(
-                                                          'Terms and Data Privacy Policy',
-                                                          style: TextStyle(
+                                                          _errorMessage!,
+                                                          style: const TextStyle(
                                                             fontSize: 12.5,
                                                             fontWeight:
-                                                            FontWeight.bold,
+                                                                FontWeight.bold,
                                                             color: ParishColors
-                                                                .marianBlue,
-                                                            decoration:
-                                                            TextDecoration
-                                                                .underline,
-                                                            decorationColor:
-                                                            ParishColors
-                                                                .marianBlue,
+                                                                .mercyRed,
                                                           ),
                                                         ),
                                                       ),
@@ -1175,262 +856,689 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
                                                   ),
                                                 ),
                                               ],
-                                            ),
-                                            if (_showTermsError) ...[
-                                              const Padding(
-                                                padding: EdgeInsets.only(
-                                                    left: 12, top: 2),
-                                                child: Text(
-                                                  'You must accept the Terms and Conditions to register.',
-                                                  style: TextStyle(
-                                                    color:
-                                                    ParishColors.mercyRed,
-                                                    fontSize: 11.5,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                            const SizedBox(height: 14),
 
-                                            // Privacy Archive Notice Pill
-                                            Container(
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: ParishColors
-                                                    .backgroundLight,
-                                                borderRadius:
-                                                BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color:
-                                                  ParishColors.borderGrey,
+                                              // 1. Legal Name Fields
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        _buildInputLabel(
+                                                          label: 'First Name *',
+                                                          icon: Icons
+                                                              .person_outline_rounded,
+                                                        ),
+                                                        const SizedBox(height: 7),
+                                                        TextFormField(
+                                                          controller:
+                                                              _firstNameController,
+                                                          focusNode:
+                                                              _firstNameFocus,
+                                                          keyboardType:
+                                                              TextInputType.name,
+                                                          textCapitalization:
+                                                              TextCapitalization
+                                                                  .words,
+                                                          autofillHints: const [
+                                                            AutofillHints
+                                                                .givenName
+                                                          ],
+                                                          style: const TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color:
+                                                                _textCharcoal,
+                                                          ),
+                                                          onChanged: (_) {
+                                                            if (_hasAttemptedSubmit ||
+                                                                _firstNameBlurred) {
+                                                              _formKey
+                                                                  .currentState
+                                                                  ?.validate();
+                                                            }
+                                                          },
+                                                          validator: (v) {
+                                                            if (!_hasAttemptedSubmit &&
+                                                                !_firstNameBlurred) {
+                                                              return null;
+                                                            }
+                                                            return _validateName(
+                                                                v, 'First name');
+                                                          },
+                                                          decoration:
+                                                              _fieldDecoration(
+                                                            hint: 'e.g. Maria',
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        _buildInputLabel(
+                                                          label: 'Last Name *',
+                                                          icon: Icons
+                                                              .person_outline_rounded,
+                                                        ),
+                                                        const SizedBox(height: 7),
+                                                        TextFormField(
+                                                          controller:
+                                                              _lastNameController,
+                                                          focusNode:
+                                                              _lastNameFocus,
+                                                          keyboardType:
+                                                              TextInputType.name,
+                                                          textCapitalization:
+                                                              TextCapitalization
+                                                                  .words,
+                                                          autofillHints: const [
+                                                            AutofillHints
+                                                                .familyName
+                                                          ],
+                                                          style: const TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color:
+                                                                _textCharcoal,
+                                                          ),
+                                                          onChanged: (_) {
+                                                            if (_hasAttemptedSubmit ||
+                                                                _lastNameBlurred) {
+                                                              _formKey
+                                                                  .currentState
+                                                                  ?.validate();
+                                                            }
+                                                          },
+                                                          validator: (v) {
+                                                            if (!_hasAttemptedSubmit &&
+                                                                !_lastNameBlurred) {
+                                                              return null;
+                                                            }
+                                                            return _validateName(
+                                                                v, 'Last name');
+                                                          },
+                                                          decoration:
+                                                              _fieldDecoration(
+                                                            hint: 'e.g. Santos',
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 16),
+
+                                              // 2. Username Field
+                                              _buildInputLabel(
+                                                label: 'Username *',
+                                                icon: Icons
+                                                    .alternate_email_rounded,
+                                              ),
+                                              const SizedBox(height: 7),
+                                              TextFormField(
+                                                controller:
+                                                    _usernameController,
+                                                focusNode: _usernameFocus,
+                                                keyboardType:
+                                                    TextInputType.text,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .deny(RegExp(r'\s'))
+                                                ],
+                                                autofillHints: const [
+                                                  AutofillHints.username
+                                                ],
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _textCharcoal,
+                                                ),
+                                                onChanged: (_) {
+                                                  if (_hasAttemptedSubmit ||
+                                                      _usernameBlurred) {
+                                                    _formKey.currentState
+                                                        ?.validate();
+                                                  }
+                                                },
+                                                validator: (v) {
+                                                  if (!_hasAttemptedSubmit &&
+                                                      !_usernameBlurred) {
+                                                    return null;
+                                                  }
+                                                  return _validateUsername(v);
+                                                },
+                                                decoration: _fieldDecoration(
+                                                  hint: 'e.g. mariasantos_01',
                                                 ),
                                               ),
-                                              child: Row(
-                                                crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                                children: [
-                                                  const Icon(
-                                                    Icons
-                                                        .verified_user_outlined,
-                                                    size: 17,
-                                                    color:
-                                                    ParishColors.oliveGreen,
+                                              const SizedBox(height: 16),
+
+                                              // 3. Email Address
+                                              _buildInputLabel(
+                                                label: 'Email Address *',
+                                                icon: Icons.email_outlined,
+                                              ),
+                                              const SizedBox(height: 7),
+                                              TextFormField(
+                                                controller: _emailController,
+                                                focusNode: _emailFocus,
+                                                keyboardType:
+                                                    TextInputType.emailAddress,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .deny(RegExp(r'\s'))
+                                                ],
+                                                autofillHints: const [
+                                                  AutofillHints.email
+                                                ],
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _textCharcoal,
+                                                ),
+                                                onChanged: (_) {
+                                                  if (_hasAttemptedSubmit ||
+                                                      _emailBlurred) {
+                                                    _formKey.currentState
+                                                        ?.validate();
+                                                  }
+                                                },
+                                                validator: (v) {
+                                                  if (!_hasAttemptedSubmit &&
+                                                      !_emailBlurred) {
+                                                    return null;
+                                                  }
+                                                  return _validateEmail(v);
+                                                },
+                                                decoration: _fieldDecoration(
+                                                  hint: 'name@email.com',
+                                                ),
+                                              ),
+                                              const SizedBox(height: 16),
+
+                                              // 4. Password Field
+                                              _buildInputLabel(
+                                                label: 'Password *',
+                                                icon:
+                                                    Icons.lock_outline_rounded,
+                                              ),
+                                              const SizedBox(height: 7),
+                                              TextFormField(
+                                                controller:
+                                                    _passwordController,
+                                                focusNode: _passwordFocus,
+                                                obscureText: _obscurePassword,
+                                                keyboardType: TextInputType
+                                                    .visiblePassword,
+                                                autofillHints: const [
+                                                  AutofillHints.newPassword
+                                                ],
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _textCharcoal,
+                                                ),
+                                                onChanged: (_) {
+                                                  if (_hasAttemptedSubmit ||
+                                                      _passwordBlurred) {
+                                                    _formKey.currentState
+                                                        ?.validate();
+                                                  }
+                                                },
+                                                validator: (v) {
+                                                  if (!_hasAttemptedSubmit &&
+                                                      !_passwordBlurred) {
+                                                    return null;
+                                                  }
+                                                  return _validatePassword(v);
+                                                },
+                                                decoration: _fieldDecoration(
+                                                  hint:
+                                                      'Min. 8 chars with uppercase & symbol',
+                                                  suffixIcon: IconButton(
+                                                    icon: Icon(
+                                                      _obscurePassword
+                                                          ? Icons
+                                                              .visibility_off_outlined
+                                                          : Icons
+                                                              .visibility_outlined,
+                                                      color: _textSlateMuted,
+                                                      size: 19,
+                                                    ),
+                                                    onPressed: () => setState(
+                                                      () => _obscurePassword =
+                                                          !_obscurePassword,
+                                                    ),
                                                   ),
-                                                  const SizedBox(width: 8),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 10),
+
+                                              // Live Password Strength Checklist
+                                              _buildPasswordStrengthWidget(),
+                                              const SizedBox(height: 16),
+
+                                              // 5. Confirm Password
+                                              _buildInputLabel(
+                                                label: 'Confirm Password *',
+                                                icon:
+                                                    Icons.lock_outline_rounded,
+                                              ),
+                                              const SizedBox(height: 7),
+                                              TextFormField(
+                                                controller:
+                                                    _confirmPasswordController,
+                                                focusNode:
+                                                    _confirmPasswordFocus,
+                                                obscureText:
+                                                    _obscureConfirmPassword,
+                                                keyboardType: TextInputType
+                                                    .visiblePassword,
+                                                autofillHints: const [
+                                                  AutofillHints.newPassword
+                                                ],
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _textCharcoal,
+                                                ),
+                                                onChanged: (_) {
+                                                  if (_hasAttemptedSubmit ||
+                                                      _confirmPasswordBlurred ||
+                                                      _confirmPasswordController
+                                                          .text.isNotEmpty) {
+                                                    _formKey.currentState
+                                                        ?.validate();
+                                                  }
+                                                },
+                                                validator: (v) {
+                                                  if (!_hasAttemptedSubmit &&
+                                                      !_confirmPasswordBlurred &&
+                                                      _confirmPasswordController
+                                                          .text.isEmpty) {
+                                                    return null;
+                                                  }
+                                                  return _validateConfirmPassword(
+                                                      v);
+                                                },
+                                                decoration: _fieldDecoration(
+                                                  hint:
+                                                      'Re-enter your password exactly',
+                                                  suffixIcon: IconButton(
+                                                    icon: Icon(
+                                                      _obscureConfirmPassword
+                                                          ? Icons
+                                                              .visibility_off_outlined
+                                                          : Icons
+                                                              .visibility_outlined,
+                                                      color: _textSlateMuted,
+                                                      size: 19,
+                                                    ),
+                                                    onPressed: () => setState(
+                                                      () =>
+                                                          _obscureConfirmPassword =
+                                                              !_obscureConfirmPassword,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 16),
+
+                                              // 6. Terms and Conditions Acceptance
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Checkbox(
+                                                    value: _acceptedTerms,
+                                                    activeColor:
+                                                        _chanceryNavyLight,
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              4),
+                                                    ),
+                                                    onChanged: (val) {
+                                                      setState(() {
+                                                        _acceptedTerms =
+                                                            val ?? false;
+                                                        if (_acceptedTerms) {
+                                                          _showTermsError =
+                                                              false;
+                                                        }
+                                                      });
+                                                    },
+                                                  ),
                                                   Expanded(
-                                                    child: Text(
-                                                      'Protected under RA 10173 and Canonical Archive Standards. A 6-digit verification code will be sent to your email.',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: ParishColors
-                                                            .textMuted,
-                                                        height: 1.35,
+                                                    child: Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              top: 8.0),
+                                                      child: Wrap(
+                                                        crossAxisAlignment:
+                                                            WrapCrossAlignment
+                                                                .center,
+                                                        children: [
+                                                          const Text(
+                                                            'I agree to the ',
+                                                            style: TextStyle(
+                                                              fontSize: 12.5,
+                                                              color:
+                                                                  _textCharcoal,
+                                                            ),
+                                                          ),
+                                                          InkWell(
+                                                            onTap: () =>
+                                                                showTermsAndConditionsModal(
+                                                              context,
+                                                              isReadOnly: false,
+                                                              onAccepted: () =>
+                                                                  setState(() {
+                                                                _acceptedTerms =
+                                                                    true;
+                                                                _showTermsError =
+                                                                    false;
+                                                              }),
+                                                            ),
+                                                            child: const Text(
+                                                              'Terms and Data Privacy Policy',
+                                                              style: TextStyle(
+                                                                fontSize: 12.5,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color:
+                                                                    _chanceryNavyLight,
+                                                                decoration:
+                                                                    TextDecoration
+                                                                        .underline,
+                                                                decorationColor:
+                                                                    _chanceryNavyLight,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                            ),
-                                            const SizedBox(height: 22),
-
-                                            // Primary Submit Button
-                                            SizedBox(
-                                              width: double.infinity,
-                                              height: 48,
-                                              child: ElevatedButton(
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor:
-                                                  ParishColors.marianBlue,
-                                                  foregroundColor: Colors.white,
-                                                  elevation: 0,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                    BorderRadius.circular(
-                                                        10),
+                                              if (_showTermsError) ...[
+                                                const Padding(
+                                                  padding: EdgeInsets.only(
+                                                      left: 12, top: 4),
+                                                  child: Text(
+                                                    'You must accept the Terms and Conditions to register.',
+                                                    style: TextStyle(
+                                                      color:
+                                                          ParishColors.mercyRed,
+                                                      fontSize: 11.5,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
                                                   ),
                                                 ),
-                                                onPressed: _isLoading
-                                                    ? null
-                                                    : _handleRegister,
-                                                child: _isLoading
-                                                    ? const SizedBox(
-                                                  width: 20,
-                                                  height: 20,
-                                                  child:
-                                                  CircularProgressIndicator(
-                                                    color: Colors.white,
-                                                    strokeWidth: 2.2,
+                                              ],
+                                              const SizedBox(height: 14),
+
+                                              // Privacy Archive Notice Box
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.all(12),
+                                                decoration: BoxDecoration(
+                                                  color: _warmInputFill,
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: _warmInputBorder,
                                                   ),
-                                                )
-                                                    : Row(
-                                                  mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .center,
+                                                ),
+                                                child: Row(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
                                                   children: const [
                                                     Icon(
                                                       Icons
-                                                          .mark_email_unread_outlined,
-                                                      size: 18,
+                                                          .verified_user_outlined,
+                                                      size: 17,
+                                                      color:
+                                                          ParishColors.oliveGreen,
                                                     ),
                                                     SizedBox(width: 8),
-                                                    Text(
-                                                      'Register & Send Code',
-                                                      style: TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                        FontWeight
-                                                            .bold,
-                                                        letterSpacing: 0.3,
+                                                    Expanded(
+                                                      child: Text(
+                                                        'Protected under RA 10173 and Canonical Archive Standards. A 6-digit verification code will be sent to your email.',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: _textSlateMuted,
+                                                          height: 1.35,
+                                                        ),
                                                       ),
                                                     ),
                                                   ],
                                                 ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 14),
+                                              const SizedBox(height: 24),
 
-                                            // "or" Divider
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Divider(
-                                                    color:
-                                                    ParishColors.borderGrey,
-                                                    thickness: 1.0,
+                                              // Primary Submit Button
+                                              SizedBox(
+                                                width: double.infinity,
+                                                height: 48,
+                                                child: ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        _chanceryNavyLight,
+                                                    foregroundColor: Colors.white,
+                                                    elevation: 2,
+                                                    shadowColor:
+                                                        _chanceryNavyLight
+                                                            .withOpacity(0.5),
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              10),
+                                                    ),
                                                   ),
+                                                  onPressed: _isLoading
+                                                      ? null
+                                                      : _handleRegister,
+                                                  child: _isLoading
+                                                      ? const SizedBox(
+                                                          width: 20,
+                                                          height: 20,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                            color: Colors.white,
+                                                            strokeWidth: 2.2,
+                                                          ),
+                                                        )
+                                                      : Row(
+                                                          mainAxisAlignment:
+                                                              MainAxisAlignment
+                                                                  .center,
+                                                          children: const [
+                                                            Icon(
+                                                              Icons
+                                                                  .mark_email_unread_outlined,
+                                                              size: 18,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                              'Register & Send Code',
+                                                              style: TextStyle(
+                                                                fontSize: 14,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                letterSpacing:
+                                                                    0.3,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
                                                 ),
-                                                Padding(
-                                                  padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 12.0),
-                                                  child: Text(
-                                                    'or',
+                                              ),
+                                              const SizedBox(height: 16),
+
+                                              // "or" Divider
+                                              Row(
+                                                children: const [
+                                                  Expanded(
+                                                    child: Divider(
+                                                      color: _warmInputBorder,
+                                                      thickness: 1.0,
+                                                    ),
+                                                  ),
+                                                  Padding(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                            horizontal: 12.0),
+                                                    child: Text(
+                                                      'or',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: _textSlateMuted,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Expanded(
+                                                    child: Divider(
+                                                      color: _warmInputBorder,
+                                                      thickness: 1.0,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 16),
+
+                                              // Secondary Action: Return to Login
+                                              SizedBox(
+                                                width: double.infinity,
+                                                height: 46,
+                                                child: OutlinedButton.icon(
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    backgroundColor:
+                                                        _warmInputFill,
+                                                    side: const BorderSide(
+                                                      color: _chanceryNavyLight,
+                                                      width: 1.2,
+                                                    ),
+                                                    foregroundColor:
+                                                      _chanceryNavyLight,
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              10),
+                                                    ),
+                                                  ),
+                                                  onPressed: _isLoading
+                                                      ? null
+                                                      : () =>
+                                                          Navigator.pop(context),
+                                                  icon: const Icon(
+                                                    Icons.login_rounded,
+                                                    size: 18,
+                                                  ),
+                                                  label: const Text(
+                                                    'Already have an account? Sign In',
                                                     style: TextStyle(
-                                                      fontSize: 12,
-                                                      color:
-                                                      ParishColors.textMuted,
-                                                      fontWeight:
-                                                      FontWeight.w500,
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.w700,
                                                     ),
                                                   ),
                                                 ),
-                                                Expanded(
-                                                  child: Divider(
-                                                    color:
-                                                    ParishColors.borderGrey,
-                                                    thickness: 1.0,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 14),
-
-                                            // Secondary Action: Return to Login
-                                            SizedBox(
-                                              width: double.infinity,
-                                              height: 46,
-                                              child: OutlinedButton.icon(
-                                                style:
-                                                OutlinedButton.styleFrom(
-                                                  backgroundColor:
-                                                  ParishColors.cardWhite,
-                                                  side: BorderSide(
-                                                    color: ParishColors
-                                                        .marianBlue
-                                                        .withOpacity(0.55),
-                                                    width: 1.2,
-                                                  ),
-                                                  foregroundColor:
-                                                  ParishColors.marianBlue,
-                                                  shape:
-                                                  RoundedRectangleBorder(
-                                                    borderRadius:
-                                                    BorderRadius.circular(
-                                                        10),
-                                                  ),
-                                                ),
-                                                onPressed: _isLoading
-                                                    ? null
-                                                    : () =>
-                                                    Navigator.pop(context),
-                                                icon: const Icon(
-                                                  Icons.login_rounded,
-                                                  size: 18,
-                                                ),
-                                                label: const Text(
-                                                  'Already have an account? Sign In',
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 20),
+                              const SizedBox(height: 22),
 
-                            // =================================================
-                            // 3. FOOTER ASSISTANCE NOTICE
-                            // =================================================
-                            InkWell(
-                              onTap: () => showLoginHelpDialog(context),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.headset_mic_outlined,
-                                      size: 16,
-                                      color: ParishColors.marianBlue,
+                              // =================================================
+                              // 3. FOOTER ASSISTANCE NOTICE (WARM CONTRAST)
+                              // =================================================
+                              InkWell(
+                                onTap: () => showLoginHelpDialog(context),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _chanceryNavyMid.withOpacity(0.55),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: _eucharisticGold.withOpacity(0.3),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Need assistance? ',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        color: ParishColors.textMuted,
-                                        fontWeight: FontWeight.w500,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: const [
+                                      Icon(
+                                        Icons.headset_mic_outlined,
+                                        size: 15,
+                                        color: _eucharisticGoldLight,
                                       ),
-                                    ),
-                                    Text(
-                                      'Contact the Parish Office',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: ParishColors.marianBlue,
-                                        decoration: TextDecoration.underline,
-                                        decorationColor:
-                                        ParishColors.marianBlue,
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Need assistance? ',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFD3DCE6),
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                      Text(
+                                        'Contact the Parish Office',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: _eucharisticGoldLight,
+                                          decoration: TextDecoration.underline,
+                                          decorationColor:
+                                              _eucharisticGoldLight,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1451,7 +1559,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
       strengthColor = Colors.orange;
       strengthLabel = 'Fair';
     } else if (score == 3) {
-      strengthColor = ParishColors.goldAccent;
+      strengthColor = _eucharisticGold;
       strengthLabel = 'Good';
     } else if (score >= 4) {
       strengthColor = ParishColors.oliveGreen;
@@ -1461,10 +1569,10 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: ParishColors.backgroundLight,
+        color: _warmInputFill,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: ParishColors.borderGrey.withOpacity(0.6),
+          color: _warmInputBorder,
         ),
       ),
       child: Column(
@@ -1473,12 +1581,12 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              const Text(
                 'Password Strength:',
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.bold,
-                  color: ParishColors.textDark,
+                  color: _textCharcoal,
                 ),
               ),
               Text(
@@ -1497,7 +1605,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
             child: LinearProgressIndicator(
               value: (score / 4.0).clamp(0.2, 1.0),
               minHeight: 5,
-              backgroundColor: ParishColors.borderGrey.withOpacity(0.3),
+              backgroundColor: _warmInputBorder.withOpacity(0.5),
               valueColor: AlwaysStoppedAnimation<Color>(strengthColor),
             ),
           ),
@@ -1539,7 +1647,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
             size: 14,
             color: isSatisfied
                 ? ParishColors.oliveGreen
-                : ParishColors.textMuted.withOpacity(0.6),
+                : _textSlateMuted.withOpacity(0.6),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -1548,9 +1656,7 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: isSatisfied ? FontWeight.bold : FontWeight.normal,
-                color: isSatisfied
-                    ? ParishColors.textDark
-                    : ParishColors.textMuted,
+                color: isSatisfied ? _textCharcoal : _textSlateMuted,
               ),
             ),
           ),
@@ -1563,14 +1669,14 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 15, color: ParishColors.marianBlue),
+        Icon(icon, size: 15, color: _chanceryNavyLight),
         const SizedBox(width: 6),
         Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w700,
-            color: ParishColors.textDark,
+            color: _textCharcoal,
           ),
         ),
       ],
@@ -1585,12 +1691,12 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
       hintText: hint,
       hintStyle: TextStyle(
         fontSize: 13.5,
-        color: ParishColors.textMuted.withOpacity(0.65),
+        color: _textSlateMuted.withOpacity(0.65),
         fontWeight: FontWeight.normal,
       ),
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: ParishColors.backgroundLight,
+      fillColor: _warmInputFill,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(
         vertical: 13,
@@ -1598,23 +1704,25 @@ class _ParishionerRegisterViewState extends State<ParishionerRegisterView> {
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey, width: 1.0),
+        borderSide: const BorderSide(color: _warmInputBorder, width: 1.0),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.borderGrey, width: 1.0),
+        borderSide: const BorderSide(color: _warmInputBorder, width: 1.0),
       ),
       focusedBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(10)),
-        borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.6),
+        borderSide: BorderSide(color: _chanceryNavyLight, width: 1.6),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.2),
+        borderSide:
+            const BorderSide(color: ParishColors.mercyRed, width: 1.2),
       ),
       focusedErrorBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(10)),
-        borderSide: BorderSide(color: ParishColors.mercyRed, width: 1.6),
+        borderSide:
+            BorderSide(color: ParishColors.mercyRed, width: 1.6),
       ),
       errorStyle: const TextStyle(
         fontSize: 11.5,
