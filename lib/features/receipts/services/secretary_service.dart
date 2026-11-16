@@ -71,6 +71,8 @@ class SecretaryService {
     String? relatedAppointmentId,
     String? relatedRequestId,
     String? relatedIssuanceId,
+    String? receiptImageUrl,
+    String? verificationStatus,
     DateTime? transactionDate,
   }) async {
     final receiptNo = await _generateReceiptNumber();
@@ -154,6 +156,10 @@ class SecretaryService {
         'related_appointment_id': relatedAppointmentId,
         'related_request_id': relatedRequestId,
         'related_issuance_id': relatedIssuanceId,
+        if (receiptImageUrl != null && receiptImageUrl.trim().isNotEmpty)
+          'receipt_image_url': receiptImageUrl.trim(),
+        if (verificationStatus != null && verificationStatus.trim().isNotEmpty)
+          'verification_status': verificationStatus.trim(),
         'encoded_by': userId,
         'created_at': DateTime.now().toIso8601String(),
       };

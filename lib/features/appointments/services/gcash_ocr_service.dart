@@ -1,10 +1,14 @@
-import 'dart:io' show File, Directory;
+import 'dart:convert';
+import 'dart:io' show File;
 import 'package:flutter/foundation.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:http/http.dart' as http;
+import 'parish_payment_settings_service.dart';
 
 class GcashOcrResult {
   final String? referenceNumber;
   final double? amount;
+  final String? recipientName;
+  final String? recipientNumber;
   final String rawText;
   final bool isSuccess;
   final String? errorMessage;
@@ -12,6 +16,8 @@ class GcashOcrResult {
   const GcashOcrResult({
     this.referenceNumber,
     this.amount,
+    this.recipientName,
+    this.recipientNumber,
     this.rawText = '',
     this.isSuccess = false,
     this.errorMessage,
@@ -20,6 +26,8 @@ class GcashOcrResult {
   GcashOcrResult copyWith({
     String? referenceNumber,
     double? amount,
+    String? recipientName,
+    String? recipientNumber,
     String? rawText,
     bool? isSuccess,
     String? errorMessage,
@@ -27,6 +35,8 @@ class GcashOcrResult {
     return GcashOcrResult(
       referenceNumber: referenceNumber ?? this.referenceNumber,
       amount: amount ?? this.amount,
+      recipientName: recipientName ?? this.recipientName,
+      recipientNumber: recipientNumber ?? this.recipientNumber,
       rawText: rawText ?? this.rawText,
       isSuccess: isSuccess ?? this.isSuccess,
       errorMessage: errorMessage ?? this.errorMessage,
@@ -37,77 +47,231 @@ class GcashOcrResult {
 class GcashOcrService {
   GcashOcrService._();
 
-  /// Process GCash receipt screenshot using Google ML Kit on-device Text Recognition.
-  /// Runs completely offline and locally on mobile devices without relying on unconfigured cloud endpoints.
+  static const String _geminiBaseUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models';
+
+  /// Process GCash receipt screenshot using Google Gemini Vision API.
+  /// Uses the configured Gemini API key and model (default: gemini-3.1-flash-lite).
   static Future<GcashOcrResult> processReceiptImage({
     String? filePath,
     Uint8List? imageBytes,
     required String fileName,
   }) async {
-    String extractedRawText = '';
-    File? tempFile;
-
-    final bool isMobilePlatform = !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS);
-
     try {
-      if (isMobilePlatform) {
-        String? targetPath = filePath;
+      final settings =
+      await ParishPaymentSettingsService.getSettings(forceRefresh: true);
+      final apiKey = settings.geminiApiKey.trim();
+      final model = settings.geminiModel.trim().isNotEmpty
+          ? settings.geminiModel.trim()
+          : ParishPaymentSettings.defaultGeminiModel;
 
-        // If filePath is null but bytes are available, write to a temp file for Google ML Kit
-        if ((targetPath == null || targetPath.isEmpty) && imageBytes != null && imageBytes.isNotEmpty) {
-          final tempDir = Directory.systemTemp;
-          final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
-          tempFile = File('${tempDir.path}/gcash_ocr_${DateTime.now().millisecondsSinceEpoch}.$ext');
-          await tempFile.writeAsBytes(imageBytes);
-          targetPath = tempFile.path;
-        }
+      if (apiKey.isEmpty) {
+        return GcashOcrResult(
+          rawText: 'GCash receipt attached: $fileName',
+          isSuccess: false,
+          errorMessage:
+          'Gemini API key is not configured. Please enter it in GCash QR & Bank Ledger settings, or enter the Reference Number and Amount manually.',
+        );
+      }
 
-        if (targetPath != null && targetPath.isNotEmpty) {
-          final inputImage = InputImage.fromFilePath(targetPath);
-          final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-
-          final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
-          extractedRawText = recognizedText.text;
-          await textRecognizer.close();
-
-          if (extractedRawText.trim().isNotEmpty) {
-            final parsed = parseGcashText(extractedRawText);
-            return GcashOcrResult(
-              referenceNumber: parsed.referenceNumber,
-              amount: parsed.amount,
-              rawText: extractedRawText,
-              isSuccess: parsed.referenceNumber != null || parsed.amount != null,
-            );
-          }
+      Uint8List? bytes = imageBytes;
+      if ((bytes == null || bytes.isEmpty) &&
+          !kIsWeb &&
+          filePath != null &&
+          filePath.isNotEmpty) {
+        final file = File(filePath);
+        if (await file.exists()) {
+          bytes = await file.readAsBytes();
         }
       }
-    } catch (mlKitError) {
-      debugPrint('[GcashOcrService] Google ML Kit OCR error: $mlKitError');
-    } finally {
-      // Clean up temporary local file if created
-      if (tempFile != null && await tempFile.exists()) {
+
+      if (bytes == null || bytes.isEmpty) {
+        return const GcashOcrResult(
+          isSuccess: false,
+          errorMessage: 'Unable to read receipt image bytes.',
+        );
+      }
+
+      final mimeType = _resolveMimeType(fileName);
+      final base64Image = base64Encode(bytes);
+
+      final uri = Uri.parse(
+        '$_geminiBaseUrl/${Uri.encodeComponent(model)}:generateContent',
+      );
+
+      final requestBody = jsonEncode({
+        'contents': [
+          {
+            'parts': [
+              {
+                'text':
+                'You are an OCR parser for Philippine GCash payment receipt screenshots. '
+                    'Extract the payment details from this image and return ONLY a valid JSON object with these exact keys: '
+                    '"reference_number" (string or null, e.g. "1002 9847 1120" or digits only as shown on the receipt), '
+                    '"amount" (number or null, the total amount sent/paid in PHP without currency symbols, e.g. 100.00), '
+                    '"recipient_name" (string or null), '
+                    '"recipient_number" (string or null), '
+                    '"raw_text" (string containing the key text lines visible on the receipt). '
+                    'If the image is not a GCash or payment receipt, set reference_number and amount to null.',
+              },
+              {
+                'inlineData': {
+                  'mimeType': mimeType,
+                  'data': base64Image,
+                },
+              },
+            ],
+          },
+        ],
+        'generationConfig': {
+          'temperature': 0.1,
+          'responseMimeType': 'application/json',
+        },
+      });
+
+      final response = await http
+          .post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: requestBody,
+      )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        String apiError = 'Gemini OCR request failed (${response.statusCode}).';
         try {
-          await tempFile.delete();
+          final errJson = jsonDecode(response.body) as Map<String, dynamic>;
+          final msg = errJson['error']?['message']?.toString();
+          if (msg != null && msg.isNotEmpty) {
+            apiError = msg;
+          }
         } catch (_) {}
+
+        debugPrint('[GcashOcrService] Gemini HTTP ${response.statusCode}: $apiError');
+        return GcashOcrResult(
+          rawText: 'GCash receipt attached: $fileName',
+          isSuccess: false,
+          errorMessage: apiError,
+        );
       }
-    }
 
-    // Fallback: If text was extracted or needs manual entry review
-    if (extractedRawText.trim().isNotEmpty) {
-      return parseGcashText(extractedRawText);
-    }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final candidates = decoded['candidates'] as List?;
+      if (candidates == null || candidates.isEmpty) {
+        return GcashOcrResult(
+          rawText: 'GCash receipt attached: $fileName',
+          isSuccess: false,
+          errorMessage: 'Gemini did not return any OCR result.',
+        );
+      }
 
-    return GcashOcrResult(
-      rawText: 'GCash receipt attached: $fileName',
-      isSuccess: false,
-      errorMessage: 'Could not automatically detect text on this platform. Please confirm the Reference Number and Amount below.',
-    );
+      final parts = candidates.first['content']?['parts'] as List?;
+      final responseText = parts != null && parts.isNotEmpty
+          ? (parts.first['text']?.toString() ?? '')
+          : '';
+
+      if (responseText.trim().isEmpty) {
+        return GcashOcrResult(
+          rawText: 'GCash receipt attached: $fileName',
+          isSuccess: false,
+          errorMessage: 'Empty OCR response from Gemini.',
+        );
+      }
+
+      final cleanedJson = _stripMarkdownCodeFence(responseText);
+      try {
+        final parsedJson = jsonDecode(cleanedJson) as Map<String, dynamic>;
+
+        String? refNo = parsedJson['reference_number']?.toString().trim();
+        if (refNo != null &&
+            (refNo.isEmpty || refNo.toLowerCase() == 'null')) {
+          refNo = null;
+        }
+
+        double? amount;
+        final rawAmount = parsedJson['amount'];
+        if (rawAmount is num) {
+          amount = rawAmount.toDouble();
+        } else if (rawAmount != null) {
+          amount = _cleanAmount(rawAmount.toString());
+        }
+        if (amount != null && amount <= 0) {
+          amount = null;
+        }
+
+        String? recipientName = parsedJson['recipient_name']?.toString().trim();
+        if (recipientName != null &&
+            (recipientName.isEmpty || recipientName.toLowerCase() == 'null')) {
+          recipientName = null;
+        }
+
+        String? recipientNumber =
+        parsedJson['recipient_number']?.toString().trim();
+        if (recipientNumber != null &&
+            (recipientNumber.isEmpty ||
+                recipientNumber.toLowerCase() == 'null')) {
+          recipientNumber = null;
+        }
+
+        final rawText = parsedJson['raw_text']?.toString().trim() ?? responseText;
+
+        // Fallback to regex parser on rawText if Gemini missed a field
+        if (refNo == null || amount == null) {
+          final fallback = parseGcashText(rawText);
+          refNo ??= fallback.referenceNumber;
+          amount ??= fallback.amount;
+        }
+
+        return GcashOcrResult(
+          referenceNumber: refNo,
+          amount: amount,
+          recipientName: recipientName,
+          recipientNumber: recipientNumber,
+          rawText: rawText,
+          isSuccess: refNo != null || amount != null,
+          errorMessage: (refNo == null && amount == null)
+              ? 'Could not detect Reference Number or Amount from the screenshot. Please enter them manually.'
+              : null,
+        );
+      } catch (_) {
+        final fallback = parseGcashText(responseText);
+        return fallback.copyWith(
+          errorMessage: fallback.isSuccess
+              ? null
+              : 'Could not parse Gemini OCR output. Please confirm the Reference Number and Amount manually.',
+        );
+      }
+    } catch (e) {
+      debugPrint('[GcashOcrService] Gemini OCR error: $e');
+      return GcashOcrResult(
+        rawText: 'GCash receipt attached: $fileName',
+        isSuccess: false,
+        errorMessage:
+        'OCR error: ${e.toString().replaceFirst("Exception: ", "")}',
+      );
+    }
   }
 
-  /// Advanced multi-line GCash receipt text parser.
-  /// Handles both single-line and broken-line formats common in GCash screenshots.
+  static String _resolveMimeType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  static String _stripMarkdownCodeFence(String text) {
+    var trimmed = text.trim();
+    if (trimmed.startsWith('```')) {
+      trimmed = trimmed.replaceFirst(RegExp(r'^```(?:json)?\s*'), '');
+      trimmed = trimmed.replaceFirst(RegExp(r'\s*```$'), '');
+    }
+    return trimmed.trim();
+  }
+
+  /// Fallback multi-line GCash receipt text parser.
   static GcashOcrResult parseGcashText(String rawText) {
     if (rawText.trim().isEmpty) {
       return const GcashOcrResult(rawText: '', isSuccess: false);
@@ -123,35 +287,33 @@ class GcashOcrService {
     String? foundReference;
     double? foundAmount;
 
-    // =========================================================================
-    // 1. REFERENCE NUMBER EXTRACTION
-    // =========================================================================
-
-    // Case A: Look for lines explicitly mentioning Ref / Reference No
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
 
-      if (RegExp(r'(?:Ref|Reference)\.?\s*(?:No|Number|#)?', caseSensitive: false).hasMatch(line)) {
-        // Try extracting digits on the SAME line first
+      if (RegExp(r'(?:Ref|Reference)\.?\s*(?:No|Number|#)?',
+          caseSensitive: false)
+          .hasMatch(line)) {
         final sameLineMatch = RegExp(
           r'(?:Ref|Reference)\.?\s*(?:No|Number|#)?\.?:?\s*([0-9\s]{9,20})',
           caseSensitive: false,
         ).firstMatch(line);
 
         if (sameLineMatch != null) {
-          final digits = sameLineMatch.group(1)?.replaceAll(RegExp(r'\s+'), ' ').trim();
+          final digits =
+          sameLineMatch.group(1)?.replaceAll(RegExp(r'\s+'), ' ').trim();
           if (digits != null && digits.replaceAll(' ', '').length >= 10) {
             foundReference = digits;
             break;
           }
         }
 
-        // Try extracting digits on the IMMEDIATE NEXT LINE (very common in GCash layout)
         if (i + 1 < lines.length) {
           final nextLine = lines[i + 1].trim();
-          final nextLineMatch = RegExp(r'^([0-9\s]{10,20})$').firstMatch(nextLine);
+          final nextLineMatch =
+          RegExp(r'^([0-9\s]{10,20})$').firstMatch(nextLine);
           if (nextLineMatch != null) {
-            final digits = nextLineMatch.group(1)?.replaceAll(RegExp(r'\s+'), ' ').trim();
+            final digits =
+            nextLineMatch.group(1)?.replaceAll(RegExp(r'\s+'), ' ').trim();
             if (digits != null && digits.replaceAll(' ', '').length >= 10) {
               foundReference = digits;
               break;
@@ -161,7 +323,6 @@ class GcashOcrService {
       }
     }
 
-    // Case B: General pattern match for 4-4-4 or 4-4-5 digit groups (e.g. "1002 9847 1120" or "0012 3456 7890")
     if (foundReference == null) {
       final groupedPattern = RegExp(r'\b(\d{4}\s\d{4}\s\d{4,5})\b');
       final match = groupedPattern.firstMatch(normalizedText);
@@ -170,7 +331,6 @@ class GcashOcrService {
       }
     }
 
-    // Case C: Continuous 12 to 14 digit number starting with 0, 1, or 9
     if (foundReference == null) {
       final longNumberPattern = RegExp(r'\b([019]\d{11,13})\b');
       final match = longNumberPattern.firstMatch(normalizedText);
@@ -179,17 +339,15 @@ class GcashOcrService {
       }
     }
 
-    // =========================================================================
-    // 2. AMOUNT EXTRACTION
-    // =========================================================================
-
-    // Case A: Look for lines explicitly mentioning Amount / Total / Sent
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
 
-      if (RegExp(r'(?:Total\s*Amount|Amount\s*Sent|Amount|Sent)', caseSensitive: false).hasMatch(line)) {
-        // Try on the SAME line
-        final sameLineMatch = RegExp(r'(?:PHP|Php|php|₱|P)?\s*([0-9,]+\.[0-9]{2})').firstMatch(line);
+      if (RegExp(r'(?:Total\s*Amount|Amount\s*Sent|Amount|Sent)',
+          caseSensitive: false)
+          .hasMatch(line)) {
+        final sameLineMatch =
+        RegExp(r'(?:PHP|Php|php|₱|P)?\s*([0-9,]+\.[0-9]{2})')
+            .firstMatch(line);
         if (sameLineMatch != null) {
           final amt = _cleanAmount(sameLineMatch.group(1));
           if (amt != null && amt > 0) {
@@ -198,10 +356,11 @@ class GcashOcrService {
           }
         }
 
-        // Try on the IMMEDIATE NEXT LINE
         if (i + 1 < lines.length) {
           final nextLine = lines[i + 1].trim();
-          final nextLineMatch = RegExp(r'(?:PHP|Php|php|₱|P)?\s*([0-9,]+\.[0-9]{2})').firstMatch(nextLine);
+          final nextLineMatch =
+          RegExp(r'(?:PHP|Php|php|₱|P)?\s*([0-9,]+\.[0-9]{2})')
+              .firstMatch(nextLine);
           if (nextLineMatch != null) {
             final amt = _cleanAmount(nextLineMatch.group(1));
             if (amt != null && amt > 0) {
@@ -213,16 +372,17 @@ class GcashOcrService {
       }
     }
 
-    // Case B: Search for currency symbol followed by decimal amount (e.g. "₱ 500.00" or "PHP 1,000.00")
     if (foundAmount == null) {
-      final currencyPattern = RegExp(r'(?:PHP|Php|php|₱)\s*([0-9,]+\.[0-9]{2})', caseSensitive: false);
+      final currencyPattern = RegExp(
+        r'(?:PHP|Php|php|₱)\s*([0-9,]+\.[0-9]{2})',
+        caseSensitive: false,
+      );
       final match = currencyPattern.firstMatch(normalizedText);
       if (match != null) {
         foundAmount = _cleanAmount(match.group(1));
       }
     }
 
-    // Case C: Standalone decimal currency number
     if (foundAmount == null) {
       final decimalPattern = RegExp(r'\b([0-9,]+\.[0-9]{2})\b');
       final matches = decimalPattern.allMatches(normalizedText);
@@ -245,7 +405,8 @@ class GcashOcrService {
 
   static double? _cleanAmount(String? raw) {
     if (raw == null) return null;
-    final clean = raw.replaceAll('₱', '').replaceAll('P', '').replaceAll(',', '').trim();
+    final clean =
+    raw.replaceAll('₱', '').replaceAll('P', '').replaceAll(',', '').trim();
     return double.tryParse(clean);
   }
 }

@@ -236,10 +236,15 @@ class RemittanceReportService {
     for (final line in lines) {
       if (line.startsWith('•') || line.startsWith('-')) {
         final clean = line.replaceFirst(RegExp(r'^[•\-]\s*'), '').trim();
-        final beforeQty = clean.replaceAll(RegExp(r'\s*x\d+$', caseSensitive: false), '').trim();
+        final beforeQty = clean
+            .replaceAll(RegExp(r'\s*x\d+$', caseSensitive: false), '')
+            .trim();
         if (clean.contains('@') && clean.contains('=')) {
           final eqParts = clean.split('=');
-          final titleSide = eqParts[0].split('@')[0].trim().replaceAll(RegExp(r'\s*x\d+$', caseSensitive: false), '');
+          final titleSide = eqParts[0]
+              .split('@')[0]
+              .trim()
+              .replaceAll(RegExp(r'\s*x\d+$', caseSensitive: false), '');
           final amtStr = eqParts.last.replaceAll(RegExp(r'[^0-9.]'), '');
           final amt = double.tryParse(amtStr) ?? 0.0;
           if (amt > 0) {
@@ -251,7 +256,9 @@ class RemittanceReportService {
         } else {
           pendingTitle = beforeQty;
         }
-      } else if (pendingTitle != null && line.contains('@') && line.contains('=')) {
+      } else if (pendingTitle != null &&
+          line.contains('@') &&
+          line.contains('=')) {
         final amtStr = line.split('=').last.replaceAll(RegExp(r'[^0-9.]'), '');
         final amt = double.tryParse(amtStr) ?? 0.0;
         if (amt > 0) {
@@ -355,10 +362,23 @@ class RemittanceReportService {
   }
 
   static String _resolveTenderMode(Map<String, dynamic> row) {
+    final paymentMode = (row['payment_mode'] ?? '').toString().toLowerCase();
+    if (paymentMode.contains('gcash') || paymentMode.contains('online')) {
+      return 'GCash';
+    }
+    if (paymentMode.contains('cheque') || paymentMode.contains('check')) {
+      return 'Cheque';
+    }
+    if (paymentMode.contains('gratis')) {
+      return 'Gratis';
+    }
+
     final details = (row['transaction_details'] ?? '').toString().toLowerCase();
     final type = (row['transaction_type'] ?? '').toString().toLowerCase();
 
-    if (details.contains('tender mode: gcash') || details.contains('gcash ref') || type == 'gcash') {
+    if (details.contains('tender mode: gcash') ||
+        details.contains('gcash ref') ||
+        type == 'gcash') {
       return 'GCash';
     }
     if (details.contains('tender mode: gratis') || type == 'gratis') {
@@ -378,8 +398,10 @@ class RemittanceReportService {
 
     switch (periodType) {
       case RemittancePeriodType.daily:
-        startDate = DateTime(targetDate.year, targetDate.month, targetDate.day, 0, 0, 0);
-        endDate = DateTime(targetDate.year, targetDate.month, targetDate.day, 23, 59, 59, 999);
+        startDate =
+            DateTime(targetDate.year, targetDate.month, targetDate.day, 0, 0, 0);
+        endDate = DateTime(
+            targetDate.year, targetDate.month, targetDate.day, 23, 59, 59, 999);
         final monthStr = monthNames[targetDate.month - 1];
         periodLabel = '$monthStr ${targetDate.day}, ${targetDate.year}';
         break;
@@ -419,7 +441,8 @@ class RemittanceReportService {
     for (final row in rawList) {
       final double amount = (row['transaction_amount'] is num)
           ? (row['transaction_amount'] as num).toDouble()
-          : (double.tryParse(row['transaction_amount']?.toString() ?? '0') ?? 0.0);
+          : (double.tryParse(row['transaction_amount']?.toString() ?? '0') ??
+          0.0);
 
       // 1. Exclude Voided Receipts
       if (_isVoided(row)) {
@@ -440,7 +463,10 @@ class RemittanceReportService {
         cashSum += amount;
       }
 
-      final txDate = DateTime.tryParse(row['transaction_date']?.toString() ?? row['created_at']?.toString() ?? '') ?? DateTime.now();
+      final txDate = DateTime.tryParse(row['transaction_date']?.toString() ??
+          row['created_at']?.toString() ??
+          '') ??
+          DateTime.now();
 
       validReceipts.add(
         RemittanceItem(
@@ -448,7 +474,11 @@ class RemittanceReportService {
           transactionDate: txDate,
           payorName: (row['payor_name'] ?? 'Parishioner').toString().trim(),
           payorContact: row['payor_contact']?.toString().trim(),
-          relatedService: (row['related_service'] ?? row['transaction_type'] ?? 'Parish Offering').toString().trim(),
+          relatedService: (row['related_service'] ??
+              row['transaction_type'] ??
+              'Parish Offering')
+              .toString()
+              .trim(),
           details: (row['transaction_details'] ?? '').toString().trim(),
           amount: amount,
           paymentMode: mode,
@@ -480,7 +510,8 @@ class RemittanceReportService {
   // PDF Export Engine (Print-ready A4 Landscape Canonical Report)
   // ===========================================================================
 
-  static Future<Uint8List> generatePdfReport(RemittanceReportData report) async {
+  static Future<Uint8List> generatePdfReport(
+      RemittanceReportData report) async {
     final pdf = pw.Document();
 
     final baseFont = await PdfGoogleFonts.arimoRegular();
@@ -513,15 +544,18 @@ class RemittanceReportService {
                     children: [
                       pw.Text(
                         'DIOCESE OF SAN PABLO',
-                        style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: textMuted),
+                        style: pw.TextStyle(
+                            font: boldFont, fontSize: 8.5, color: textMuted),
                       ),
                       pw.Text(
                         'ST. JOHN PAUL II PARISH',
-                        style: pw.TextStyle(font: boldFont, fontSize: 14, color: marianBlue),
+                        style: pw.TextStyle(
+                            font: boldFont, fontSize: 14, color: marianBlue),
                       ),
                       pw.Text(
                         'Barangay Labuin, Santa Cruz, Laguna, Philippines',
-                        style: pw.TextStyle(font: baseFont, fontSize: 8, color: textMuted),
+                        style: pw.TextStyle(
+                            font: baseFont, fontSize: 8, color: textMuted),
                       ),
                     ],
                   ),
@@ -529,24 +563,28 @@ class RemittanceReportService {
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
                       pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: pw.BoxDecoration(
                           border: pw.Border.all(color: goldAccent, width: 1),
                           borderRadius: pw.BorderRadius.circular(4),
                         ),
                         child: pw.Text(
                           'OFFICIAL REMITTANCE REPORT',
-                          style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: marianBlue),
+                          style: pw.TextStyle(
+                              font: boldFont, fontSize: 8.5, color: marianBlue),
                         ),
                       ),
                       pw.SizedBox(height: 3),
                       pw.Text(
                         'Period: ${report.periodLabel.toUpperCase()}',
-                        style: pw.TextStyle(font: boldFont, fontSize: 9.5, color: textDark),
+                        style: pw.TextStyle(
+                            font: boldFont, fontSize: 9.5, color: textDark),
                       ),
                       pw.Text(
                         'Generated: $genDateStr | Page ${context.pageNumber} of ${context.pagesCount}',
-                        style: pw.TextStyle(font: baseFont, fontSize: 7.5, color: textMuted),
+                        style: pw.TextStyle(
+                            font: baseFont, fontSize: 7.5, color: textMuted),
                       ),
                     ],
                   ),
@@ -571,10 +609,24 @@ class RemittanceReportService {
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
                 children: [
-                  _buildPdfKpiCell('Valid Receipts Count', '${report.totalCount} receipts', baseFont, boldFont),
-                  _buildPdfKpiCell('Cash Collections', 'P ${report.totalCash.toStringAsFixed(2)}', baseFont, boldFont),
-                  _buildPdfKpiCell('GCash Collections', 'P ${report.totalGCash.toStringAsFixed(2)}', baseFont, boldFont),
-                  _buildPdfKpiCell('TOTAL REMITTANCE', 'P ${report.totalRemittance.toStringAsFixed(2)}', baseFont, boldFont, isPrimary: true),
+                  _buildPdfKpiCell('Valid Receipts Count',
+                      '${report.totalCount} receipts', baseFont, boldFont),
+                  _buildPdfKpiCell(
+                      'Cash Collections',
+                      'P ${report.totalCash.toStringAsFixed(2)}',
+                      baseFont,
+                      boldFont),
+                  _buildPdfKpiCell(
+                      'GCash Collections',
+                      'P ${report.totalGCash.toStringAsFixed(2)}',
+                      baseFont,
+                      boldFont),
+                  _buildPdfKpiCell(
+                      'TOTAL REMITTANCE',
+                      'P ${report.totalRemittance.toStringAsFixed(2)}',
+                      baseFont,
+                      boldFont,
+                      isPrimary: true),
                 ],
               ),
             ),
@@ -586,11 +638,13 @@ class RemittanceReportService {
               children: [
                 pw.Text(
                   '* Note: Excluded ${report.excludedVoidCount} voided receipt(s) and ${report.excludedGratisCount} gratis slip(s) from remittance figures.',
-                  style: pw.TextStyle(font: italicFont, fontSize: 7, color: textMuted),
+                  style: pw.TextStyle(
+                      font: italicFont, fontSize: 7, color: textMuted),
                 ),
                 pw.Text(
                   'Currency: Philippine Peso (PHP)',
-                  style: pw.TextStyle(font: baseFont, fontSize: 7, color: textMuted),
+                  style: pw.TextStyle(
+                      font: baseFont, fontSize: 7, color: textMuted),
                 ),
               ],
             ),
@@ -615,9 +669,12 @@ class RemittanceReportService {
                     _buildTableCell('RECEIPT NO.', boldFont, isHeader: true),
                     _buildTableCell('DATE / TIME', boldFont, isHeader: true),
                     _buildTableCell('PAYOR NAME', boldFont, isHeader: true),
-                    _buildTableCell('PARTICULARS / SERVICE', boldFont, isHeader: true),
-                    _buildTableCell('TENDER', boldFont, isHeader: true, align: pw.TextAlign.center),
-                    _buildTableCell('AMOUNT (PHP)', boldFont, isHeader: true, align: pw.TextAlign.right),
+                    _buildTableCell('PARTICULARS / SERVICE', boldFont,
+                        isHeader: true),
+                    _buildTableCell('TENDER', boldFont,
+                        isHeader: true, align: pw.TextAlign.center),
+                    _buildTableCell('AMOUNT (PHP)', boldFont,
+                        isHeader: true, align: pw.TextAlign.right),
                   ],
                 ),
                 // Table Rows
@@ -628,8 +685,10 @@ class RemittanceReportService {
                       _buildTableCell(r.formattedDate, baseFont),
                       _buildTableCell(r.payorName, boldFont),
                       _buildTableCell(r.relatedService, baseFont),
-                      _buildTableCell(r.paymentMode.toUpperCase(), baseFont, align: pw.TextAlign.center),
-                      _buildTableCell(r.amount.toStringAsFixed(2), boldFont, align: pw.TextAlign.right),
+                      _buildTableCell(r.paymentMode.toUpperCase(), baseFont,
+                          align: pw.TextAlign.center),
+                      _buildTableCell(r.amount.toStringAsFixed(2), boldFont,
+                          align: pw.TextAlign.right),
                     ],
                   );
                 }),
@@ -639,24 +698,33 @@ class RemittanceReportService {
                   children: [
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(5),
-                      child: pw.Text('TOTAL', style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
+                      child: pw.Text('TOTAL',
+                          style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
                     ),
-                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('')),
-                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('')),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('')),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('')),
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(5),
                       child: pw.Text(
                         'Total Included: ${report.totalCount} Valid Receipts',
-                        style: pw.TextStyle(font: boldFont, fontSize: 8, color: textMuted),
+                        style: pw.TextStyle(
+                            font: boldFont, fontSize: 8, color: textMuted),
                       ),
                     ),
-                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('')),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('')),
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(5),
                       child: pw.Text(
                         'P ${report.totalRemittance.toStringAsFixed(2)}',
                         textAlign: pw.TextAlign.right,
-                        style: pw.TextStyle(font: boldFont, fontSize: 9.5, color: marianBlue),
+                        style: pw.TextStyle(
+                            font: boldFont, fontSize: 9.5, color: marianBlue),
                       ),
                     ),
                   ],
@@ -670,9 +738,24 @@ class RemittanceReportService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                _buildSignatoryLine('Prepared by (Cashier / Desk):', report.generatedByName, report.generatedByRole, boldFont, baseFont),
-                _buildSignatoryLine('Verified by (Parish Secretariat / PFC):', 'Parish Secretary', 'Head of Administration', boldFont, baseFont),
-                _buildSignatoryLine('Approved by (Parish Priest):', 'Rev. Fr. Roy G. Reyes', 'Parish Priest', boldFont, baseFont),
+                _buildSignatoryLine(
+                    'Prepared by (Cashier / Desk):',
+                    report.generatedByName,
+                    report.generatedByRole,
+                    boldFont,
+                    baseFont),
+                _buildSignatoryLine(
+                    'Verified by (Parish Secretariat / PFC):',
+                    'Parish Secretary',
+                    'Head of Administration',
+                    boldFont,
+                    baseFont),
+                _buildSignatoryLine(
+                    'Approved by (Parish Priest):',
+                    'Rev. Fr. Roy G. Reyes',
+                    'Parish Priest',
+                    boldFont,
+                    baseFont),
               ],
             ),
           ];
@@ -683,10 +766,14 @@ class RemittanceReportService {
     return pdf.save();
   }
 
-  static pw.Widget _buildPdfKpiCell(String label, String value, pw.Font baseFont, pw.Font boldFont, {bool isPrimary = false}) {
+  static pw.Widget _buildPdfKpiCell(
+      String label, String value, pw.Font baseFont, pw.Font boldFont,
+      {bool isPrimary = false}) {
     return pw.Column(
       children: [
-        pw.Text(label, style: pw.TextStyle(font: baseFont, fontSize: 7, color: PdfColors.grey700)),
+        pw.Text(label,
+            style: pw.TextStyle(
+                font: baseFont, fontSize: 7, color: PdfColors.grey700)),
         pw.SizedBox(height: 1),
         pw.Text(
           value,
@@ -694,14 +781,17 @@ class RemittanceReportService {
             font: boldFont,
             fontSize: isPrimary ? 10.5 : 9.5,
             fontWeight: pw.FontWeight.bold,
-            color: isPrimary ? const PdfColor.fromInt(0xFF164E87) : PdfColors.black,
+            color: isPrimary
+                ? const PdfColor.fromInt(0xFF164E87)
+                : PdfColors.black,
           ),
         ),
       ],
     );
   }
 
-  static pw.Widget _buildTableCell(String text, pw.Font font, {bool isHeader = false, pw.TextAlign align = pw.TextAlign.left}) {
+  static pw.Widget _buildTableCell(String text, pw.Font font,
+      {bool isHeader = false, pw.TextAlign align = pw.TextAlign.left}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3.5),
       child: pw.Text(
@@ -716,16 +806,21 @@ class RemittanceReportService {
     );
   }
 
-  static pw.Widget _buildSignatoryLine(String title, String name, String subtitle, pw.Font boldFont, pw.Font baseFont) {
+  static pw.Widget _buildSignatoryLine(String title, String name,
+      String subtitle, pw.Font boldFont, pw.Font baseFont) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        pw.Text(title, style: pw.TextStyle(font: baseFont, fontSize: 7, color: PdfColors.grey700)),
+        pw.Text(title,
+            style: pw.TextStyle(
+                font: baseFont, fontSize: 7, color: PdfColors.grey700)),
         pw.SizedBox(height: 24),
         pw.Container(width: 170, height: 0.8, color: PdfColors.black),
         pw.SizedBox(height: 2),
         pw.Text(name, style: pw.TextStyle(font: boldFont, fontSize: 8.5)),
-        pw.Text(subtitle, style: pw.TextStyle(font: baseFont, fontSize: 7, color: PdfColors.grey700)),
+        pw.Text(subtitle,
+            style: pw.TextStyle(
+                font: baseFont, fontSize: 7, color: PdfColors.grey700)),
       ],
     );
   }
@@ -742,7 +837,8 @@ class RemittanceReportService {
     return value;
   }
 
-  static String _fmtAmt(double value) => value == 0.0 ? '' : value.toStringAsFixed(2);
+  static String _fmtAmt(double value) =>
+      value == 0.0 ? '' : value.toStringAsFixed(2);
 
   static Uint8List generateExcelCompatibleCsv(RemittanceReportData report) {
     final buffer = StringBuffer();
@@ -796,7 +892,8 @@ class RemittanceReportService {
       '',
       'Total',
       breakdown.grandAmountTotal.toStringAsFixed(2),
-      ...fundColumns.map((c) => breakdown.col(c['key']!).toStringAsFixed(2)),
+      ...fundColumns
+          .map((c) => breakdown.col(c['key']!).toStringAsFixed(2)),
     ];
     buffer.writeln(totalCells.join(','));
 
@@ -816,34 +913,60 @@ class RemittanceReportService {
 
     // Sacrament Summary Block
     buffer.writeln(',,,,Sacrament,,,,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Baptism Infant,,${breakdown.col('baptism').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Confirmation,,${breakdown.col('confirmation').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Permission,,${breakdown.col('permission').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Certificates,,${breakdown.col('certificates').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Marriage Banns,,${breakdown.col('marriage_banns').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Funeral Mass,,${breakdown.col('funeral_mass').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Funeral Blessing,,${breakdown.col('funeral_blessing').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Mass Intention (60%),,${breakdown.massIntention60.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Mass Intention Collection (60%),,${breakdown.miCollection60.toStringAsFixed(2)},${(breakdown.massIntention60 + breakdown.miCollection60).toStringAsFixed(2)},,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Wedding,,${breakdown.col('wedding').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Sub total,,${breakdown.sacramentSubtotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Baptism Infant,,${breakdown.col('baptism').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Confirmation,,${breakdown.col('confirmation').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Permission,,${breakdown.col('permission').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Certificates,,${breakdown.col('certificates').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Marriage Banns,,${breakdown.col('marriage_banns').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Funeral Mass,,${breakdown.col('funeral_mass').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Funeral Blessing,,${breakdown.col('funeral_blessing').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Mass Intention (60%),,${breakdown.massIntention60.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Mass Intention Collection (60%),,${breakdown.miCollection60.toStringAsFixed(2)},${(breakdown.massIntention60 + breakdown.miCollection60).toStringAsFixed(2)},,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Wedding,,${breakdown.col('wedding').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Sub total,,${breakdown.sacramentSubtotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
     buffer.writeln(',,,,,,,,,,,,,,,,,,,,,,,');
 
     // Parish Fund Summary Block
     buffer.writeln(',,,,Parish Fund,,,,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Weekday Collection,,${breakdown.col('weekday_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Sunday Collection,,${breakdown.col('sunday_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Special Collection,,${breakdown.col('special_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Mass Intention (40%),,${breakdown.massIntention40.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Mass Intention Collection (40%),,${breakdown.miCollection40.toStringAsFixed(2)},${(breakdown.massIntention40 + breakdown.miCollection40).toStringAsFixed(2)},,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Donation Balik Handog,,${breakdown.col('balik_handog').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Donation additional sponsors,,${(breakdown.col('baptism_add') + breakdown.col('confirmation_add')).toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    final combinedDonations = breakdown.col('balik_handog') + breakdown.col('baptism_add') + breakdown.col('confirmation_add') + breakdown.col('donation_parish');
-    buffer.writeln(',,,,Donation from Parishioners,,${breakdown.col('donation_parish').toStringAsFixed(2)},${combinedDonations.toStringAsFixed(2)},,,,,,,,,,,,,,,,');
-    buffer.writeln(',Prepared by:,,,Subsidy from Diocese,,${breakdown.col('subsidy').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Sub total,,${breakdown.parishFundSubtotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',,,,Total,,${breakdown.grandSummaryTotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
-    buffer.writeln(',${_escapeCsv(report.generatedByName)},,,Variance Check (Amount - Total),,${breakdown.variance.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Weekday Collection,,${breakdown.col('weekday_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Sunday Collection,,${breakdown.col('sunday_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Special Collection,,${breakdown.col('special_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Mass Intention (40%),,${breakdown.massIntention40.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Mass Intention Collection (40%),,${breakdown.miCollection40.toStringAsFixed(2)},${(breakdown.massIntention40 + breakdown.miCollection40).toStringAsFixed(2)},,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Donation Balik Handog,,${breakdown.col('balik_handog').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Donation additional sponsors,,${(breakdown.col('baptism_add') + breakdown.col('confirmation_add')).toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    final combinedDonations = breakdown.col('balik_handog') +
+        breakdown.col('baptism_add') +
+        breakdown.col('confirmation_add') +
+        breakdown.col('donation_parish');
+    buffer.writeln(
+        ',,,,Donation from Parishioners,,${breakdown.col('donation_parish').toStringAsFixed(2)},${combinedDonations.toStringAsFixed(2)},,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',Prepared by:,,,Subsidy from Diocese,,${breakdown.col('subsidy').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Sub total,,${breakdown.parishFundSubtotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',,,,Total,,${breakdown.grandSummaryTotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(
+        ',${_escapeCsv(report.generatedByName)},,,Variance Check (Amount - Total),,${breakdown.variance.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
 
     return Uint8List.fromList(utf8.encode(buffer.toString()));
   }
@@ -851,7 +974,8 @@ class RemittanceReportService {
   /// Triggers print or layout preview for PDF
   static Future<void> exportPdf(RemittanceReportData report) async {
     final pdfBytes = await generatePdfReport(report);
-    final periodSlug = report.periodLabel.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final periodSlug =
+    report.periodLabel.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
     await Printing.layoutPdf(
       onLayout: (format) async => pdfBytes,
       name: 'Remittance_Report_$periodSlug',
@@ -861,7 +985,8 @@ class RemittanceReportService {
   /// Exports an Excel-compatible spreadsheet file (.csv) matching the Fund Receipts template
   static Future<void> exportExcel(RemittanceReportData report) async {
     final excelBytes = generateExcelCompatibleCsv(report);
-    final periodSlug = report.periodLabel.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final periodSlug =
+    report.periodLabel.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
     final filename = 'FundReceipts_$periodSlug.csv';
 
     await Printing.sharePdf(

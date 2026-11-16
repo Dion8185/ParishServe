@@ -99,7 +99,8 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
 
   Future<void> _loadPaymentSettings() async {
     try {
-      final settings = await ParishPaymentSettingsService.getSettings();
+      final settings =
+      await ParishPaymentSettingsService.getSettings(forceRefresh: true);
       if (!mounted) return;
       setState(() {
         _paymentSettings = settings;
@@ -144,7 +145,8 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                 (map['requesterName'] as String).isNotEmpty) {
               _requesterNameController.text = map['requesterName'];
             }
-            if (_contactNumberController.text.isEmpty && map['contact'] != null) {
+            if (_contactNumberController.text.isEmpty &&
+                map['contact'] != null) {
               _contactNumberController.text = map['contact'];
             }
             if (!_isParishioner &&
@@ -163,24 +165,28 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
               _stipendAmountController.text = map['stipendAmount'];
             }
 
-            if (map['thanksgiving'] is List && (map['thanksgiving'] as List).isNotEmpty) {
+            if (map['thanksgiving'] is List &&
+                (map['thanksgiving'] as List).isNotEmpty) {
               _thanksgivingControllers.clear();
               for (var name in (map['thanksgiving'] as List)) {
-                _thanksgivingControllers.add(TextEditingController(text: name.toString()));
+                _thanksgivingControllers
+                    .add(TextEditingController(text: name.toString()));
               }
             }
 
             if (map['repose'] is List && (map['repose'] as List).isNotEmpty) {
               _reposeSoulsControllers.clear();
               for (var name in (map['repose'] as List)) {
-                _reposeSoulsControllers.add(TextEditingController(text: name.toString()));
+                _reposeSoulsControllers
+                    .add(TextEditingController(text: name.toString()));
               }
             }
 
             if (map['special'] is List && (map['special'] as List).isNotEmpty) {
               _specialIntentionsControllers.clear();
               for (var name in (map['special'] as List)) {
-                _specialIntentionsControllers.add(TextEditingController(text: name.toString()));
+                _specialIntentionsControllers
+                    .add(TextEditingController(text: name.toString()));
               }
             }
 
@@ -307,8 +313,10 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate.isBefore(today) ? _getNextValidMassDate() : _selectedDate,
-      firstDate: today, // STRICTLY blocks past dates
+      initialDate: _selectedDate.isBefore(today)
+          ? _getNextValidMassDate()
+          : _selectedDate,
+      firstDate: today,
       lastDate: today.add(const Duration(days: 365)),
       selectableDayPredicate: (DateTime day) {
         if (day.isBefore(today)) return false;
@@ -357,18 +365,38 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
         _isExtractingOcr = false;
         _ocrResult = ocrRes;
 
-        if (ocrRes.referenceNumber != null && ocrRes.referenceNumber!.isNotEmpty) {
+        if (ocrRes.referenceNumber != null &&
+            ocrRes.referenceNumber!.isNotEmpty) {
           _gcashRefController.text = ocrRes.referenceNumber!;
         }
         if (ocrRes.amount != null && ocrRes.amount! > 0) {
           _stipendAmountController.text = ocrRes.amount!.toStringAsFixed(2);
         }
       });
+
+      _saveDraft();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ocrRes.isSuccess
+                ? 'Gemini AI scanned receipt!${ocrRes.referenceNumber != null ? " Ref #${ocrRes.referenceNumber}" : ""}${ocrRes.amount != null ? " • ₱${ocrRes.amount!.toStringAsFixed(2)}" : ""}'
+                : (ocrRes.errorMessage ??
+                'Screenshot attached. Please confirm Reference Number and Amount.'),
+          ),
+          backgroundColor: ocrRes.isSuccess
+              ? ParishColors.oliveGreen
+              : ParishColors.goldAccent,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _isExtractingOcr = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error scanning receipt: $e')),
+        SnackBar(
+          content: Text('Error scanning receipt: $e'),
+          backgroundColor: ParishColors.mercyRed,
+        ),
       );
     }
   }
@@ -391,7 +419,8 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.receipt_long, color: Color(0xFF005CEE), size: 22),
+                      const Icon(Icons.receipt_long,
+                          color: Color(0xFF005CEE), size: 22),
                       const SizedBox(width: 8),
                       Text(
                         'GCash Receipt Inspection',
@@ -468,10 +497,12 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final massDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final massDay =
+    DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
     if (massDay.isBefore(today)) {
-      setState(() => _errorMessage = 'Cannot schedule Mass intentions on past dates.');
+      setState(
+              () => _errorMessage = 'Cannot schedule Mass intentions on past dates.');
       return;
     }
 
@@ -480,24 +511,31 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
     final special = _extractCleanList(_specialIntentionsControllers);
     final other = _otherIntentionsController.text.trim();
 
-    if (thanksgiving.isEmpty && repose.isEmpty && special.isEmpty && other.isEmpty) {
-      setState(() => _errorMessage = 'Please provide at least one intention entry.');
+    if (thanksgiving.isEmpty &&
+        repose.isEmpty &&
+        special.isEmpty &&
+        other.isEmpty) {
+      setState(
+              () => _errorMessage = 'Please provide at least one intention entry.');
       return;
     }
 
-    final double enteredAmount = double.tryParse(_stipendAmountController.text.trim()) ?? 0.0;
+    final double enteredAmount =
+        double.tryParse(_stipendAmountController.text.trim()) ?? 0.0;
     if (enteredAmount <= 0) {
       setState(() => _errorMessage = 'Please enter a valid stipend amount.');
       return;
     }
 
-    if (_isParishioner) {
+    if (_isParishioner || _paymentMethod == 'GCash') {
       if (_receiptBytes == null) {
-        setState(() => _errorMessage = 'Please upload your GCash payment screenshot.');
+        setState(() =>
+        _errorMessage = 'Please upload your GCash payment screenshot.');
         return;
       }
       if (_gcashRefController.text.trim().isEmpty) {
-        setState(() => _errorMessage = 'Please provide the GCash Reference Number.');
+        setState(() =>
+        _errorMessage = 'Please provide the GCash Reference Number.');
         return;
       }
     }
@@ -546,14 +584,25 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
       Navigator.pop(context);
       widget.onIntentionSaved?.call();
 
+      final bool isAutoVerifiedGcash =
+          result.isApprovedAndVerified && result.paymentMethod == 'GCash';
+      final String message = isAutoVerifiedGcash
+          ? 'Mass Intention #${result.intentionId} auto-verified via GCash QR and transferred to Receipts Management!'
+          : (result.isApprovedAndVerified
+          ? 'Mass Intention #${result.intentionId} confirmed & receipt issued!'
+          : 'Mass Intention #${result.intentionId} submitted for verification (pending transfer to Receipts Management).');
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Mass Intention #${result.intentionId} successfully booked!'),
-          backgroundColor: ParishColors.oliveGreen,
+          content: Text(message),
+          backgroundColor: result.isApprovedAndVerified
+              ? ParishColors.oliveGreen
+              : ParishColors.goldAccent,
         ),
       );
     } catch (e) {
-      setState(() => _errorMessage = e.toString().replaceFirst('Exception: ', ''));
+      setState(
+              () => _errorMessage = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -580,12 +629,17 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _isParishioner ? 'Book Mass Intention' : 'Encode Mass Intention (Altar Desk)',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+              _isParishioner
+                  ? 'Book Mass Intention'
+                  : 'Encode Mass Intention (Altar Desk)',
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+              overflow: TextOverflow.ellipsis,
             ),
             Text(
               'Wed & Fri (5:30 PM) • Sun (8:00 AM & 4:00 PM)',
               style: TextStyle(fontSize: 12, color: textMuted),
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -607,21 +661,25 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                 children: [
                   Expanded(
                     flex: 6,
-                    child: _buildNamesAndScheduleCard(textDark, textMuted, cardWhite, borderGrey, isSunday),
+                    child: _buildNamesAndScheduleCard(textDark, textMuted,
+                        cardWhite, borderGrey, isSunday),
                   ),
                   const SizedBox(width: 24),
                   Expanded(
                     flex: 4,
-                    child: _buildOfferingAndCheckoutSidebar(textDark, textMuted, cardWhite, borderGrey),
+                    child: _buildOfferingAndCheckoutSidebar(
+                        textDark, textMuted, cardWhite, borderGrey),
                   ),
                 ],
               )
                   : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildNamesAndScheduleCard(textDark, textMuted, cardWhite, borderGrey, isSunday),
+                  _buildNamesAndScheduleCard(textDark, textMuted,
+                      cardWhite, borderGrey, isSunday),
                   const SizedBox(height: 20),
-                  _buildOfferingAndCheckoutSidebar(textDark, textMuted, cardWhite, borderGrey),
+                  _buildOfferingAndCheckoutSidebar(
+                      textDark, textMuted, cardWhite, borderGrey),
                 ],
               ),
             ),
@@ -659,7 +717,10 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
               ),
               child: Text(
                 _errorMessage!,
-                style: const TextStyle(color: ParishColors.mercyRed, fontWeight: FontWeight.bold, fontSize: 13),
+                style: const TextStyle(
+                    color: ParishColors.mercyRed,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13),
               ),
             ),
           ],
@@ -670,11 +731,13 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
             decoration: BoxDecoration(
               color: ParishColors.marianBlueSurface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
+              border:
+              Border.all(color: ParishColors.marianBlue.withOpacity(0.3)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.event_available, color: ParishColors.marianBlue, size: 28),
+                const Icon(Icons.event_available,
+                    color: ParishColors.marianBlue, size: 28),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -682,18 +745,25 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                     children: [
                       const Text(
                         'SELECTED MASS SCHEDULE',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: ParishColors.marianBlue),
                       ),
                       Text(
                         _currentScheduleFullDisplay,
-                        style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: textDark),
+                        style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.bold,
+                            color: textDark),
                       ),
                     ],
                   ),
                 ),
                 TextButton(
                   onPressed: _pickDate,
-                  child: const Text('Change Date', style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: const Text('Change Date',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -706,8 +776,12 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
               value: _selectedMassTime,
               isExpanded: true,
               items: const [
-                DropdownMenuItem(value: '08:00:00', child: Text('8:00 AM (Sunday Morning Mass)')),
-                DropdownMenuItem(value: '16:00:00', child: Text('4:00 PM (Sunday Afternoon Mass)')),
+                DropdownMenuItem(
+                    value: '08:00:00',
+                    child: Text('8:00 AM (Sunday Morning Mass)')),
+                DropdownMenuItem(
+                    value: '16:00:00',
+                    child: Text('4:00 PM (Sunday Afternoon Mass)')),
               ],
               onChanged: (val) {
                 if (val != null) setState(() => _selectedMassTime = val);
@@ -718,58 +792,79 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
           ],
 
           // Requester Info
-          _buildFieldLabel(_isParishioner ? 'Requester Name (Linked)' : 'Requester Name (Walk-In) *'),
+          _buildFieldLabel(_isParishioner
+              ? 'Requester Name (Linked)'
+              : 'Requester Name (Walk-In) *'),
           TextFormField(
             controller: _requesterNameController,
             enabled: !_isParishioner,
             inputFormatters: [TitleCaseInputFormatter()],
-            validator: (v) => SacramentalValidators.validateName(v, 'Requester name', isRequired: true),
+            validator: (v) => SacramentalValidators.validateName(
+                v, 'Requester name',
+                isRequired: true),
             decoration: _inputDecoration(hint: 'Full Name'),
           ),
           const SizedBox(height: 14),
 
-          Row(
-            children: [
-              Expanded(
-                child: Column(
+          LayoutBuilder(
+            builder: (context, fieldConstraints) {
+              final isNarrow = fieldConstraints.maxWidth < 460;
+              final contactField = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildFieldLabel('Contact Number *'),
+                  TextFormField(
+                    controller: _contactNumberController,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      PhilippinePhoneInputFormatter(),
+                    ],
+                    validator: SacramentalValidators.validatePhoneNumber,
+                    decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
+                  ),
+                ],
+              );
+
+              final emailField = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildFieldLabel('Email (Optional)'),
+                  TextFormField(
+                    controller: _emailController,
+                    enabled: !_isParishioner,
+                    decoration: _inputDecoration(hint: 'name@email.com'),
+                  ),
+                ],
+              );
+
+              if (isNarrow) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildFieldLabel('Contact Number *'),
-                    TextFormField(
-                      controller: _contactNumberController,
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        PhilippinePhoneInputFormatter(),
-                      ],
-                      validator: SacramentalValidators.validatePhoneNumber,
-                      decoration: _inputDecoration(hint: '09XX-XXX-XXXX'),
-                    ),
+                    contactField,
+                    const SizedBox(height: 14),
+                    emailField,
                   ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildFieldLabel('Email (Optional)'),
-                    TextFormField(
-                      controller: _emailController,
-                      enabled: !_isParishioner,
-                      decoration: _inputDecoration(hint: 'name@email.com'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: contactField),
+                  const SizedBox(width: 12),
+                  Expanded(child: emailField),
+                ],
+              );
+            },
           ),
           const Divider(height: 32),
 
           // Categorized Lists
           Text(
             'Altar Intentions & Names (Up to 10 per Category)',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+            style: TextStyle(
+                fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
           ),
           const SizedBox(height: 12),
 
@@ -805,7 +900,9 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
             controller: _otherIntentionsController,
             maxLength: 150,
             maxLines: 2,
-            buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            buildCounter: (context,
+                {required currentLength, required isFocused, maxLength}) =>
+            null,
             decoration: _inputDecoration(hint: 'Special private petitions'),
             onChanged: (_) => _recalculateDefaultStipend(),
           ),
@@ -832,7 +929,8 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
         children: [
           Text(
             'Offering Stipend & Checkout',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.bold, color: textDark),
           ),
           const Divider(height: 20),
 
@@ -842,8 +940,11 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
               value: _paymentMethod,
               isExpanded: true,
               items: const [
-                DropdownMenuItem(value: 'Cash (Walk-In Desk)', child: Text('Cash (Walk-In Desk)')),
-                DropdownMenuItem(value: 'GCash', child: Text('GCash Direct Transfer')),
+                DropdownMenuItem(
+                    value: 'Cash (Walk-In Desk)',
+                    child: Text('Cash (Walk-In Desk)')),
+                DropdownMenuItem(
+                    value: 'GCash', child: Text('GCash Direct Transfer')),
               ],
               onChanged: (val) {
                 if (val != null) setState(() => _paymentMethod = val);
@@ -856,12 +957,16 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
           _buildFieldLabel('Offering Amount (PHP) *'),
           TextFormField(
             controller: _stipendAmountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+            keyboardType:
+            const TextInputType.numberWithOptions(decimal: true),
+            style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
             decoration: _inputDecoration(
               prefixIcon: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                child: Text('₱', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                child: Text('₱',
+                    style:
+                    TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               ),
             ),
           ),
@@ -873,35 +978,77 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
               decoration: BoxDecoration(
                 color: const Color(0xFFF0F7FF),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF005CEE).withOpacity(0.3)),
+                border: Border.all(
+                    color: const Color(0xFF005CEE).withOpacity(0.3)),
               ),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.qr_code, color: Color(0xFF005CEE)),
-                      const SizedBox(width: 8),
-                      Text(
-                        'GCash: ${_paymentSettings.gcashAccountNumber}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF005CEE)),
+                  // Parish Official GCash QR Display
+                  Container(
+                    width: 130,
+                    height: 130,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: borderGrey),
+                    ),
+                    child: _isLoadingPaymentSettings
+                        ? const Center(child: CircularProgressIndicator())
+                        : (_paymentSettings.gcashQrCodeUrl != null &&
+                        _paymentSettings.gcashQrCodeUrl!.isNotEmpty
+                        ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        _paymentSettings.gcashQrCodeUrl!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) =>
+                            _buildFallbackQr(),
                       ),
-                    ],
+                    )
+                        : _buildFallbackQr()),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Account: ${_paymentSettings.gcashAccountName}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 12.5),
+                    textAlign: TextAlign.center,
+                  ),
+                  Text(
+                    'GCash: ${_paymentSettings.gcashAccountNumber}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF005CEE),
+                        fontSize: 12.5),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 10),
 
                   // Upload / Attached Box with Zoom Preview
                   if (_receiptBytes == null)
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFF005CEE)),
-                        foregroundColor: const Color(0xFF005CEE),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF005CEE)),
+                          foregroundColor: const Color(0xFF005CEE),
+                        ),
+                        onPressed:
+                        _isExtractingOcr ? null : _pickReceiptScreenshot,
+                        icon: _isExtractingOcr
+                            ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child:
+                            CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.auto_awesome, size: 17),
+                        label: Text(
+                          _isExtractingOcr
+                              ? 'Scanning with Gemini AI...'
+                              : 'Upload Receipt (Gemini OCR)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      onPressed: _isExtractingOcr ? null : _pickReceiptScreenshot,
-                      icon: _isExtractingOcr
-                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.document_scanner),
-                      label: Text(_isExtractingOcr ? 'Scanning with OCR...' : 'Upload Receipt Screenshot'),
                     )
                   else
                     Container(
@@ -909,7 +1056,8 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: borderGrey.withValues(alpha: 0.6)),
+                        border: Border.all(
+                            color: borderGrey.withValues(alpha: 0.6)),
                       ),
                       child: Row(
                         children: [
@@ -935,13 +1083,15 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                                 Container(
                                   padding: const EdgeInsets.all(3),
                                   decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
+                                    color:
+                                    Colors.black.withValues(alpha: 0.6),
                                     borderRadius: const BorderRadius.only(
                                       topLeft: Radius.circular(6),
                                       bottomRight: Radius.circular(8),
                                     ),
                                   ),
-                                  child: const Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                                  child: const Icon(Icons.zoom_in,
+                                      color: Colors.white, size: 14),
                                 ),
                               ],
                             ),
@@ -953,13 +1103,19 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                               children: [
                                 Text(
                                   _receiptFileName ?? 'receipt.jpg',
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Tap thumbnail to inspect',
-                                  style: TextStyle(fontSize: 11, color: textMuted),
+                                  _isExtractingOcr
+                                      ? 'Extracting with Gemini AI...'
+                                      : (_ocrResult?.errorMessage ??
+                                      'Tap thumbnail to inspect'),
+                                  style: TextStyle(
+                                      fontSize: 11, color: textMuted),
                                 ),
                                 const SizedBox(height: 4),
                                 Row(
@@ -971,15 +1127,23 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                                       ),
                                       child: const Text(
                                         'Inspect',
-                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF005CEE)),
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF005CEE)),
                                       ),
                                     ),
                                     const SizedBox(width: 12),
                                     InkWell(
-                                      onTap: _pickReceiptScreenshot,
+                                      onTap: _isExtractingOcr
+                                          ? null
+                                          : _pickReceiptScreenshot,
                                       child: Text(
                                         'Replace',
-                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted),
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: textMuted),
                                       ),
                                     ),
                                   ],
@@ -988,8 +1152,12 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close, size: 18, color: ParishColors.mercyRed),
-                            onPressed: () => setState(() => _receiptBytes = null),
+                            icon: const Icon(Icons.close,
+                                size: 18, color: ParishColors.mercyRed),
+                            onPressed: () => setState(() {
+                              _receiptBytes = null;
+                              _ocrResult = null;
+                            }),
                           ),
                         ],
                       ),
@@ -1012,11 +1180,16 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: ParishColors.marianBlue,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: _isSubmitting ? null : _submitMassIntention,
               icon: _isSubmitting
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.check, size: 20),
               label: Text(
                 _isSubmitting
@@ -1024,12 +1197,27 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                     : (!_isParishioner && _paymentMethod.contains('Cash')
                     ? 'Confirm & Issue Receipt'
                     : 'Submit Mass Intention'),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFallbackQr() {
+    return const Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.qr_code, size: 75, color: Color(0xFF005CEE)),
+        Text('SCAN TO PAY GCASH',
+            style: TextStyle(
+                fontSize: 8.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF005CEE))),
+      ],
     );
   }
 
@@ -1055,9 +1243,15 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
               Icon(icon, size: 16, color: color),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13)),
               ),
-              Text('${controllers.length}/10', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
+              Text('${controllers.length}/10',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: color)),
             ],
           ),
           const SizedBox(height: 8),
@@ -1072,14 +1266,20 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
                     child: TextFormField(
                       controller: ctrl,
                       maxLength: 100,
-                      buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                      buildCounter: (_,
+                          {required currentLength,
+                            required isFocused,
+                            maxLength}) =>
+                      null,
                       onChanged: (_) => _recalculateDefaultStipend(),
-                      decoration: _inputDecoration(hint: 'Entry #${idx + 1} Name'),
+                      decoration:
+                      _inputDecoration(hint: 'Entry #${idx + 1} Name'),
                     ),
                   ),
                   if (controllers.length > 1)
                     IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, color: ParishColors.mercyRed, size: 18),
+                      icon: const Icon(Icons.remove_circle_outline,
+                          color: ParishColors.mercyRed, size: 18),
                       onPressed: () => _removeListItem(controllers, idx),
                     ),
                 ],
@@ -1113,7 +1313,11 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
   Widget _buildFieldLabel(String label) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.textDark)),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: ParishColors.textDark)),
     );
   }
 
@@ -1125,9 +1329,15 @@ class _BookMassIntentionPageState extends State<BookMassIntentionPage> {
       fillColor: ParishColors.backgroundLight,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ParishColors.borderGrey)),
-      focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10)), borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8)),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: ParishColors.borderGrey)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: ParishColors.borderGrey)),
+      focusedBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(10)),
+          borderSide: BorderSide(color: ParishColors.marianBlue, width: 1.8)),
     );
   }
 }

@@ -11,6 +11,46 @@ import 'payment_reference_service.dart';
 class MassIntentionService {
   static final SupabaseClient _client = Supabase.instance.client;
 
+  /// Safely updates the local SQLite `mass_intentions` cache by filtering
+  /// out columns that do not exist in the local SQLite table schema.
+  static Future<void> _safeLocalMassIntentionUpdate(
+      String intentionId,
+      Map<String, dynamic> payload,
+      ) async {
+    if (kIsWeb) return;
+    try {
+      final db = await LocalDatabaseService.instance.database;
+      if (db == null) return;
+
+      final tableInfo =
+      await db.rawQuery('PRAGMA table_info(mass_intentions)');
+      final validColumns = tableInfo
+          .map((row) => row['name']?.toString() ?? '')
+          .where((name) => name.isNotEmpty)
+          .toSet();
+
+      if (validColumns.isEmpty) return;
+
+      final filteredPayload = <String, dynamic>{};
+      payload.forEach((key, value) {
+        if (validColumns.contains(key)) {
+          filteredPayload[key] = value;
+        }
+      });
+
+      if (filteredPayload.isNotEmpty) {
+        await db.update(
+          'mass_intentions',
+          filteredPayload,
+          where: 'intention_id = ?',
+          whereArgs: [intentionId],
+        );
+      }
+    } catch (e) {
+      debugPrint('[MassIntentionService] Local SQLite update skipped: $e');
+    }
+  }
+
   /// Fetch all mass intentions ordered by scheduled date and time.
   /// Online/Web: queries Supabase and caches to SQLite.
   /// Offline native: queries SQLite directly.
@@ -28,8 +68,10 @@ class MassIntentionService {
           query = query.eq('intention_status', statusFilter.toLowerCase());
         }
 
-        if (verificationFilter != null && verificationFilter.toLowerCase() != 'all') {
-          query = query.eq('verification_status', verificationFilter.toLowerCase());
+        if (verificationFilter != null &&
+            verificationFilter.toLowerCase() != 'all') {
+          query = query.eq(
+              'verification_status', verificationFilter.toLowerCase());
         }
 
         final response = await query
@@ -107,7 +149,9 @@ class MassIntentionService {
             .order('scheduled_date', ascending: false);
 
         if ((emailMatches as List).isNotEmpty) {
-          return emailMatches.map((e) => MassIntentionModel.fromMap(e)).toList();
+          return emailMatches
+              .map((e) => MassIntentionModel.fromMap(e))
+              .toList();
         }
       }
 
@@ -117,7 +161,9 @@ class MassIntentionService {
           .ilike('requester_name', '%$cleanName%')
           .order('scheduled_date', ascending: false);
 
-      return (nameMatches as List).map((e) => MassIntentionModel.fromMap(e)).toList();
+      return (nameMatches as List)
+          .map((e) => MassIntentionModel.fromMap(e))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -130,33 +176,42 @@ class MassIntentionService {
     required String fileName,
   }) async {
     try {
-      final cleanExtension = fileName.contains('.') ? fileName.split('.').last : 'jpg';
-      final filePath = 'gcash_receipts/$intentionId/receipt_${DateTime.now().millisecondsSinceEpoch}.$cleanExtension';
+      final cleanExtension =
+      fileName.contains('.') ? fileName.split('.').last : 'jpg';
+      final filePath =
+          'gcash_receipts/$intentionId/receipt_${DateTime.now().millisecondsSinceEpoch}.$cleanExtension';
 
       await _client.storage.from('certificate-assets').uploadBinary(
         filePath,
         fileBytes,
         fileOptions: FileOptions(
-          contentType: cleanExtension == 'pdf' ? 'application/pdf' : 'image/$cleanExtension',
+          contentType: cleanExtension == 'pdf'
+              ? 'application/pdf'
+              : 'image/$cleanExtension',
           upsert: true,
         ),
       );
 
       return _client.storage.from('certificate-assets').getPublicUrl(filePath);
     } catch (e) {
-      debugPrint('[MassIntentionService] Error uploading receipt screenshot: $e');
+      debugPrint(
+          '[MassIntentionService] Error uploading receipt screenshot: $e');
       return null;
     }
   }
 
   /// Create and register a complete Mass Intention.
-  /// Enforces role rules: Parishioners can only pay via GCash; Secretary can encode walk-in Cash or GCash.
+  /// - GCash QR payments are automatically approved, verified, and transferred to
+  ///   Receipts Management (`parish_transactions`) ONLY if the GCash reference and
+  ///   amount match an unused entry in `payment_references`.
+  /// - Unmatched/unverified GCash submissions remain pending and are NOT transferred
+  ///   to Receipts Management until verified.
   static Future<MassIntentionModel> createMassIntention({
     required String requesterName,
     required String contactNumber,
     String? email,
-    required String date,       // YYYY-MM-DD
-    required String massTime,   // "17:30:00", "08:00:00", "16:00:00"
+    required String date, // YYYY-MM-DD
+    required String massTime, // "17:30:00", "08:00:00", "16:00:00"
     required List<String> thanksgivingList,
     required List<String> reposeSoulsList,
     required List<String> specialIntentionsList,
@@ -193,7 +248,8 @@ class MassIntentionService {
     }
 
     // Strict Time Validation
-    if (parsedDate.weekday == DateTime.wednesday || parsedDate.weekday == DateTime.friday) {
+    if (parsedDate.weekday == DateTime.wednesday ||
+        parsedDate.weekday == DateTime.friday) {
       if (!massTime.startsWith('17:30')) {
         throw 'Weekday Mass Intentions (Wednesdays & Fridays) can only be set at 5:30 PM.';
       }
@@ -205,31 +261,53 @@ class MassIntentionService {
 
     final intentionId = await _generateIntentionId();
     final String? currentUserId = AuthService.currentUser?.userId;
-    final bool isStaff = AuthService.currentUser?.userRole.toLowerCase() != 'user';
+    final bool isStaff =
+        AuthService.currentUser?.userRole.toLowerCase() != 'user';
 
     // Users are strictly locked to GCash. Secretary may accept Walk-In Cash or GCash.
     final String effectivePaymentMethod = isStaff ? paymentMethod : 'GCash';
+    final bool isImmediateCashConfirmation =
+        isStaff && effectivePaymentMethod.toLowerCase().contains('cash');
 
-    // Walk-ins handled directly by Secretary with Cash intake can be auto-confirmed on desk
-    final bool isImmediateCashConfirmation = isStaff && effectivePaymentMethod.toLowerCase().contains('cash');
-    final String initialStatus = isImmediateCashConfirmation ? 'confirmed' : 'pending';
-    final String initialPaymentStatus = isImmediateCashConfirmation ? 'verified' : 'pending';
-    final String initialVerificationStatus = isImmediateCashConfirmation ? 'verified' : 'pending';
-
-    // Automated counter-check against existing payment references
+    // Automated counter-check against existing payment references for GCash QR payments
     String? matchedRefId;
+    bool isAutoVerifiedByGcashQr = false;
+
     if (effectivePaymentMethod == 'GCash') {
-      final refToSearch = gcashReferenceNo ?? ocrReferenceNumber;
-      if (refToSearch != null && refToSearch.trim().isNotEmpty) {
+      final refToSearch = (gcashReferenceNo != null &&
+          gcashReferenceNo.trim().isNotEmpty)
+          ? gcashReferenceNo.trim()
+          : (ocrReferenceNumber?.trim() ?? '');
+      final double amountToVerify =
+      (ocrAmount != null && ocrAmount > 0) ? ocrAmount : stipendAmount;
+
+      if (refToSearch.isNotEmpty) {
         final existingRef = await PaymentReferenceService.findMatchingReference(
-          referenceNumber: refToSearch.trim(),
-          expectedAmount: ocrAmount ?? stipendAmount,
+          referenceNumber: refToSearch,
+          expectedAmount: amountToVerify,
         );
-        if (existingRef != null && existingRef.isUnused) {
+
+        final bool ocrMatchesStipend =
+            ocrAmount == null || (ocrAmount - stipendAmount).abs() < 0.01;
+
+        if (existingRef != null &&
+            existingRef.isUnused &&
+            ocrMatchesStipend) {
           matchedRefId = existingRef.referenceId;
+          isAutoVerifiedByGcashQr = true;
         }
       }
     }
+
+    final bool shouldAutoApprove =
+        isImmediateCashConfirmation || isAutoVerifiedByGcashQr;
+
+    final String initialStatus = shouldAutoApprove ? 'confirmed' : 'pending';
+    final String initialPaymentStatus =
+    shouldAutoApprove ? 'verified' : 'pending';
+    final String initialVerificationStatus = shouldAutoApprove
+        ? 'verified'
+        : (effectivePaymentMethod == 'GCash' ? 'unmatched' : 'pending');
 
     final payload = {
       'intention_id': intentionId,
@@ -242,11 +320,14 @@ class MassIntentionService {
       'thanksgiving_list': thanksgivingList,
       'repose_souls_list': reposeSoulsList,
       'special_intentions_list': specialIntentionsList,
-      'other_intentions': otherIntentions?.trim().isEmpty ?? true ? null : otherIntentions!.trim(),
+      'other_intentions':
+      otherIntentions?.trim().isEmpty ?? true ? null : otherIntentions!.trim(),
       'stipend_amount': stipendAmount,
       'payment_method': effectivePaymentMethod,
       'payment_status': initialPaymentStatus,
-      'gcash_reference_no': gcashReferenceNo?.trim().isEmpty ?? true ? null : gcashReferenceNo!.trim(),
+      'gcash_reference_no': gcashReferenceNo?.trim().isEmpty ?? true
+          ? null
+          : gcashReferenceNo!.trim(),
       'intention_status': initialStatus,
       'remarks': remarks?.trim().isEmpty ?? true ? null : remarks!.trim(),
       'receipt_image_url': receiptImageUrl,
@@ -271,16 +352,27 @@ class MassIntentionService {
 
         final created = MassIntentionModel.fromMap(response);
 
-        // If staff recorded walk-in cash intake, generate official receipt immediately
-        if (isImmediateCashConfirmation) {
+        // Only transfer to Receipts Management if automatically approved & verified
+        if (isAutoVerifiedByGcashQr) {
+          final txnRecord = await _generateReceiptForIntention(created, 'GCash');
+          if (matchedRefId != null && matchedRefId.isNotEmpty) {
+            await PaymentReferenceService.markAsUsed(
+              referenceId: matchedRefId,
+              intentionId: created.intentionId,
+              transactionId: txnRecord['transaction_id']?.toString(),
+            );
+          }
+        } else if (isImmediateCashConfirmation) {
           await _generateReceiptForIntention(created, 'Cash');
         }
 
         if (!kIsWeb) {
-          await RecordsSyncService.instance.cacheRemoteRecordsLocally(
-            'mass_intentions',
-            [response],
-          );
+          try {
+            await RecordsSyncService.instance.cacheRemoteRecordsLocally(
+              'mass_intentions',
+              [response],
+            );
+          } catch (_) {}
         }
 
         return created;
@@ -302,8 +394,8 @@ class MassIntentionService {
 
   /// Secretary approval of Mass Intention and Payment:
   /// 1. Updates status to confirmed and verified in Supabase and SQLite
-  /// 2. Marks reference as used
-  /// 3. Generates the official receipt in parish_transactions
+  /// 2. Generates the official receipt in parish_transactions
+  /// 3. Marks reference as used (linked to intention and transaction)
   static Future<Map<String, dynamic>> approveAndVerifyIntention({
     required MassIntentionModel intention,
     required double verifiedAmount,
@@ -317,7 +409,8 @@ class MassIntentionService {
       'verification_status': 'verified',
       'gcash_reference_no': verifiedRefNumber.trim(),
       'stipend_amount': verifiedAmount,
-      'matching_reference_id': matchingReferenceId ?? intention.matchingReferenceId,
+      'matching_reference_id':
+      matchingReferenceId ?? intention.matchingReferenceId,
       'updated_at': now.toIso8601String(),
     };
 
@@ -326,26 +419,7 @@ class MassIntentionService {
         .update(updatePayload)
         .eq('intention_id', intention.intentionId);
 
-    if (!kIsWeb) {
-      final db = await LocalDatabaseService.instance.database;
-      if (db != null) {
-        await db.update(
-          'mass_intentions',
-          updatePayload,
-          where: 'intention_id = ?',
-          whereArgs: [intention.intentionId],
-        );
-      }
-    }
-
-    // If matching payment reference is present, mark as used
-    final refId = matchingReferenceId ?? intention.matchingReferenceId;
-    if (refId != null && refId.isNotEmpty) {
-      await PaymentReferenceService.markAsUsed(
-        referenceId: refId,
-        intentionId: intention.intentionId,
-      );
-    }
+    await _safeLocalMassIntentionUpdate(intention.intentionId, updatePayload);
 
     // Generate Official Receipt in parish_transactions
     final updatedModel = intention.copyWith(
@@ -360,6 +434,16 @@ class MassIntentionService {
       updatedModel,
       intention.paymentMethod,
     );
+
+    // If matching payment reference is present, mark as used with transaction link
+    final refId = matchingReferenceId ?? intention.matchingReferenceId;
+    if (refId != null && refId.isNotEmpty) {
+      await PaymentReferenceService.markAsUsed(
+        referenceId: refId,
+        intentionId: intention.intentionId,
+        transactionId: txnRecord['transaction_id']?.toString(),
+      );
+    }
 
     return txnRecord;
   }
@@ -402,19 +486,10 @@ class MassIntentionService {
         .update(updatePayload)
         .eq('intention_id', intentionId);
 
-    if (!kIsWeb) {
-      final db = await LocalDatabaseService.instance.database;
-      if (db != null) {
-        await db.update(
-          'mass_intentions',
-          updatePayload,
-          where: 'intention_id = ?',
-          whereArgs: [intentionId],
-        );
-      }
-    }
+    await _safeLocalMassIntentionUpdate(intentionId, updatePayload);
 
-    final refId = matchingReferenceId ?? res?['matching_reference_id']?.toString();
+    final refId =
+        matchingReferenceId ?? res?['matching_reference_id']?.toString();
     if (refId != null && refId.isNotEmpty) {
       await PaymentReferenceService.releaseReference(refId);
     }
@@ -439,11 +514,16 @@ class MassIntentionService {
       lines.add('• Others: ${item.otherIntentions}');
     }
 
-    final serviceTitle = 'Mass Intention (${item.dayOfWeekName}, ${item.formattedDate} at ${item.formattedTime12Hour})';
-    final refNote = (item.gcashReferenceNo != null && item.gcashReferenceNo!.isNotEmpty)
+    final normalizedMode =
+    paymentMode.toLowerCase().contains('gcash') ? 'GCash' : 'Cash';
+    final serviceTitle =
+        'Mass Intention (${item.dayOfWeekName}, ${item.formattedDate} at ${item.formattedTime12Hour})';
+    final refNote = (item.gcashReferenceNo != null &&
+        item.gcashReferenceNo!.isNotEmpty)
         ? '\nGCash Ref: ${item.gcashReferenceNo}'
         : '';
-    final details = '• $serviceTitle\n${lines.join("\n")}$refNote\nIntention ID: ${item.intentionId}';
+    final details =
+        '• $serviceTitle\n${lines.join("\n")}\nTender Mode: $normalizedMode$refNote\nIntention ID: ${item.intentionId}';
 
     return await SecretaryService.createTransaction(
       payorName: item.requesterName,
@@ -452,6 +532,9 @@ class MassIntentionService {
       transactionDetails: details,
       transactionAmount: item.stipendAmount,
       transactionType: 'mass_intention',
+      paymentMode: normalizedMode,
+      receiptImageUrl: item.receiptImageUrl,
+      verificationStatus: 'verified',
       transactionDate: item.scheduledDate,
     );
   }
@@ -475,7 +558,8 @@ class MassIntentionService {
       throw 'Mass Intentions can only be moved to Wednesdays, Fridays, and Sundays.';
     }
 
-    final bool isParishioner = AuthService.currentUser?.userRole.toLowerCase() == 'user';
+    final bool isParishioner =
+        AuthService.currentUser?.userRole.toLowerCase() == 'user';
     final targetStatus = isParishioner ? 'pending' : 'confirmed';
 
     final now = DateTime.now();
@@ -484,7 +568,8 @@ class MassIntentionService {
     final auditLog =
         '[Rescheduled on $dateStamp]: Moved from $previousDate ($previousTime) to $newDate ($newMassTime). Reason: $reason';
 
-    final updatedRemarks = (previousRemarks == null || previousRemarks.trim().isEmpty)
+    final updatedRemarks =
+    (previousRemarks == null || previousRemarks.trim().isEmpty)
         ? auditLog
         : '$previousRemarks\n$auditLog';
 
@@ -499,14 +584,12 @@ class MassIntentionService {
     final isOnline = await RecordsSyncService.instance.checkConnectivity();
     if (isOnline || kIsWeb) {
       try {
-        await _client.from('mass_intentions').update(updatePayload).eq('intention_id', intentionId);
+        await _client
+            .from('mass_intentions')
+            .update(updatePayload)
+            .eq('intention_id', intentionId);
 
-        if (!kIsWeb) {
-          final db = await LocalDatabaseService.instance.database;
-          if (db != null) {
-            await db.update('mass_intentions', updatePayload, where: 'intention_id = ?', whereArgs: [intentionId]);
-          }
-        }
+        await _safeLocalMassIntentionUpdate(intentionId, updatePayload);
         return;
       } catch (e) {
         if (kIsWeb) rethrow;
@@ -523,7 +606,8 @@ class MassIntentionService {
   }
 
   /// Update Mass Intention status
-  static Future<void> updateStatus(String intentionId, String newStatus) async {
+  static Future<void> updateStatus(
+      String intentionId, String newStatus) async {
     final updatePayload = {
       'intention_status': newStatus.toLowerCase(),
       'updated_at': DateTime.now().toIso8601String(),
@@ -532,14 +616,12 @@ class MassIntentionService {
     final isOnline = await RecordsSyncService.instance.checkConnectivity();
     if (isOnline || kIsWeb) {
       try {
-        await _client.from('mass_intentions').update(updatePayload).eq('intention_id', intentionId);
+        await _client
+            .from('mass_intentions')
+            .update(updatePayload)
+            .eq('intention_id', intentionId);
 
-        if (!kIsWeb) {
-          final db = await LocalDatabaseService.instance.database;
-          if (db != null) {
-            await db.update('mass_intentions', updatePayload, where: 'intention_id = ?', whereArgs: [intentionId]);
-          }
-        }
+        await _safeLocalMassIntentionUpdate(intentionId, updatePayload);
         return;
       } catch (e) {
         if (kIsWeb) rethrow;
@@ -614,7 +696,8 @@ class MassIntentionService {
       } catch (_) {}
     }
 
-    final timestampSeq = (now.millisecondsSinceEpoch ~/ 100 % 9000 + 1000).toString();
+    final timestampSeq =
+    (now.millisecondsSinceEpoch ~/ 100 % 9000 + 1000).toString();
     return 'INT-$yearSuffix-$timestampSeq';
   }
 }
