@@ -45,9 +45,7 @@ class _AppointmentSubmissionSuccessDialog extends StatelessWidget {
     } else if (s.contains('baptism')) {
       return [
         'PSA Authenticated Birth Certificate / Certified True Copy of Live Birth (Child)',
-        'Parents\' PSA Catholic Marriage Contract (or Certificate of No Marriage/COLB Acknowledgement under Canon 877 if unmarried)',
-        'Baptismal & Confirmation Certificates of Catholic Godparents (Ninong & Ninang)',
-        'Pre-Baptismal Seminar Attendance Certificate (Parents & Sponsors)',
+        'Parents\' PSA Catholic Marriage Contract (If Married)',
         'Photocopy of Valid Government ID of Parents',
       ];
     } else if (s.contains('funeral')) {
@@ -345,7 +343,7 @@ class _AppointmentSubmissionSuccessDialog extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '• Tuesday to Sunday: 8:00 AM – 12:00 PM | 1:30 PM – 5:00 PM\n'
+                            '• Wednesday to Sunday: 9:00 AM – 12:00 PM | 2:00 PM – 4:00 PM\n'
                                 '• Monday: Closed (Clergy Rest Day & Office Sanitation)\n'
                                 '• Location: Parish Secretariat, St. John Paul II Parish, Brgy. Labuin, Sta. Cruz, Laguna',
                             style: TextStyle(

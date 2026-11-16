@@ -321,7 +321,7 @@ class _ParishCalendarPageState extends State<ParishCalendarPage> {
                   const SizedBox(height: 4),
                   Text(
                     '• Claim location: Parish Secretariat, St. John Paul II Parish (Brgy. Labuin, Sta. Cruz, Laguna).\n'
-                        '• Office Hours: Tuesday to Sunday: 8:00 AM – 12:00 PM | 1:30 PM – 5:00 PM\n'
+                        '• Office Hours: Wednesday to Sunday: 9:00 AM – 12:00 PM | 2:00 PM – 4:00 PM\n'
                         '• Monday: Closed (Clergy Rest Day)',
                     style: TextStyle(fontSize: 11.5, color: ParishColors.textMuted, height: 1.35),
                   ),

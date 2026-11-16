@@ -1386,9 +1386,9 @@ class _DashboardViewState extends State<DashboardView> {
             ],
           ),
           const SizedBox(height: 15),
-          _buildScheduleRow('Sunday Holy Masses', '8:00 AM • 4:00 PM (Main Altar)', Icons.wb_sunny_outlined),
+          _buildScheduleRow('Sunday Holy Masses', '8:00 AM • 4:00 PM', Icons.wb_sunny_outlined),
           _buildScheduleRow('Weekday Holy Masses', 'Wednesday & Friday 5:30 PM', Icons.schedule_rounded),
-          _buildScheduleRow('Confessions & Anointing', 'By appointment or Saturday 4:00 PM', Icons.favorite_border_rounded),
+          _buildScheduleRow('Confessions & Anointing', 'By appointment', Icons.favorite_border_rounded),
         ],
       ),
     );
@@ -1479,7 +1479,7 @@ class _DashboardViewState extends State<DashboardView> {
                 const SizedBox(width: 9),
                 Expanded(
                   child: Text(
-                    'Tuesday to Sunday\n8:00 AM – 12:00 PM  |  1:30 PM – 5:00 PM',
+                    'Wednesday to Sunday\n8:00 AM – 12:00 PM  |  1:30 PM – 5:00 PM',
                     style: TextStyle(fontSize: 11, color: textDark, height: 1.5, fontWeight: FontWeight.w600),
                   ),
                 ),

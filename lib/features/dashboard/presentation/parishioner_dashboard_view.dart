@@ -1092,7 +1092,7 @@ class _ParishionerDashboardViewState extends State<ParishionerDashboardView> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '• Tuesday – Sunday: 8:00 AM – 12:00 PM | 1:30 PM – 5:00 PM\n• Monday: Closed (Clergy Rest Day)',
+                  '• Tuesday – Sunday: 9:00 AM – 12:00 PM | 2:00 PM – 4:00 PM\n• Monday: Closed (Clergy Rest Day)',
                   style: TextStyle(fontSize: 12, color: ParishColors.textMuted, height: 1.4),
                 ),
               ],
