@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -40,6 +39,13 @@ class RemittanceItem {
     final min = transactionDate.minute.toString().padLeft(2, '0');
     return '$y-$m-$d $h:$min';
   }
+
+  String get dateOnly {
+    final y = transactionDate.year.toString();
+    final m = transactionDate.month.toString().padLeft(2, '0');
+    final d = transactionDate.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
 }
 
 class RemittanceReportData {
@@ -74,6 +80,50 @@ class RemittanceReportData {
   });
 }
 
+class FundDistributionRow {
+  final RemittanceItem item;
+  final Map<String, double> allocations;
+
+  const FundDistributionRow({
+    required this.item,
+    required this.allocations,
+  });
+}
+
+class FundReceiptsBreakdown {
+  final List<FundDistributionRow> rows;
+  final Map<String, double> columnTotals;
+  final double grandAmountTotal;
+
+  // 60% / 40% Mass Intention Split
+  final double massIntention60;
+  final double massIntention40;
+  final double miCollection60;
+  final double miCollection40;
+
+  // Summary Blocks
+  final double sacramentSubtotal;
+  final double parishFundSubtotal;
+  final double grandSummaryTotal;
+  final double variance;
+
+  const FundReceiptsBreakdown({
+    required this.rows,
+    required this.columnTotals,
+    required this.grandAmountTotal,
+    required this.massIntention60,
+    required this.massIntention40,
+    required this.miCollection60,
+    required this.miCollection40,
+    required this.sacramentSubtotal,
+    required this.parishFundSubtotal,
+    required this.grandSummaryTotal,
+    required this.variance,
+  });
+
+  double col(String key) => columnTotals[key] ?? 0.0;
+}
+
 class RemittanceReportService {
   RemittanceReportService._();
 
@@ -83,6 +133,210 @@ class RemittanceReportService {
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
+  // Canonical 18 Fund Receipts Columns (Cols G through X)
+  static const List<Map<String, String>> fundColumns = [
+    {'key': 'donation_parish', 'label': 'Donation for Parish'},
+    {'key': 'subsidy', 'label': 'Subsidy'},
+    {'key': 'baptism', 'label': 'Baptism'},
+    {'key': 'baptism_add', 'label': 'additional sponsor/donation'},
+    {'key': 'confirmation', 'label': 'CONFIRMATION'},
+    {'key': 'confirmation_add', 'label': 'additional/donation'},
+    {'key': 'permission', 'label': 'permission'},
+    {'key': 'funeral_mass', 'label': 'funeral mass'},
+    {'key': 'funeral_blessing', 'label': 'funeral blessing'},
+    {'key': 'certificates', 'label': 'certificates'},
+    {'key': 'wedding', 'label': 'wedding'},
+    {'key': 'marriage_banns', 'label': 'marriage banns'},
+    {'key': 'mass_intentions', 'label': 'mass intentions'},
+    {'key': 'balik_handog', 'label': 'Balik Handog'},
+    {'key': 'weekday_coll', 'label': 'Weekday Collection'},
+    {'key': 'sunday_coll', 'label': 'Sunday Collection'},
+    {'key': 'special_coll', 'label': 'Special Collection'},
+    {'key': 'mi_coll', 'label': 'MI/ Collection'},
+  ];
+
+  static String _matchFundColumnKey(String title) {
+    final lower = title.toLowerCase().trim();
+
+    if (lower.contains('additional sponsor') ||
+        (lower.contains('baptism') && lower.contains('add'))) {
+      return 'baptism_add';
+    }
+    if ((lower.contains('confirmation') && lower.contains('add')) ||
+        lower.startsWith('additional/donation') ||
+        lower.startsWith('additional / donation')) {
+      return 'confirmation_add';
+    }
+    if (lower.contains('certificate') || lower.contains('pabuklat')) {
+      return 'certificates';
+    }
+    if (lower.contains('baptism')) {
+      return 'baptism';
+    }
+    if (lower.contains('confirmation')) {
+      return 'confirmation';
+    }
+    if (lower.contains('permission')) {
+      return 'permission';
+    }
+    if (lower.contains('funeral blessing')) {
+      return 'funeral_blessing';
+    }
+    if (lower.contains('funeral')) {
+      return 'funeral_mass';
+    }
+    if (lower.contains('marriage banns') || lower.contains('banns')) {
+      return 'marriage_banns';
+    }
+    if (lower.contains('wedding') ||
+        lower.contains('nuptial') ||
+        lower.contains('marriage')) {
+      return 'wedding';
+    }
+    if (lower.contains('mi / collection') ||
+        lower.contains('mi/ collection') ||
+        lower.contains('mi collection')) {
+      return 'mi_coll';
+    }
+    if (lower.contains('mass') ||
+        lower.contains('intention') ||
+        lower.contains('thanksgiving') ||
+        lower.contains('repose') ||
+        lower.contains('petition')) {
+      return 'mass_intentions';
+    }
+    if (lower.contains('balik handog')) {
+      return 'balik_handog';
+    }
+    if (lower.contains('weekday collection')) {
+      return 'weekday_coll';
+    }
+    if (lower.contains('sunday collection')) {
+      return 'sunday_coll';
+    }
+    if (lower.contains('special collection')) {
+      return 'special_coll';
+    }
+    if (lower.contains('subsidy')) {
+      return 'subsidy';
+    }
+    return 'donation_parish';
+  }
+
+  /// Parses itemized lines from `details` or falls back to `relatedService`
+  static Map<String, double> _allocateItemToColumns(RemittanceItem item) {
+    final Map<String, double> allocations = {};
+
+    // Attempt to parse itemized POS lines: "• Title xQty\n  @ ₱Price = ₱Total"
+    final lines = item.details.split('\n').map((l) => l.trim()).toList();
+    String? pendingTitle;
+    double parsedSum = 0.0;
+
+    for (final line in lines) {
+      if (line.startsWith('•') || line.startsWith('-')) {
+        final clean = line.replaceFirst(RegExp(r'^[•\-]\s*'), '').trim();
+        final beforeQty = clean.replaceAll(RegExp(r'\s*x\d+$', caseSensitive: false), '').trim();
+        if (clean.contains('@') && clean.contains('=')) {
+          final eqParts = clean.split('=');
+          final titleSide = eqParts[0].split('@')[0].trim().replaceAll(RegExp(r'\s*x\d+$', caseSensitive: false), '');
+          final amtStr = eqParts.last.replaceAll(RegExp(r'[^0-9.]'), '');
+          final amt = double.tryParse(amtStr) ?? 0.0;
+          if (amt > 0) {
+            final key = _matchFundColumnKey(titleSide);
+            allocations[key] = (allocations[key] ?? 0.0) + amt;
+            parsedSum += amt;
+          }
+          pendingTitle = null;
+        } else {
+          pendingTitle = beforeQty;
+        }
+      } else if (pendingTitle != null && line.contains('@') && line.contains('=')) {
+        final amtStr = line.split('=').last.replaceAll(RegExp(r'[^0-9.]'), '');
+        final amt = double.tryParse(amtStr) ?? 0.0;
+        if (amt > 0) {
+          final key = _matchFundColumnKey(pendingTitle);
+          allocations[key] = (allocations[key] ?? 0.0) + amt;
+          parsedSum += amt;
+        }
+        pendingTitle = null;
+      }
+    }
+
+    // If itemized lines did not sum to item.amount, allocate full amount by relatedService
+    if (allocations.isEmpty || (parsedSum - item.amount).abs() > 0.05) {
+      allocations.clear();
+      final key = _matchFundColumnKey(item.relatedService);
+      allocations[key] = item.amount;
+    }
+
+    return allocations;
+  }
+
+  /// Computes the complete Fund Receipts breakdown matching the Nov2026 Excel Template
+  static FundReceiptsBreakdown computeFundBreakdown(List<RemittanceItem> items) {
+    final List<FundDistributionRow> rows = [];
+    final Map<String, double> totals = {
+      for (final col in fundColumns) col['key']!: 0.0,
+    };
+    double grandAmount = 0.0;
+
+    for (final item in items) {
+      final alloc = _allocateItemToColumns(item);
+      rows.add(FundDistributionRow(item: item, allocations: alloc));
+      grandAmount += item.amount;
+      alloc.forEach((key, val) {
+        totals[key] = (totals[key] ?? 0.0) + val;
+      });
+    }
+
+    final miTotal = totals['mass_intentions'] ?? 0.0;
+    final miCollTotal = totals['mi_coll'] ?? 0.0;
+
+    final mi60 = miTotal * 0.60;
+    final mi40 = miTotal * 0.40;
+    final miColl60 = miCollTotal * 0.60;
+    final miColl40 = miCollTotal * 0.40;
+
+    final sacramentSubtotal = (totals['baptism'] ?? 0.0) +
+        (totals['confirmation'] ?? 0.0) +
+        (totals['permission'] ?? 0.0) +
+        (totals['certificates'] ?? 0.0) +
+        (totals['marriage_banns'] ?? 0.0) +
+        (totals['funeral_mass'] ?? 0.0) +
+        (totals['funeral_blessing'] ?? 0.0) +
+        mi60 +
+        miColl60 +
+        (totals['wedding'] ?? 0.0);
+
+    final parishFundSubtotal = (totals['weekday_coll'] ?? 0.0) +
+        (totals['sunday_coll'] ?? 0.0) +
+        (totals['special_coll'] ?? 0.0) +
+        mi40 +
+        miColl40 +
+        (totals['balik_handog'] ?? 0.0) +
+        (totals['baptism_add'] ?? 0.0) +
+        (totals['confirmation_add'] ?? 0.0) +
+        (totals['donation_parish'] ?? 0.0) +
+        (totals['subsidy'] ?? 0.0);
+
+    final grandSummaryTotal = sacramentSubtotal + parishFundSubtotal;
+    final variance = grandAmount - grandSummaryTotal;
+
+    return FundReceiptsBreakdown(
+      rows: rows,
+      columnTotals: totals,
+      grandAmountTotal: grandAmount,
+      massIntention60: mi60,
+      massIntention40: mi40,
+      miCollection60: miColl60,
+      miCollection40: miColl40,
+      sacramentSubtotal: sacramentSubtotal,
+      parishFundSubtotal: parishFundSubtotal,
+      grandSummaryTotal: grandSummaryTotal,
+      variance: variance,
+    );
+  }
 
   static bool _isVoided(Map<String, dynamic> row) {
     final status = (row['transaction_status'] ?? '').toString().toLowerCase();
@@ -477,7 +731,7 @@ class RemittanceReportService {
   }
 
   // ===========================================================================
-  // Excel-Compatible Spreadsheet Export (Zero External Packages Required)
+  // Excel-Compatible Fund Receipts Template Export (Mirrors Nov2026 Sheet)
   // Generates UTF-8 with BOM CSV that Microsoft Excel & Google Sheets open natively
   // ===========================================================================
 
@@ -488,55 +742,108 @@ class RemittanceReportService {
     return value;
   }
 
+  static String _fmtAmt(double value) => value == 0.0 ? '' : value.toStringAsFixed(2);
+
   static Uint8List generateExcelCompatibleCsv(RemittanceReportData report) {
     final buffer = StringBuffer();
+    final breakdown = computeFundBreakdown(report.validReceipts);
 
     // UTF-8 BOM so Microsoft Excel immediately displays currency symbols and text without corruption
     buffer.write('\uFEFF');
 
-    // Header Metadata Rows
-    buffer.writeln('ST. JOHN PAUL II PARISH - DIOCESE OF SAN PABLO');
-    buffer.writeln('Barangay Labuin, Santa Cruz, Laguna, Philippines');
-    buffer.writeln('Official Remittance Report - Covered Period: ${_escapeCsv(report.periodLabel)}');
-    final genDateStr =
-        '${report.generatedAt.year}-${report.generatedAt.month.toString().padLeft(2, '0')}-${report.generatedAt.day.toString().padLeft(2, '0')} ${report.generatedAt.hour.toString().padLeft(2, '0')}:${report.generatedAt.minute.toString().padLeft(2, '0')}';
-    buffer.writeln('Generated By: ${_escapeCsv("${report.generatedByName} (${report.generatedByRole})")} on $genDateStr');
-    buffer.writeln('');
+    // Rows 1-4: Canonical Template Header
+    buffer.writeln(',SAINT JOHN PAUL II PARISH,,,,,,,,,,,,,,,,,,,,,,');
+    buffer.writeln(',Fund Receipts,,,,,,,,,,,,,,,,,,,,,,');
+    buffer.writeln(',${_escapeCsv(report.periodLabel)},,,,,,,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,,,,,,,,,,,,,,,,,,,,');
 
-    // Summary Section
-    buffer.writeln('FINANCIAL REMITTANCE SUMMARY');
-    buffer.writeln('Valid Receipts Count,${report.totalCount}');
-    buffer.writeln('Cash Intake (PHP),${report.totalCash.toStringAsFixed(2)}');
-    buffer.writeln('GCash Intake (PHP),${report.totalGCash.toStringAsFixed(2)}');
-    buffer.writeln('TOTAL REMITTANCE (PHP),${report.totalRemittance.toStringAsFixed(2)}');
-    buffer.writeln('Excluded Voided Slips,${report.excludedVoidCount}');
-    buffer.writeln('Excluded Gratis Slips,${report.excludedGratisCount}');
-    buffer.writeln('');
-
-    // Table Column Headers
-    buffer.writeln('Receipt Number,Date & Time,Payor Name,Contact Number,Particulars / Offering Service,Payment Mode,Amount (PHP)');
+    // Row 5: Column Headers (Cols A..X)
+    final headerCells = [
+      '',
+      'Date',
+      'OR NO.',
+      'Donor',
+      'PARTICULARS',
+      'AMOUNT',
+      ...fundColumns.map((c) => _escapeCsv(c['label']!)),
+    ];
+    buffer.writeln(headerCells.join(','));
+    buffer.writeln(',,,,,,,,,,,,,,,,,,,,,,,');
 
     // Data Rows
-    for (final item in report.validReceipts) {
-      final line = [
+    for (int i = 0; i < breakdown.rows.length; i++) {
+      final row = breakdown.rows[i];
+      final item = row.item;
+      final rowCells = [
+        '${i + 1}',
+        _escapeCsv(item.dateOnly),
         _escapeCsv(item.receiptNumber),
-        _escapeCsv(item.formattedDate),
         _escapeCsv(item.payorName),
-        _escapeCsv(item.payorContact ?? '-'),
         _escapeCsv(item.relatedService),
-        _escapeCsv(item.paymentMode.toUpperCase()),
         item.amount.toStringAsFixed(2),
-      ].join(',');
-      buffer.writeln(line);
+        ...fundColumns.map((c) => _fmtAmt(row.allocations[c['key']!] ?? 0.0)),
+      ];
+      buffer.writeln(rowCells.join(','));
     }
 
-    // Total Row
-    buffer.writeln('TOTAL,,,,Grand Total (${report.totalCount} Receipts),,${report.totalRemittance.toStringAsFixed(2)}');
-    buffer.writeln('');
-    buffer.writeln('');
+    buffer.writeln(',,,,,,,,,,,,,,,,,,,,,,,');
 
-    // Signatories Block
-    buffer.writeln('Prepared by:,${_escapeCsv(report.generatedByName)},Verified by:,Parish Secretary / PFC,Approved by:,Rev. Fr. Roy G. Reyes');
+    // Sub total & Total Rows
+    final totalCells = [
+      '',
+      '',
+      '',
+      '',
+      'Total',
+      breakdown.grandAmountTotal.toStringAsFixed(2),
+      ...fundColumns.map((c) => breakdown.col(c['key']!).toStringAsFixed(2)),
+    ];
+    buffer.writeln(totalCells.join(','));
+
+    // 60% / 40% Mass Intention Split Rows (Cols S & X)
+    final row60 = List<String>.filled(24, '');
+    row60[4] = 'Mass Intention Split (60%)';
+    row60[18] = breakdown.massIntention60.toStringAsFixed(2); // Col S
+    row60[23] = breakdown.miCollection60.toStringAsFixed(2); // Col X
+    buffer.writeln(row60.join(','));
+
+    final row40 = List<String>.filled(24, '');
+    row40[4] = 'Mass Intention Split (40%)';
+    row40[18] = breakdown.massIntention40.toStringAsFixed(2); // Col S
+    row40[23] = breakdown.miCollection40.toStringAsFixed(2); // Col X
+    buffer.writeln(row40.join(','));
+    buffer.writeln(',,,,,,,,,,,,,,,,,,,,,,,');
+
+    // Sacrament Summary Block
+    buffer.writeln(',,,,Sacrament,,,,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Baptism Infant,,${breakdown.col('baptism').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Confirmation,,${breakdown.col('confirmation').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Permission,,${breakdown.col('permission').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Certificates,,${breakdown.col('certificates').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Marriage Banns,,${breakdown.col('marriage_banns').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Funeral Mass,,${breakdown.col('funeral_mass').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Funeral Blessing,,${breakdown.col('funeral_blessing').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Mass Intention (60%),,${breakdown.massIntention60.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Mass Intention Collection (60%),,${breakdown.miCollection60.toStringAsFixed(2)},${(breakdown.massIntention60 + breakdown.miCollection60).toStringAsFixed(2)},,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Wedding,,${breakdown.col('wedding').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Sub total,,${breakdown.sacramentSubtotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,,,,,,,,,,,,,,,,,,,,');
+
+    // Parish Fund Summary Block
+    buffer.writeln(',,,,Parish Fund,,,,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Weekday Collection,,${breakdown.col('weekday_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Sunday Collection,,${breakdown.col('sunday_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Special Collection,,${breakdown.col('special_coll').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Mass Intention (40%),,${breakdown.massIntention40.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Mass Intention Collection (40%),,${breakdown.miCollection40.toStringAsFixed(2)},${(breakdown.massIntention40 + breakdown.miCollection40).toStringAsFixed(2)},,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Donation Balik Handog,,${breakdown.col('balik_handog').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Donation additional sponsors,,${(breakdown.col('baptism_add') + breakdown.col('confirmation_add')).toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    final combinedDonations = breakdown.col('balik_handog') + breakdown.col('baptism_add') + breakdown.col('confirmation_add') + breakdown.col('donation_parish');
+    buffer.writeln(',,,,Donation from Parishioners,,${breakdown.col('donation_parish').toStringAsFixed(2)},${combinedDonations.toStringAsFixed(2)},,,,,,,,,,,,,,,,');
+    buffer.writeln(',Prepared by:,,,Subsidy from Diocese,,${breakdown.col('subsidy').toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Sub total,,${breakdown.parishFundSubtotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',,,,Total,,${breakdown.grandSummaryTotal.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
+    buffer.writeln(',${_escapeCsv(report.generatedByName)},,,Variance Check (Amount - Total),,${breakdown.variance.toStringAsFixed(2)},,,,,,,,,,,,,,,,,');
 
     return Uint8List.fromList(utf8.encode(buffer.toString()));
   }
@@ -551,11 +858,11 @@ class RemittanceReportService {
     );
   }
 
-  /// Exports an Excel-compatible spreadsheet file (.csv) without dependency conflicts
+  /// Exports an Excel-compatible spreadsheet file (.csv) matching the Fund Receipts template
   static Future<void> exportExcel(RemittanceReportData report) async {
     final excelBytes = generateExcelCompatibleCsv(report);
     final periodSlug = report.periodLabel.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-    final filename = 'Remittance_Report_$periodSlug.csv';
+    final filename = 'FundReceipts_$periodSlug.csv';
 
     await Printing.sharePdf(
       bytes: excelBytes,

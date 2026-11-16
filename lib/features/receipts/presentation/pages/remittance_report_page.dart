@@ -283,7 +283,11 @@ class _RemittanceReportPageState extends State<RemittanceReportPage> {
                       ),
                       const SizedBox(height: 18),
 
-                      // 3. DataTable Section Header
+                      // 3. Fund Receipts Template Breakdown (Sacrament vs Parish Fund + 60/40 Split)
+                      _buildFundReceiptsBreakdownSection(_reportData!, isDesktop),
+                      const SizedBox(height: 22),
+
+                      // 4. DataTable Section Header
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -314,7 +318,7 @@ class _RemittanceReportPageState extends State<RemittanceReportPage> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 4. Full-width Data Table
+                      // 5. Full-width Data Table
                       _buildReportDataTable(_reportData!),
                     ],
 
@@ -361,6 +365,194 @@ class _RemittanceReportPageState extends State<RemittanceReportPage> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildFundReceiptsBreakdownSection(RemittanceReportData data, bool isDesktop) {
+    final breakdown = RemittanceReportService.computeFundBreakdown(data.validReceipts);
+
+    final sacramentCard = _buildSummaryBlockCard(
+      title: 'Sacrament Fund Summary',
+      icon: Icons.church_outlined,
+      accentColor: ParishColors.marianBlue,
+      rows: [
+        _SummaryRowData('Baptism Infant', breakdown.col('baptism')),
+        _SummaryRowData('Confirmation', breakdown.col('confirmation')),
+        _SummaryRowData('Permission', breakdown.col('permission')),
+        _SummaryRowData('Certificates', breakdown.col('certificates')),
+        _SummaryRowData('Marriage Banns', breakdown.col('marriage_banns')),
+        _SummaryRowData('Funeral Mass', breakdown.col('funeral_mass')),
+        _SummaryRowData('Funeral Blessing', breakdown.col('funeral_blessing')),
+        _SummaryRowData('Mass Intention (60%)', breakdown.massIntention60),
+        _SummaryRowData('MI Collection (60%)', breakdown.miCollection60),
+        _SummaryRowData('Wedding', breakdown.col('wedding')),
+      ],
+      subtotalLabel: 'Sacrament Sub Total',
+      subtotalValue: breakdown.sacramentSubtotal,
+    );
+
+    final parishFundCard = _buildSummaryBlockCard(
+      title: 'Parish Fund Summary',
+      icon: Icons.account_balance_outlined,
+      accentColor: ParishColors.oliveGreen,
+      rows: [
+        _SummaryRowData('Weekday Collection', breakdown.col('weekday_coll')),
+        _SummaryRowData('Sunday Collection', breakdown.col('sunday_coll')),
+        _SummaryRowData('Special Collection', breakdown.col('special_coll')),
+        _SummaryRowData('Mass Intention (40%)', breakdown.massIntention40),
+        _SummaryRowData('MI Collection (40%)', breakdown.miCollection40),
+        _SummaryRowData('Donation — Balik Handog', breakdown.col('balik_handog')),
+        _SummaryRowData(
+          'Donation — Additional Sponsors',
+          breakdown.col('baptism_add') + breakdown.col('confirmation_add'),
+        ),
+        _SummaryRowData('Donation from Parishioners', breakdown.col('donation_parish')),
+        _SummaryRowData('Subsidy from Diocese', breakdown.col('subsidy')),
+      ],
+      subtotalLabel: 'Parish Fund Sub Total',
+      subtotalValue: breakdown.parishFundSubtotal,
+      extraFooter: Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: ParishColors.marianBlueSurface,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Text(
+                'Grand Total (Sacrament + Parish Fund)',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              '₱ ${breakdown.grandSummaryTotal.toStringAsFixed(2)}',
+              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: ParishColors.marianBlue),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Fund Receipts Breakdown (Excel Template Reconciliation)',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: ParishColors.textDark),
+        ),
+        const SizedBox(height: 10),
+        if (isDesktop)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: sacramentCard),
+              const SizedBox(width: 16),
+              Expanded(child: parishFundCard),
+            ],
+          )
+        else ...[
+          sacramentCard,
+          const SizedBox(height: 12),
+          parishFundCard,
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSummaryBlockCard({
+    required String title,
+    required IconData icon,
+    required Color accentColor,
+    required List<_SummaryRowData> rows,
+    required String subtotalLabel,
+    required double subtotalValue,
+    Widget? extraFooter,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ParishColors.cardWhite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ParishColors.borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 18, color: accentColor),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: ParishColors.textDark),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 20),
+          ...rows.map((r) {
+            final hasValue = r.amount > 0;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3.5),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      r.label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: hasValue ? ParishColors.textDark : ParishColors.textMuted,
+                        fontWeight: hasValue ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    hasValue ? '₱ ${r.amount.toStringAsFixed(2)}' : '—',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: hasValue ? FontWeight.bold : FontWeight.normal,
+                      color: hasValue ? ParishColors.textDark : ParishColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const Divider(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  subtotalLabel,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: accentColor),
+                ),
+              ),
+              Text(
+                '₱ ${subtotalValue.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: accentColor),
+              ),
+            ],
+          ),
+          if (extraFooter != null) extraFooter,
+        ],
       ),
     );
   }
@@ -654,4 +846,11 @@ class _RemittanceReportPageState extends State<RemittanceReportPage> {
       },
     );
   }
+}
+
+class _SummaryRowData {
+  final String label;
+  final double amount;
+
+  const _SummaryRowData(this.label, this.amount);
 }
